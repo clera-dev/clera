@@ -1,9 +1,23 @@
-# Clera Web Page
+# Clera 
 
-## Components
-Most components were pulled from [aceternity](https://ui.aceternity.com/). It builds copy/paste UI features using Tailwind CSS and Framer Motion animation.
+This is a monorepo that contains all the code pertaining to building Clera. Monorepos made CI/CD pipelines, testing, and onboarding future engineers a lot simpler.
 
-Edits from original version: we used to use a WebGL spinning globe for the `NewsCard` but switched that out for a `World Map` aceternity component because WebGL isn't compatible with all devices.
+Here is a breakdown of what's going on:
 
-## Database
-We are using Supabase to handle all of the waitlist submissions (name and email). 
+## backend
+All of our (mainly) python AI logic is housed here.
+
+### Analysis of subfolders
+...
+
+## frontend-app
+This is our code for the frontend of app.askclera.com.
+
+## website
+This is our code for askclera.com - our informational website.
+
+## docs
+This is where we'll document this entire repo to easily track how everything is being built.
+
+## packages
+Here we're housing code that can be utilized by the entire stack. 
