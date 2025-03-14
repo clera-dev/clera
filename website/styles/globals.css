@@ -1,0 +1,447 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 0, 0, 0;
+  --background-end-rgb: 10, 10, 15;
+  --tap-highlight-color: transparent;
+}
+
+html {
+  background-color: rgb(var(--background-start-rgb));
+  overscroll-behavior: none; /* Prevents bounce effect in some browsers */
+  height: 100%;
+  -webkit-tap-highlight-color: var(--tap-highlight-color);
+  touch-action: manipulation; /* Prevents delays on touch events */
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--background-start-rgb)),
+    rgb(var(--background-end-rgb))
+  );
+  min-height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior-y: none; /* Prevents bounce effect in modern browsers */
+}
+
+/* Improve mobile form inputs */
+input, 
+select, 
+textarea {
+  font-size: 16px !important; /* Prevents iOS zoom on focus */
+}
+
+/* Add explicit touch feedback for buttons and links */
+@media (hover: none) {
+  a:active, button:active {
+    opacity: 0.7;
+    transition: opacity 0.1s ease;
+  }
+  
+  .mobile-touch-feedback:active {
+    transform: scale(0.98);
+    opacity: 0.8;
+    transition: transform 0.1s ease, opacity 0.1s ease;
+  }
+}
+
+/* Increase touch target size for small interactive elements */
+.touch-target {
+  position: relative;
+}
+
+.touch-target::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.8;
+    stroke-width: 15px;
+    filter: drop-shadow(0 0 25px rgba(185, 211, 255, 0.3))
+           drop-shadow(0 0 50px rgba(185, 211, 255, 0.15));
+  }
+  50% {
+    opacity: 1;
+    stroke-width: 18px;
+    filter: drop-shadow(0 0 35px rgba(185, 211, 255, 0.4))
+           drop-shadow(0 0 60px rgba(185, 211, 255, 0.2));
+  }
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 35px rgba(66, 153, 225, 0.6), 0 0 55px rgba(66, 153, 225, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 45px rgba(66, 153, 225, 0.8), 0 0 65px rgba(66, 153, 225, 0.6);
+  }
+}
+
+@keyframes soundWaveA {
+  0% {
+    opacity: 0;
+    transform: scale(0.93) rotate(0deg);
+    stroke-width: 3px;
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1) rotate(180deg);
+    stroke-width: 2px;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.07) rotate(360deg);
+    stroke-width: 1px;
+  }
+}
+
+@keyframes soundWaveB {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) rotate(360deg);
+    stroke-width: 3px;
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1) rotate(180deg);
+    stroke-width: 2px;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.05) rotate(0deg);
+    stroke-width: 1px;
+  }
+}
+
+@keyframes soundWaveC {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+    stroke-width: 3px;
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+    stroke-width: 2px;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+    stroke-width: 1px;
+  }
+}
+
+@keyframes dotSpin {
+  0% {
+    opacity: 0.2;
+    transform: rotate(0deg) translate(0, -150%) scale(0.2);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(180deg) translate(0, -150%) scale(1);
+  }
+  100% {
+    opacity: 0.2;
+    transform: rotate(360deg) translate(0, -150%) scale(0.2);
+  }
+}
+
+.sound-wave-1 {
+  animation: soundWaveA 3s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.sound-wave-2 {
+  animation: soundWaveB 2.5s ease-in-out infinite 0.3s;
+  transform-origin: center;
+}
+
+.sound-wave-3 {
+  animation: soundWaveC 2.8s ease-in-out infinite 0.6s;
+  transform-origin: center;
+}
+
+.sound-wave-4 {
+  animation: soundWaveB 3.2s ease-in-out infinite 0.9s;
+  transform-origin: center;
+}
+
+.sound-wave-5 {
+  animation: soundWaveA 2.7s ease-in-out infinite 1.2s;
+  transform-origin: center;
+}
+
+.sound-wave-6 {
+  animation: soundWaveC 3s ease-in-out infinite 1.5s;
+  transform-origin: center;
+}
+
+.energy-ring {
+  animation: pulse 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 25px rgba(185, 211, 255, 0.3))
+         drop-shadow(0 0 50px rgba(185, 211, 255, 0.15));
+  stroke-linecap: round;
+}
+
+.energy-ring-static {
+  filter: drop-shadow(0 0 35px rgba(185, 211, 255, 0.4))
+         drop-shadow(0 0 60px rgba(185, 211, 255, 0.2));
+  stroke-linecap: round;
+}
+
+.energy-ring::before,
+.energy-ring::after,
+.energy-ring-static::before,
+.energy-ring-static::after {
+  display: none;
+}
+
+/* Add this new style for the typing animation */
+.typed-text {
+  display: inline-block;
+}
+
+.typed-text-highlight {
+  color: #7fb3f5;
+}
+
+@keyframes shine {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shine {
+  animation: shine 1.5s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 1.2s ease-out forwards;
+}
+
+.animate-fade-in-up-delay-1 {
+  animation: fadeInUp 1.2s ease-out 0.8s forwards;
+  opacity: 0;
+}
+
+/* Add these styles for the glowing effect */
+.rounded-2\.5xl {
+  border-radius: 1.25rem;
+}
+
+.border-0\.75 {
+  border-width: 0.75px;
+}
+
+.-tracking-4 {
+  letter-spacing: -0.04em;
+}
+
+/* Add any dark mode specific styles if needed */
+.dark .dark\:shadow-\[0px_0px_27px_0px_\#2D2D2D\] {
+  box-shadow: 0px 0px 27px 0px #2D2D2D;
+}
+
+/* Add these styles for the Macbook frame */
+.macbook-container {
+  position: relative;
+  padding: 2% 2% 2.5% 2%;
+  background: #2a2a2a;
+  border-radius: 20px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.2),
+              0 20px 40px rgba(0,0,0,0.4);
+  transform-origin: center top;
+  perspective: 1000px;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  transform-style: preserve-3d;
+}
+
+.macbook-frame {
+  position: relative;
+  background: #2a2a2a;
+  border-radius: 20px;
+  transform-style: preserve-3d;
+}
+
+.screen-bezel {
+  position: relative;
+  background: #1a1a1a;
+  border-radius: 10px 10px 0 0;
+  padding: 2%;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.screen-content {
+  aspect-ratio: 16/10;
+  background: #000;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.base {
+  position: relative;
+  height: 60px;
+  background: linear-gradient(180deg, #2a2a2a 0%, #3a3a3a 100%);
+  border-radius: 0 0 10px 10px;
+  margin-top: 2px;
+  border: 1px solid rgba(255,255,255,0.1);
+  transform-style: preserve-3d;
+  transform: translateZ(-10px);
+}
+
+.trackpad {
+  position: absolute;
+  width: 40%;
+  height: 30px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 10px rgba(255,255,255,0.1);
+}
+
+/* Add this new style for the image */
+.screen-content img {
+  opacity: 0.9;
+  filter: brightness(1.1);
+}
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+/* Additional animations from app/globals.css */
+@keyframes border-travel {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(calc(100% - 16px), 0);
+  }
+  50% {
+    transform: translate(calc(100% - 16px), calc(100% - 16px));
+  }
+  75% {
+    transform: translate(0, calc(100% - 16px));
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+.animate-border-travel {
+  animation: border-travel 8s linear infinite;
+}
+
+/* Typing animation for security card */
+@keyframes typing {
+  from { 
+    width: 0; 
+    border-right: 2px solid;
+  }
+  to { 
+    width: 100%;
+    border-right: 2px solid transparent;
+  }
+}
+
+@keyframes blink {
+  50% { border-color: transparent; }
+}
+
+.typing-animation {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: 
+    typing 3s steps(40, end),
+    blink 1s step-end infinite alternate;
+  border-right: 2px solid;
+}
+
+/* Pulse animation for shield outline */
+@keyframes pulse-outline {
+  0% {
+    opacity: 0.6;
+    stroke-width: 2;
+  }
+  50% {
+    opacity: 1;
+    stroke-width: 2.5;
+  }
+  100% {
+    opacity: 0.6;
+    stroke-width: 2;
+  }
+}
+
+.pulse-outline {
+  animation: pulse-outline 3s ease-in-out infinite;
+}
+
