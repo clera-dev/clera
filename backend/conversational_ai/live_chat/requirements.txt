@@ -1,0 +1,53 @@
+# LiveKit Agents Framework
+livekit-agents>=0.3.0
+livekit-plugins>=0.3.0
+livekit-server-sdk>=1.0.0
+
+# Speech-to-text and text-to-speech
+deepgram-sdk>=2.11.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Async support
+asyncio>=3.4.3
+
+# Logging
+logging>=0.4.9
+
+# LangGraph dependencies (for your custom agent)
+langgraph>=0.0.19
+langchain>=0.0.335
+langchain-core>=0.1.7
+
+# Deepgram plugins
+livekit-plugins-deepgram>=0.6.0,<1.0.0
+livekit-plugins-silero>=0.7.0,<1.0.0
+livekit-plugins-cartesia>=0.4.0,<1.0.0
+livekit-plugins-turn-detector>=0.4.0,<1.0.0
+livekit-plugins-openai>=0.10.0,<1.0.0
+
+# Langchain dependencies
+langchain-anthropic>=0.1.23
+langchain-community>=0.2.17 # 0.3.18
+langchain-huggingface>=0.1.2
+langchain-openai>=0.1.22
+langchain-pinecone>=0.2.2
+langchain-tests>=0.3.8
+langchain-text-splitters>=0.3.6
+langgraph-api>=0.0.27
+langgraph-checkpoint>=2.0.16
+langgraph-cli>=0.1.74
+langgraph-sdk>=0.1.51
+langgraph-supervisor>=0.0.2
+langsmith>=0.3.11
+
+# Alpaca dependencies
+alpaca-py==0.38.0
+
+# Certifi and OpenAI
+certifi==2024.2.2
+openai==1.64.0
+
+# Requests
+requests>=2.28.0

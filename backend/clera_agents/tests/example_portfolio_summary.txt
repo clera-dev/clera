@@ -1,0 +1,45 @@
+# Portfolio Summary
+Total Portfolio Value: $15,315.00
+Cash: $2,000.00 (13.1%)
+Invested: $13,315.00 (86.9%)
+
+## Investment Strategy
+Risk Profile: Aggressive
+Target Portfolio: Aggressive Growth Portfolio
+Target Allocation: Equity: 70.0%, Fixed Income: 20.0%, Cash: 10.0%
+
+## Asset Allocation
+Equity: $6,000.00 (45.1%)
+Fixed Income: $3,200.00 (24.0%)
+Cash: $500.00 (3.8%)
+Real Estate: $1,275.00 (9.6%)
+Commodities: $1,140.00 (8.6%)
+Alternatives: $1,200.00 (9.0%)
+
+## Security Types
+Individual Stock: 30.0%
+Etf: 47.6%
+Reit: 9.6%
+Money Market: 3.8%
+Cryptocurrency: 9.0%
+
+## Performance
+Total Gain: $605.00 (4.76%)
+
+Performance Attribution by Asset Class:
+Equity: 74.4% contribution
+Alternatives: 49.6% contribution
+Fixed Income: -21.5% contribution
+Real Estate: -12.4% contribution
+Commodities: 9.9% contribution
+
+## Risk Assessment
+Risk Score: 7.1/10 (High)
+Diversification Score: 8.0/10 (Good)
+
+## Concentration Risks
+Position: AAPL: 15.0%
+Position: MSFT: 15.0%
+Position: SPY: 15.0%
+Position: AGG: 15.0%
+Position: VNQ: 9.6%
