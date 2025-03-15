@@ -2,19 +2,19 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { motion, useScroll, useTransform } from "framer-motion"
-import BackgroundChart from '../components/BackgroundChart'
-import TickerBanner from '../components/TickerBanner'
-import { Button } from "../components/ui/button"
+import BackgroundChart from 'components/BackgroundChart'
+import TickerBanner from 'components/TickerBanner'
+import { Button } from "components/ui/button"
 import Link from "next/link"
-import FeatureCard from "../components/FeatureCard"
-import { features } from "../data/features"
+import FeatureCard from "components/FeatureCard"
+import { features } from "data/features"
 import { ArrowRight, LucideIcon } from "lucide-react"
-import { BentoGrid, BentoGridItem, MobileScrollbarStyle } from "../components/BentoGrid"
-import { SecurityCard } from "../components/SecurityCard"
-import { NewsCard } from '../components/NewsCard'
-import { FinancialCard } from '../components/FinancialCard'
-import { InvestmentCard } from '../components/InvestmentCard'
-import { PersonalAdvisorCard } from '../components/PersonalAdvisorCard'
+import { BentoGrid, BentoGridItem, MobileScrollbarStyle } from "components/BentoGrid"
+import { SecurityCard } from "components/SecurityCard"
+import { NewsCard } from 'components/NewsCard'
+import { FinancialCard } from 'components/FinancialCard'
+import { InvestmentCard } from 'components/InvestmentCard'
+import { PersonalAdvisorCard } from 'components/PersonalAdvisorCard'
 
 // Helper component to render feature icons
 const FeatureIcon = ({ IconComponent, isLarge = false }: { IconComponent: LucideIcon; isLarge?: boolean }) => {

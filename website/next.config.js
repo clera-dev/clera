@@ -15,9 +15,14 @@ const nextConfig = {
   },
   // Configure webpack for missing modules
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Add fallback resolvers for Babel helpers
+    // Add module resolution aliases
     config.resolve.alias = {
       ...config.resolve.alias,
+      'lib': path.resolve(__dirname, 'lib'),
+      'components': path.resolve(__dirname, 'components'),
+      'data': path.resolve(__dirname, 'data'),
+      'app': path.resolve(__dirname, 'app'),
+      'styles': path.resolve(__dirname, 'styles'),
       '@babel/runtime/helpers/esm/extends': path.resolve(__dirname, 'extend-helper.js'),
       // Add other helpers as needed
     };

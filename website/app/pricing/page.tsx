@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Check } from 'lucide-react'
-import { plans } from '../../data/pricing'
+import { plans } from 'data/pricing'
 
 // Custom CSS for hide-scrollbar
 const styles = {
