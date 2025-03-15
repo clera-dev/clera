@@ -1,6 +1,6 @@
 "use client";
 import { motion, useInView } from "framer-motion";
-import { cn } from "lib/utils";
+import { cn } from "@/lib/utils";
 import dynamic from 'next/dynamic';
 import { LucideIcon } from "lucide-react";
 import { useState, useEffect, useRef } from "react";

@@ -1,8 +1,0 @@
-{
-  "buildCommand": "pnpm build",
-  "installCommand": "pnpm install",
-  "framework": "nextjs",
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
-  ]
-} 

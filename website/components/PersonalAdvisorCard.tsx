@@ -1,6 +1,6 @@
 "use client";
 import { motion, useMotionValue, useTransform, useSpring, AnimatePresence } from "framer-motion";
-import { cn } from "lib/utils";
+import { cn } from "@/lib/utils";
 import React, { useState, useEffect, useRef } from 'react';
 import { UserPlus, ArrowRight } from "lucide-react";
 import Image from "next/image";
