@@ -3,8 +3,8 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { HoverBorderGradient } from '@/components/ui/hover-border-gradient'
+import { Button } from './ui/button'
+import { HoverBorderGradient } from './ui/hover-border-gradient'
 import supabase from '../lib/supabase'
 import confetti from 'canvas-confetti'
 

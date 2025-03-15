@@ -1,6 +1,6 @@
 "use client";
 import { motion, useAnimation, useInView } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { cn } from "../lib/utils";
 import React, { useEffect, useState, useRef } from 'react';
 
 export const InvestmentCard = ({

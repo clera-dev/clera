@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Button } from '@/components/ui/button'
+import { Button } from './ui/button'
 import Logo from './Logo'
 import ContactSlideout from './ContactSlideout'
 import { motion, AnimatePresence } from 'framer-motion'
