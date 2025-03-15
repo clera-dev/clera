@@ -101,6 +101,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
         
+      - name: List directory contents before build
+        run: ls -la
+        
       - name: Build application
         run: npm run build
         env:
@@ -108,13 +111,27 @@ jobs:
           # No sensitive data should be hardcoded in workflows
           NEXT_PUBLIC_API_URL: https://api-staging.clera.ai
         
+      - name: List directory contents after build
+        run: |
+          echo "Current directory:"
+          ls -la
+          echo "Checking if .next directory exists:"
+          if [ -d ".next" ]; then
+            echo ".next directory exists, showing contents:"
+            ls -la .next
+          else
+            echo ".next directory not found!"
+            echo "Checking parent directory:"
+            ls -la ..
+          fi
+        
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nextjs-build-${{ github.run_id }}
-          path: ./frontend-app/.next
+          path: frontend-app/.next
           retention-days: 3
-          if-no-files-found: error # Fail this step if no files are found
+          if-no-files-found: warn # Changed to warn instead of error to see the full logs
 
   deploy-staging:
     name: Deploy to Staging
@@ -122,9 +139,6 @@ jobs:
     needs: [build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: staging
-    defaults:
-      run:
-        working-directory: ./frontend-app
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -138,12 +152,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nextjs-build-${{ github.run_id }}
-          path: ./frontend-app/.next
+          path: frontend-app/.next
           
       - name: Verify artifact download
         run: |
+          cd frontend-app
           if [ ! -d ".next" ] || [ -z "$(ls -A .next)" ]; then
             echo "The .next directory is empty or doesn't exist. Artifact download may have failed."
+            echo "Current directory contents:"
+            ls -la
             exit 1
           else
             echo "Build artifacts successfully downloaded."
@@ -151,7 +168,9 @@ jobs:
           fi
           
       - name: Install production dependencies
-        run: npm ci --production
+        run: |
+          cd frontend-app
+          npm ci --production
         
       - name: Deploy to Vercel (staging)
         id: deploy-staging
@@ -187,9 +206,6 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
     # This ensures manual approval before deploying to production
-    defaults:
-      run:
-        working-directory: ./frontend-app
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -203,12 +219,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nextjs-build-${{ github.run_id }}
-          path: ./frontend-app/.next
+          path: frontend-app/.next
           
       - name: Verify artifact download
         run: |
+          cd frontend-app
           if [ ! -d ".next" ] || [ -z "$(ls -A .next)" ]; then
             echo "The .next directory is empty or doesn't exist. Artifact download may have failed."
+            echo "Current directory contents:"
+            ls -la
             exit 1
           else
             echo "Build artifacts successfully downloaded."
@@ -216,7 +235,9 @@ jobs:
           fi
           
       - name: Install production dependencies
-        run: npm ci --production
+        run: |
+          cd frontend-app
+          npm ci --production
         
       - name: Deploy to Vercel (production)
         id: deploy-production
