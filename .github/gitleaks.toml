@@ -2,7 +2,7 @@
 
 title = "Gitleaks Config for Clera Fintech AI"
 
-# Defines a whitelist of allowed regex patterns
+# Defines an allowlist of allowed regex patterns
 [allowlist]
 description = "Global allowlist"
 
