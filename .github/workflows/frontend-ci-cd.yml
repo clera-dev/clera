@@ -82,6 +82,8 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     needs: [security-scan, lint]
+    # Only run this job on main branch pushes or PRs to main
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.base_ref == 'main')
     defaults:
       run:
         working-directory: ./frontend-app
@@ -109,9 +111,10 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nextjs-build
+          name: nextjs-build-${{ github.run_id }}
           path: ./frontend-app/.next
-          retention-days: 1
+          retention-days: 3
+          if-no-files-found: error # Fail this step if no files are found
 
   deploy-staging:
     name: Deploy to Staging
@@ -134,13 +137,24 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: nextjs-build
+          name: nextjs-build-${{ github.run_id }}
           path: ./frontend-app/.next
+          
+      - name: Verify artifact download
+        run: |
+          if [ ! -d ".next" ] || [ -z "$(ls -A .next)" ]; then
+            echo "The .next directory is empty or doesn't exist. Artifact download may have failed."
+            exit 1
+          else
+            echo "Build artifacts successfully downloaded."
+            ls -la .next
+          fi
           
       - name: Install production dependencies
         run: npm ci --production
         
       - name: Deploy to Vercel (staging)
+        id: deploy-staging
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -150,10 +164,26 @@ jobs:
           working-directory: ./frontend-app
           vercel-args: '--prod'
           
+      - name: Log Deployment URL
+        run: |
+          echo "Deployed to staging environment: ${{ steps.deploy-staging.outputs.preview-url }}"
+          # Store the URL for use in other jobs or for notifications
+          echo "STAGING_URL=${{ steps.deploy-staging.outputs.preview-url }}" >> $GITHUB_ENV
+  
+  wait-for-approval:
+    name: Wait for Production Approval
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production-approval
+    steps:
+      - name: Production Approval
+        run: echo "Production deployment has been manually approved at $(date)"
+          
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [deploy-staging]
+    needs: [wait-for-approval]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
     # This ensures manual approval before deploying to production
@@ -172,13 +202,24 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: nextjs-build
+          name: nextjs-build-${{ github.run_id }}
           path: ./frontend-app/.next
+          
+      - name: Verify artifact download
+        run: |
+          if [ ! -d ".next" ] || [ -z "$(ls -A .next)" ]; then
+            echo "The .next directory is empty or doesn't exist. Artifact download may have failed."
+            exit 1
+          else
+            echo "Build artifacts successfully downloaded."
+            ls -la .next
+          fi
           
       - name: Install production dependencies
         run: npm ci --production
         
       - name: Deploy to Vercel (production)
+        id: deploy-production
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -188,4 +229,8 @@ jobs:
           working-directory: ./frontend-app
           vercel-args: '--prod'
           alias-domains: |
-            app.clera.ai 
+            app.clera.ai
+            
+      - name: Log Deployment URL
+        run: |
+          echo "Deployed to production environment: ${{ steps.deploy-production.outputs.preview-url }}" 
