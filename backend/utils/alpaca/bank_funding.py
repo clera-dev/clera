@@ -240,17 +240,13 @@ def create_ach_transfer(
     
     return transfer
 
-def get_ach_relationships(account_id: str):
-    """
-    Get all ACH relationships for an account.
-    
-    Args:
-        account_id: Alpaca account ID
-        
-    Returns:
-        List of ACH relationships
-    """
-    relationships = broker_client.get_ach_relationships_for_account(account_id=account_id)
+def get_ach_relationships(alpaca_account_id, broker_client=None):
+    # Use provided client or initialize new one
+    if broker_client is None:
+        logger.warning("No broker client provided for get_ach_relationships, this may lead to authentication errors")
+        broker_client = get_broker_client()
+
+    relationships = broker_client.get_ach_relationships_for_account(account_id=alpaca_account_id)
     return relationships
 
 def create_direct_plaid_link_url(alpaca_account_id: str, user_email: str, redirect_uri: str = None) -> Dict[str, Any]:

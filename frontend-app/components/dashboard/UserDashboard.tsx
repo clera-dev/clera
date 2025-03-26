@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { InfoIcon } from "lucide-react";
-
+import PortfolioCard from './PortfolioCard';
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 interface UserDashboardProps {
   firstName: string;
   accountDetails: {
@@ -16,7 +17,47 @@ export default function UserDashboard({
   firstName,
   accountDetails
 }: UserDashboardProps) {
-  
+    const alpacaAccountId = localStorage.getItem('alpacaAccountId') || '';
+  return (
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold">Hello, {firstName}</h1>
+      <p className="text-muted-foreground">Welcome to your Clera investment dashboard.</p>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Bank Account Details Card */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-medium">Bank Account Details</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Existing bank details content */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Account Number</span>
+                <span className="font-medium">{accountDetails.bankAccountNumber}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Routing Number</span>
+                <span className="font-medium">{accountDetails.bankRoutingNumber}</span>
+              </div>
+              {accountDetails.transferAmount && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Transfer Amount</span>
+                  <span className="font-medium">${accountDetails.transferAmount}</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Portfolio Card - New addition */}
+        <PortfolioCard alpacaAccountId={alpacaAccountId} />
+      </div>
+    </div>
+  );
+}
+
+/*
   return (
     <div className="w-full">
       <div className="mb-8">
@@ -65,3 +106,4 @@ export default function UserDashboard({
     </div>
   );
 } 
+  */

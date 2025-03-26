@@ -306,6 +306,13 @@ Since Alpaca only allows one active ACH relationship per account and limits to o
    - Removed database operations that would fail if tables don't exist
    - Added detailed logging to help diagnose database-related issues
 
+5. **Portfolio Display**:
+   - Added Portfolio section to the dashboard showing current cash balance
+   - Implemented direct Alpaca API integration to fetch account cash balance
+   - Used Alpaca's transfer and account endpoints to retrieve accurate balances
+   - Added robust error handling and loading states for better user experience
+   - No backend changes required as all communication happens through the frontend API route
+
 #### Required Database Tables
 
 To fully support the bank connection and transfer functionality, the following Supabase tables need to be created:

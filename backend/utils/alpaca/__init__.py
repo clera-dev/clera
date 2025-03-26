@@ -18,6 +18,11 @@ from .manual_bank_funding import (
     create_ach_transfer
 )
 
+from .transfers import (
+    get_transfers_for_account,
+    get_account_details
+)
+
 __all__ = [
     'get_broker_client',
     'create_alpaca_account',
@@ -29,5 +34,7 @@ __all__ = [
     'get_ach_relationships',
     'create_direct_plaid_link_url',
     'create_ach_relationship_manual',
-    'create_ach_transfer'
+    'create_ach_transfer',
+    'get_transfers_for_account',
+    'get_account_details',
 ] 

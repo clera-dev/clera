@@ -114,7 +114,12 @@ def get_broker_client():
     )
 
 # Import our Alpaca utilities
-from utils.alpaca import create_or_get_alpaca_account, create_direct_plaid_link_url
+from utils.alpaca import (
+    create_or_get_alpaca_account, 
+    create_direct_plaid_link_url,
+    get_transfers_for_account,
+    get_account_details
+)
 
 # For ACH transfers
 from utils.alpaca.bank_funding import create_ach_transfer, create_ach_relationship_manual
@@ -788,8 +793,11 @@ async def get_ach_relationships_for_account(
         raise HTTPException(status_code=401, detail="Invalid API key")
     
     try:
+        # Get a broker client instance
+        client = get_broker_client()
+        
         # Get the ACH relationships
-        relationships = get_ach_relationships(account_id)
+        relationships = get_ach_relationships(account_id, broker_client=client)
         
         # Return the relationships
         return {
@@ -798,6 +806,65 @@ async def get_ach_relationships_for_account(
     except Exception as e:
         logger.error(f"Error getting ACH relationships: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/get-account-info/{account_id}")
+async def get_account_info(
+    account_id: str,
+    x_api_key: str = Header(None)
+):
+    """
+    Get the account information including cash balance from Alpaca.
+    """
+    # Validate API key
+    api_key_env = os.getenv("BACKEND_API_KEY")
+    if x_api_key != api_key_env:
+        logger.error("API key validation failed")
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    try:
+        # Get a broker client instance
+        client = get_broker_client()
+        
+        # Get account details to get latest cash balance
+        account_details = get_account_details(account_id, broker_client=client)
+        
+        # Get the transfers to calculate total funded amount
+        transfers = get_transfers_for_account(account_id, broker_client=client)
+        
+        # Calculate total successful deposits
+        total_funded = 0.0
+        for transfer in transfers:
+            if transfer.status == "COMPLETE" and transfer.direction == "INCOMING":
+                total_funded += float(transfer.amount)
+        
+        # Extract cash balance - In Broker API, it's in last_equity field
+        # The structure might be a dictionary or an object with attributes
+        current_cash = 0.0
+        
+        if hasattr(account_details, 'last_equity'):
+            # If it's an object with attributes
+            current_cash = float(account_details.last_equity or 0)
+        elif isinstance(account_details, dict) and 'last_equity' in account_details:
+            # If it's a dictionary
+            current_cash = float(account_details['last_equity'] or 0)
+        elif hasattr(account_details, 'cash'):
+            # Fallback to cash field if available
+            current_cash = float(account_details.cash or 0)
+        elif isinstance(account_details, dict) and 'cash' in account_details:
+            # If it's a dictionary
+            current_cash = float(account_details['cash'] or 0)
+        
+        logger.info(f"Account {account_id} current cash: {current_cash}, total funded: {total_funded}")
+        
+        return {
+            "total_funded": total_funded,
+            "current_balance": current_cash,
+            "currency": "USD"
+        }
+    except Exception as e:
+        logger.error(f"Error getting account info: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
