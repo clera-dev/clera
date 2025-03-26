@@ -4,6 +4,10 @@ import { encodedRedirect } from "@/utils/utils";
 import { createClient } from "@/utils/supabase/server";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { OnboardingData } from "@/components/onboarding/OnboardingTypes";
+
+export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected';
 
 export const signUpAction = async (formData: FormData) => {
   const email = formData.get("email")?.toString();
@@ -136,3 +140,108 @@ export const signOutAction = async () => {
   await supabase.auth.signOut();
   return redirect("/sign-in");
 };
+
+export async function saveOnboardingDataAction(
+  userId: string,
+  onboardingData: OnboardingData,
+  status: OnboardingStatus = 'in_progress',
+  alpacaData?: {
+    accountId?: string;
+    accountNumber?: string;
+    accountStatus?: string;
+  }
+) {
+  try {
+    const supabase = await createClient();
+    
+    // Check if record already exists for this user
+    const { data: existingRecord } = await supabase
+      .from('user_onboarding')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+    
+    if (existingRecord) {
+      // Update existing record
+      const { error } = await supabase
+        .from('user_onboarding')
+        .update({
+          status,
+          onboarding_data: onboardingData,
+          updated_at: new Date().toISOString(),
+          ...(alpacaData?.accountId && { alpaca_account_id: alpacaData.accountId }),
+          ...(alpacaData?.accountNumber && { alpaca_account_number: alpacaData.accountNumber }),
+          ...(alpacaData?.accountStatus && { alpaca_account_status: alpacaData.accountStatus }),
+        })
+        .eq('id', existingRecord.id);
+      
+      if (error) throw error;
+    } else {
+      // Create new record
+      const { error } = await supabase
+        .from('user_onboarding')
+        .insert({
+          user_id: userId,
+          status,
+          onboarding_data: onboardingData,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...(alpacaData?.accountId && { alpaca_account_id: alpacaData.accountId }),
+          ...(alpacaData?.accountNumber && { alpaca_account_number: alpacaData.accountNumber }),
+          ...(alpacaData?.accountStatus && { alpaca_account_status: alpacaData.accountStatus }),
+        });
+      
+      if (error) throw error;
+    }
+    
+    revalidatePath('/protected');
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving onboarding data:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'An unknown error occurred'
+    };
+  }
+}
+
+export async function getOnboardingDataAction(userId: string) {
+  try {
+    const supabase = await createClient();
+    
+    // Check if the table exists by attempting to get its schema
+    const { error: schemaError } = await supabase
+      .from('user_onboarding')
+      .select('*')
+      .limit(0);
+    
+    // If the table doesn't exist, return empty data instead of throwing an error
+    if (schemaError && schemaError.code === '42P01') { // PostgreSQL error code for 'relation does not exist'
+      return { data: undefined };
+    }
+    
+    // Proceed with the regular query if the table exists
+    const { data, error } = await supabase
+      .from('user_onboarding')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error) {
+      // If no record exists, don't treat as an error
+      if (error.code === 'PGRST116') {
+        return { data: undefined };
+      }
+      throw error;
+    }
+    
+    return { data };
+  } catch (error) {
+    console.error('Error fetching onboarding data:', error);
+    // Handle the error gracefully without throwing
+    return { 
+      data: undefined,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
