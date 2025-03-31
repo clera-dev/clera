@@ -20,6 +20,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from langgraph.errors import GraphInterrupt
+from langgraph.graph.message import add_messages
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, FunctionMessage
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -64,6 +68,13 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(..., description="Chat message history")
     user_input: str = Field(..., description="Latest user input")
+
+class ChatWithAccountRequest(BaseModel):
+    messages: List[ChatMessage] = Field(..., description="Chat message history")
+    user_input: str = Field(..., description="Latest user input")
+    account_id: str = Field(..., description="User's Alpaca account ID")
+    user_id: Optional[str] = Field(None, description="User's Supabase ID")
+    session_id: Optional[str] = Field(None, description="Chat session ID")
 
 # Define trade execution models
 class TradeRequest(BaseModel):
@@ -123,6 +134,19 @@ from utils.alpaca import (
 
 # For ACH transfers
 from utils.alpaca.bank_funding import create_ach_transfer, create_ach_relationship_manual
+
+# Import Supabase conversation and chat session utilities
+from utils.supabase import (
+    save_conversation,
+    get_user_conversations,
+    get_portfolio_conversations,
+    create_chat_session,
+    get_chat_sessions,
+    get_conversations_by_session,
+    delete_chat_session,
+    save_conversation_with_session,
+    get_user_alpaca_account_id
+)
 
 # API key authentication
 def verify_api_key(x_api_key: str = Header(None)):
@@ -206,6 +230,45 @@ class ACHTransferRequest(BaseModel):
     accountId: str
     relationshipId: str
     amount: str
+
+# Add new conversation models
+class SaveConversationRequest(BaseModel):
+    user_id: str
+    portfolio_id: str
+    message: str
+    response: str
+
+class GetConversationsRequest(BaseModel):
+    user_id: str
+    portfolio_id: Optional[str] = None
+    limit: Optional[int] = 50
+
+# Add new chat session models
+class CreateSessionRequest(BaseModel):
+    user_id: str
+    portfolio_id: str
+    title: str
+
+class GetSessionsRequest(BaseModel):
+    user_id: str
+    portfolio_id: Optional[str] = None
+
+class GetSessionConversationsRequest(BaseModel):
+    user_id: str
+    session_id: str
+
+class SaveConversationWithSessionRequest(BaseModel):
+    user_id: str
+    portfolio_id: str
+    message: str
+    response: str
+    session_id: str
+
+# --- Resume Chat Endpoint Request Model ---
+class ResumeChatRequest(BaseModel):
+    session_id: str = Field(..., description="The session ID of the interrupted conversation")
+    user_confirmation: str = Field(..., description="User's confirmation ('yes' or 'no')")
+# -----------------------------------------
 
 @app.post("/api/trade")
 async def execute_trade(request: TradeRequest):
@@ -324,6 +387,262 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         logger.info(f"Graph result type: {type(result)}")
         logger.info(f"Graph result keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
         
+        # Extract response from result
+        response = None
+        
+        # Log the full result in development mode for debugging
+        if os.environ.get("ENVIRONMENT") == "development":
+            logger.info(f"Full graph result: {json.dumps(result, default=str)}")
+        
+        if isinstance(result, dict):
+            # Method 1: Try to find direct response field
+            if "response" in result:
+                response = result["response"]
+                logger.info("Found direct response field")
+            
+            # Method 2: Check for messages in the result and extract the last AI message
+            elif "messages" in result and isinstance(result["messages"], list):
+                logger.info(f"Result has {len(result['messages'])} messages")
+                # Loop through messages from the end to find the last assistant message
+                for msg in reversed(result["messages"]):
+                    # Try to identify the assistant/AI message
+                    if isinstance(msg, dict):
+                        msg_type = msg.get("type")
+                        msg_role = msg.get("role")
+                        
+                        logger.info(f"Checking message with type: {msg_type}, role: {msg_role}")
+                        
+                        if msg_type in ["ai", "assistant"] or msg_role in ["ai", "assistant"]:
+                            logger.info("Found AI/assistant message")
+                            content = msg.get("content")
+                            if content:
+                                response = content
+                                logger.info(f"Extracted response from message: {response[:100]}...")
+                                break
+                    # Handle LangChain message objects
+                    elif hasattr(msg, "type") and hasattr(msg, "content"):
+                        if msg.type in ["ai", "assistant"]:
+                            logger.info("Found AI/assistant LangChain message")
+                            response = msg.content
+                            logger.info(f"Extracted response from LangChain message: {response[:100]}...")
+                            break
+            
+            # Method 3: Check in the final output
+            elif "output" in result and isinstance(result["output"], str):
+                response = result["output"]
+                logger.info("Found response in output field")
+            
+            # Method 4: Look for return_values in the LangSmith result format
+            elif "return_values" in result and isinstance(result["return_values"], dict):
+                ret_values = result["return_values"]
+                if "output" in ret_values:
+                    response = ret_values["output"]
+                    logger.info("Found response in return_values.output")
+                elif "messages" in ret_values:
+                    # If return_values contains a messages field, try to extract the last AI message
+                    messages = ret_values["messages"]
+                    if isinstance(messages, list) and messages:
+                        for msg in reversed(messages):
+                            if hasattr(msg, "type") and hasattr(msg, "content") and msg.type in ["ai", "assistant"]:
+                                response = msg.content
+                                logger.info("Found response in return_values.messages")
+                                break
+                            elif isinstance(msg, dict) and (msg.get("type") in ["ai", "assistant"] or 
+                                                            msg.get("role") in ["ai", "assistant"]):
+                                response = msg.get("content")
+                                logger.info("Found response in return_values.messages dict")
+                                break
+            
+            # Method 5: Check if the result itself might be the message list
+            elif any(isinstance(item, dict) and ("role" in item or "type" in item) for item in result.get("output", []) if isinstance(result.get("output"), list)):
+                messages_list = result.get("output", [])
+                # Look for the last AI message
+                for msg in reversed(messages_list):
+                    if isinstance(msg, dict) and (
+                        msg.get("role") in ["ai", "assistant"] or 
+                        msg.get("type") in ["ai", "assistant"]
+                    ):
+                        response = msg.get("content", "") or msg.get("text", "")
+                        logger.info("Found response in output messages list")
+                        break
+        
+        # Try to catch any other response format
+        if not response and isinstance(result, dict):
+            # Check all top-level string values as a last resort
+            for key, value in result.items():
+                if isinstance(value, str) and len(value) > 20:  # Assume longer strings might be responses
+                    logger.info(f"Using string value from key '{key}' as response")
+                    response = value
+                    break
+        
+        # Fallback if we couldn't extract a response
+        if not response:
+            logger.warning("Failed to extract AI response from result, using fallback")
+            response = "I processed your request, but I'm having trouble formulating a response. Could you try rephrasing your question?"
+        
+        # Update conversation state
+        conversation_states[session_id] = result if isinstance(result, dict) else state
+        
+        # Schedule cleanup of old sessions
+        background_tasks.add_task(cleanup_old_sessions)
+        
+        # Return the response with more debugging info in development
+        if os.environ.get("ENVIRONMENT") == "development":
+            return JSONResponse({
+                "session_id": session_id,
+                "response": response,
+                "debug_info": {
+                    "result_type": str(type(result)),
+                    "result_keys": list(result.keys()) if isinstance(result, dict) else [],
+                    "messages_count": len(result.get("messages", [])) if isinstance(result, dict) else 0,
+                }
+            })
+        else:
+            return JSONResponse({
+                "session_id": session_id,
+                "response": response,
+            })
+    except Exception as e:
+        logger.error(f"Error processing chat request: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat-with-account")
+async def chat_with_account(request: ChatWithAccountRequest, background_tasks: BackgroundTasks):
+    """Process a chat request with a specific account ID."""
+    try:
+        # Validate required fields
+        if not request.account_id:
+            logger.error("Missing required account_id in request")
+            raise HTTPException(status_code=400, detail="account_id is required")
+        
+        if not request.user_id:
+            logger.error("Missing required user_id in request")
+            raise HTTPException(status_code=400, detail="user_id is required")
+        
+        # Log the request with critical context
+        logger.info(f"Processing chat request - user_id: {request.user_id}, account_id: {request.account_id}")
+        
+        # Validate that the account belongs to the user by checking the database
+        try:
+            from utils.supabase import get_user_alpaca_account_id
+            
+            # Get the user's account ID from the database
+            verified_account_id = get_user_alpaca_account_id(request.user_id)
+            
+            # If verification fails or doesn't match, reject the request
+            if not verified_account_id:
+                logger.error(f"No Alpaca account found for user_id: {request.user_id}")
+                raise HTTPException(
+                    status_code=403, 
+                    detail="No Alpaca account found for this user"
+                )
+            
+            if verified_account_id != request.account_id:
+                logger.error(f"Account ID mismatch. Provided: {request.account_id}, Expected: {verified_account_id}")
+                raise HTTPException(
+                    status_code=403, 
+                    detail="The provided account_id doesn't belong to this user"
+                )
+                
+            logger.info(f"Successfully verified account_id {request.account_id} belongs to user_id {request.user_id}")
+            
+            # Initialize the module-level variables in the agent modules
+            # This ensures that even if state is not properly passed, the agents will have access to the correct values
+            try:
+                # Import the agent modules to access their module-level variables
+                from clera_agents.portfolio_management_agent import _LAST_VALID_ACCOUNT_ID as pm_account_id
+                from clera_agents.portfolio_management_agent import _LAST_VALID_USER_ID as pm_user_id
+                from clera_agents.trade_execution_agent import _LAST_VALID_ACCOUNT_ID as te_account_id
+                from clera_agents.trade_execution_agent import _LAST_VALID_USER_ID as te_user_id
+                
+                # Set the module-level variables
+                import clera_agents.portfolio_management_agent as pm
+                import clera_agents.trade_execution_agent as te
+                
+                # Set in portfolio management agent
+                pm._LAST_VALID_ACCOUNT_ID = verified_account_id
+                pm._LAST_VALID_USER_ID = request.user_id
+                
+                # Set in trade execution agent
+                te._LAST_VALID_ACCOUNT_ID = verified_account_id
+                te._LAST_VALID_USER_ID = request.user_id
+                
+                logger.info(f"Successfully initialized agent module variables with account_id: {verified_account_id}, user_id: {request.user_id}")
+            except ImportError as e:
+                logger.warning(f"Could not initialize agent module variables: {e}")
+                
+        except Exception as e:
+            logger.error(f"Error verifying account ownership: {e}")
+            raise HTTPException(status_code=500, detail="Error verifying account ownership")
+        
+        # Create a unique session ID if not provided
+        session_id = request.session_id or f"session-{datetime.now().timestamp()}"
+        logger.info(f"Using session ID: {session_id}")
+        
+        # Get existing state or create a new one
+        state = conversation_states.get(session_id, {
+            "messages": [],
+            "next_step": "supervisor",
+            "current_agent": "supervisor",
+            "agent_scratchpad": [],
+            "retrieved_context": [],
+            "last_user_input": "",
+            "answered_user": False,
+            "is_last_step": False,
+            "remaining_steps": 5,
+            "account_id": request.account_id,  # Include account_id in state
+            "user_id": request.user_id,        # Include user_id in state
+        })
+        
+        # Always update critical context in state to ensure it's present
+        state["last_user_input"] = request.user_input
+        state["answered_user"] = False
+        state["account_id"] = request.account_id  # Ensure account_id is set
+        state["user_id"] = request.user_id        # Ensure user_id is set
+        
+        # Log the state to confirm critical context
+        logger.info(f"State context - user_id: {state['user_id']}, account_id: {state['account_id']}")
+        
+        # Convert messages to the format expected by graph
+        formatted_messages = []
+        for msg in request.messages:
+            if msg.role == "system":
+                formatted_messages.append({
+                    "type": "system",
+                    "content": msg.content,
+                })
+            elif msg.role == "user":
+                formatted_messages.append({
+                    "type": "human",
+                    "content": msg.content,
+                })
+            elif msg.role == "ai" or msg.role == "assistant":
+                formatted_messages.append({
+                    "type": "ai",
+                    "content": msg.content,
+                })
+        
+        # Update state with messages
+        state["messages"] = formatted_messages
+        
+        # Process with graph - wrapped in try/except for GraphInterrupt
+        logger.info("Invoking graph with verified user and account context...")
+        try:
+            result = graph.invoke(state)
+            logger.info(f"Graph result type: {type(result)}")
+        except GraphInterrupt as e:
+            logger.warning(f"Graph interrupted: {e}")
+            interrupt_message = e.args[0].value if e.args and hasattr(e.args[0], 'value') else "Confirmation required."
+            # Return a specific structure indicating an interrupt
+            return JSONResponse(
+                content={
+                    "type": "interrupt",
+                    "message": interrupt_message,
+                    "session_id": session_id # Important for resuming later
+                }, 
+                status_code=200
+            )
+            
         # Extract response from result
         response = None
         
@@ -865,9 +1184,515 @@ async def get_account_info(
         logger.error(f"Error getting account info: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/save-conversation")
+async def save_chat_conversation(
+    request: SaveConversationRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Save a chat conversation to the database."""
+    try:
+        # Log the request
+        logger.info(f"Saving conversation for user {request.user_id}")
+        
+        # Save the conversation
+        result = save_conversation(
+            user_id=request.user_id,
+            portfolio_id=request.portfolio_id,
+            message=request.message,
+            response=request.response
+        )
+        
+        if not result:
+            return JSONResponse({
+                "success": False,
+                "message": "Failed to save conversation"
+            }, status_code=500)
+        
+        return JSONResponse({
+            "success": True,
+            "message": "Conversation saved successfully",
+            "data": result
+        })
+    
+    except Exception as e:
+        logger.error(f"Error saving conversation: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error saving conversation: {str(e)}"
+        }, status_code=500)
+
+@app.post("/get-conversations")
+async def get_chat_conversations(
+    request: GetConversationsRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Get chat conversations for a user."""
+    try:
+        # Log the request
+        logger.info(f"Getting conversations for user {request.user_id}")
+        
+        # Get the conversations
+        if request.portfolio_id:
+            # Get conversations for specific portfolio
+            conversations = get_portfolio_conversations(
+                user_id=request.user_id,
+                portfolio_id=request.portfolio_id,
+                limit=request.limit or 50
+            )
+        else:
+            # Get all conversations for user
+            conversations = get_user_conversations(
+                user_id=request.user_id,
+                limit=request.limit or 50
+            )
+        
+        return JSONResponse({
+            "success": True,
+            "conversations": conversations
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting conversations: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error getting conversations: {str(e)}"
+        }, status_code=500)
+
+@app.post("/create-chat-session")
+async def create_new_chat_session(
+    request: CreateSessionRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Create a new chat session."""
+    try:
+        # Log the request
+        logger.info(f"Creating chat session for user {request.user_id}")
+        
+        # Create the chat session
+        session = create_chat_session(
+            user_id=request.user_id,
+            portfolio_id=request.portfolio_id,
+            title=request.title
+        )
+        
+        if not session:
+            return JSONResponse({
+                "success": False,
+                "message": "Failed to create chat session"
+            }, status_code=500)
+        
+        return JSONResponse({
+            "success": True,
+            "message": "Chat session created successfully",
+            "session": session
+        })
+    
+    except Exception as e:
+        logger.error(f"Error creating chat session: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error creating chat session: {str(e)}"
+        }, status_code=500)
+
+@app.post("/get-chat-sessions")
+async def get_user_chat_sessions(
+    request: GetSessionsRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Get all chat sessions for a user."""
+    try:
+        # Log the request
+        logger.info(f"Getting chat sessions for user {request.user_id}")
+        
+        # Get the chat sessions
+        sessions = get_chat_sessions(
+            user_id=request.user_id,
+            portfolio_id=request.portfolio_id
+        )
+        
+        # Process sessions into the expected format
+        formatted_sessions = []
+        for session in sessions:
+            # Convert createdAt to ISO string
+            created_at = session.get("created_at", "")
+            
+            formatted_sessions.append({
+                "id": session.get("id", ""),
+                "title": session.get("title", ""),
+                "createdAt": created_at,
+                "messages": []  # We'll populate this later if needed
+            })
+        
+        return JSONResponse({
+            "success": True,
+            "sessions": formatted_sessions
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting chat sessions: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error getting chat sessions: {str(e)}"
+        }, status_code=500)
+
+@app.post("/get-session-conversations")
+async def get_session_conversations(
+    request: dict,
+    api_key: str = Depends(verify_api_key)
+):
+    """Retrieve all conversations for a specific chat session."""
+    try:
+        session_id = request.get('session_id')
+        user_id = request.get('user_id')
+        
+        if not session_id or not user_id:
+            return JSONResponse({
+                "success": False,
+                "message": "Session ID and user ID are required",
+                "messages": []
+            }, status_code=400)
+        
+        logger.info(f"Getting conversations for session {session_id}, user {user_id}")
+        
+        # Connect to Supabase
+        from utils.supabase.db_client import get_supabase_client, conversations_to_messages
+        
+        try:
+            # Create Supabase client
+            supabase = get_supabase_client()
+            
+            # Query the conversations table for this session and user
+            response = supabase.table("conversations") \
+                .select("message, response, created_at") \
+                .eq("session_id", session_id) \
+                .eq("user_id", user_id) \
+                .order("created_at", desc=False) \
+                .execute()
+            
+            # Check for errors
+            if response.data is None and hasattr(response, 'error') and response.error:
+                logger.error(f"Supabase error fetching conversations: {response.error}")
+                return JSONResponse({
+                    "success": False,
+                    "message": f"Database error: {response.error.message}",
+                    "messages": []
+                }, status_code=500)
+            
+            # Convert database records to chat message format
+            if response.data:
+                chat_messages = conversations_to_messages(response.data)
+                logger.info(f"Found {len(chat_messages)} messages for session {session_id}")
+                return JSONResponse({
+                    "success": True,
+                    "messages": chat_messages
+                })
+            else:
+                logger.info(f"No conversations found for session {session_id}")
+                return JSONResponse({
+                    "success": True,
+                    "messages": []
+                })
+        except Exception as e:
+            logger.error(f"Error fetching session conversations: {e}", exc_info=True)
+            return JSONResponse({
+                "success": False,
+                "message": f"Error fetching session conversations: {str(e)}",
+                "messages": []
+            }, status_code=500)
+    
+    except Exception as e:
+        logger.error(f"Error processing request: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error processing request: {str(e)}",
+            "messages": []
+        }, status_code=500)
+
+@app.delete("/delete-chat-session")
+async def delete_user_chat_session(
+    session_id: str,
+    user_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """Delete a chat session and all its conversations."""
+    try:
+        # Log the request
+        logger.info(f"Deleting chat session {session_id} for user {user_id}")
+        
+        # Delete the chat session
+        success = delete_chat_session(
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        if not success:
+            return JSONResponse({
+                "success": False,
+                "message": "Failed to delete chat session"
+            }, status_code=404)
+        
+        return JSONResponse({
+            "success": True,
+            "message": "Chat session deleted successfully"
+        })
+    
+    except Exception as e:
+        logger.error(f"Error deleting chat session: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error deleting chat session: {str(e)}"
+        }, status_code=500)
+
+@app.post("/save-conversation-with-session")
+async def save_conversation_to_session(
+    request: SaveConversationWithSessionRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Save a conversation to a specific chat session."""
+    try:
+        # Log the request
+        logger.info(f"Saving conversation to session {request.session_id}")
+        
+        # Save the conversation
+        conversation = save_conversation_with_session(
+            user_id=request.user_id,
+            portfolio_id=request.portfolio_id,
+            message=request.message,
+            response=request.response,
+            session_id=request.session_id
+        )
+        
+        if not conversation:
+            return JSONResponse({
+                "success": False,
+                "message": "Failed to save conversation"
+            }, status_code=500)
+        
+        return JSONResponse({
+            "success": True,
+            "message": "Conversation saved successfully",
+            "conversation": conversation
+        })
+    
+    except Exception as e:
+        logger.error(f"Error saving conversation: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error saving conversation: {str(e)}"
+        }, status_code=500)
+
+@app.post("/count-session-messages")
+async def count_session_messages(
+    request: dict,
+    api_key: str = Depends(verify_api_key)
+):
+    """Count the number of messages in a chat session."""
+    try:
+        # Log the request
+        logger.info(f"Counting messages for session {request.get('session_id')}")
+        
+        session_id = request.get('session_id')
+        user_id = request.get('user_id')
+        
+        if not session_id or not user_id:
+            return JSONResponse({
+                "success": False,
+                "message": "Session ID and user ID are required",
+                "count": 0
+            }, status_code=400)
+        
+        # Connect to Supabase
+        from utils.supabase.db_client import get_supabase_client
+        
+        try:
+            # Create Supabase client
+            supabase = get_supabase_client()
+            
+            # Count messages for this session
+            response = supabase.table("conversations") \
+                .select("*", count="exact") \
+                .eq("session_id", session_id) \
+                .eq("user_id", user_id) \
+                .execute()
+            
+            # Extract the count
+            count = response.count if hasattr(response, 'count') else 0
+            
+            return JSONResponse({
+                "success": True,
+                "count": count
+            })
+        except Exception as e:
+            logger.error(f"Error counting session messages: {e}", exc_info=True)
+            return JSONResponse({
+                "success": False,
+                "message": f"Error counting session messages: {str(e)}",
+                "count": 0
+            }, status_code=500)
+    
+    except Exception as e:
+        logger.error(f"Error counting session messages: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error counting session messages: {str(e)}",
+            "count": 0
+        }, status_code=500)
+
+@app.post("/update-chat-session-title")
+async def update_chat_session_title(
+    request: dict,
+    api_key: str = Depends(verify_api_key)
+):
+    """Update the title of a chat session."""
+    try:
+        # Log the request
+        logger.info(f"Updating title for session {request.get('session_id')}")
+        
+        session_id = request.get('session_id')
+        title = request.get('title')
+        user_id = request.get('user_id')
+        
+        if not session_id or not title or not user_id:
+            return JSONResponse({
+                "success": False,
+                "message": "Session ID, title, and user ID are required"
+            }, status_code=400)
+        
+        # Connect to Supabase
+        from utils.supabase.db_client import get_supabase_client
+        
+        try:
+            # Create Supabase client
+            supabase = get_supabase_client()
+            
+            # Update the session title
+            response = supabase.table("chat_sessions") \
+                .update({"title": title}) \
+                .eq("id", session_id) \
+                .eq("user_id", user_id) \
+                .execute()
+            
+            # Check if the update was successful
+            if not response.data:
+                return JSONResponse({
+                    "success": False,
+                    "message": "Failed to update chat session title"
+                }, status_code=404)
+            
+            return JSONResponse({
+                "success": True,
+                "message": "Chat session title updated successfully"
+            })
+        except Exception as e:
+            logger.error(f"Error updating chat session title: {e}", exc_info=True)
+            return JSONResponse({
+                "success": False,
+                "message": f"Error updating chat session title: {str(e)}"
+            }, status_code=500)
+    
+    except Exception as e:
+        logger.error(f"Error updating chat session title: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error updating chat session title: {str(e)}"
+        }, status_code=500)
+
+# --- New Endpoint to Resume Interrupted Chat --- 
+@app.post("/api/resume-chat")
+async def resume_chat(request: ResumeChatRequest):
+    """Resume an interrupted graph execution with user confirmation."""
+    try:
+        session_id = request.session_id
+        user_confirmation = request.user_confirmation.lower().strip()
+        logger.info(f"Resuming chat for session_id: {session_id} with confirmation: '{user_confirmation}'")
+
+        # Validate confirmation
+        if user_confirmation not in ["yes", "no"]:
+            raise HTTPException(status_code=400, detail="Invalid confirmation. Must be 'yes' or 'no'.")
+
+        # Retrieve the state associated with this session ID
+        # IMPORTANT: LangGraph's checkpointer usually handles state retrieval for resumption.
+        # Since we stored the state in `conversation_states` during the initial interrupt,
+        # we might need to reconstruct how LangGraph expects the state for resumption.
+        # The exact method depends on how the checkpointer is configured.
+        # For a simple in-memory approach without a persistent checkpointer, we might need 
+        # to find the interrupted node and pass the confirmation back.
+        
+        # Assuming graph.invoke might be called again with the confirmation appended to messages.
+        # This is a common pattern, but might need adjustment based on your specific graph setup.
+
+        state = conversation_states.get(session_id)
+        if not state:
+            logger.error(f"No state found for session_id: {session_id} to resume.")
+            raise HTTPException(status_code=404, detail="Chat session not found or expired.")
+
+        # Add the user's confirmation to the messages in the state
+        # This simulates the user responding to the interrupt prompt
+        state["messages"] = add_messages(state["messages"], [HumanMessage(content=user_confirmation)])
+        state["answered_user"] = False # Reset flag if needed
+
+        logger.info(f"Resuming graph for session {session_id} with updated state.")
+        # Re-invoke the graph with the updated state including the confirmation
+        # The graph should now proceed from the interrupt point.
+        try:
+            result = graph.invoke(state)
+            logger.info(f"Graph resumed successfully for session {session_id}.")
+        except GraphInterrupt:
+            # It's possible to hit another interrupt, though less likely after a simple yes/no.
+            logger.warning(f"Graph interrupted AGAIN after resuming session {session_id}.")
+            # Handle nested interrupts if necessary, perhaps return another interrupt response.
+            raise HTTPException(status_code=500, detail="Graph interrupted unexpectedly after resuming.")
+        except Exception as resume_err:
+            logger.error(f"Error invoking graph during resumption for session {session_id}: {resume_err}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Error processing confirmation.")
+
+        # --- Extract the final response after resumption --- 
+        # (Using the same extraction logic as in /api/chat-with-account)
+        response = None
+        if isinstance(result, dict):
+            if "response" in result:
+                response = result["response"]
+            elif "messages" in result and isinstance(result["messages"], list):
+                for msg in reversed(result["messages"]):
+                    if isinstance(msg, dict) and msg.get("type") in ["ai", "assistant"]:
+                        response = msg.get("content")
+                        break
+                    elif hasattr(msg, "type") and msg.type in ["ai", "assistant"]:
+                        response = msg.content
+                        break
+            elif "output" in result and isinstance(result["output"], str):
+                 response = result["output"]
+            # Add other extraction methods if needed...
+
+        if not response:
+            logger.warning(f"Could not extract final response after resuming session {session_id}.")
+            response = "Confirmation received. Please ask follow-up questions if needed."
+        # -----------------------------------------------------
+
+        # Update the final state (optional, depends on state management)
+        conversation_states[session_id] = result
+
+        logger.info(f"Returning final response for resumed session {session_id}.")
+        return JSONResponse({
+            "session_id": session_id,
+            "response": response
+        })
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        logger.error(f"Error resuming chat: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error while resuming chat: {str(e)}")
+# -------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
     os.environ["ENVIRONMENT"] = "development"
     # Run the server
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True, log_level="info")
+    uvicorn.run(
+        "api_server:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        reload=True, 
+        log_level="info"
+    )

@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { InfoIcon } from "lucide-react";
 import PortfolioCard from './PortfolioCard';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import ChatButton from "../chat/ChatButton";
+
 interface UserDashboardProps {
   firstName: string;
   accountDetails: {
@@ -21,7 +23,7 @@ export default function UserDashboard({
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Hello, {firstName}</h1>
-      <p className="text-muted-foreground">Welcome to your Clera investment dashboard.</p>
+      <p className="text-muted-foreground">Welcome to your Clera account dashboard.</p>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Bank Account Details Card */}
@@ -53,6 +55,9 @@ export default function UserDashboard({
         {/* Portfolio Card - New addition */}
         <PortfolioCard alpacaAccountId={alpacaAccountId} />
       </div>
+      
+      {/* Chat Button */}
+      {alpacaAccountId && <ChatButton accountId={alpacaAccountId} />}
     </div>
   );
 }

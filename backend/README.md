@@ -2,8 +2,9 @@
 
 This repository contains the backend services for Clera, including LangGraph agents for financial analysis and portfolio management.
 
-## TODO:
-* ...
+## Note:
+* To run the Clera agent workflow, cd into this backend directory then run `langgraph dev`
+    * This will launch LangGraph studio and allow you to test the agent with build-in persistence (memory)
 
 ## Development Setup
 

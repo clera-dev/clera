@@ -2,6 +2,7 @@
 
 # Import necessary libraries
 import os
+import logging
 from dotenv import load_dotenv
 from langchain_core.tools import tool
 
@@ -21,6 +22,12 @@ from clera_agents.tools.portfolio_analysis import (
     PortfolioPosition, PortfolioAnalyzer, PortfolioAnalyticsEngine
 )
 
+# Import our Supabase helper
+from utils.supabase import get_user_alpaca_account_id
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 fin_modeling_prep_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
 
@@ -31,11 +38,64 @@ broker_client = BrokerClient(
     sandbox=True
 )
 
+# Module-level variable to store the last valid account ID
+_LAST_VALID_ACCOUNT_ID = None
+_LAST_VALID_USER_ID = None
 
-def get_account_id() -> str:
-    """Get the account ID for the human."""
-    return "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for now
-    #return broker_client.get_account(os.getenv("BROKER_ACCOUNT_ID")).account_id
+def get_account_id(state=None) -> str:
+    """Get the account ID for the human.
+    
+    Args:
+        state: Optional state dictionary that may contain account_id or user_id
+        
+    Returns:
+        str: Account ID to use for operations
+    """
+    global _LAST_VALID_ACCOUNT_ID, _LAST_VALID_USER_ID
+    
+    # Default fallback account ID - only used in extreme failure cases
+    fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
+    
+    # ---- STRATEGY 1: Use valid state if available ----
+    if state and isinstance(state, dict):
+        # Update the module-level variables if we have valid data
+        if state.get("account_id"):
+            _LAST_VALID_ACCOUNT_ID = state.get("account_id")
+            logger.info(f"Updated last valid account_id from state: {_LAST_VALID_ACCOUNT_ID}")
+            
+        if state.get("user_id"):
+            _LAST_VALID_USER_ID = state.get("user_id")
+            logger.info(f"Updated last valid user_id from state: {_LAST_VALID_USER_ID}")
+            
+        # Direct account_id from state takes precedence
+        if state.get("account_id"):
+            return state.get("account_id")
+            
+        # Use user_id from state to get account_id
+        if state.get("user_id"):
+            db_account_id = get_user_alpaca_account_id(state.get("user_id"))
+            if db_account_id:
+                _LAST_VALID_ACCOUNT_ID = db_account_id
+                return db_account_id
+    else:
+        logger.warning("Invalid state provided to get_account_id: state is None or not a dictionary")
+    
+    # ---- STRATEGY 2: Use last known valid account_id ----
+    if _LAST_VALID_ACCOUNT_ID:
+        logger.info(f"Using last known valid account_id: {_LAST_VALID_ACCOUNT_ID}")
+        return _LAST_VALID_ACCOUNT_ID
+        
+    # ---- STRATEGY 3: Try to get account_id from last known user_id ----
+    if _LAST_VALID_USER_ID:
+        logger.info(f"Attempting to get account_id for last known user_id: {_LAST_VALID_USER_ID}")
+        db_account_id = get_user_alpaca_account_id(_LAST_VALID_USER_ID)
+        if db_account_id:
+            _LAST_VALID_ACCOUNT_ID = db_account_id
+            return db_account_id
+    
+    # ---- FALLBACK: Last resort fallback account_id ----
+    logger.error("CRITICAL: Using fallback account_id - all retrieval strategies failed")
+    return fallback_account_id
 
 #@tool("retrieve_portfolio_positions")
 def retrieve_portfolio_positions() -> List:
@@ -115,7 +175,7 @@ def create_rebalance_instructions(positions_data: List, target_portfolio_type: O
 
 
 @tool("analyze_and_rebalance_portfolio")
-def analyze_and_rebalance_portfolio() -> str:
+def analyze_and_rebalance_portfolio(state=None) -> str:
     """Complete function to retrieve portfolio positions, analyze them, and provide rebalancing instructions.
     
     This is a simplified function that handles the entire rebalancing process in one step, including:
@@ -124,15 +184,15 @@ def analyze_and_rebalance_portfolio() -> str:
     3. Generating rebalancing instructions based on the target portfolio type
     
     Args:
-        target_portfolio_type: The type of target portfolio to use for rebalancing. Options are:
-            - "aggressive": 100% equity with 50% ETFs, 50% individual stocks (default)
-            - "balanced": 60% equity, 40% fixed income
-            - "conservative": 30% equity, 60% fixed income, 10% cash
+        state: The current conversation state which may contain account_id
     
     Returns:
         str: A detailed set of instructions for rebalancing the portfolio
     """
     try:
+        # Get account ID from state if available
+        account_id = get_account_id(state)
+        
         # Retrieve the current portfolio positions
         positions_data = retrieve_portfolio_positions()
         target_portfolio = get_user_investment_strategy()
@@ -145,7 +205,7 @@ def analyze_and_rebalance_portfolio() -> str:
 
 
 @tool("get_portfolio_summary")
-def get_portfolio_summary() -> str:
+def get_portfolio_summary(state=None) -> str:
     """Generate a comprehensive summary of the user's investment portfolio.
     
     This tool provides a detailed analysis of the portfolio including:
@@ -155,12 +215,15 @@ def get_portfolio_summary() -> str:
     - Concentration risk identification
     - Comparison to target allocation based on investment strategy
     
+    Args:
+        state: The current conversation state which may contain account_id
+        
     Returns:
         str: A formatted summary of the portfolio with detailed metrics
     """
     try:
-        # Get account ID
-        account_id = get_account_id()
+        # Get account ID from state if available
+        account_id = get_account_id(state)
         
         # Get the raw positions data
         positions_data = retrieve_portfolio_positions()

@@ -32,6 +32,11 @@ backend/
 │   ├── live_chat/         # Live chat implementation
 │   ├── audio_files/       # Audio file storage
 │   └── learning_cartesia.py  # Integration with Cartesia voice AI
+├── utils/                 # Utility functions
+│   ├── alpaca/            # Alpaca broker integration utilities
+│   │   ├── __init__.py    # Exports all functions
+│   │   ├── bank_funding.py # Plaid integration for ACH funding
+│   │   └── manual_bank_funding.py # Manual bank account connection
 └── venv/                  # Python virtual environment
 ```
 
@@ -46,6 +51,10 @@ This is the main REST API server that provides endpoints for chat interactions, 
 - `/api/company/{ticker}` - Company information lookup
 - `/api/health` - Health check endpoint
 - `/create-alpaca-account` - Endpoint for creating brokerage accounts via Alpaca
+- `/create-ach-relationship-link` - Creates a Plaid Link for bank account connection
+- `/create-ach-relationship-manual` - Creates an ACH relationship manually
+- `/get-ach-relationships` - Retrieves all ACH relationships for an account
+- `/initiate-ach-transfer` - Initiates an ACH transfer from bank to Alpaca
 
 The API server imports the agent graph from `clera_agents.graph` and orchestrates the workflow between different specialized agents.
 
@@ -104,6 +113,21 @@ The backend includes integration with Alpaca's Broker API for brokerage account 
    - Includes error handling and validation for API requests
    - Supports sandbox environment for testing and development
 
+4. **ACH Funding with Plaid Integration**
+   - Utility functions in `utils/alpaca/bank_funding.py` to connect bank accounts
+   - Creates Plaid Link URLs with OAuth redirect support
+   - Exchanges Plaid tokens for access tokens
+   - Creates processor tokens for Alpaca integration
+   - Establishes ACH relationships in Alpaca
+   - Initiates ACH transfers from connected bank accounts
+
+5. **Manual Bank Account Connection**
+   - Utility functions in `utils/alpaca/manual_bank_funding.py`
+   - Creates ACH relationships using manually entered bank details
+   - Supports both checking and savings account types
+   - Validates routing numbers against Alpaca's requirements
+   - Handles Alpaca's single active ACH relationship constraint
+
 ### Chatbots (clera_chatbots/)
 
 Multiple chatbot implementations for different use cases:
@@ -141,6 +165,7 @@ Voice and conversational capabilities:
 - Alpaca for brokerage services and trade execution
   - Alpaca Broker API for account creation and management
   - Alpaca Trading API for executing trades
+- Plaid for bank account linking and ACH transfers
 - Financial Modeling Prep for financial data
 - LiveKit, Deepgram, and Cartesia for voice features
 - Retell for additional voice capabilities
@@ -153,6 +178,11 @@ The system uses environment variables (in `.env` file) for configuration:
 - Broker credentials (Alpaca API key and secret)
 - Voice service configuration (LiveKit, Cartesia, Deepgram)
 - Database connection settings (Supabase)
+- Plaid configuration:
+  - `PLAID_CLIENT_ID`: Plaid client ID
+  - `PLAID_SECRET`: Plaid secret for chosen environment
+  - `PLAID_ENV`: 'sandbox' for testing, 'development' for production
+  - `BACKEND_PUBLIC_URL`: Public URL of the backend for webhooks
 
 ## API Routes
 
@@ -211,6 +241,94 @@ The system uses environment variables (in `.env` file) for configuration:
   }
   ```
 
+### Create ACH Relationship Link (Plaid)
+- **Endpoint**: `/create-ach-relationship-link`
+- **Method**: POST
+- **Authentication**: API key
+- **Request Body**:
+  ```json
+  {
+    "accountId": "alpaca-account-id",
+    "redirectUri": "https://app.example.com/callback"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "link_url": "https://cdn.plaid.com/link/v2/stable/link.html?..."
+  }
+  ```
+
+### Create ACH Relationship Manual
+- **Endpoint**: `/create-ach-relationship-manual`
+- **Method**: POST
+- **Authentication**: API key
+- **Request Body**:
+  ```json
+  {
+    "accountId": "alpaca-account-id",
+    "bankAccountType": "CHECKING",
+    "bankAccountNumber": "123456789",
+    "bankRoutingNumber": "121000358",
+    "nickname": "My Checking Account"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "id": "relationship-id",
+    "status": "APPROVED",
+    "created_at": "2023-01-01T00:00:00Z"
+  }
+  ```
+
+### Get ACH Relationships
+- **Endpoint**: `/get-ach-relationships`
+- **Method**: GET
+- **Authentication**: API key
+- **Query Parameters**:
+  ```
+  accountId=alpaca-account-id
+  ```
+- **Response**:
+  ```json
+  {
+    "relationships": [
+      {
+        "id": "relationship-id",
+        "status": "APPROVED",
+        "bank_name": "Bank Name",
+        "bank_account_type": "CHECKING",
+        "last_4": "6789",
+        "created_at": "2023-01-01T00:00:00Z"
+      }
+    ]
+  }
+  ```
+
+### Initiate ACH Transfer
+- **Endpoint**: `/initiate-ach-transfer`
+- **Method**: POST
+- **Authentication**: API key
+- **Request Body**:
+  ```json
+  {
+    "accountId": "alpaca-account-id",
+    "relationshipId": "relationship-id",
+    "amount": 100.00,
+    "direction": "INCOMING"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "id": "transfer-id",
+    "status": "SUBMITTED",
+    "amount": 100.00,
+    "created_at": "2023-01-01T00:00:00Z"
+  }
+  ```
+
 ## Deployment
 
 The backend supports:
@@ -218,6 +336,30 @@ The backend supports:
 - Local development with Docker and Docker Compose
 - VS Code Dev Containers for easy setup
 - Production deployment on AWS (ECS, EKS)
+
+## Development Configuration
+
+### File Watcher Configuration
+
+The development server uses Uvicorn's file watching capability for automatic reloading when code changes. To prevent excessive terminal spam from virtual environment changes, the watchfiles library is configured to ignore certain directories:
+
+- **Environment Variable**: `WATCHFILES_IGNORE_PATHS`
+- **Configuration**: `.venv;venv;site-packages;__pycache__;.git`
+- **Location**: Set in `.watchfiles.env` file or via `activate.sh` script
+
+**Usage Options**:
+
+1. Source the environment file before starting the server:
+   ```bash
+   source .watchfiles.env && python api_server.py
+   ```
+
+2. Use the helper activation script:
+   ```bash
+   source activate.sh && python api_server.py
+   ```
+
+This configuration prevents uvicorn's file watcher from detecting changes in virtual environment directories, which significantly reduces log spam and improves the development experience.
 
 ## Getting Started
 
@@ -234,3 +376,4 @@ The backend supports:
 - **Vector Databases**: Pinecone for knowledge retrieval
 - **Voice Services**: LiveKit, Deepgram, and Cartesia integration
 - **Brokerage Services**: Alpaca Broker API for account management and trading
+- **Banking Services**: Plaid for bank account connection and ACH transfers

@@ -30,6 +30,14 @@ export default function DashboardPage() {
           return redirect("/sign-in");
         }
         
+        // Store user ID in localStorage for chat functionality
+        try {
+          localStorage.setItem('userId', user.id);
+          console.log("Stored user ID in localStorage:", user.id);
+        } catch (err) {
+          console.error("Error storing user ID in localStorage:", err);
+        }
+        
         // Get user data from user_onboarding
         try {
           const { data: onboardingData, error: onboardingError } = await supabase

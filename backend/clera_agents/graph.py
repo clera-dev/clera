@@ -69,6 +69,8 @@ class State(TypedDict):
     retrieved_context: List[str]
     last_user_input: str
     answered_user: bool
+    account_id: Optional[str]
+    user_id: Optional[str]
 
     # Add these two lines to allow supervisor to have state memory
     is_last_step: bool

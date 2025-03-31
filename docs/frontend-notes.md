@@ -15,7 +15,12 @@ frontend-app/
 │   │   └── confirm/       # Email confirmation
 │   ├── api/               # API routes
 │   │   └── broker/        # Broker API integration
-│   │       └── create-account/ # Alpaca account creation endpoint
+│   │       ├── create-account/ # Alpaca account creation endpoint
+│   │       ├── connect-bank/ # Plaid bank connection endpoint
+│   │       ├── connect-bank-manual/ # Manual bank connection endpoint
+│   │       ├── bank-status/ # ACH relationship status check
+│   │       └── transfer/ # ACH transfer initiation
+│   ├── dashboard/         # Dashboard page showing account info and funding status
 │   ├── notes/             # Notes feature
 │   ├── protected/         # Protected routes (require authentication)
 │   │   └── reset-password/ # Password reset functionality
@@ -28,10 +33,20 @@ frontend-app/
 │   ├── ui/                # UI component library
 │   │   ├── badge.tsx
 │   │   ├── button.tsx
+│   │   ├── card.tsx       # Card component with header, content, and footer
 │   │   ├── checkbox.tsx
 │   │   ├── dropdown-menu.tsx
 │   │   ├── input.tsx
-│   │   └── label.tsx
+│   │   ├── label.tsx
+│   │   └── tooltip.tsx    # Tooltip component for displaying additional information
+│   ├── dashboard/         # Dashboard components
+│   │   ├── AccountInfoCard.tsx    # Displays Alpaca account information
+│   │   ├── BankConnectionButton.tsx # Button to initiate bank connection
+│   │   ├── BankConnectionsCard.tsx # Shows connected bank accounts
+│   │   ├── ManualBankEntry.tsx    # Entry point for manual bank connection
+│   │   ├── ManualBankForm.tsx     # Form for manual bank account details
+│   │   ├── TransferForm.tsx       # Form for entering transfer amount
+│   │   └── TransfersCard.tsx      # Displays recent transfers
 │   ├── onboarding/        # Onboarding components for brokerage account setup
 │   │   ├── AgreementsStep.tsx        # Step for accepting user agreements
 │   │   ├── ContactInfoStep.tsx       # Step for collecting contact information
@@ -110,17 +125,69 @@ The application integrates with Supabase for authentication and database service
 
 This separation follows Next.js best practices by ensuring server-only code runs on the server and client-only code runs in the browser.
 
+### Supabase Database Schema
+
+The application uses the following tables in Supabase:
+
+1. **user_onboarding**: Stores onboarding data and Alpaca account information
+   ```sql
+   CREATE TABLE public.user_onboarding (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+     onboarding_data JSONB,
+     status TEXT,
+     alpaca_account_id TEXT,
+     alpaca_account_number TEXT,
+     alpaca_account_status TEXT,
+     created_at TIMESTAMPTZ DEFAULT now()
+   );
+   ```
+
+2. **user_bank_connections**: Stores bank connection information
+   ```sql
+   CREATE TABLE public.user_bank_connections (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+     alpaca_account_id TEXT NOT NULL,
+     relationship_id TEXT NOT NULL,
+     bank_name TEXT NOT NULL,
+     bank_account_type TEXT NOT NULL,
+     last_4 TEXT,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     updated_at TIMESTAMPTZ
+   );
+   ```
+
+3. **user_transfers**: Stores ACH transfer information
+   ```sql
+   CREATE TABLE public.user_transfers (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+     alpaca_account_id TEXT NOT NULL,
+     relationship_id TEXT NOT NULL,
+     transfer_id TEXT NOT NULL,
+     amount DECIMAL(15, 2) NOT NULL CHECK (amount > 0),
+     status TEXT NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     updated_at TIMESTAMPTZ
+   );
+   ```
+
+All tables use Row-Level Security policies to ensure users can only access their own data.
+
 ### UI Components
 
-The frontend uses a combination of custom components and a UI library (likely Shadcn UI based on the components.json file):
+The frontend uses a combination of custom components and a UI library (Shadcn UI based on the components.json file):
 
 - Basic UI components in `components/ui/`
 - Form components with validation
 - Theme switching between light and dark modes
 - Typography components for consistent text styling
 - Layout components for page structure
+- Card components for dashboard information display
+- Tooltip components for explanatory information
 
-### Broker Account Onboarding
+### Broker Account Onboarding Flow
 
 The application includes a multi-step onboarding flow for setting up a brokerage account through Alpaca:
 
@@ -134,8 +201,18 @@ The application includes a multi-step onboarding flow for setting up a brokerage
    - Welcome Page: Initial welcome screen
    - Contact Information: Collects user's contact details
    - Personal Information: Collects personal details needed for KYC
+     - First name, last name, date of birth
+     - Social Security Number (in XXX-XX-XXXX format)
+     - Citizenship and tax residency information
+     - Funding sources
    - Disclosures: Regulatory required disclosures
+     - Control person status
+     - Exchange/FINRA affiliation
+     - Political exposure questions
    - Agreements: Legal agreements user must accept
+     - Customer agreement (required)
+     - Account agreement (required)
+     - Margin agreement (optional)
    - Success: Confirmation after successful submission
 
 3. **Alpaca Integration**:
@@ -143,11 +220,60 @@ The application includes a multi-step onboarding flow for setting up a brokerage
    - Makes requests through a Next.js API route (`/api/broker/create-account`)
    - Stores account information in Supabase after creation
 
-4. **Client-Server Separation**:
-   - Client components marked with "use client" directive 
-   - Client components use server actions for data operations
-   - Server components handle data fetching directly
-   - Clear separation between client-side UI state and server-side data operations
+### Bank Account Connection and Funding
+
+The application provides two methods for connecting bank accounts for ACH funding:
+
+1. **Plaid Integration**:
+   - `BankConnectionButton` component for initiating Plaid connection
+   - OAuth redirect flow for secure authentication
+   - `/api/broker/connect-bank` API route for creating Plaid Link URLs
+   - `/api/broker/bank-status` for checking ACH relationship status
+   - Automatic polling for relationship status after connection
+   - User is directed to transfer form after successful connection
+
+2. **Manual Bank Account Entry**:
+   - `ManualBankEntry` component as alternative to Plaid
+   - `ManualBankForm` for collecting bank account details:
+     - Account type (Checking or Savings)
+     - Account number
+     - Routing number (pre-filled with valid test number for sandbox)
+   - `/api/broker/connect-bank-manual` API route for manual connection
+   - Error handling for Alpaca's single ACH relationship constraint
+
+3. **ACH Transfer Flow**:
+   - `TransferForm` component for entering transfer amount
+   - Validation for minimum transfer amount ($1.00)
+   - `/api/broker/transfer` API route for initiating transfers
+   - Multi-layered storage approach:
+     - Primary storage in Supabase
+     - Fallback storage in localStorage
+     - Automatic syncing between both
+
+### Dashboard Components
+
+After account creation and funding, the user accesses a dashboard with:
+
+1. **Account Information Card**:
+   - Welcome message with the user's first name
+   - Account number, status, and creation date
+   - Current cash balance
+
+2. **Bank Connections Card**:
+   - Connected bank accounts with status
+   - Connection date and bank account details
+   - Option to connect additional bank accounts
+
+3. **Transfers Card**:
+   - Recent transfers with amount and status
+   - Processing information with tooltips
+   - Transfer history
+
+4. **Data Persistence Strategy**:
+   - Primary storage in Supabase database
+   - Secondary storage in browser localStorage
+   - Robust error handling and recovery mechanisms
+   - Automatic backfilling of database from localStorage
 
 ### Styling
 
@@ -157,14 +283,33 @@ The application uses:
 - CSS modules for component-specific styles
 - A consistent theme defined in `tailwind.config.ts`
 - Responsive design for different device sizes
+- Tailwind merge and clsx for conditional class merging
 
 ### Third-Party Integrations
 
 Based on the environment variables, the application integrates with:
 
 - **Alpaca**: For brokerage account creation and management
-- **Plaid**: For financial data access (investments)
-- **LiveKit**: Possibly for real-time communication features
+- **Plaid**: For bank account connection and ACH funding
+- **LiveKit**: For real-time communication features
+
+The application requires the following environment variables in `.env.local`:
+
+```
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Backend API Configuration
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+
+# Plaid Configuration
+PLAID_CLIENT_ID=your-plaid-client-id
+PLAID_SECRET=your-plaid-secret
+PLAID_ENV=sandbox
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
+```
 
 ## Key Features
 
@@ -173,7 +318,32 @@ Based on the environment variables, the application integrates with:
 3. **Theme Switching**: Support for light and dark mode
 4. **Responsive Design**: Mobile and desktop friendly UI
 5. **Brokerage Onboarding**: Multi-step flow for setting up Alpaca brokerage accounts
-6. **Data Persistence**: Stores onboarding progress in Supabase through server actions
+6. **Bank Connection**: Both Plaid integration and manual connection options
+7. **ACH Funding**: Flow for transferring money from bank to Alpaca account
+8. **Dashboard**: Comprehensive view of account, bank connections, and transfers
+9. **Data Persistence**: Robust storage in Supabase with localStorage fallback
+
+## Error Handling and Resilience
+
+The application implements several strategies for robust error handling:
+
+1. **Connection Error Handling**:
+   - Displays appropriate error messages if bank connection fails
+   - Gracefully handles OAuth redirect failures
+   - Provides feedback for validation errors
+   - Handles Alpaca's limitation of one active ACH relationship per account
+
+2. **Data Persistence Resilience**:
+   - Multi-layered storage with automatic recovery
+   - Detailed logging for debugging
+   - Graceful handling of database connection issues
+   - Client-side fallbacks for server-side failures
+
+3. **User Experience Improvements**:
+   - Auto-detection of existing ACH relationships
+   - Redirect to dashboard after successful connections
+   - Information tooltips for transfer processing times
+   - Prevention of duplicate transfers
 
 ## Development Environment
 
@@ -207,3 +377,4 @@ The frontend application connects to the Clera backend services for:
 - Trade execution
 - Conversational AI features
 - Brokerage account creation through Alpaca's Broker API
+- ACH funding through Plaid integration or manual bank connection

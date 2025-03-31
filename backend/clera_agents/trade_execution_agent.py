@@ -5,11 +5,18 @@ from langchain_core.tools import tool
 from langgraph.types import interrupt
 
 import os
+import logging
 from dotenv import load_dotenv
 
 from alpaca.broker.client import BrokerClient
 from alpaca.broker.requests import MarketOrderRequest, LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
+
+# Import our Supabase helper
+from utils.supabase import get_user_alpaca_account_id
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -23,22 +30,80 @@ broker_client = BrokerClient(
     sandbox=True
 )
 
-@tool("get_account_id")
-def get_account_id() -> str:
-    """Get the account ID for the human."""
-    return "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for now
-    #return broker_client.get_account(os.getenv("BROKER_ACCOUNT_ID")).account_id
+# Module-level variable to store the last valid account ID
+_LAST_VALID_ACCOUNT_ID = None
+_LAST_VALID_USER_ID = None
+
+def get_account_id(state=None) -> str:
+    """Get the account ID for the human.
+    
+    Args:
+        state: Optional state dictionary that may contain account_id or user_id
+        
+    Returns:
+        str: Account ID to use for operations
+    """
+    global _LAST_VALID_ACCOUNT_ID, _LAST_VALID_USER_ID
+    
+    # Default fallback account ID - only used in extreme failure cases
+    fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
+    
+    # ---- STRATEGY 1: Use valid state if available ----
+    if state and isinstance(state, dict):
+        # Update the module-level variables if we have valid data
+        if state.get("account_id"):
+            _LAST_VALID_ACCOUNT_ID = state.get("account_id")
+            logger.info(f"Updated last valid account_id from state: {_LAST_VALID_ACCOUNT_ID}")
+            
+        if state.get("user_id"):
+            _LAST_VALID_USER_ID = state.get("user_id")
+            logger.info(f"Updated last valid user_id from state: {_LAST_VALID_USER_ID}")
+            
+        # Direct account_id from state takes precedence
+        if state.get("account_id"):
+            return state.get("account_id")
+            
+        # Use user_id from state to get account_id
+        if state.get("user_id"):
+            db_account_id = get_user_alpaca_account_id(state.get("user_id"))
+            if db_account_id:
+                _LAST_VALID_ACCOUNT_ID = db_account_id
+                return db_account_id
+    else:
+        logger.warning("Invalid state provided to get_account_id: state is None or not a dictionary")
+    
+    # ---- STRATEGY 2: Use last known valid account_id ----
+    if _LAST_VALID_ACCOUNT_ID:
+        logger.info(f"Using last known valid account_id: {_LAST_VALID_ACCOUNT_ID}")
+        return _LAST_VALID_ACCOUNT_ID
+        
+    # ---- STRATEGY 3: Try to get account_id from last known user_id ----
+    if _LAST_VALID_USER_ID:
+        logger.info(f"Attempting to get account_id for last known user_id: {_LAST_VALID_USER_ID}")
+        db_account_id = get_user_alpaca_account_id(_LAST_VALID_USER_ID)
+        if db_account_id:
+            _LAST_VALID_ACCOUNT_ID = db_account_id
+            return db_account_id
+    
+    # ---- FALLBACK: Last resort fallback account_id ----
+    logger.error("CRITICAL: Using fallback account_id - all retrieval strategies failed")
+    return fallback_account_id
 
 
 @tool("execute_buy_market_order")
-def execute_buy_market_order(account_id: str, ticker: str, notional_amount: float) -> str: # in practice, this won't have price since we'll buy at market price automatically
+def execute_buy_market_order(account_id: str, ticker: str, notional_amount: float, state=None) -> str:
     """Execute a market order trade.
 
     Inputs:
-        account_id: str | UUID
+        account_id: str | UUID (can be "auto" to use state account_id)
         ticker: str
         notional_amount: float
+        state: Optional state dictionary that may contain account_id
     """
+    # If account_id is "auto", get it from state
+    if account_id == "auto" and state:
+        account_id = get_account_id(state)
+    
     # Validate notional amount
     if notional_amount < 1:
         return f"Error: Notional amount must be at least $1. You provided ${notional_amount}."
@@ -71,14 +136,19 @@ def execute_buy_market_order(account_id: str, ticker: str, notional_amount: floa
 
 
 @tool("execute_sell_market_order")
-def execute_sell_market_order(account_id: str, ticker: str, notional_amount: float) -> str: # in practice, this won't have price since we'll buy at market price automatically
+def execute_sell_market_order(account_id: str, ticker: str, notional_amount: float, state=None) -> str:
     """Execute a market order trade.
 
     Inputs:
-        account_id: str | UUID
+        account_id: str | UUID (can be "auto" to use state account_id)
         ticker: str
         notional_amount: float
+        state: Optional state dictionary that may contain account_id
     """
+    # If account_id is "auto", get it from state
+    if account_id == "auto" and state:
+        account_id = get_account_id(state)
+    
     # Validate notional amount
     if notional_amount < 1:
         return f"Error: Notional amount must be at least $1. You provided ${notional_amount}."
