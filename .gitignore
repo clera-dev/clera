@@ -150,3 +150,6 @@ embeddings.py
 
 # personal notes and trackers
 notes.md
+
+# langgraph
+.langgraph_api/

@@ -3,7 +3,7 @@
   "graphs": {
     "agent": "./backend/clera_agents/graph.py:graph" 
   },
-  "env": ".env",
+  "env": "./backend/.env",
   "dependencies": ["./backend"],
   "store": {
     "index": {
