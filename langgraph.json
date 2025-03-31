@@ -4,7 +4,7 @@
     "agent": "./backend/clera_agents/graph.py:graph" 
   },
   "env": ".env",
-  "dependencies": ["./backend/requirements.txt"],
+  "dependencies": ["./backend"],
   "store": {
     "index": {
       "embed": "openai:text-embedding-3-small",
