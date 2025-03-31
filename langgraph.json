@@ -1,0 +1,17 @@
+{
+  "dockerfile_lines": [],
+  "graphs": {
+    "agent": "./backend/clera_agents/graph.py:graph" 
+  },
+  "env": ".env",
+  "dependencies": ["./backend/requirements.txt"],
+  "store": {
+    "index": {
+      "embed": "openai:text-embedding-3-small",
+      "dims": 1536,
+      "fields": ["$"]
+    }
+  }
+}
+
+
