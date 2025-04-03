@@ -398,3 +398,73 @@ if (response.type === 'interrupt') {
 ```
 
 This mechanism enhances safety by requiring explicit user confirmation before executing trades, while maintaining a smooth conversational experience.
+
+## Account ID and Context Passing to Agent
+
+An important update has been implemented to fix issues with passing account context from the frontend to the LangGraph backend agents.
+
+### Issue Summary
+
+The trade execution and portfolio management agents need access to the user's Alpaca account ID to perform actions. Previously, the config object wasn't being properly structured or consistently passed in all interactions, especially during interrupt handling for trade confirmations.
+
+### Implementation Fix
+
+1. **Consistent Config Structure**: 
+   - Both initial messages and interrupts now use the exact same config structure format
+   - The config structure follows the expected LangGraph format: `{ config: { configurable: { user_id, account_id } } }`
+   - All config values are validated as non-null before sending
+
+2. **Enhanced Logging**:
+   - Added detailed logging of config values being sent with each request
+   - This enables easier debugging of missing context issues
+
+3. **Interrupt Handling**: 
+   - The `handleInterruptConfirmation` function now explicitly structures the resume options
+   - Ensures account_id and user_id are properly passed when a user confirms or rejects a trade
+
+4. **Initial Message Handling**:
+   - The `handleSendMessage` function uses the same standardized config structure
+   - TypeScript type checking is used to ensure correct object structure
+
+### Backend Integration
+
+The backend agents already had robust fallback strategies in place:
+
+1. **Multi-Layer Lookup Strategy**:
+   - First check config.configurable for account_id and user_id
+   - Fall back to state for account_id and user_id if not in config
+   - Query Supabase using user_id to retrieve account_id if needed
+   - Use cached values from previous successful retrievals if all else fails
+   - Final fallback to a static test account ID only as last resort
+
+2. **Logging at Each Stage**:
+   - Each strategy logs detailed information about its execution
+   - Makes debugging straightforward when context is missing
+
+### Example Usage
+
+```typescript
+// When sending a message with context
+thread.submit(messageInput, {
+  config: {
+    configurable: {
+      user_id: userIdToSend,
+      account_id: accountIdToSend
+    }
+  },
+  // other options...
+});
+
+// When handling interrupts with context
+thread.submit(undefined, {
+  command: { resume: confirmationString },
+  config: {
+    configurable: {
+      user_id: userIdToSend,
+      account_id: accountIdToSend
+    }
+  }
+});
+```
+
+This standardized approach ensures consistent context passing throughout the entire chat interaction flow.
