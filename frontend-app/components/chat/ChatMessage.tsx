@@ -7,7 +7,7 @@ import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import ReactMarkdown from 'react-markdown';
 
-interface ChatMessageProps {
+export interface ChatMessageProps {
   message: Message;
   isLast: boolean;
 }

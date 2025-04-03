@@ -240,6 +240,76 @@ The implementation follows a layered approach:
      - Check RLS policies are properly configured
      - Verify API routes for saving conversations
 
+## Chat Session Deletion
+
+- **Original Implementation**: Chat deletion was handled by a frontend API route (`/api/conversations/delete-session`) proxying to a backend endpoint (`/delete-chat-session`). The backend verified ownership using Supabase and then attempted deletion.
+- **Current Implementation (as of YYYY-MM-DD)**: Deletion is now handled **directly on the frontend** using the LangGraph JS/TS SDK. The `deleteChatSession` function in `frontend-app/utils/api/chat-client.ts` instantiates the LangGraph `Client` and calls `client.threads.delete(threadId)`. This removes the need for the backend endpoint and the frontend API proxy route for deletion.
+- **Benefit**: Faster deletion feedback for the user and reduced backend complexity.
+
+## Direct LangGraph SDK Integration
+
+The chat functionality has been updated to work directly with the LangGraph JS/TS SDK for most operations, reducing reliance on backend API proxies.
+
+### Implementation Details
+
+All primary thread operations now use the LangGraph SDK directly:
+
+1. **Thread Operations Moved to Frontend**:
+   - **Thread Creation**: `createChatSession` uses `client.threads.create()`
+   - **Thread Listing**: `getChatSessions` uses `client.threads.search()`
+   - **Thread Deletion**: `deleteChatSession` uses `client.threads.delete()`
+   - **Title Updates**: `updateChatThreadTitle` uses `client.threads.patchState()`
+   - **Message Retrieval**: `getThreadMessages` uses `client.threads.getState()`
+
+2. **Benefits**:
+   - **Performance**: Direct communication with LangGraph eliminates API proxy overhead
+   - **Reduced Backend Complexity**: Fewer backend endpoints to maintain
+   - **Improved Error Handling**: More direct error reporting from the source
+   - **Simplified Architecture**: Client connects directly to its data source
+
+3. **Configuration**:
+   - Environment variables in `.env.local`:
+     - `NEXT_PUBLIC_LANGGRAPH_API_URL`: URL of LangGraph deployment
+     - `NEXT_PUBLIC_LANGGRAPH_API_KEY`: API key for authentication
+
+4. **Helper Functions**:
+   - `convertLangGraphMessages`: Converts LangGraph message format to frontend format
+   - `getLangGraphClient`: Creates a configured LangGraph client instance
+
+### Obsolete Backend APIs
+
+The following backend routes are now obsolete and can be removed:
+- `/create-new-thread` (replaced by `client.threads.create`)
+- `/list-user-threads` (replaced by `client.threads.search`)
+- `/delete-chat-session` (replaced by `client.threads.delete`)
+- `/update-thread-metadata` (replaced by `client.threads.patchState`)
+- `/get-thread-messages` (replaced by `client.threads.getState`)
+
+### Implementation Pattern
+
+```typescript
+// Example of direct SDK pattern
+export async function someOperation(threadId: string): Promise<Result> {
+  try {
+    const client = getLangGraphClient();
+    // Directly call LangGraph SDK methods
+    const result = await client.threads.someMethod(threadId, options);
+    // Process result as needed
+    return formattedResult;
+  } catch (error) {
+    console.error('Error in operation:', error);
+    return fallbackValue;
+  }
+}
+```
+
+### Remaining Backend Integration
+
+Some operations still require backend API routes:
+- **Conversation Storage**: Saving conversations to Supabase for long-term persistence
+- **Database-Specific Queries**: Operations that need access to other database tables
+- **Complex Backend Logic**: Operations requiring server-side processing
+
 ## Future Enhancements
 
 1. **Voice Interaction**:
@@ -258,3 +328,73 @@ The implementation follows a layered approach:
    - Grouping conversations by topic or date
    - Ability to name and save important conversations
    - Conversation summarization for quick reference
+
+## LangGraph Interrupt Handling
+
+The chat integration implements a mechanism to handle LangGraph interrupts, specifically for trade confirmations:
+
+1. **Backend Implementation**:
+   - Trade execution agent uses `interrupt()` from LangGraph to pause execution and request confirmation
+   - When a trade command is detected, the agent sends a confirmation request to the user
+   - API server catches the `GraphInterrupt` exception and returns a special response
+   - `/api/resume-chat` endpoint handles receiving user confirmations and resuming execution
+
+2. **Frontend API Routes**:
+   - `/api/chat` - Main chat endpoint that can receive and detect interrupts
+   - `/api/resume-chat` - Dedicated endpoint for sending user confirmations back to resume the workflow
+
+3. **Type Definitions**:
+   - `ChatApiResponse` - Union type of `ChatResponse | InterruptResponse`
+   - `ChatResponse` - Normal chat responses with type: 'response'
+   - `InterruptResponse` - Interrupt responses with type: 'interrupt', message, and session_id
+
+4. **Chat Component Logic**:
+   - Detects interrupt responses using `response.type === 'interrupt'`
+   - Displays confirmation UI with Yes/No buttons
+   - Stores session ID for resuming the conversation
+   - Calls `resumeChatRequest()` with confirmation when user clicks a button
+
+5. **User Experience**:
+   - When user attempts to execute a trade, they see a confirmation prompt
+   - Trade only executes after explicit confirmation
+   - Conversation flow is preserved throughout the interruption
+   - Provides clear feedback about the trade details before execution
+
+## Example Interrupt Flow
+
+1. User types "Buy $100 of AAPL"
+2. Backend trade_execution_agent creates an interrupt with confirmation message
+3. Frontend receives response with `type: 'interrupt'`
+4. Chat component displays confirmation UI
+5. User clicks "Yes" or "No"
+6. Frontend sends confirmation to `/api/resume-chat`
+7. Backend resumes execution from the interrupt point
+8. Trade executes (if confirmed) or cancels (if rejected)
+9. Final response returns to frontend and displays to user
+
+## Technical Implementation
+
+The interrupt mechanism is implemented using LangGraph's built-in interrupt capability:
+
+```python
+# In trade_execution_agent.py
+og_user_confirmation = interrupt(
+    f"TRADE CONFIRMATION REQUIRED: Buy ${notional_amount} worth of {ticker}.\n\n"
+    f"Please confirm with 'yes' to execute or 'no' to cancel this trade."
+)
+```
+
+The frontend handles this through a dedicated workflow:
+
+```typescript
+// In Chat.tsx
+if (response.type === 'interrupt') {
+  setInterruptMessage(response.message);
+  setInterruptSessionId(response.session_id);
+  setIsInterrupting(true);
+  // Later, when user confirms:
+  const finalResponse = await resumeChatRequest(interruptSessionId, confirmation);
+}
+```
+
+This mechanism enhances safety by requiring explicit user confirmation before executing trades, while maintaining a smooth conversational experience.

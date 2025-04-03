@@ -1,3 +1,10 @@
+// ******************************************************************
+// OBSOLETE: This API route is no longer used.
+// The get sessions operation is now handled directly using LangGraph SDK 
+// in the frontend via client.threads.search() - see chat-client.ts
+// This file can be safely removed.
+// ******************************************************************
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
@@ -17,35 +24,42 @@ export async function POST(request: NextRequest) {
     
     // Parse request body
     const requestData = await request.json();
+    const { portfolio_id } = requestData;
     
-    // Set user_id from authenticated user
-    requestData.user_id = user.id;
+    if (!portfolio_id) {
+      return NextResponse.json(
+        { error: 'Portfolio ID is required' },
+        { status: 400 }
+      );
+    }
     
     // Get backend URL from environment variable
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
     
-    // Forward the request to the backend
-    const backendResponse = await fetch(`${backendUrl}/get-chat-sessions`, {
+    // Call backend to list threads for this user
+    const response = await fetch(`${backendUrl}/list-user-threads`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': process.env.BACKEND_API_KEY || '',
       },
-      body: JSON.stringify(requestData),
+      body: JSON.stringify({
+        user_id: user.id,
+        account_id: portfolio_id,
+      }),
     });
     
-    if (!backendResponse.ok) {
-      const errorData = await backendResponse.json();
-      console.error('Error from backend:', errorData);
+    if (!response.ok) {
+      const errorData = await response.json();
       return NextResponse.json(
-        { error: errorData.message || 'Backend request failed' },
-        { status: backendResponse.status }
+        { error: errorData.message || 'Failed to get chat sessions' },
+        { status: response.status }
       );
     }
     
-    // Return the response from the backend
-    const responseData = await backendResponse.json();
-    return NextResponse.json(responseData);
+    // Return sessions from backend
+    const data = await response.json();
+    return NextResponse.json(data);
     
   } catch (error) {
     console.error('Error getting chat sessions:', error);

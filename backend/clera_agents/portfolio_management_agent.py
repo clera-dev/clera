@@ -13,6 +13,7 @@ from typing import List, Optional, Dict
 from decimal import Decimal
 
 from alpaca.broker import BrokerClient
+from langgraph.pregel import Pregel # Import if needed to understand config structure
 
 # Import our custom types
 from clera_agents.types.portfolio_types import (
@@ -42,63 +43,90 @@ broker_client = BrokerClient(
 _LAST_VALID_ACCOUNT_ID = None
 _LAST_VALID_USER_ID = None
 
-def get_account_id(state=None) -> str:
+def get_account_id(state=None, config=None) -> str:
     """Get the account ID for the human.
     
+    Checks config, state, last known values, and Supabase lookup.
+    
     Args:
-        state: Optional state dictionary that may contain account_id or user_id
+        state: Optional state dictionary.
+        config: Optional config dictionary (contains configurable).
         
     Returns:
         str: Account ID to use for operations
     """
     global _LAST_VALID_ACCOUNT_ID, _LAST_VALID_USER_ID
     
-    # Default fallback account ID - only used in extreme failure cases
     fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
     
-    # ---- STRATEGY 1: Use valid state if available ----
+    current_user_id = None
+    current_account_id = None
+
+    # ---- STRATEGY 1: Use Config ----
+    if config and isinstance(config, dict) and isinstance(config.get('configurable'), dict):
+        current_user_id = config['configurable'].get('user_id')
+        current_account_id = config['configurable'].get('account_id')
+        if current_account_id:
+            logger.info(f"[Portfolio Agent] Using account_id from config: {current_account_id}")
+            _LAST_VALID_ACCOUNT_ID = current_account_id
+            if current_user_id: _LAST_VALID_USER_ID = current_user_id
+            return current_account_id
+        if current_user_id:
+            _LAST_VALID_USER_ID = current_user_id 
+            logger.info(f"[Portfolio Agent] User ID found in config: {current_user_id}, will try Supabase lookup.")
+
+    # ---- STRATEGY 2: Use State (if available and needed) ----
+    # Only use state if config didn't provide the info
     if state and isinstance(state, dict):
-        # Update the module-level variables if we have valid data
-        if state.get("account_id"):
-            _LAST_VALID_ACCOUNT_ID = state.get("account_id")
-            logger.info(f"Updated last valid account_id from state: {_LAST_VALID_ACCOUNT_ID}")
-            
-        if state.get("user_id"):
-            _LAST_VALID_USER_ID = state.get("user_id")
-            logger.info(f"Updated last valid user_id from state: {_LAST_VALID_USER_ID}")
-            
-        # Direct account_id from state takes precedence
-        if state.get("account_id"):
-            return state.get("account_id")
-            
-        # Use user_id from state to get account_id
-        if state.get("user_id"):
-            db_account_id = get_user_alpaca_account_id(state.get("user_id"))
+        state_account_id = state.get("account_id")
+        state_user_id = state.get("user_id")
+        if state_account_id and not current_account_id:
+            logger.info(f"[Portfolio Agent] Using account_id from state: {state_account_id}")
+            _LAST_VALID_ACCOUNT_ID = state_account_id
+            if state_user_id: _LAST_VALID_USER_ID = state_user_id
+            return state_account_id # Return if found in state
+        if state_user_id and not current_user_id: 
+             _LAST_VALID_USER_ID = state_user_id
+             current_user_id = state_user_id 
+             logger.info(f"[Portfolio Agent] User ID found in state: {current_user_id}, will try Supabase lookup.")
+
+    # ---- STRATEGY 3: Use User ID (from Config or State) for Supabase Lookup ----
+    if current_user_id:
+        logger.info(f"[Portfolio Agent] Attempting Supabase lookup for user_id: {current_user_id}")
+        try:
+            db_account_id = get_user_alpaca_account_id(current_user_id)
             if db_account_id:
+                logger.info(f"[Portfolio Agent] Found account_id via Supabase: {db_account_id}")
                 _LAST_VALID_ACCOUNT_ID = db_account_id
                 return db_account_id
-    else:
-        logger.warning("Invalid state provided to get_account_id: state is None or not a dictionary")
-    
-    # ---- STRATEGY 2: Use last known valid account_id ----
+            else:
+                 logger.warning(f"[Portfolio Agent] Supabase lookup failed for user_id: {current_user_id}")
+        except Exception as e:
+            logger.error(f"[Portfolio Agent] Error during Supabase lookup for {current_user_id}: {e}", exc_info=True)
+
+    # ---- STRATEGY 4: Use last known valid account_id ----
     if _LAST_VALID_ACCOUNT_ID:
-        logger.info(f"Using last known valid account_id: {_LAST_VALID_ACCOUNT_ID}")
+        logger.info(f"[Portfolio Agent] Using last known valid account_id: {_LAST_VALID_ACCOUNT_ID}")
         return _LAST_VALID_ACCOUNT_ID
-        
-    # ---- STRATEGY 3: Try to get account_id from last known user_id ----
-    if _LAST_VALID_USER_ID:
-        logger.info(f"Attempting to get account_id for last known user_id: {_LAST_VALID_USER_ID}")
-        db_account_id = get_user_alpaca_account_id(_LAST_VALID_USER_ID)
-        if db_account_id:
-            _LAST_VALID_ACCOUNT_ID = db_account_id
-            return db_account_id
-    
-    # ---- FALLBACK: Last resort fallback account_id ----
-    logger.error("CRITICAL: Using fallback account_id - all retrieval strategies failed")
+
+    # ---- STRATEGY 5: Try to get account_id from last known user_id ----
+    if _LAST_VALID_USER_ID and not current_user_id: 
+        logger.info(f"[Portfolio Agent] Attempting Supabase lookup for last known user_id: {_LAST_VALID_USER_ID}")
+        try:
+            db_account_id = get_user_alpaca_account_id(_LAST_VALID_USER_ID)
+            if db_account_id:
+                logger.info(f"[Portfolio Agent] Found account_id via Supabase (last known user): {db_account_id}")
+                _LAST_VALID_ACCOUNT_ID = db_account_id
+                return db_account_id
+        except Exception as e:
+             logger.error(f"[Portfolio Agent] Error during Supabase lookup for last known user {_LAST_VALID_USER_ID}: {e}", exc_info=True)
+
+    # ---- FALLBACK ----
+    logger.error("[Portfolio Agent] CRITICAL: Using fallback account_id - all retrieval strategies failed")
     return fallback_account_id
 
 #@tool("retrieve_portfolio_positions")
-def retrieve_portfolio_positions() -> List:
+def retrieve_portfolio_positions(state=None, config=None) -> List:
     """Retrieve portfolio positions from the user's account.
     
     Returns:
@@ -124,13 +152,18 @@ def retrieve_portfolio_positions() -> List:
         position.cost_basis = '1917.76'
         position.avg_entry_price = '239.72'
     """
-    account_id = get_account_id()
-    all_positions = broker_client.get_all_positions_for_account(account_id=account_id)
-    return all_positions
+    account_id = get_account_id(state=state, config=config)
+    try:
+        all_positions = broker_client.get_all_positions_for_account(account_id=account_id)
+        return all_positions
+    except Exception as e:
+        logger.error(f"[Portfolio Agent] Failed to retrieve positions for account {account_id}: {e}", exc_info=True)
+        # Return empty list or raise specific exception?
+        return [] 
 
     
 #@tool("rebalance_portfolio")
-def create_rebalance_instructions(positions_data: List, target_portfolio_type: Optional[str] = "aggressive") -> str:
+def create_rebalance_instructions(positions_data: List, target_portfolio_type: Optional[str] = "aggressive", state=None, config=None) -> str:
     """Calculate and explain portfolio rebalancing steps based on Alpaca position data and target portfolio type.
     
     This function analyzes the current portfolio positions and generates detailed instructions
@@ -151,31 +184,34 @@ def create_rebalance_instructions(positions_data: List, target_portfolio_type: O
         in dollar amounts (notional values) that can be directly used with trade execution functions
     """
     try:
-        # Convert positions to our standard format
+        # Ensure positions are retrieved if not passed directly (though they usually are)
+        if not positions_data:
+             positions_data = retrieve_portfolio_positions(state=state, config=config)
+             if not positions_data:
+                  return "Error: Could not retrieve portfolio positions to generate rebalancing instructions."
+             
         positions = [PortfolioPosition.from_alpaca_position(position) for position in positions_data]
         
-        # Get the target portfolio based on the specified type
+        # Get target portfolio based on type (or potentially from user state/config in future)
         if target_portfolio_type.lower() == "balanced":
             target_portfolio = TargetPortfolio.create_balanced_portfolio()
         elif target_portfolio_type.lower() == "conservative":
             target_portfolio = TargetPortfolio.create_conservative_portfolio()
-        else:  # Default to aggressive
+        else: 
             target_portfolio = TargetPortfolio.create_aggressive_growth_portfolio()
             
-        # Generate rebalance instructions
         instructions = PortfolioAnalyzer.generate_rebalance_instructions(
             positions=positions,
             target_portfolio=target_portfolio
         )
-        
         return instructions
-        
     except Exception as e:
+        logger.error(f"[Portfolio Agent] Error generating rebalance instructions: {e}", exc_info=True)
         return f"Error processing portfolio data: {str(e)}"
 
 
 @tool("analyze_and_rebalance_portfolio")
-def analyze_and_rebalance_portfolio(state=None) -> str:
+def analyze_and_rebalance_portfolio(state=None, config=None) -> str:
     """Complete function to retrieve portfolio positions, analyze them, and provide rebalancing instructions.
     
     This is a simplified function that handles the entire rebalancing process in one step, including:
@@ -184,28 +220,39 @@ def analyze_and_rebalance_portfolio(state=None) -> str:
     3. Generating rebalancing instructions based on the target portfolio type
     
     Args:
-        state: The current conversation state which may contain account_id
+        state: The current conversation state.
+        config: The current run configuration.
     
     Returns:
         str: A detailed set of instructions for rebalancing the portfolio
     """
     try:
-        # Get account ID from state if available
-        account_id = get_account_id(state)
+        # Get positions using context
+        positions_data = retrieve_portfolio_positions(state=state, config=config)
+        if not positions_data:
+             # Handle case where positions couldn't be retrieved
+             # Maybe check account status?
+             account_id = get_account_id(state=state, config=config)
+             return f"Could not retrieve portfolio positions for account {account_id}. Please ensure the account is active and funded."
+
+        # Get user strategy (currently static, uses config for account_id)
+        investment_strategy = get_user_investment_strategy(state=state, config=config)
+        target_type = investment_strategy.get("risk_profile", "aggressive") # Default to aggressive
         
-        # Retrieve the current portfolio positions
-        positions_data = retrieve_portfolio_positions()
-        target_portfolio = get_user_investment_strategy()
-        
-        # Pass the positions to the create_rebalance_instructions function
-        return create_rebalance_instructions(positions_data, target_portfolio["risk_profile"])
+        return create_rebalance_instructions(
+            positions_data=positions_data, 
+            target_portfolio_type=target_type,
+            state=state, 
+            config=config
+        )
         
     except Exception as e:
+        logger.error(f"[Portfolio Agent] Error in analyze_and_rebalance_portfolio tool: {e}", exc_info=True)
         return f"Error analyzing portfolio: {str(e)}"
 
 
 @tool("get_portfolio_summary")
-def get_portfolio_summary(state=None) -> str:
+def get_portfolio_summary(state=None, config=None) -> str:
     """Generate a comprehensive summary of the user's investment portfolio.
     
     This tool provides a detailed analysis of the portfolio including:
@@ -216,52 +263,51 @@ def get_portfolio_summary(state=None) -> str:
     - Comparison to target allocation based on investment strategy
     
     Args:
-        state: The current conversation state which may contain account_id
-        
+        state: The current conversation state.
+        config: The current run configuration.
+    
     Returns:
         str: A formatted summary of the portfolio with detailed metrics
     """
     try:
-        # Get account ID from state if available
-        account_id = get_account_id(state)
+        # Get positions using context
+        positions_data = retrieve_portfolio_positions(state=state, config=config)
+        if not positions_data:
+             account_id = get_account_id(state=state, config=config)
+             # Consider more specific error based on Alpaca client response if available
+             return f"Could not retrieve portfolio positions for account {account_id}. The portfolio might be empty or the account inactive."
+
+        investment_strategy = get_user_investment_strategy(state=state, config=config)
         
-        # Get the raw positions data
-        positions_data = retrieve_portfolio_positions()
-        
-        # Get the user's investment strategy
-        investment_strategy = get_user_investment_strategy()
-        
-        # Convert positions to our standard format
         positions = [PortfolioPosition.from_alpaca_position(position) for position in positions_data]
         
-        # Classify each position by asset class and security type
         for i, position in enumerate(positions):
             if position.asset_class is None or position.security_type is None:
                 positions[i] = PortfolioAnalyzer.classify_position(position)
         
-        # Get cash balance (assuming 0 for now - could be retrieved from account data)
-        cash_value = Decimal('0')
+        # TODO: Retrieve actual cash balance from Alpaca account details
+        cash_value = Decimal('0') 
         
-        # Generate comprehensive metrics
         metrics = PortfolioAnalyticsEngine.generate_complete_portfolio_metrics(
             positions=positions,
             cash_value=cash_value
         )
         
-        # Format the metrics into a readable summary
         summary = PortfolioAnalyticsEngine.format_portfolio_summary(
             metrics=metrics,
             investment_strategy=investment_strategy
         )
-        
         return summary
         
     except Exception as e:
-        return f"Error generating portfolio summary: {str(e)}"
+        # Catch specific exceptions if possible (e.g., AlpacaAPIError)
+        logger.error(f"[Portfolio Agent] Error in get_portfolio_summary tool: {e}", exc_info=True)
+        # Provide a more user-friendly error message
+        return f"Error generating portfolio summary: {str(e)}. Please try again later."
 
 
 #@tool("get_user_investment_strategy")
-def get_user_investment_strategy() -> Dict:
+def get_user_investment_strategy(state=None, config=None) -> Dict:
     """Get the user's investment risk profile and strategy details.
     
     Args:
@@ -276,7 +322,8 @@ def get_user_investment_strategy() -> Dict:
     # In the future, this might retrieve actual user preferences from a database
     # For now, we're using a static aggressive growth strategy
 
-    account_id = get_account_id()
+    account_id = get_account_id(state=state, config=config)
+    logger.info(f"[Portfolio Agent] Determining investment strategy for account: {account_id}")
     
     target_portfolio = TargetPortfolio.create_aggressive_growth_portfolio()
     

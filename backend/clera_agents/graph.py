@@ -63,16 +63,17 @@ load_dotenv(override=True)
 ###############################################################################
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
-    next_step: str
-    current_agent: str
-    agent_scratchpad: List[BaseMessage]
-    retrieved_context: List[str]
-    last_user_input: str
-    answered_user: bool
-    account_id: Optional[str]
-    user_id: Optional[str]
+    # Removed fields previously used for manual context passing if not needed by graph logic itself
+    # next_step: str
+    # current_agent: str
+    # agent_scratchpad: List[BaseMessage]
+    # retrieved_context: List[str]
+    # last_user_input: str
+    # answered_user: bool
+    # account_id: Optional[str] # Context now passed via config
+    # user_id: Optional[str]   # Context now passed via config
 
-    # Add these two lines to allow supervisor to have state memory
+    # Keep supervisor state fields
     is_last_step: bool
     remaining_steps: int
 
@@ -125,6 +126,10 @@ The human user CANNOT see ANY communications with your specialized agents. When 
 5. RESTATE portfolio recommendations, trade confirmations, and all important information in your own words
 </CRITICALLY IMPORTANT>
 
+<CRITICALLY IMPORTANT - CONTEXT>
+Clera, you will receive essential context about the user (like their user ID and Alpaca account ID) in the `config['configurable']` dictionary during each run. You MUST ensure this context is passed correctly when delegating to specialized agents that require it (like Portfolio Management and Trade Execution).
+</CRITICALLY IMPORTANT - CONTEXT>
+
 <CRITICALLY IMPORTANT - PROPER AGENT DELEGATION>
 When delegating to specialized agents:
 1. NEVER output function call syntax to the user (e.g., "<function=transfer_to_financial_analyst_agent>{}</function>")
@@ -168,11 +173,13 @@ This is because Clera communicates like a friend — simple, concise, and caring
 Clera is a team supervisor managing three specialized agents:
 
 1. FINANCIAL ANALYST AGENT
+   - Context Needed: Generally NO (unless query involves comparing news to specific portfolio holdings, then requires explicit tickers passed by Clera)
    - When to use: For any questions about market news, company updates, economic trends, or financial events
    - This agent can either provide in-depth research or quick summaries of financial news
    - Tools available for THIS agent (not Clera): financial_news_research, summarize_news, get_stock_price
 
 2. PORTFOLIO MANAGEMENT AGENT
+   - Context Needed: YES (User ID and Account ID from `config['configurable']` are required for tools)
    - Tools available for THIS agent (not Clera): 
      * get_portfolio_summary: For general portfolio insights, current allocation, performance metrics
      * analyze_and_rebalance_portfolio: For specific rebalancing recommendations
@@ -192,14 +199,15 @@ Clera is a team supervisor managing three specialized agents:
    - CRITICAL: For information requests use get_portfolio_summary, for action recommendations use analyze_and_rebalance_portfolio
 
 3. TRADE EXECUTION AGENT
+   - Context Needed: YES (User ID and Account ID from `config['configurable']` are required for tools)
    - Tools available for THIS agent (not Clera): execute_buy_market_order, execute_sell_market_order
    - When to use: Only when the human explicitly requests to execute a trade (buy or sell)
    - This agent handles the actual execution of trades with the broker
    - All trades are executed using notional dollar amounts (e.g., "Buy $500.00 of AAPL"), not share quantities
 
 Clera's role is to:
-1. Analyze human's queries to determine which specialized agent to use
-2. Delegate tasks to the appropriate agent (not tools of the specialized agents - transfer to the specialized agents themselves to handle their own tool calling)
+1. Analyze human's queries and required context (user_id, account_id from config)
+2. Delegate tasks to the appropriate agent, passing necessary context if required.
 3. Synthesize responses from specialized agents into clear, actionable advice
 4. If no specialized tools are needed, respond directly based on financial knowledge
 5. VERIFY that specialized agents have completed their entire workflow before responding to the human
@@ -301,7 +309,7 @@ trade_llm = ChatGroq(
 
 # Create specialized agents
 #print("Creating financial news agent...")
-financial_analyst_agent = create_react_agent( #
+financial_analyst_agent = create_react_agent(
     model=news_llm,
     tools=[financial_analyst_agent.financial_news_research,
            financial_analyst_agent.summarize_news,
@@ -349,8 +357,7 @@ You must follow these strict guidelines:
 </IMPORTANT TOOL INSTRUCTIONS>
 
 Your response should be clear, concise, and directly address the human's query based on the tool output.""",
-    name="financial_analyst_agent",
-    state_schema=State
+    name="financial_analyst_agent"
 )
 
 portfolio_management_agent = create_react_agent(
@@ -405,8 +412,7 @@ You must choose the correct tool for each query:
 </STRICT RULES>
 
 For any portfolio-related query, use the appropriate tool and provide clear guidance based on the results.""",
-    name="portfolio_management_agent",
-    state_schema=State
+    name="portfolio_management_agent"
 )
 
 trade_execution_agent = create_react_agent(
@@ -414,18 +420,20 @@ trade_execution_agent = create_react_agent(
     tools=[trade_execution_agent.execute_buy_market_order,
            trade_execution_agent.execute_sell_market_order
            ],
-    prompt="""You are the world's BEST trade execution agent, responsible for executing trades with precision and accuracy.
+    prompt="""You are the world's BEST trade execution agent, responsible for executing trades with precision and accuracy for a specific user account.
+
+<CONTEXT REQUIREMENT>
+Your tools (`execute_buy_market_order`, `execute_sell_market_order`) require the user's account context (user ID, account ID). This context is provided by the supervisor (Clera) in the `config` object during the run. Your tools will automatically access this context to execute trades for the correct account.
+</CONTEXT REQUIREMENT>
 
 <IMPORTANT TOOL INSTRUCTIONS>
 You have access to EXACTLY TWO tools:
-1. execute_buy_market_order: Executes a market buy order for a specified ticker and notional amount (dollar value).
-2. execute_sell_market_order: Executes a market sell order for a specified ticker and notional amount (dollar value).
+1. execute_buy_market_order: Executes a market buy order for a specified ticker and notional amount.
+2. execute_sell_market_order: Executes a market sell order for a specified ticker and notional amount.
 
-The EXACT function signatures are:
-- execute_buy_market_order(account_id: str, ticker: str, notional_amount: float) -> str
-- execute_sell_market_order(account_id: str, ticker: str, notional_amount: float) -> str
-
-For the account_id parameter, ALWAYS use: "4a045111-ef77-46aa-9f33-6002703376f6"
+The function signatures implicitly use the user context provided via `config`:
+- execute_buy_market_order(ticker: str, notional_amount: float) -> str
+- execute_sell_market_order(ticker: str, notional_amount: float) -> str
 
 WHEN TO USE EACH TOOL:
 - Use execute_buy_market_order when:
@@ -437,11 +445,10 @@ WHEN TO USE EACH TOOL:
   * The request mentions "selling", "exiting", or "reducing" a position
 
 CRITICAL REQUIREMENTS:
-1. Execute ONE trade at a time - call execute_buy_market_order or execute_sell_market_order once for each trade
-2. Always provide the exact ticker symbol in uppercase (e.g., "AAPL", "MSFT"). For ANY trade related to fixed income, use the ticker symbol "AGG," which is the ticker for the iShares Core US Aggregate Bond ETF, because you cannot execute a trade for individual fixed income securities. That is your ONLY option for fixed income.
-3. Notional amount must be a positive float in dollars (minimum $1)
-4. Double-check all trade details before execution
-5. Confirm successful execution and return the details to the human
+1. Execute ONE trade at a time.
+2. Always provide the exact ticker symbol in uppercase (e.g., "AAPL"). For fixed income, use "AGG".
+3. Notional amount must be a positive float (minimum $1).
+4. Your tools will handle user confirmation via an interrupt mechanism.
 
 <TRADE EXECUTION FLOW>
 1. When calling trading tools:
@@ -468,9 +475,9 @@ COMMON ERRORS TO AVOID:
 - DO NOT attempt to execute a trade for individual fixed income securities - that is not possible, so you MUST use the ticker symbol "AGG," which is the ticker for the iShares Core US Aggregate Bond ETF.
 </IMPORTANT TOOL INSTRUCTIONS>
 
-Remember: You are handling the human's investments with extreme care. Think critically about each trade request and execute it with 100% accuracy.""",
-    name="trade_execution_agent",
-    state_schema=State
+Remember: You are handling the user's investments with extreme care. Think critically about each trade request and execute it with 100% accuracy using the provided context.
+""",
+    name="trade_execution_agent"
 )
 
 # Create supervisor workflow
@@ -478,18 +485,15 @@ workflow = create_supervisor(
     [financial_analyst_agent, portfolio_management_agent, trade_execution_agent],
     model=main_llm,
     prompt=(supervisor_clera_system_prompt),
-    output_mode="full_history",  # Include full message history from agents
+    output_mode="full_history", 
     supervisor_name="Clera",
-
-    # ADD THIS so that your custom State is recognized:
     state_schema=State
 )
 
 # Compile with memory components
-graph = workflow.compile(
-    #checkpointer=checkpointer, # LangGraph studio automatically adds checkpointer!!!
-    #store=store
-)
+graph = workflow.compile()
+# No need for checkpointer or memory store because we're using LangGraph deployment
+# checkpointer=checkpointer, store=store # is what it would typically look like
 
 graph.name = "CleraAndTeam" # This defines a custom name in LangSmith + LangGraph Studio
 

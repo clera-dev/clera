@@ -1,15 +1,8 @@
-// ******************************************************************
-// OBSOLETE: This API route is no longer used.
-// The delete operation is now handled directly using LangGraph SDK 
-// in the frontend via client.threads.delete() - see chat-client.ts
-// This file can be safely removed.
-// ******************************************************************
-
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
-export async function DELETE(request: NextRequest) {
-  // Create a Supabase client
+export async function POST(request: NextRequest) {
+  // Create a Supabase client - must await this as it returns a Promise
   const supabase = await createClient();
   
   try {
@@ -22,34 +15,30 @@ export async function DELETE(request: NextRequest) {
       );
     }
     
-    // Get session ID from URL query parameter
-    const searchParams = request.nextUrl.searchParams;
-    const sessionId = searchParams.get('id');
-    
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: 'Session ID is required' },
-        { status: 400 }
-      );
-    }
+    // Parse request body
+    const requestData = await request.json();
     
     // Get backend URL from environment variable
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
     
     // Forward the request to the backend
-    const backendResponse = await fetch(`${backendUrl}/delete-chat-session?session_id=${sessionId}&user_id=${user.id}`, {
-      method: 'DELETE',
+    const backendResponse = await fetch(`${backendUrl}/api/resume-chat`, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': process.env.BACKEND_API_KEY || '',
       },
+      body: JSON.stringify({
+        session_id: requestData.session_id,
+        user_confirmation: requestData.user_confirmation
+      }),
     });
     
     if (!backendResponse.ok) {
       const errorData = await backendResponse.json();
       console.error('Error from backend:', errorData);
       return NextResponse.json(
-        { error: errorData.message || 'Backend request failed' },
+        { error: errorData.detail || 'Backend request failed' },
         { status: backendResponse.status }
       );
     }
@@ -59,9 +48,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(responseData);
     
   } catch (error) {
-    console.error('Error deleting chat session:', error);
+    console.error('Error processing resume chat request:', error);
     return NextResponse.json(
-      { error: 'Failed to delete chat session' },
+      { error: 'Failed to process request' },
       { status: 500 }
     );
   }

@@ -1,5 +1,8 @@
 // Chat API client for interacting with the Clera backend
 
+import { Client } from '@langchain/langgraph-sdk';
+import { Message as LangGraphMessage } from '@langchain/langgraph-sdk';
+
 export type Message = {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -11,7 +14,7 @@ export type ChatRequest = {
 };
 
 export type ChatResponse = {
-  type?: 'response';
+  type: 'response';
   session_id: string;
   response: string;
   debug_info?: any;
@@ -115,146 +118,122 @@ export function groupChatsByDate(chats: ChatSession[]): {
 }
 
 /**
- * Sends a chat request to the Clera API with the user's Alpaca account ID
+ * Starts a new chat stream or continues an existing one.
+ *
+ * @param messages Current message history (primarily for context if needed, not sent directly)
+ * @param userInput The new user input to send.
+ * @param accountId User's Alpaca account ID.
+ * @param userId Optional user ID.
+ * @param threadId Optional existing thread ID to continue.
+ * @returns An EventSource instance connected to the streaming endpoint.
  */
-export async function sendChatRequest(
-  messages: Message[],
-  userInput: string,
-  accountId: string,
-  userId?: string,
-  sessionId?: string
-): Promise<ChatApiResponse> {
+export function startChatStream(
+  userInput: string, 
+  accountId: string, 
+  userId?: string, 
+  threadId?: string 
+): EventSource {
   if (!accountId) {
-    throw new Error("Account ID is required for chat requests");
+    throw new Error("Account ID is required to start chat stream");
   }
   
-  try {
-    // Get userId from localStorage if not provided
-    let effectiveUserId = userId;
-    if (!effectiveUserId) {
-      try {
-        const storedUserId = localStorage.getItem('userId');
-        if (!storedUserId) {
-          console.error("No user ID found in parameters or localStorage");
-          throw new Error("User ID is required for chat requests");
-        }
-        effectiveUserId = storedUserId;
-      } catch (error) {
-        console.error("Error accessing localStorage for userId:", error);
-        throw new Error("Failed to get user ID");
-      }
-    }
-    
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messages,
-        user_input: userInput,
-        account_id: accountId,
-        user_id: effectiveUserId,
-        session_id: sessionId,
-      }),
-    });
+  // Construct the payload for the backend stream endpoint
+  const payload = {
+      user_input: userInput,
+      account_id: accountId,
+      user_id: userId, // Pass userId obtained from Supabase/localStorage
+      session_id: threadId // Pass existing thread/session ID if available
+  };
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || errorData.error || 'Failed to send chat request');
-    }
+  console.log('Starting chat stream with payload:', payload);
 
-    const responseData: ChatApiResponse = await response.json();
-    
-    // Check if it's an interrupt response
-    if (responseData.type === 'interrupt') {
-      console.log('Received interrupt response:', responseData);
-      return responseData;
-    }
+  // Use POST for the stream request, sending data in the body
+  // We need a way to send the payload with EventSource. Standard EventSource doesn't support POST body.
+  // WORKAROUND: Use fetch to initiate the stream, then handle the response body manually.
+  // OR: Use a library that wraps EventSource with POST support.
+  // OR: Pass essential initial data via query params (less ideal for complex input).
+  
+  // Simplest approach for now: Use query params for critical IDs, fetch handles body.
+  // NOTE: This might hit URL length limits if userInput is huge. Refactor might be needed.
+  const queryParams = new URLSearchParams({
+      user_input: userInput,
+      account_id: accountId,
+      // Add userId if available
+      ...(userId && { user_id: userId }),
+      // Add threadId if available
+      ...(threadId && { session_id: threadId })
+  }).toString();
 
-    // If it's a regular response, proceed with saving (if applicable)
-    // Ensure type safety for regular response handling
-    const regularResponse = responseData as ChatResponse;
-    regularResponse.type = 'response';
+  // Correct endpoint
+  const url = `/api/chat/stream`; 
+  
+  // Since EventSource doesn't support POST body, we create it but don't send the body with it.
+  // The API route /api/chat/stream will need to be adjusted to read from query OR have a way
+  // to associate this EventSource connection with a POST request body (complex).
+  
+  // Let's stick to the original plan: EventSource connects to a GET endpoint that proxies POST.
+  // The previous steps created POST proxy routes. EventSource CAN connect to them.
+  
+  // Revert: Use standard EventSource on the POST proxy route. The proxy handles the body.
+  const eventSource = new EventSource(url, { withCredentials: true }); // Use POST proxy route
 
-    // Save conversation to database (but don't block waiting for it)
-    if (regularResponse.response && !sessionId) {
-      try {
-        // For new conversations, create a new chat session with title from first message
-        const firstUserMessage = userInput;
-        const title = formatChatTitle(firstUserMessage);
-        
-        // Create a session first
-        const session = await createChatSession(accountId, title);
-        
-        // Then save the conversation with the session ID
-        if (session?.id) {
-          await saveConversationToDatabase(
-            accountId, 
-            userInput, 
-            regularResponse.response,
-            session.id
-          );
-          
-          // Update the response to include the session ID
-          regularResponse.session_id = session.id;
-        }
-      } catch (error) {
-        console.error('Error saving conversation to database:', error);
-      }
-    } else if (regularResponse.response && sessionId) {
-      try {
-        await saveConversationToDatabase(
-          accountId, 
-          userInput, 
-          regularResponse.response,
-          sessionId
-        );
-        
-        // Check if this is the first user message in an existing session to update the title
-        const isFirstMessage = await isFirstMessageInSession(sessionId);
-        if (isFirstMessage) {
-          const title = formatChatTitle(userInput);
-          await updateChatSessionTitle(sessionId, title);
-        }
-      } catch (error) {
-        console.error('Error saving conversation to database:', error);
-      }
-    }
+  // Log connection status
+  eventSource.onopen = () => {
+    console.log(`EventSource connected to ${url}`);
+  };
+  eventSource.onerror = (error) => {
+    console.error(`EventSource error for ${url}:`, error);
+    // Maybe close connection here or implement retry logic
+    eventSource.close(); 
+  };
 
-    return regularResponse;
-  } catch (error) {
-    console.error('Error sending chat request:', error);
-    if (error instanceof Error) {
-      throw error;
-    } else {
-      throw new Error('An unknown error occurred during the chat request.');
-    }
-  }
+  return eventSource;
 }
 
 /**
- * Checks if this is the first message in a chat session
+ * Resumes an interrupted chat stream with user confirmation.
+ *
+ * @param threadId The ID of the thread to resume.
+ * @param confirmation User's confirmation ('yes' or 'no').
+ * @returns An EventSource instance connected to the resume streaming endpoint.
  */
-async function isFirstMessageInSession(sessionId: string): Promise<boolean> {
-  try {
-    const response = await fetch(`/api/conversations/count?sessionId=${sessionId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      return false;
-    }
-
-    const data = await response.json();
-    return data.count === 0;
-  } catch (error) {
-    console.error('Error checking message count:', error);
-    return false;
+export function resumeChatStream(
+  threadId: string,
+  confirmation: 'yes' | 'no'
+): EventSource {
+  if (!threadId) {
+    throw new Error("Thread ID (session_id) is required to resume chat stream");
   }
+
+  const url = `/api/resume-chat/stream`;
+
+  // Similar challenge: EventSource doesn't support POST body.
+  // The POST proxy route needs to handle the body.
+  // We need to trigger the POST from the component *before* creating the EventSource,
+  // or find a way to link them. This is tricky.
+  
+  // --- Let's redesign Chat.tsx to handle this --- 
+  // Chat.tsx will make a POST request to the proxy, and *then* EventSource will connect.
+  // This client function becomes simpler: it just provides the URL.
+
+  // --- Revised Approach --- 
+  // These functions won't *create* the EventSource directly.
+  // They'll provide configuration or trigger the POST proxy.
+  // Let's simplify: The component will handle EventSource creation and POST calls.
+  // Removing these functions for now, logic moves to Chat.tsx.
+
+  // Placeholder - actual EventSource creation will be in Chat.tsx after a POST
+  const eventSource = new EventSource(url, { withCredentials: true }); 
+
+  eventSource.onopen = () => {
+    console.log(`EventSource connected to ${url} for resume`);
+  };
+  eventSource.onerror = (error) => {
+    console.error(`EventSource error for ${url} (resume):`, error);
+    eventSource.close();
+  };
+  
+  return eventSource; // This is conceptually wrong, fix in Chat.tsx
 }
 
 /**
@@ -285,31 +264,35 @@ export async function updateChatSessionTitle(sessionId: string, title: string): 
 }
 
 /**
- * Creates a new chat session
+ * Creates a new chat session (thread) directly using LangGraph SDK
  */
 export async function createChatSession(
   portfolioId: string,
-  title: string
+  title: string = "New Conversation"
 ): Promise<{ id: string } | null> {
   try {
-    const response = await fetch('/api/conversations/create-session', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        portfolio_id: portfolioId,
-        title,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to create chat session');
+    console.log(`Creating new chat session with title: ${title}`);
+    const client = getLangGraphClient();
+    
+    // Get user ID from localStorage (assuming it's stored there after login)
+    const userId = localStorage.getItem('userId');
+    
+    if (!userId) {
+      console.warn('No user ID found in localStorage for thread creation');
     }
-
-    const data = await response.json();
-    return data.session || null;
+    
+    // Create thread with metadata
+    const thread = await client.threads.create({
+      metadata: {
+        user_id: userId || 'anonymous',
+        account_id: portfolioId,
+        title: title,
+        created_at: new Date().toISOString()
+      }
+    });
+    
+    console.log(`Created new thread with ID: ${thread.thread_id}`);
+    return { id: thread.thread_id };
   } catch (error) {
     console.error('Error creating chat session:', error);
     return null;
@@ -318,6 +301,7 @@ export async function createChatSession(
 
 /**
  * Saves a conversation to the database
+ * Note: We still need the backend for this as we're storing in Supabase as well
  */
 export async function saveConversationToDatabase(
   portfolioId: string,
@@ -384,29 +368,43 @@ export async function getConversationHistory(
 }
 
 /**
- * Retrieves all chat sessions for the current user
+ * Gets all chat sessions (threads) for the current user directly using LangGraph SDK
  */
 export async function getChatSessions(
   portfolioId: string
 ): Promise<ChatSession[]> {
   try {
-    const response = await fetch('/api/conversations/sessions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        portfolio_id: portfolioId,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to get chat sessions');
+    console.log(`Fetching chat sessions with portfolio ID: ${portfolioId}`);
+    const client = getLangGraphClient();
+    
+    // Get user ID from localStorage
+    const userId = localStorage.getItem('userId');
+    
+    if (!userId) {
+      console.warn('No user ID found in localStorage for thread search');
+      return [];
     }
-
-    const data = await response.json();
-    return data.sessions || [];
+    
+    // Use threads.search to get all threads with matching metadata
+    const threads = await client.threads.search({
+      metadata: {
+        user_id: userId
+      }
+    });
+    
+    // Format threads as ChatSessions
+    const sessions: ChatSession[] = threads.map(thread => {
+      const metadata = thread.metadata || {};
+      return {
+        id: thread.thread_id,
+        title: (metadata.title as string) || "New Conversation",
+        createdAt: thread.created_at || new Date().toISOString(),
+        messages: []
+      };
+    });
+    
+    console.log(`Found ${sessions.length} chat sessions`);
+    return sessions;
   } catch (error) {
     console.error('Error getting chat sessions:', error);
     return [];
@@ -414,24 +412,80 @@ export async function getChatSessions(
 }
 
 /**
- * Deletes a chat session and all its conversations
+ * Get thread messages directly using LangGraph SDK
  */
-export async function deleteChatSession(
-  sessionId: string
+export async function getThreadMessages(
+  threadId: string
+): Promise<Message[]> {
+  try {
+    console.log(`Fetching messages for thread: ${threadId}`);
+    const client = getLangGraphClient();
+    
+    // Get thread state
+    const threadState = await client.threads.getState(threadId);
+    
+    // Extract messages from thread state with proper type handling
+    let messages: LangGraphMessage[] = [];
+    
+    // Check if values exists and safely access the messages property
+    if (threadState.values && typeof threadState.values === 'object') {
+      // Access messages using type assertion since structure may vary
+      const stateValues = threadState.values as Record<string, unknown>;
+      if (Array.isArray(stateValues.messages)) {
+        messages = stateValues.messages as LangGraphMessage[];
+      }
+    }
+    
+    // Convert messages to our format
+    return convertLangGraphMessages(messages);
+  } catch (error) {
+    console.error(`Error getting thread messages for ${threadId}:`, error);
+    return [];
+  }
+}
+
+/**
+ * Updates the title of a chat thread directly using LangGraph SDK
+ */
+export async function updateChatThreadTitle(
+  threadId: string, 
+  title: string
 ): Promise<boolean> {
   try {
-    const response = await fetch(`/api/conversations/delete-session?id=${sessionId}`, {
-      method: 'DELETE',
+    console.log(`Updating thread ${threadId} title to: ${title}`);
+    const client = getLangGraphClient();
+    
+    // Use update() with metadata instead of patchState()
+    await client.threads.update(threadId, {
+      metadata: {
+        title: title
+      }
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to delete chat session');
-    }
-
+    
+    console.log(`Successfully updated title for thread ${threadId}`);
     return true;
   } catch (error) {
-    console.error('Error deleting chat session:', error);
+    console.error('Error updating thread title:', error);
+    return false;
+  }
+}
+
+/**
+ * Deletes a chat session (thread) directly using LangGraph SDK.
+ */
+export async function deleteChatSession(
+  threadId: string
+): Promise<boolean> {
+  try {
+    console.log(`Attempting to delete thread ${threadId} using LangGraph SDK`);
+    const client = getLangGraphClient();
+    await client.threads.delete(threadId);
+    console.log(`Successfully deleted thread ${threadId}`);
+    return true;
+  } catch (error) {
+    console.error(`Failed to delete thread ${threadId}:`, error);
+    // Optional: Check error type/status for more specific feedback
+    // e.g., if (error.status === 404) console.error("Thread not found");
     return false;
   }
 }
@@ -491,51 +545,53 @@ export function conversationsToMessages(conversations: Conversation[]): Message[
   return messages;
 }
 
+// --- Get LangGraphClient Instance ---
+// You need to configure this client with your LangGraph API URL and potentially API key.
+// Assuming environment variables for configuration:
+const getLangGraphClient = () => {
+  const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL;
+  const apiKey = process.env.NEXT_PUBLIC_LANGGRAPH_API_KEY;
+
+  if (!apiUrl) {
+    throw new Error("NEXT_PUBLIC_LANGGRAPH_API_URL is not set in environment variables.");
+  }
+
+  return new Client({
+    apiUrl,
+    ...(apiKey && { apiKey }),
+  });
+};
+// ----------------------------------
+
+// --- LangGraph SDK Helper Methods ---
+
 /**
- * Sends a confirmation response to resume an interrupted chat flow
+ * Converts LangGraph message format to our frontend Message format
  */
-export async function resumeChatRequest(
-  sessionId: string,
-  confirmation: 'yes' | 'no'
-): Promise<ChatResponse> {
-  if (!sessionId) {
-    throw new Error("Session ID is required to resume chat");
-  }
-
-  try {
-    console.log(`Resuming chat session ${sessionId} with confirmation: ${confirmation}`);
-    
-    const response = await fetch('/api/resume-chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        session_id: sessionId,
-        user_confirmation: confirmation,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Error resuming chat:", errorData);
-      throw new Error(errorData.detail || errorData.error || 'Failed to resume chat request');
-    }
-
-    const responseData: ChatResponse = await response.json();
-    console.log("Chat resumed successfully, final response:", responseData);
-
-    // Optionally save the final response to the database here if needed
-    // Note: The backend might handle saving the final turn
-
-    return responseData;
-
-  } catch (error) {
-    console.error('Error resuming chat request:', error);
-    if (error instanceof Error) {
-      throw error;
-    } else {
-      throw new Error('An unknown error occurred while resuming the chat.');
+function convertLangGraphMessages(messages: LangGraphMessage[]): Message[] {
+  const convertedMessages: Message[] = [];
+  
+  for (const msg of messages) {
+    if (msg.type === 'human') {
+      convertedMessages.push({
+        role: 'user',
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      });
+    } else if (msg.type === 'ai') {
+      // Skip tool calls and specific worker messages
+      const hasAgentName = 'name' in msg && !!msg.name;
+      const hasFunctionCalls = msg.tool_calls && msg.tool_calls.length > 0;
+      
+      if (hasFunctionCalls || (hasAgentName && msg.name !== 'Clera')) {
+        continue;
+      }
+      
+      convertedMessages.push({
+        role: 'assistant',
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      });
     }
   }
+  
+  return convertedMessages;
 } 

@@ -91,6 +91,13 @@ export default function ChatPage() {
     setRefreshTrigger(prev => prev + 1);
   };
 
+  // Add handler for title updates
+  const handleTitleUpdated = (sessionId: string, newTitle: string) => {
+    console.log(`ChatPage received title update for ${sessionId}: ${newTitle}`);
+    // Trigger sidebar refresh to potentially show the new title
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   if (!accountId) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -137,6 +144,7 @@ export default function ChatPage() {
             initialMessages={initialMessages}
             onMessageSent={handleChatSent}
             onSessionCreated={handleSessionCreated}
+            onTitleUpdated={handleTitleUpdated}
           />
         </div>
       </div>

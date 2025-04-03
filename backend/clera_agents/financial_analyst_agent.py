@@ -104,7 +104,7 @@ def get_stock_price(ticker: str) -> str:
     """
 
     stock_quote = get_stock_quote(ticker)
-    price = stock_quote['price']
+    price = stock_quote[0]['price']
 
     return f"The current price of {ticker} is {price}."
 
