@@ -114,7 +114,7 @@ export default function Chat({
     apiKey: apiKey ?? undefined, 
     assistantId, 
     threadId: currentThreadId, 
-    messagesKey: 'messages',
+    messagesKey: 'messages', 
     onThreadId: (id) => { 
       console.log("useStream using threadId:", id);
       if (id !== currentThreadId) {
@@ -154,36 +154,30 @@ export default function Chat({
         messages: [{ type: 'human' as const, content: contentToSend }],
     };
     
-    // Ensure values are non-null before sending
-    const userIdToSend = userId || '';
-    const accountIdToSend = accountId || '';
-    
-    // Explicitly structure the run options with all required properties
-    const submitOptions = {
-      config: {
-        configurable: {
-          user_id: userIdToSend,
-          account_id: accountIdToSend
-        }
-      },
-      optimisticValues(prev: GraphStateType) {
-        const prevMessages = prev.messages ?? [];
-        // Optimistic update uses LangGraphMessage format
-        const newMessage: LangGraphMessage = { 
-            type: 'human' as const, 
-            content: contentToSend,
-            id: `temp-${Date.now()}` 
-        };
-        return { ...prev, messages: [...prevMessages, newMessage] };
+    // Configurable context to pass accountId and userId
+    // Ensure backend graph reads from config.configurable
+    const runConfig = {
+      configurable: {
+        user_id: userId,
+        account_id: accountId // Pass the received accountId prop
       }
     };
 
-    console.log("Submitting input via thread.submit:", runInput, "with options:", JSON.stringify({
-      config: submitOptions.config
-    }));    
-    
+    console.log("Submitting input via thread.submit:", runInput, "with config:", runConfig);    
     try {
-      thread.submit(runInput, submitOptions);
+      thread.submit(runInput, {
+          config: runConfig, // Pass the config object
+          optimisticValues(prev) {
+            const prevMessages = prev.messages ?? [];
+            // Optimistic update uses LangGraphMessage format
+            const newMessage: LangGraphMessage = { 
+                type: 'human' as const, 
+                content: contentToSend,
+                id: `temp-${Date.now()}` 
+            };
+            return { ...prev, messages: [...prevMessages, newMessage] };
+          },
+        });
       
       // If this is the first message and we have a thread ID, update the title
       if (isFirstMessage && currentThreadId && !hasTitleBeenUpdated) {
@@ -216,31 +210,26 @@ export default function Chat({
 
   // Handle interrupt confirmation
   const handleInterruptConfirmation = useCallback((confirmationString: 'yes' | 'no') => { 
-    console.log("Resuming interrupt with value:", confirmationString, "with user_id:", userId, "and account_id:", accountId);
+    console.log("Resuming interrupt with value:", confirmationString);
     if (!isInterrupting) return;
     
-    // Ensure values are non-null before sending
-    const userIdToSend = userId || '';
-    const accountIdToSend = accountId || '';
-    
+    // Pass context in config when resuming too
+    const runConfig = {
+      configurable: {
+        user_id: userId,
+        account_id: accountId
+      }
+    };
+
     try { 
-      // Explicitly structure the run options with all required properties
-      const resumeOptions = {
+      thread.submit(undefined, { 
         command: { resume: confirmationString },
-        config: {
-          configurable: {
-            user_id: userIdToSend,
-            account_id: accountIdToSend
-          }
-        }
-      };
-      
-      console.log("Submitting resume with options:", JSON.stringify(resumeOptions));
-      thread.submit(undefined, resumeOptions);
+        config: runConfig // Pass config on resume
+      });
     } catch (err) { 
       console.error("Error calling thread.submit for resume:", err); 
     }
-  }, [isInterrupting, thread, userId, accountId]);
+  }, [isInterrupting, thread, userId, accountId]); // Add userId and accountId
 
   // Auto-scroll
   useEffect(() => {

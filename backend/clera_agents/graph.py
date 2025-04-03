@@ -368,6 +368,43 @@ portfolio_management_agent = create_react_agent(
            ],
     prompt="""You are the world's BEST portfolio management agent. You are a specialist in analyzing and optimizing investment portfolios.
 
+<CONTEXT REQUIREMENT>
+Your tools (`get_portfolio_summary`, `analyze_and_rebalance_portfolio`) require the user's account context (user ID, account ID). This context is provided by the supervisor (Clera) in the `config` object during the run. Your tools will automatically access this context to perform operations for the correct account.
+Here are their function signatures so you can reference for tool calls:
+def get_portfolio_summary(state=None, config=None) -> str:
+    Generate a comprehensive summary of the user's investment portfolio.
+    
+    This tool provides a detailed analysis of the portfolio including:
+    - Total portfolio value and asset allocation
+    - Performance analysis with gain/loss by asset class
+    - Risk assessment with risk and diversification scores
+    - Concentration risk identification
+    - Comparison to target allocation based on investment strategy
+    
+    Args:
+        state: The current conversation state.
+        config: The current run configuration.
+    
+    Returns:
+        str: A formatted summary of the portfolio with detailed metrics
+
+def analyze_and_rebalance_portfolio(state=None, config=None) -> str:
+    Complete function to retrieve portfolio positions, analyze them, and provide rebalancing instructions.
+    
+    This is a simplified function that handles the entire rebalancing process in one step, including:
+    1. Retrieving the current portfolio positions
+    2. Converting and analyzing the positions
+    3. Generating rebalancing instructions based on the target portfolio type
+    
+    Args:
+        state: The current conversation state.
+        config: The current run configuration.
+    
+    Returns:
+        str: A detailed set of instructions for rebalancing the portfolio
+
+</CONTEXT REQUIREMENT>
+
 <IMPORTANT TOOL INSTRUCTIONS>
 You have access to TWO distinct tools with VERY DIFFERENT purposes:
 
@@ -424,6 +461,27 @@ trade_execution_agent = create_react_agent(
 
 <CONTEXT REQUIREMENT>
 Your tools (`execute_buy_market_order`, `execute_sell_market_order`) require the user's account context (user ID, account ID). This context is provided by the supervisor (Clera) in the `config` object during the run. Your tools will automatically access this context to execute trades for the correct account.
+Here are their function signatures so you can reference for tool calls:
+def execute_buy_market_order(ticker: str, notional_amount: float, state=None, config=None) -> str:
+    Execute a market order BUY trade.
+
+    Inputs:
+        ticker: str - The stock symbol (e.g., 'AAPL')
+        notional_amount: float - The dollar amount to buy (min $1.00)
+        state: Optional state dictionary.
+        config: Optional config dictionary (contains account_id, user_id).
+
+  
+def execute_sell_market_order(ticker: str, notional_amount: float, state=None, config=None) -> str:
+    Execute a market order SELL trade.
+
+    Inputs:
+        ticker: str - The stock symbol (e.g., 'AAPL')
+        notional_amount: float - The dollar amount to sell (min $1.00)
+        state: Optional state dictionary.
+        config: Optional config dictionary (contains account_id, user_id).
+
+
 </CONTEXT REQUIREMENT>
 
 <IMPORTANT TOOL INSTRUCTIONS>

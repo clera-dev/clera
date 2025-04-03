@@ -62,33 +62,49 @@ def get_account_id(state=None, config=None) -> str:
     current_user_id = None
     current_account_id = None
 
+    logger.info(f"[Portfolio Agent] get_account_id called. Received config: {config}, state: {state}")
+
     # ---- STRATEGY 1: Use Config ----
     if config and isinstance(config, dict) and isinstance(config.get('configurable'), dict):
+        logger.info("[Portfolio Agent] Config is a valid dictionary with 'configurable' key.")
         current_user_id = config['configurable'].get('user_id')
         current_account_id = config['configurable'].get('account_id')
         if current_account_id:
             logger.info(f"[Portfolio Agent] Using account_id from config: {current_account_id}")
             _LAST_VALID_ACCOUNT_ID = current_account_id
-            if current_user_id: _LAST_VALID_USER_ID = current_user_id
+            if current_user_id: 
+                _LAST_VALID_USER_ID = current_user_id
+                logger.info(f"[Portfolio Agent] Stored user_id from config: {current_user_id}")
             return current_account_id
         if current_user_id:
             _LAST_VALID_USER_ID = current_user_id 
             logger.info(f"[Portfolio Agent] User ID found in config: {current_user_id}, will try Supabase lookup.")
+        else:
+            logger.info("[Portfolio Agent] Config had 'configurable', but no account_id or user_id found.")
+    else:
+        logger.info("[Portfolio Agent] Config is NOT a valid dictionary or lacks 'configurable'. Skipping Strategy 1.")
 
     # ---- STRATEGY 2: Use State (if available and needed) ----
     # Only use state if config didn't provide the info
     if state and isinstance(state, dict):
+        logger.info("[Portfolio Agent] State is a valid dictionary. Checking for account_id/user_id.")
         state_account_id = state.get("account_id")
         state_user_id = state.get("user_id")
         if state_account_id and not current_account_id:
             logger.info(f"[Portfolio Agent] Using account_id from state: {state_account_id}")
             _LAST_VALID_ACCOUNT_ID = state_account_id
-            if state_user_id: _LAST_VALID_USER_ID = state_user_id
+            if state_user_id: 
+                _LAST_VALID_USER_ID = state_user_id
+                logger.info(f"[Portfolio Agent] Stored user_id from state: {state_user_id}")
             return state_account_id # Return if found in state
         if state_user_id and not current_user_id: 
              _LAST_VALID_USER_ID = state_user_id
              current_user_id = state_user_id 
              logger.info(f"[Portfolio Agent] User ID found in state: {current_user_id}, will try Supabase lookup.")
+        else:
+            logger.info("[Portfolio Agent] State did not provide needed IDs (or they were already found in config).")
+    else:
+        logger.info("[Portfolio Agent] State is not a valid dictionary or not provided. Skipping Strategy 2.")
 
     # ---- STRATEGY 3: Use User ID (from Config or State) for Supabase Lookup ----
     if current_user_id:

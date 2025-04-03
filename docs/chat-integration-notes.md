@@ -96,26 +96,27 @@ The chat interface provides a premium, human-like experience:
 The implementation follows a layered approach:
 
 1. **User Interface Layer**:
-   - React components for chat UI
-   - State management for messages and loading states
+   - React components for chat UI (`Chat.tsx`, etc.)
+   - State management for messages and loading states using LangGraph SDK (`useStream`)
    - Responsive design for all device sizes
 
-2. **API Layer**:
-   - Next.js API routes to proxy requests
-   - Authentication with Supabase
-   - Error handling and response formatting
+2. **Frontend-to-LangGraph Communication Layer**:
+   - LangGraph JS/TS SDK (`@langchain/langgraph-sdk`) used directly in `Chat.tsx`
+   - `useStream` hook manages the connection to the deployed LangGraph instance
+   - `thread.submit()` sends user input and importantly, the `config` object containing `configurable: { user_id, account_id }`.
+   - Handles receiving streaming responses and interrupts.
 
-3. **Backend Integration**:
-   - LangGraph agents with dynamic account IDs
-   - State preservation between messages
-   - Supabase integration for reliable user data access
-   - Proper error handling and fallbacks
+3. **LangGraph Backend Layer (`graph.py`, agents)**:
+   - Deployed LangGraph instance receives requests from the frontend SDK.
+   - The main supervisor (`Clera`) receives the `config` object in the execution context.
+   - Supervisor delegates to specialized agents (Portfolio, Trade), ensuring the `config` object is passed along so agents can access `user_id` and `account_id` via `config['configurable']`.
+   - Agents use the provided context to interact with external services (Supabase, Alpaca) for the correct user.
+   - Agent prompts are configured to expect and utilize this context mechanism.
 
 4. **Data Persistence**:
-   - Primary storage: Supabase `conversations` table with RLS policies
-   - Secondary storage: localStorage for offline access and as backup
-   - Automatic conversion between storage formats
-   - Fallback mechanisms if primary storage is unavailable
+   - LangGraph handles thread state persistence automatically on the server.
+   - Supabase `conversations` table can be used for long-term archival if needed (though primary interaction is via LangGraph threads).
+   - localStorage can act as a temporary backup on the client-side.
 
 ## How to Use
 
@@ -194,18 +195,19 @@ The implementation follows a layered approach:
 
 ## Troubleshooting
 
-1. **Account ID Not Found**:
-   - **Symptom**: Agent uses fallback account ID instead of the user's actual ID
+1. **Account ID Not Found / Agent Uses Fallback ID**:
+   - **Symptom**: Agent uses fallback account ID or fails, logs show `config: "default_config"` or similar incorrect value received by `get_account_id`.
    - **Causes**:
-     - User ID not stored in localStorage
-     - User ID not passed to backend
-     - Supabase connection issues
-     - Missing user_onboarding record
+     - `userId` or `accountId` not correctly passed from `UserDashboard.tsx` to `Chat.tsx`.
+     - Issue in `Chat.tsx` where `runConfig` object is not constructed or passed correctly in `thread.submit()`.
+     - Potential bug in the LangGraph supervisor/agent execution layer preventing the `config` dictionary from being passed down (check `graph.py` prompts and structure).
+     - Incorrect state definition in `graph.py` if `config` was added there improperly.
    - **Solution**:
-     - Check browser console for localStorage errors
-     - Verify the SQL function exists in Supabase
-     - Check backend logs for Supabase connection errors
-     - Ensure the user has completed onboarding and has an Alpaca account ID in the user_onboarding table
+     - Verify `accountId` and `userId` props in `Chat.tsx`.
+     - Ensure `runConfig = { configurable: { user_id: ..., account_id: ... } }` is correctly passed in `thread.submit({ config: runConfig })`.
+     - Check backend LangGraph logs (especially the added logging in `get_account_id`) to see what `config` value is actually received by the agent tools.
+     - Review `graph.py` prompts (especially Supervisor and context-aware agents) for correct instructions regarding `config['configurable']`.
+     - Check Supabase lookup logic in `get_account_id` if fallbacks are being triggered.
 
 2. **API Connection Errors**:
    - **Symptom**: "Failed to connect to backend" error in chat
@@ -398,73 +400,3 @@ if (response.type === 'interrupt') {
 ```
 
 This mechanism enhances safety by requiring explicit user confirmation before executing trades, while maintaining a smooth conversational experience.
-
-## Account ID and Context Passing to Agent
-
-An important update has been implemented to fix issues with passing account context from the frontend to the LangGraph backend agents.
-
-### Issue Summary
-
-The trade execution and portfolio management agents need access to the user's Alpaca account ID to perform actions. Previously, the config object wasn't being properly structured or consistently passed in all interactions, especially during interrupt handling for trade confirmations.
-
-### Implementation Fix
-
-1. **Consistent Config Structure**: 
-   - Both initial messages and interrupts now use the exact same config structure format
-   - The config structure follows the expected LangGraph format: `{ config: { configurable: { user_id, account_id } } }`
-   - All config values are validated as non-null before sending
-
-2. **Enhanced Logging**:
-   - Added detailed logging of config values being sent with each request
-   - This enables easier debugging of missing context issues
-
-3. **Interrupt Handling**: 
-   - The `handleInterruptConfirmation` function now explicitly structures the resume options
-   - Ensures account_id and user_id are properly passed when a user confirms or rejects a trade
-
-4. **Initial Message Handling**:
-   - The `handleSendMessage` function uses the same standardized config structure
-   - TypeScript type checking is used to ensure correct object structure
-
-### Backend Integration
-
-The backend agents already had robust fallback strategies in place:
-
-1. **Multi-Layer Lookup Strategy**:
-   - First check config.configurable for account_id and user_id
-   - Fall back to state for account_id and user_id if not in config
-   - Query Supabase using user_id to retrieve account_id if needed
-   - Use cached values from previous successful retrievals if all else fails
-   - Final fallback to a static test account ID only as last resort
-
-2. **Logging at Each Stage**:
-   - Each strategy logs detailed information about its execution
-   - Makes debugging straightforward when context is missing
-
-### Example Usage
-
-```typescript
-// When sending a message with context
-thread.submit(messageInput, {
-  config: {
-    configurable: {
-      user_id: userIdToSend,
-      account_id: accountIdToSend
-    }
-  },
-  // other options...
-});
-
-// When handling interrupts with context
-thread.submit(undefined, {
-  command: { resume: confirmationString },
-  config: {
-    configurable: {
-      user_id: userIdToSend,
-      account_id: accountIdToSend
-    }
-  }
-});
-```
-
-This standardized approach ensures consistent context passing throughout the entire chat interaction flow.
