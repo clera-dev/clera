@@ -365,7 +365,8 @@ You must follow these strict guidelines:
 </IMPORTANT TOOL INSTRUCTIONS>
 
 Your response should be clear, concise, and directly address the human's query based on the tool output.""",
-    name="financial_analyst_agent"
+    name="financial_analyst_agent",
+    state_schema=State
 )
 
 portfolio_management_agent = create_react_agent(
@@ -431,7 +432,8 @@ You must choose the correct tool for each query:
 </STRICT RULES>
 
 For any portfolio-related query, use the appropriate tool and provide clear guidance based on the results.""",
-    name="portfolio_management_agent"
+    name="portfolio_management_agent",
+    state_schema=State
 )
 
 trade_execution_agent = create_react_agent(
@@ -500,7 +502,8 @@ COMMON ERRORS TO AVOID:
 - DO NOT insert extraneous formatting in the parameters
 - DO NOT attempt to execute a trade for individual fixed income securities - that is not possible, so you MUST use the ticker symbol "AGG," which is the ticker for the iShares Core US Aggregate Bond ETF.
 """,
-    name="trade_execution_agent"
+    name="trade_execution_agent",
+    state_schema=State
 )
 
 # Create supervisor workflow

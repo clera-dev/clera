@@ -63,6 +63,8 @@ def get_account_id(state=None, config=None) -> str:
     current_user_id = None
     current_account_id = None
 
+    logger.info(f"[Portfolio Agent] recieved state: {state} and config: {config}")
+
     # ---- STRATEGY 1: Use State Metadata (Primary - LangGraph Cloud Pattern) ----
     if state and isinstance(state, dict) and isinstance(state.get("metadata"), dict):
         metadata = state["metadata"]
