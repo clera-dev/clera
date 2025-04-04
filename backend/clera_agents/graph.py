@@ -70,8 +70,8 @@ class State(TypedDict):
     # retrieved_context: List[str]
     # last_user_input: str
     # answered_user: bool
-    # account_id: Optional[str] # Context now passed via config
-    # user_id: Optional[str]   # Context now passed via config
+    account_id: Optional[str] # Context now passed via config/state
+    user_id: Optional[str]   # Context now passed via config/state
 
     # Keep supervisor state fields
     is_last_step: bool
@@ -126,9 +126,17 @@ The human user CANNOT see ANY communications with your specialized agents. When 
 5. RESTATE portfolio recommendations, trade confirmations, and all important information in your own words
 </CRITICALLY IMPORTANT>
 
-<CRITICALLY IMPORTANT - CONTEXT>
-Clera, you will receive essential context about the user (like their user ID and Alpaca account ID) in the `config['configurable']` dictionary during each run. You MUST ensure this context is passed correctly when delegating to specialized agents that require it (like Portfolio Management and Trade Execution).
-</CRITICALLY IMPORTANT - CONTEXT>
+<CRITICALLY IMPORTANT - CONTEXT HANDLING>
+Clera, you will receive essential context about the user (like their user_id and account_id) in the `config['configurable']` dictionary during each run. This context will be automatically stored in the graph's state. DO NOT try to manually pass these values - the system will handle this automatically.
+
+When you delegate tasks to specialized agents:
+1. The account_id and user_id are AUTOMATICALLY included in the graph state
+2. You DO NOT need to explicitly pass these values - tools will automatically receive the state object
+3. Tool functions (like get_portfolio_summary or execute_buy_market_order) will extract the context they need directly from the state
+4. Just focus on delegating to the right specialized agent with the correct query - the context passing happens automatically
+
+IMPORTANT: NEVER try to manually pass context values to agent tools - this will override the automatic state handling.
+</CRITICALLY IMPORTANT - CONTEXT HANDLING>
 
 <CRITICALLY IMPORTANT - PROPER AGENT DELEGATION>
 When delegating to specialized agents:
@@ -179,7 +187,7 @@ Clera is a team supervisor managing three specialized agents:
    - Tools available for THIS agent (not Clera): financial_news_research, summarize_news, get_stock_price
 
 2. PORTFOLIO MANAGEMENT AGENT
-   - Context Needed: YES (User ID and Account ID from `config['configurable']` are required for tools)
+   - Context Needed: YES (User ID and Account ID from graph state are automatically available to tools)
    - Tools available for THIS agent (not Clera): 
      * get_portfolio_summary: For general portfolio insights, current allocation, performance metrics
      * analyze_and_rebalance_portfolio: For specific rebalancing recommendations
@@ -199,7 +207,7 @@ Clera is a team supervisor managing three specialized agents:
    - CRITICAL: For information requests use get_portfolio_summary, for action recommendations use analyze_and_rebalance_portfolio
 
 3. TRADE EXECUTION AGENT
-   - Context Needed: YES (User ID and Account ID from `config['configurable']` are required for tools)
+   - Context Needed: YES (User ID and Account ID from graph state are automatically available to tools)
    - Tools available for THIS agent (not Clera): execute_buy_market_order, execute_sell_market_order
    - When to use: Only when the human explicitly requests to execute a trade (buy or sell)
    - This agent handles the actual execution of trades with the broker
@@ -368,42 +376,16 @@ portfolio_management_agent = create_react_agent(
            ],
     prompt="""You are the world's BEST portfolio management agent. You are a specialist in analyzing and optimizing investment portfolios.
 
-<CONTEXT REQUIREMENT>
-Your tools (`get_portfolio_summary`, `analyze_and_rebalance_portfolio`) require the user's account context (user ID, account ID). This context is provided by the supervisor (Clera) in the `config` object during the run. Your tools will automatically access this context to perform operations for the correct account.
-Here are their function signatures so you can reference for tool calls:
-def get_portfolio_summary(state=None, config=None) -> str:
-    Generate a comprehensive summary of the user's investment portfolio.
-    
-    This tool provides a detailed analysis of the portfolio including:
-    - Total portfolio value and asset allocation
-    - Performance analysis with gain/loss by asset class
-    - Risk assessment with risk and diversification scores
-    - Concentration risk identification
-    - Comparison to target allocation based on investment strategy
-    
-    Args:
-        state: The current conversation state.
-        config: The current run configuration.
-    
-    Returns:
-        str: A formatted summary of the portfolio with detailed metrics
+<STATE-BASED CONTEXT INSTRUCTIONS - CRITICAL>
+Your tools (get_portfolio_summary, analyze_and_rebalance_portfolio) automatically receive the graph state 
+which contains user_id and account_id values needed for retrieving portfolio information. 
 
-def analyze_and_rebalance_portfolio(state=None, config=None) -> str:
-    Complete function to retrieve portfolio positions, analyze them, and provide rebalancing instructions.
-    
-    This is a simplified function that handles the entire rebalancing process in one step, including:
-    1. Retrieving the current portfolio positions
-    2. Converting and analyzing the positions
-    3. Generating rebalancing instructions based on the target portfolio type
-    
-    Args:
-        state: The current conversation state.
-        config: The current run configuration.
-    
-    Returns:
-        str: A detailed set of instructions for rebalancing the portfolio
+DO NOT try to manually pass account_id or user_id values to these tools - this will cause errors.
+Simply call the tools directly without attempting to provide context - the system handles this automatically.
 
-</CONTEXT REQUIREMENT>
+CORRECT: get_portfolio_summary()
+INCORRECT: get_portfolio_summary(account_id="123", user_id="456")
+</STATE-BASED CONTEXT INSTRUCTIONS - CRITICAL>
 
 <IMPORTANT TOOL INSTRUCTIONS>
 You have access to TWO distinct tools with VERY DIFFERENT purposes:
@@ -459,37 +441,23 @@ trade_execution_agent = create_react_agent(
            ],
     prompt="""You are the world's BEST trade execution agent, responsible for executing trades with precision and accuracy for a specific user account.
 
-<CONTEXT REQUIREMENT>
-Your tools (`execute_buy_market_order`, `execute_sell_market_order`) require the user's account context (user ID, account ID). This context is provided by the supervisor (Clera) in the `config` object during the run. Your tools will automatically access this context to execute trades for the correct account.
-Here are their function signatures so you can reference for tool calls:
-def execute_buy_market_order(ticker: str, notional_amount: float, state=None, config=None) -> str:
-    Execute a market order BUY trade.
+<STATE-BASED CONTEXT INSTRUCTIONS - CRITICAL>
+Your tools (execute_buy_market_order, execute_sell_market_order) automatically receive the graph state 
+which contains user_id and account_id values needed for executing trades on the correct account.
 
-    Inputs:
-        ticker: str - The stock symbol (e.g., 'AAPL')
-        notional_amount: float - The dollar amount to buy (min $1.00)
-        state: Optional state dictionary.
-        config: Optional config dictionary (contains account_id, user_id).
+DO NOT try to manually pass account_id or user_id values to these tools - this will cause errors.
+Simply call the tools with only the required ticker and notional_amount parameters:
 
-  
-def execute_sell_market_order(ticker: str, notional_amount: float, state=None, config=None) -> str:
-    Execute a market order SELL trade.
-
-    Inputs:
-        ticker: str - The stock symbol (e.g., 'AAPL')
-        notional_amount: float - The dollar amount to sell (min $1.00)
-        state: Optional state dictionary.
-        config: Optional config dictionary (contains account_id, user_id).
-
-
-</CONTEXT REQUIREMENT>
+CORRECT: execute_buy_market_order(ticker="AAPL", notional_amount=500)
+INCORRECT: execute_buy_market_order(ticker="AAPL", notional_amount=500, account_id="123", user_id="456")
+</STATE-BASED CONTEXT INSTRUCTIONS - CRITICAL>
 
 <IMPORTANT TOOL INSTRUCTIONS>
 You have access to EXACTLY TWO tools:
 1. execute_buy_market_order: Executes a market buy order for a specified ticker and notional amount.
 2. execute_sell_market_order: Executes a market sell order for a specified ticker and notional amount.
 
-The function signatures implicitly use the user context provided via `config`:
+The function signatures are:
 - execute_buy_market_order(ticker: str, notional_amount: float) -> str
 - execute_sell_market_order(ticker: str, notional_amount: float) -> str
 
@@ -517,7 +485,7 @@ CRITICAL REQUIREMENTS:
 2. Each trade requires:
    * Valid ticker symbol (uppercase letters, e.g., "AAPL")
    * Notional amount (minimum $1, whole number)
-   * The fixed account ID provided above
+   * The context (account_id) is automatically provided by the system
 
 3. Important guardrails:
    * The system will automatically normalize ticker symbols to uppercase
@@ -528,12 +496,9 @@ CRITICAL REQUIREMENTS:
 COMMON ERRORS TO AVOID:
 - DO NOT attempt to execute multiple trades in a single function call
 - DO NOT use fractional dollars - notional_amount must be a whole number
-- DO NOT modify the account_id parameter
+- DO NOT try to manually provide account_id - it's handled automatically
 - DO NOT insert extraneous formatting in the parameters
 - DO NOT attempt to execute a trade for individual fixed income securities - that is not possible, so you MUST use the ticker symbol "AGG," which is the ticker for the iShares Core US Aggregate Bond ETF.
-</IMPORTANT TOOL INSTRUCTIONS>
-
-Remember: You are handling the user's investments with extreme care. Think critically about each trade request and execute it with 100% accuracy using the provided context.
 """,
     name="trade_execution_agent"
 )

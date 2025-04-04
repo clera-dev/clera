@@ -74,23 +74,18 @@ The system uses LangGraph to orchestrate multiple specialized agents:
 1. **Financial Analyst Agent** (`financial_analyst_agent.py`)
    - Analyzes company fundamentals and financial data
    - Provides investment insights and recommendations
-   - Generally does not require user-specific context unless comparing news to holdings.
 
 2. **Portfolio Management Agent** (`portfolio_management_agent.py`)
    - Manages investment portfolios
    - Suggests portfolio adjustments and rebalancing
-   - **Context Requirement**: Requires `user_id` and `account_id` passed via the `config['configurable']` dictionary during the run to access the correct user portfolio.
 
 3. **Trade Execution Agent** (`trade_execution_agent.py`)
    - Executes trades via brokerage APIs (Alpaca)
    - Handles order placement and confirmation
-   - **Context Requirement**: Requires `user_id` and `account_id` passed via the `config['configurable']` dictionary during the run to execute trades for the correct account.
 
 4. **Main Agent Graph** (`graph.py`)
-   - Defines the workflow and communication between agents using `create_supervisor`.
-   - The supervisor agent (Clera) is responsible for receiving the `config['configurable']` context from the initial run invocation (e.g., from the frontend SDK) and ensuring it is available when delegating tasks to context-aware agents (Portfolio, Trade).
-   - Uses LangGraph for state management and transitions.
-   - Agent prompts explicitly mention the `config['configurable']` mechanism for context-aware agents.
+   - Defines the workflow and communication between agents
+   - Uses LangGraph for state management and transitions
 
 ### Agent Tools (clera_agents/tools/)
 
