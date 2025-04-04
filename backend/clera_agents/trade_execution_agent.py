@@ -4,6 +4,7 @@
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 from langgraph.pregel import Pregel # Import if needed to understand config structure
+from langgraph.config import get_config # Import get_config
 
 import os
 import logging
@@ -50,6 +51,16 @@ def get_account_id(state=None, config=None) -> str:
     """
     global _LAST_VALID_ACCOUNT_ID, _LAST_VALID_USER_ID
     
+    # Try to get the config directly from langgraph.config if not provided
+    if config is None:
+        try:
+            config = get_config()
+            logger.info(f"[Trade Agent] Retrieved config via get_config(): {config}")
+        except Exception as e:
+            # Log a warning but don't stop execution, as other strategies might work
+            logger.warning(f"[Trade Agent] Failed to get config via get_config(), proceeding with other strategies: {e}")
+            config = None # Ensure config remains None if retrieval failed
+
     fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
     
     current_user_id = None
