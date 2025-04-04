@@ -38,10 +38,11 @@ _LAST_VALID_USER_ID = None
 def get_account_id(state=None, config=None) -> str:
     """Get the account ID for the human.
     
-    Prioritizes state, then config, then last known values, and finally Supabase lookup.
+    Prioritizes state metadata, then state values, then config, 
+    then last known values, and finally Supabase lookup.
     
     Args:
-        state: Optional state dictionary.
+        state: Optional state dictionary (should contain a 'metadata' key).
         config: Optional config dictionary (contains configurable).
         
     Returns:
@@ -54,25 +55,49 @@ def get_account_id(state=None, config=None) -> str:
     current_user_id = None
     current_account_id = None
 
-    # ---- STRATEGY 1: Use State (Primary) ----
-    if state and isinstance(state, dict):
-        state_account_id = state.get("account_id")
-        state_user_id = state.get("user_id")
-        if state_account_id:
-            logger.info(f"[Trade Agent] Using account_id from state: {state_account_id}")
-            _LAST_VALID_ACCOUNT_ID = state_account_id
-            if state_user_id: _LAST_VALID_USER_ID = state_user_id
-            return state_account_id
-        if state_user_id: 
-            current_user_id = state_user_id
-            _LAST_VALID_USER_ID = state_user_id
-            logger.info(f"[Trade Agent] User ID found in state: {current_user_id}, will check config then try Supabase lookup.")
+    # ---- STRATEGY 1: Use State Metadata (Primary - LangGraph Cloud Pattern) ----
+    if state and isinstance(state, dict) and isinstance(state.get("metadata"), dict):
+        metadata = state["metadata"]
+        meta_account_id = metadata.get("account_id")
+        meta_user_id = metadata.get("user_id")
+        if meta_account_id:
+            logger.info(f"[Trade Agent] Using account_id from state metadata: {meta_account_id}")
+            _LAST_VALID_ACCOUNT_ID = meta_account_id
+            if meta_user_id: _LAST_VALID_USER_ID = meta_user_id
+            return meta_account_id
+        if meta_user_id:
+            current_user_id = meta_user_id
+            _LAST_VALID_USER_ID = meta_user_id
+            logger.info(f"[Trade Agent] User ID found in state metadata: {current_user_id}, will check other sources then try Supabase lookup.")
         else:
-            logger.info(f"[Trade Agent] State dictionary provided but no account_id or user_id found.")
+            logger.info(f"[Trade Agent] State metadata found but no account_id or user_id.")
     else:
-        logger.info(f"[Trade Agent] State is not a valid dictionary or not provided. Skipping Strategy 1.")
+        logger.info(f"[Trade Agent] State dictionary lacks a valid 'metadata' dictionary. Skipping Strategy 1.")
 
-    # ---- STRATEGY 2: Use Config (Secondary) ----
+    # ---- STRATEGY 2: Use State Values (Secondary) ----
+    if state and isinstance(state, dict):
+        # Access state values, often within a 'values' key if nested
+        state_values = state.get("values", state) # Check for common 'values' nesting
+        if isinstance(state_values, dict):
+            state_val_account_id = state_values.get("account_id")
+            state_val_user_id = state_values.get("user_id")
+            if state_val_account_id:
+                logger.info(f"[Trade Agent] Using account_id from state values: {state_val_account_id}")
+                _LAST_VALID_ACCOUNT_ID = state_val_account_id
+                if state_val_user_id: _LAST_VALID_USER_ID = state_val_user_id
+                return state_val_account_id
+            if state_val_user_id and not current_user_id:
+                current_user_id = state_val_user_id
+                _LAST_VALID_USER_ID = state_val_user_id
+                logger.info(f"[Trade Agent] User ID found in state values: {current_user_id}, will check config then try Supabase lookup.")
+            else:
+                 logger.info(f"[Trade Agent] State values checked, but no new account_id or user_id found.")
+        else:
+             logger.info(f"[Trade Agent] State['values'] is not a dictionary or state itself is not dictionary-like for values. Skipping parts of Strategy 2.")
+    else:
+        logger.info(f"[Trade Agent] State is not a valid dictionary or not provided for value check. Skipping Strategy 2.")
+
+    # ---- STRATEGY 3: Use Config (Tertiary) ----
     if config and isinstance(config, dict) and isinstance(config.get('configurable'), dict):
         config_account_id = config['configurable'].get('account_id')
         config_user_id = config['configurable'].get('user_id')
@@ -81,16 +106,16 @@ def get_account_id(state=None, config=None) -> str:
             _LAST_VALID_ACCOUNT_ID = config_account_id
             if config_user_id: _LAST_VALID_USER_ID = config_user_id
             return config_account_id
-        if config_user_id and not current_user_id: # If user_id is in config and not already found in state
+        if config_user_id and not current_user_id: # If user_id is in config and not already found
             current_user_id = config_user_id
             _LAST_VALID_USER_ID = config_user_id
             logger.info(f"[Trade Agent] User ID found in config: {current_user_id}, will try Supabase lookup.")
         else:
             logger.info(f"[Trade Agent] Config found but no new account_id or user_id information.")
     else:
-        logger.info(f"[Trade Agent] Config is not a valid dictionary or lacks 'configurable'. Skipping Strategy 2.")
+        logger.info(f"[Trade Agent] Config is not a valid dictionary or lacks 'configurable'. Skipping Strategy 3.")
 
-    # ---- STRATEGY 3: Use User ID (from State or Config) for Supabase Lookup ----
+    # ---- STRATEGY 4: Use User ID (from any source) for Supabase Lookup ----
     if current_user_id:
         logger.info(f"[Trade Agent] Attempting Supabase lookup for user_id: {current_user_id}")
         try:
@@ -104,12 +129,12 @@ def get_account_id(state=None, config=None) -> str:
         except Exception as e:
             logger.error(f"[Trade Agent] Error during Supabase lookup for {current_user_id}: {e}", exc_info=True)
 
-    # ---- STRATEGY 4: Use last known valid account_id ----
+    # ---- STRATEGY 5: Use last known valid account_id ----
     if _LAST_VALID_ACCOUNT_ID:
         logger.info(f"[Trade Agent] Using last known valid account_id: {_LAST_VALID_ACCOUNT_ID}")
         return _LAST_VALID_ACCOUNT_ID
 
-    # ---- STRATEGY 5: Try to get account_id from last known user_id ----
+    # ---- STRATEGY 6: Try to get account_id from last known user_id ----
     if _LAST_VALID_USER_ID:
         logger.info(f"[Trade Agent] Attempting Supabase lookup for last known user_id: {_LAST_VALID_USER_ID}")
         try:

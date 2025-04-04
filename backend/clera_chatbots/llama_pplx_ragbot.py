@@ -16,7 +16,7 @@ from typing_extensions import TypedDict
 import uuid
 
 from langchain_groq import ChatGroq
-from langchain_community.chat_models import ChatPerplexity
+from langchain_perplexity import ChatPerplexity
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from langchain_core.prompts import (

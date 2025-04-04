@@ -722,6 +722,12 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+@app.get("/info")
+async def get_info():
+    """Provides basic server information, often probed by SDKs."""
+    logger.info("Received request for /info endpoint")
+    return {"server": "Clera AI API", "status": "running", "version": "1.0.0"}
+
 @app.post("/create-alpaca-account", response_model=AlpacaAccountResponse)
 async def create_alpaca_account(
     request: AlpacaAccountRequest,

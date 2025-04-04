@@ -18,7 +18,7 @@ fin_modeling_prep_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
 ###############################################################################
 # Import LLM client(s)
 ###############################################################################
-from langchain_community.chat_models import ChatPerplexity
+from langchain_perplexity import ChatPerplexity
 
 ###############################################################################
 # Define Tools for Financial Analyst Agent to Use

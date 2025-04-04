@@ -29,7 +29,7 @@ type InterruptValueType = string; // Assuming the interrupt value is the prompt 
 
 interface ChatProps {
   accountId: string;
-  userId?: string;
+  userId: string; // changed from `userID?` in case that was why it wasn't being passed
   onClose: () => void;
   isFullscreen?: boolean;
   sessionId?: string; // This will be the thread_id for useStream
@@ -41,6 +41,25 @@ interface ChatProps {
 
 // Helper function adjusted to filter for supervisor-orchestrated messages
 function convertMessageFormat(lgMsg: LangGraphMessage): Message | null { 
+    // Check if we're dealing with a messages-tuple format [message, metadata]
+    if (Array.isArray(lgMsg) && lgMsg.length === 2) {
+        const [message, metadata] = lgMsg;
+        
+        // Check if this message is from a node other than "Clera"
+        // We only want to show messages from the main "Clera" agent
+        if (metadata && 'langgraph_node' in metadata) {
+            // If node name isn't "Clera" or "agent", filter it out
+            // Sometimes the main agent is called "agent" in LangGraph
+            if (metadata.langgraph_node !== 'Clera' && metadata.langgraph_node !== 'agent') {
+                return null;
+            }
+        }
+        
+        // Now process the actual message part
+        return convertMessageFormat(message);
+    }
+    
+    // Process non-tuple format messages (original handling)
     // Allow human messages
     if (lgMsg.type === 'human') {
       const content = typeof lgMsg.content === 'string' ? lgMsg.content : JSON.stringify(lgMsg.content);
@@ -53,7 +72,6 @@ function convertMessageFormat(lgMsg: LangGraphMessage): Message | null {
     // Process AI messages
     if (lgMsg.type === 'ai') {
         // Check for the 'name' attribute in lgMsg which indicates messages from specific worker agents
-        // as seen in the LangGraph stream examples like: HumanMessage(..., name='researcher')
         const hasAgentName = 'name' in lgMsg && !!lgMsg.name;
         
         // Filter out all messages with tool calls
@@ -67,16 +85,30 @@ function convertMessageFormat(lgMsg: LangGraphMessage): Message | null {
             return null;
         }
         
-        // For messages that pass filtering, ensure content is a simple string
+        // Handle different content formats
         if (typeof lgMsg.content === 'string') {
             return {
                 role: 'assistant', 
                 content: lgMsg.content
             };
-        } else {
-            // Filter out non-string content
-            return null;
+        } else if (Array.isArray(lgMsg.content) && lgMsg.content.length > 0) {
+            // Handle content that might be an array of text chunks
+            // This is common in newer LangGraph SDK versions
+            const textContent = lgMsg.content
+                .filter(item => item && typeof item === 'object' && 'text' in item)
+                .map(item => item.text)
+                .join('');
+                
+            if (textContent) {
+                return {
+                    role: 'assistant',
+                    content: textContent
+                };
+            }
         }
+        
+        // Filter out other content formats we can't handle
+        return null;
     }
 
     // Filter out all other message types (e.g., 'tool', 'system')
@@ -114,7 +146,7 @@ export default function Chat({
     apiKey: apiKey ?? undefined, 
     assistantId, 
     threadId: currentThreadId, 
-    messagesKey: 'messages', 
+    messagesKey: 'messages',
     onThreadId: (id) => { 
       console.log("useStream using threadId:", id);
       if (id !== currentThreadId) {
@@ -160,7 +192,8 @@ export default function Chat({
       configurable: {
         user_id: userId,
         account_id: accountId // Pass the received accountId prop
-      }
+      },
+      stream_mode: 'messages-tuple' // Use messages-tuple mode for proper filtering
     };
 
     console.log("Submitting input via thread.submit:", runInput, "with config:", runConfig);    
@@ -218,7 +251,8 @@ export default function Chat({
       configurable: {
         user_id: userId,
         account_id: accountId
-      }
+      },
+      stream_mode: 'messages-tuple' // Use messages-tuple mode for proper filtering
     };
 
     try { 

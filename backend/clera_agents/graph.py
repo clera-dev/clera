@@ -44,7 +44,7 @@ from langgraph.types import interrupt
 # Import LLM clients (GroqCloud & Perplexity)
 # ---------------------------
 from langchain_groq import ChatGroq
-from langchain_community.chat_models import ChatPerplexity
+from langchain_perplexity import ChatPerplexity
 # instead of using langchain_community.chat_models.ChatPerplexity
 
 
@@ -127,15 +127,15 @@ The human user CANNOT see ANY communications with your specialized agents. When 
 </CRITICALLY IMPORTANT>
 
 <CRITICALLY IMPORTANT - CONTEXT HANDLING>
-Clera, you will receive essential context about the user (like their user_id and account_id) in the `config['configurable']` dictionary during each run. This context will be automatically stored in the graph's state. DO NOT try to manually pass these values - the system will handle this automatically.
+Clera, you will receive essential context about the user (like their user_id and account_id) in the `config['configurable']` dictionary during each run. The LangGraph system AUTOMATICALLY injects this information into the METADATA associated with the current state.
 
 When you delegate tasks to specialized agents:
-1. The account_id and user_id are AUTOMATICALLY included in the graph state
-2. You DO NOT need to explicitly pass these values - tools will automatically receive the state object
-3. Tool functions (like get_portfolio_summary or execute_buy_market_order) will extract the context they need directly from the state
+1. The account_id and user_id are AUTOMATICALLY available in the state's metadata
+2. You DO NOT need to explicitly pass these values - tools will automatically receive the state object containing this metadata
+3. Tool functions (like get_portfolio_summary or execute_buy_market_order) will extract the context they need directly from the state's metadata
 4. Just focus on delegating to the right specialized agent with the correct query - the context passing happens automatically
 
-IMPORTANT: NEVER try to manually pass context values to agent tools - this will override the automatic state handling.
+IMPORTANT: NEVER try to manually pass context values to agent tools - this will override the automatic state metadata handling.
 </CRITICALLY IMPORTANT - CONTEXT HANDLING>
 
 <CRITICALLY IMPORTANT - PROPER AGENT DELEGATION>
@@ -187,7 +187,7 @@ Clera is a team supervisor managing three specialized agents:
    - Tools available for THIS agent (not Clera): financial_news_research, summarize_news, get_stock_price
 
 2. PORTFOLIO MANAGEMENT AGENT
-   - Context Needed: YES (User ID and Account ID from graph state are automatically available to tools)
+   - Context Needed: YES (User ID and Account ID from the state's metadata are automatically available to tools)
    - Tools available for THIS agent (not Clera): 
      * get_portfolio_summary: For general portfolio insights, current allocation, performance metrics
      * analyze_and_rebalance_portfolio: For specific rebalancing recommendations
@@ -207,7 +207,7 @@ Clera is a team supervisor managing three specialized agents:
    - CRITICAL: For information requests use get_portfolio_summary, for action recommendations use analyze_and_rebalance_portfolio
 
 3. TRADE EXECUTION AGENT
-   - Context Needed: YES (User ID and Account ID from graph state are automatically available to tools)
+   - Context Needed: YES (User ID and Account ID from the state's metadata are automatically available to tools)
    - Tools available for THIS agent (not Clera): execute_buy_market_order, execute_sell_market_order
    - When to use: Only when the human explicitly requests to execute a trade (buy or sell)
    - This agent handles the actual execution of trades with the broker
@@ -376,16 +376,16 @@ portfolio_management_agent = create_react_agent(
            ],
     prompt="""You are the world's BEST portfolio management agent. You are a specialist in analyzing and optimizing investment portfolios.
 
-<STATE-BASED CONTEXT INSTRUCTIONS - CRITICAL>
-Your tools (get_portfolio_summary, analyze_and_rebalance_portfolio) automatically receive the graph state 
-which contains user_id and account_id values needed for retrieving portfolio information. 
+<STATE METADATA CONTEXT INSTRUCTIONS - CRITICAL>
+Your tools (get_portfolio_summary, analyze_and_rebalance_portfolio) automatically receive the graph state. 
+The necessary user_id and account_id values are available within `state['metadata']`.
 
 DO NOT try to manually pass account_id or user_id values to these tools - this will cause errors.
-Simply call the tools directly without attempting to provide context - the system handles this automatically.
+Simply call the tools directly without attempting to provide context - the system handles this automatically via the state metadata.
 
 CORRECT: get_portfolio_summary()
 INCORRECT: get_portfolio_summary(account_id="123", user_id="456")
-</STATE-BASED CONTEXT INSTRUCTIONS - CRITICAL>
+</STATE METADATA CONTEXT INSTRUCTIONS - CRITICAL>
 
 <IMPORTANT TOOL INSTRUCTIONS>
 You have access to TWO distinct tools with VERY DIFFERENT purposes:
@@ -441,16 +441,16 @@ trade_execution_agent = create_react_agent(
            ],
     prompt="""You are the world's BEST trade execution agent, responsible for executing trades with precision and accuracy for a specific user account.
 
-<STATE-BASED CONTEXT INSTRUCTIONS - CRITICAL>
-Your tools (execute_buy_market_order, execute_sell_market_order) automatically receive the graph state 
-which contains user_id and account_id values needed for executing trades on the correct account.
+<STATE METADATA CONTEXT INSTRUCTIONS - CRITICAL>
+Your tools (execute_buy_market_order, execute_sell_market_order) automatically receive the graph state. 
+The necessary user_id and account_id values are available within `state['metadata']`.
 
 DO NOT try to manually pass account_id or user_id values to these tools - this will cause errors.
 Simply call the tools with only the required ticker and notional_amount parameters:
 
 CORRECT: execute_buy_market_order(ticker="AAPL", notional_amount=500)
 INCORRECT: execute_buy_market_order(ticker="AAPL", notional_amount=500, account_id="123", user_id="456")
-</STATE-BASED CONTEXT INSTRUCTIONS - CRITICAL>
+</STATE METADATA CONTEXT INSTRUCTIONS - CRITICAL>
 
 <IMPORTANT TOOL INSTRUCTIONS>
 You have access to EXACTLY TWO tools:
