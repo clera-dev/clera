@@ -27,19 +27,162 @@ The primary change involves the frontend application interacting directly with t
 
 ### Agent Context Handling (`alpaca_account_id`, `user_id`)
 
-A key challenge with the direct SDK approach is providing user-specific context (like Alpaca account ID and Supabase user ID) to the LangGraph agents (`portfolio_management_agent.py`, `trade_execution_agent.py`), as `client.runs.submit`/`stream` might not directly support passing arbitrary state like the previous backend endpoint did. Potential strategies include:
+A key challenge with the direct SDK approach is providing user-specific context (like Alpaca account ID and Supabase user ID) to the LangGraph agents (`portfolio_management_agent.py`, `trade_execution_agent.py`). The current implementation uses the following approach:
 
-*   **Agent-Side Lookup (Most Likely)**: The agents, upon receiving a message or starting a run within a thread, could use the authenticated user information associated with the LangGraph API call (or information stored in thread metadata) to look up the required `user_id` and `alpaca_account_id` from Supabase. This requires the agent environment to have Supabase access. The existing `utils/supabase/db_client.py` and lookup functions might be used here.
-*   **Thread Metadata**: The `alpaca_account_id` and `user_id` could be stored in the LangGraph thread's metadata when the thread is created or updated via the frontend SDK (`client.threads.create` or `client.threads.patchState`). Agents would then read this metadata.
-*   **Initial Message Context**: The necessary IDs could be passed within the configuration or input of the *first* message/run initiated for a thread. The agent logic would need to extract and persist this information in the thread's state for subsequent interactions.
+**Current Implementation: Context via LangGraph Run Configuration**
 
-**Current Implementation: Context via Graph State**
+1. **Initial Context Passing (Frontend → Backend)**:
+   * During the initial `thread.submit` call from `Chat.tsx`, the user context is included in the `config.configurable` object:
+   ```typescript
+   // Example from Chat.tsx
+   thread.submit(userMessage, {
+     config: {
+       configurable: {
+         account_id: accountId,
+         user_id: userId
+       }
+     }
+   });
+   ```
+   * LangGraph Cloud automatically incorporates these user-provided values in the run configuration.
 
-The current approach passes the `user_id` and `account_id` in the `config.configurable` object during the initial `thread.submit` call from the frontend (`Chat.tsx`). LangGraph automatically populates the corresponding fields (`user_id`, `account_id`) in the main graph `State` (defined in `graph.py`) from this initial configuration.
+2. **Context Access in Agent Tools**:
+   * Agent tools use `langgraph.config.get_config()` to access the run configuration directly:
+   ```python
+   from langgraph.config import get_config
+   
+   def get_account_id(config=None):
+     # Try to get config if not provided
+     if config is None:
+       config = get_config()
+     
+     # Extract the account_id from config.configurable
+     if config and isinstance(config.get('configurable'), dict):
+       account_id = config['configurable'].get('account_id')
+       if account_id:
+         return account_id
+     
+     # Fallback strategies if needed...
+   ```
+   * This approach is more reliable than attempting to extract values from graph state or metadata.
 
-When specialized agents (Portfolio Management, Trade Execution) need the context, their tool functions (e.g., `get_portfolio_summary`, `execute_buy_market_order`) receive the current graph `state` object as an argument. The `get_account_id` helper function within these agents is designed to prioritize reading `user_id` and `account_id` directly from this `state` dictionary.
+3. **LangGraph Run Configuration Structure**:
+   The configuration object accessible via `get_config()` has this general structure:
+   ```python
+   {
+     'tags': [], 
+     'metadata': {  
+       # Session/thread metadata
+       'title': 'chat thread title',
+       'user_id': 'a37c45d5-e372-44d7-9909-b027bd23efa2',
+       'account_id': '9506fa62-68e0-4018-8e44-8c37fae8fa91',
+       'thread_id': '9aac52c4-9dc6-40be-a007-76803904614e',
+       'created_at': '2025-04-05T00:25:40.354Z', 
+       
+       # LangGraph metadata
+       'graph_id': 'agent',
+       'assistant_id': 'fe096781-5601-53d2-b2f6-0d3403f7e9ca',
+       'run_attempt': 1, 
+       'langgraph_version': '0.3.25',
+       'langgraph_plan': 'enterprise',
+       'langgraph_host': 'saas',
+       'langgraph_step': 2,
+       'langgraph_node': 'tools',
+       
+       # HTTP request metadata
+       'x-real-ip': '10.0.0.45',
+       'user-agent': '...',
+       'x-request-id': '...',
+       # ... other HTTP headers
+     },
+     'recursion_limit': 25,
+     'configurable': {
+       # User-provided context (most important for custom tools)
+       'account_id': '9506fa62-68e0-4018-8e44-8c37fae8fa91',
+       'user_id': 'a37c45d5-e372-44d7-9909-b027bd23efa2',
+       
+       # LangGraph runtime values
+       'run_id': '1f011b49-5dd6-6dc4-90c2-96cada96905f',
+       'thread_id': '9aac52c4-9dc6-40be-a007-76803904614e',
+       'graph_id': 'agent',
+       # ... other LangGraph runtime values
+     }
+   }
+   ```
+   * **Note**: Values may appear in both `metadata` and `configurable`. When setting custom values, always use `configurable`.
+   * The most reliable path for custom values is `config['configurable']['account_id']`.
 
-This ensures that the correct context, originating from the frontend call, is available to the tools when they are executed within the agent's workflow.
+### Interrupt Handling with LangGraph SDK
+
+A critical feature for interactive agents is handling user confirmations for actions like trades. The LangGraph interrupt mechanism enables this:
+
+1. **Backend Interrupt Implementation**:
+   * Tools use the `interrupt()` function to pause execution and request user input:
+   ```python
+   from langgraph.types import interrupt
+   
+   @tool("execute_buy_market_order")
+   def execute_buy_market_order(ticker, notional_amount, ...):
+     # Validation and preparation...
+     
+     # Request user confirmation - this will pause execution
+     confirmation_prompt = f"TRADE CONFIRMATION REQUIRED: Buy ${amount} worth of {ticker}..."
+     user_confirmation = interrupt(confirmation_prompt)
+     
+     # Execution continues here after user responds
+     if "yes" in user_confirmation.lower():
+       # Execute the trade
+     else:
+       # Cancel the trade
+   ```
+   * **IMPORTANT**: The tool must let the `GraphInterrupt` exception propagate naturally. Catching it with `try/except` will prevent the frontend from detecting the interrupt.
+
+2. **Frontend Interrupt Handling**:
+   * The `useStream` hook automatically detects interrupts:
+   ```typescript
+   const thread = useStream<GraphStateType, { InterruptType: string }>({
+     apiUrl, 
+     apiKey, 
+     assistantId, 
+     threadId: currentThreadId,
+     // other options...
+   });
+   
+   // Derived state for interrupts
+   const interrupt = thread.interrupt;
+   const isInterrupting = interrupt !== undefined;
+   const interruptMessage = isInterrupting ? String(interrupt.value) : null;
+   ```
+   * UI components conditionally render confirmation controls when `isInterrupting` is true.
+   * User confirmation is sent back via the resume command:
+   ```typescript
+   // On user confirmation button press:
+   thread.submit(undefined, { 
+     command: { resume: "yes" }, // or "no" to reject
+     config: { /* Same config as initial call */ }
+   });
+   ```
+
+### Message Filtering in the Frontend
+
+The frontend implementation uses a simplified approach to message filtering:
+
+1. **Message Conversion**:
+   * The `convertMessageFormat` function in `Chat.tsx` filters and converts LangGraph messages to UI-ready messages.
+   * Human messages are passed through directly.
+   * AI messages are included if:
+     * They don't contain tool calls (which are intermediate steps)
+     * They have meaningful content
+   * The filtering relies mainly on the supervisor pattern in the backend, where the main `Clera` agent synthesizes information from sub-agents before responding to the user.
+
+2. **Message Display**:
+   * Only converted messages are displayed in the UI:
+   ```typescript
+   const messagesToDisplay = (thread.messages || [])
+     .map(convertMessageFormat)
+     .filter((msg): msg is Message => msg !== null);
+   ```
+   * This ensures users only see the final, coherent responses rather than intermediate agent communications.
 
 ### Backend Responsibilities (Reduced)
 
@@ -51,7 +194,6 @@ While most chat interaction logic moves to the frontend SDK, the backend still h
     *   Backend functions to save/retrieve history, respecting RLS policies.
     *   Frontend calls to this API after receiving messages.
 3.  **Supabase Integration**: Backend utilities (`utils/supabase/db_client.py`) for agents to interact with Supabase (e.g., for user ID lookups or retrieving financial data).
-4.  **Interrupt Resumption (Potentially)**: Depending on how interrupts are handled with the SDK, a backend endpoint like `/api/resume-chat` might still be needed if the SDK requires a server-side action to resume an interrupted graph execution.
 
 ### Frontend Implementation
 
@@ -96,7 +238,6 @@ The implementation follows a revised layered approach:
 2.  **Frontend SDK Layer**: `chat-client.ts` interacting directly with the LangGraph API via the SDK. Handles thread management, message submission/streaming, and interrupt detection.
 3.  **Backend API Layer (Minimal)**:
     *   Endpoints primarily for Supabase persistence (`/api/conversations/save`, `/api/conversations/load`).
-    *   Potentially an endpoint for resuming interrupts (`/api/resume-chat`) if needed by the SDK flow.
 4.  **LangGraph Agent Layer**: Python agents running server-side, managed by LangGraph. Handle core logic, tool use, internal state, and context retrieval.
 5.  **Data Persistence**:
     *   LangGraph internal state management.
@@ -128,28 +269,15 @@ Remain the same (Portfolio Analysis, Market Insights, Trade Execution).
     *   `conversations` table and RLS policies (as before).
     *   SQL function `get_user_id_by_email` (potentially used by agents or backend lookups).
 
-## LangGraph Interrupt Handling (SDK Flow)
-
-The SDK likely provides mechanisms to handle interrupts initiated by agents (e.g., for trade confirmations):
-
-1.  **Agent Implementation**: Agent code (`trade_execution_agent.py`) still uses LangGraph's `interrupt()` mechanism.
-2.  **SDK Detection**: When streaming or receiving responses via the SDK (`client.runs.stream`/`get`), the frontend code needs to check the response objects for an indication of an interrupt state (the exact format depends on the SDK's implementation). This replaces the backend API detecting `GraphInterrupt`.
-3.  **Frontend UI**: If an interrupt is detected:
-    *   Display the confirmation message from the interrupt payload.
-    *   Show confirmation controls (Yes/No buttons).
-    *   Store necessary information (like the run ID or thread ID) needed to resume.
-4.  **Resuming Execution**:
-    *   When the user confirms/denies, the frontend needs to signal LangGraph to resume the run. This might involve:
-        *   A specific SDK method (e.g., `client.runs.resume(run_id, confirmation_input)` - **Check SDK docs for the actual method**).
-        *   OR, potentially calling the existing backend endpoint (`/api/resume-chat`) if server-side logic is required to map the confirmation back to the correct LangGraph run. **[Clarify the resume mechanism]**.
-5.  **User Experience**: Remains similar – user sees prompt, confirms/denies, execution continues/cancels.
-
 ## Troubleshooting
 
 1.  **Agent Context Issues**:
     *   **Symptom**: Agent fails to access correct portfolio, uses defaults, or errors on lookups.
-    *   **Causes**: Incorrect implementation of the context handling strategy (metadata, lookup, initial message); Missing Supabase records; Agent lacks Supabase credentials/permissions; Incorrect user mapping.
-    *   **Solution**: Verify the chosen context passing mechanism; Check agent logs for lookup errors; Ensure Supabase data is present; Check LangGraph thread metadata if used.
+    *   **Causes**: 
+        * Missing `account_id` or `user_id` in `config.configurable`
+        * Error in `get_account_id` implementation
+        * `get_config()` failing to retrieve run configuration
+    *   **Solution**: Verify context is correctly passed in `thread.submit`, check agent logs for config retrieval, ensure `get_account_id` correctly processes config structure.
 
 2.  **LangGraph Connection Errors**:
     *   **Symptom**: Errors connecting to LangGraph API in the browser console.
@@ -158,31 +286,22 @@ The SDK likely provides mechanisms to handle interrupts initiated by agents (e.g
 
 3.  **Interrupt Handling Failures**:
     *   **Symptom**: Confirmation prompts don't appear; Confirmation doesn't resume the flow.
-    *   **Causes**: Frontend logic doesn't correctly detect interrupt state from SDK response; Incorrect SDK method used for resuming; Backend resume endpoint (`/api/resume-chat`) malfunctioning (if still used).
-    *   **Solution**: Debug SDK response handling; Verify the correct SDK resume method/parameters; Check backend logs for the resume endpoint.
+    *   **Causes**: 
+        * Tool function catches `GraphInterrupt` instead of letting it propagate
+        * Frontend `useStream` hook not correctly detecting the interrupt
+        * Incorrect resume command format
+    *   **Solution**: 
+        * Ensure `interrupt()` calls aren't wrapped in `try/except` blocks that catch `GraphInterrupt`
+        * Verify `thread.interrupt` state in frontend
+        * Check the resume command format (`{ command: { resume: "yes" } }`)
 
 4.  **Conversation History Discrepancies**:
     *   **Symptom**: History in chat doesn't match Supabase or is lost.
     *   **Causes**: Failure in frontend calls to the backend save API; Errors in the backend save endpoint; Issues with `client.threads.getState`.
     *   **Solution**: Check browser network tab for failed save requests; Check backend logs for Supabase saving errors; Verify `getThreadMessages` implementation.
 
-## Obsolete Backend APIs
-
-The shift to the frontend SDK makes several previous backend proxy endpoints obsolete:
-
-*   `/api/chat-with-account` (Main proxy endpoint)
-*   Backend implementations for:
-    *   `/create-new-thread`
-    *   `/list-user-threads`
-    *   `/delete-chat-session`
-    *   `/update-thread-metadata`
-    *   `/get-thread-messages`
-
-The corresponding frontend API routes (`/api/chat`, `/api/conversations/delete-session`, etc.) that proxied to these are also either removed or significantly simplified (e.g., `/api/chat` might only handle initial auth checks if not removed entirely).
-
 ## Future Enhancements
 
-(Section remains relevant, no changes needed based on SDK shift)
 1. Voice Interaction
 2. Enhanced Visualization
 3. Advanced Personalization

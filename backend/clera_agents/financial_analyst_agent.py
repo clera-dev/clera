@@ -35,54 +35,37 @@ deep_research_perplexity = ChatPerplexity(
     temperature=0.4
 )
 
-@tool("financial_news_research")
-def financial_news_research(query: str) -> str:
-    """Perform in-depth research on financial topics, including real-time news, events, and market data. Input should be a specific financial research question."""
-    research_prompt = f"""You are the world's BEST financial news analyst. Research and provide a detailed analysis with actionable insights on the user's query.
+@tool("research_financial_topic")
+def research_financial_topic(query: str) -> str:
+    """Research financial topics, news, events, market data, or specific companies. Adapts depth based on the query.
+    - Use for general financial questions, news updates, or company research.
+    - Provides concise, factual, up-to-date information by default.
+    - Performs more in-depth research ONLY if the query explicitly asks for "detailed" or "in-depth" analysis.
+    Input should be a specific financial research question.
+    """
+    # Determine if in-depth research is requested
+    is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
 
-IMPORTANT INSTRUCTIONS:
-1. When analyzing market conditions or stock performance:
-   - Focus on SPECIFIC companies and tickers mentioned in the query
-   - Provide CONCRETE facts about recent price movements, news events, and analyst opinions
-   - Include relevant sector trends, economic indicators, and company-specific developments
-   - Cite recent analyst ratings changes, price targets, or earnings expectations when relevant
-   - Explain the ACTUAL reasons behind market movements, not general financial advice
+    if is_in_depth_query:
+        research_prompt = f"""You are the world's BEST financial news analyst. The user has asked for DETAILED/IN-DEPTH research. Provide a thorough, comprehensive analysis with actionable insights on the query below. Focus on concrete facts, figures, sources, and causal relationships. Avoid generic advice.
 
-2. Avoid generic or vague responses like:
-   - "Markets can be volatile"
-   - "Many factors affect stock performance"
-   - "Consider your investment goals"
-
-3. Your response should include:
-   - Specific percentages or figures when discussing price movements
-   - Named analysts or institutions making relevant forecasts
-   - Concrete market events and their impact on securities
-   - Clear explanations of cause-and-effect relationships
-
-The query is: {query}
+Query: {query}
 """
-    messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
+    else:
+        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
+
+Query: {query}
+"""
+
+    messages = [SystemMessage(content=research_prompt)] # Removed HumanMessage as query is in prompt
     try:
-        #print("Invoking Perplexity...")
+        # Use the standard perplexity model for efficiency unless deep research is needed?
+        # For now, standard model should handle prompt instructions.
         response = chat_perplexity.invoke(messages)
-        #print("Perplexity invoked successfully.")
         return response.content
     except Exception as e:
-        return f"Error retrieving financial news: {e}"
-    
-@tool("summarize_news") # NOTE: I DONT NEED THIS RIGHT NOW SINCE I HAVE THE REACT AGENT ACCESS TO PERPLEXITY
-def summarize_news(query: str) -> str:
-    """Summarize any news for quick digest. Input should be a specific financial research question."""
-    research_prompt = f"You are the world's BEST financial news SUMMARIZER. Without the use of any headers or subheaders, quickly summarize the information you find regarding the human's query."
-    messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
-    try:
-        #print("Invoking Perplexity...")
-        response = chat_perplexity.invoke(messages)
-        #print("Perplexity invoked successfully.")
-        return response.content
-    except Exception as e:
-        return f"Error retrieving financial news: {e}"
-    
+        return f"Error researching financial topic: {e}"
+
 @tool("build_investment_themes")
 def build_investment_themes(query: str) -> str:
     """Build in-depth investment themes based on the user's query."""
@@ -93,7 +76,6 @@ def build_investment_themes(query: str) -> str:
         return response.content
     except Exception as e:
         return f"Error building investment themes: {e}"
-
 
 @tool("get_stock_price")
 def get_stock_price(ticker: str) -> str:

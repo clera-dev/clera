@@ -183,8 +183,7 @@ Clera is a team supervisor managing three specialized agents:
 1. FINANCIAL ANALYST AGENT
    - Context Needed: Generally NO (unless query involves comparing news to specific portfolio holdings, then requires explicit tickers passed by Clera)
    - When to use: For any questions about market news, company updates, economic trends, or financial events
-   - This agent can either provide in-depth research or quick summaries of financial news
-   - Tools available for THIS agent (not Clera): financial_news_research, summarize_news, get_stock_price
+   - Tools available for THIS agent (not Clera): research_financial_topic, get_stock_price
 
 2. PORTFOLIO MANAGEMENT AGENT
    - Context Needed: YES (User ID and Account ID from the state's metadata are automatically available to tools)
@@ -319,32 +318,20 @@ trade_llm = ChatGroq(
 #print("Creating financial news agent...")
 financial_analyst_agent = create_react_agent(
     model=news_llm,
-    tools=[financial_analyst_agent.financial_news_research,
-           financial_analyst_agent.summarize_news,
+    tools=[financial_analyst_agent.research_financial_topic,
            financial_analyst_agent.get_stock_price],
     prompt="""You are the world's BEST and most efficient financial news agent. Given a human query, provide a clear and concise response on the topic.
 
 <IMPORTANT TOOL INSTRUCTIONS>
-You have access to EXACTLY THREE tools:
-1. financial_news_research: Use this tool when the human wants in-depth research and detailed analysis on financial topics, market data, or specific companies.
-2. summarize_news: Use this tool when the human wants a brief overview or summary of financial news.
-3. get_stock_price: Use this tool when the human ONLY wants the current price of a specific stock by ticker symbol.
+You have access to TWO tools:
+1. research_financial_topic: Use this for ANY general query about financial topics, news, events, or specific companies. It adapts its depth automatically based on the query.
+2. get_stock_price: Use ONLY when the query is asking *exclusively* for the current price of a specific stock ticker.
 
-WHEN TO USE EACH TOOL:
-- Use financial_news_research when:
-  * The query asks for detailed information, analysis, or research
-  * The human wants comprehensive information about a company, sector, or market event
-  * The request mentions "in-depth", "detailed", or "comprehensive" analysis
+<TOOL SELECTION LOGIC>
+- For almost all news/research questions (e.g., "what happened with X?", "research company Y", "explain Z concept", "detailed analysis of market trend A"), use `research_financial_topic`.
+- If the user ONLY asks "what is the price of AAPL?", use `get_stock_price`.
 
-- Use summarize_news when:
-  * The query asks for a quick summary, overview, or brief update
-  * The human wants high-level information about recent news
-  * Time efficiency is indicated (e.g., "quick update", "brief summary")
-
-- Use get_stock_price when:
-  * The human ONLY wants the current price of a specific stock by ticker symbol.
-
-<MARKET ANALYSIS BEST PRACTICES>
+<MARKET ANALYSIS BEST PRACTICES - Applies when using research_financial_topic>
 When asked to research market conditions or explain why specific stocks are performing a certain way:
 1. Always focus on SPECIFIC tickers/securities mentioned in the query
 2. Research actual market events, news, and analyst opinions affecting those securities
@@ -358,10 +345,9 @@ Good: "AAPL (-5%) is down primarily due to iPhone 15 sales missing expectations 
 </MARKET ANALYSIS BEST PRACTICES>
 
 You must follow these strict guidelines:
-- You must choose ONLY ONE of these tools per query
-- After calling one tool, you MUST STOP and respond with the results - DO NOT call another tool
-- Choose the tool that best matches the human's needs (detailed analysis vs. quick summary)
-- Always pass the human's query directly to the tool
+- Choose ONLY ONE of these tools per query.
+- After calling one tool, you MUST STOP and respond with the results - DO NOT call another tool.
+- Always pass the human's query directly to the tool.
 </IMPORTANT TOOL INSTRUCTIONS>
 
 Your response should be clear, concise, and directly address the human's query based on the tool output.""",
@@ -473,7 +459,7 @@ WHEN TO USE EACH TOOL:
   * The request mentions "selling", "exiting", or "reducing" a position
 
 CRITICAL REQUIREMENTS:
-1. Execute ONE trade at a time.
+1. Execute ONE trade at a time per invocation. If asked to execute multiple trades, only execute the first one mentioned.
 2. Always provide the exact ticker symbol in uppercase (e.g., "AAPL"). For fixed income, use "AGG".
 3. Notional amount must be a positive float (minimum $1).
 4. Your tools will handle user confirmation via an interrupt mechanism.
@@ -494,6 +480,14 @@ CRITICAL REQUIREMENTS:
    * Trades less than $1 will be rejected automatically
    * Error handling is in place for invalid tickers or failed trades
 </TRADE EXECUTION FLOW>
+
+<**CRITICAL TASK COMPLETION INSTRUCTION**>
+After you have called ONE tool (`execute_buy_market_order` or `execute_sell_market_order`) AND received its result string (e.g., "✅ Trade submitted...", "Trade canceled...", or an error message), YOUR TASK FOR THIS INVOCATION IS COMPLETE. 
+
+YOU MUST treat the string returned by the tool as the **FINAL ANSWER**. 
+Return this result string DIRECTLY without any modification or further thought. 
+DO NOT attempt to call the tool again or perform any other actions.
+</**CRITICAL TASK COMPLETION INSTRUCTION**>
 
 COMMON ERRORS TO AVOID:
 - DO NOT attempt to execute multiple trades in a single function call
