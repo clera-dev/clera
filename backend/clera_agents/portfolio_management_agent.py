@@ -15,6 +15,8 @@ from decimal import Decimal
 from alpaca.broker import BrokerClient
 from langgraph.pregel import Pregel # Import if needed to understand config structure
 from langgraph.config import get_config # Import get_config
+from langchain_core.runnables.config import RunnableConfig
+
 
 # Import our custom types
 from clera_agents.types.portfolio_types import (
@@ -44,101 +46,54 @@ broker_client = BrokerClient(
 _LAST_VALID_ACCOUNT_ID = None
 _LAST_VALID_USER_ID = None
 
-def get_account_id(state=None, config=None) -> str:
+def get_account_id(config: RunnableConfig = None) -> str:
     """Get the account ID for the human.
-    
-    Prioritizes state metadata, then state values, then config,
-    then last known values, and finally Supabase lookup.
-    
+
+    Primarily uses get_config() when running in LangGraph Cloud.
+    Falls back to last known ID or Supabase lookup if needed.
+
     Args:
-        state: Optional state dictionary (should contain a 'metadata' key).
-        config: Optional config dictionary (contains configurable).
-        
+        config: Optional RunnableConfig (automatically passed or retrieved).
+
     Returns:
-        str: Account ID to use for operations
+        str: Account ID to use for operations.
     """
     global _LAST_VALID_ACCOUNT_ID, _LAST_VALID_USER_ID
 
-    # Try to get the config directly from langgraph.config if not provided
-    if config is None:
-        try:
-            config = get_config()
-            logger.info(f"[Trade Agent] Retrieved config via get_config(): {config}")
-        except Exception as e:
-            # Log a warning but don't stop execution, as other strategies might work
-            logger.warning(f"[Trade Agent] Failed to get config via get_config(), proceeding with other strategies: {e}")
-            config = None # Ensure config remains None if retrieval failed
-    
-    fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
-    
     current_user_id = None
     current_account_id = None
 
-    logger.info(f"[Portfolio Agent] recieved state: {state} and config: {config}")
+    # ---- STRATEGY 1: Use get_config() (Primary for LangGraph Cloud) ----
+    retrieved_config = config
+    if retrieved_config is None:
+        try:
+            retrieved_config = get_config()
+            logger.info(f"[Portfolio Agent] Retrieved config via get_config(): {retrieved_config}")
+        except Exception as e:
+            logger.warning(f"[Portfolio Agent] Failed to get config via get_config(), proceeding with fallback strategies: {e}")
+            retrieved_config = None
 
-    # ---- STRATEGY 1: Use State Metadata (Primary - LangGraph Cloud Pattern) ----
-    if state and isinstance(state, dict) and isinstance(state.get("metadata"), dict):
-        metadata = state["metadata"]
-        meta_account_id = metadata.get("account_id")
-        meta_user_id = metadata.get("user_id")
-        if meta_account_id:
-            logger.info(f"[Portfolio Agent] Using account_id from state metadata: {meta_account_id}")
-            _LAST_VALID_ACCOUNT_ID = meta_account_id
-            if meta_user_id: _LAST_VALID_USER_ID = meta_user_id
-            return meta_account_id
-        if meta_user_id:
-            current_user_id = meta_user_id
-            _LAST_VALID_USER_ID = meta_user_id
-            logger.info(f"[Portfolio Agent] User ID found in state metadata: {current_user_id}, will check other sources then try Supabase lookup.")
+    if retrieved_config and isinstance(retrieved_config.get('configurable'), dict):
+        configurable = retrieved_config['configurable']
+        current_account_id = configurable.get('account_id')
+        current_user_id = configurable.get('user_id') # Get user_id as well
+
+        if current_account_id:
+            logger.info(f"[Portfolio Agent] Using account_id from config: {current_account_id}")
+            _LAST_VALID_ACCOUNT_ID = current_account_id
+            if current_user_id: _LAST_VALID_USER_ID = current_user_id
+            return current_account_id
+        elif current_user_id:
+            _LAST_VALID_USER_ID = current_user_id
+            logger.info(f"[Portfolio Agent] User ID found in config ({current_user_id}), but no account_id. Will try Supabase lookup.")
         else:
-            logger.info(f"[Portfolio Agent] State metadata found but no account_id or user_id.")
+            logger.info(f"[Portfolio Agent] Config retrieved but lacks account_id and user_id.")
     else:
-        logger.info(f"[Portfolio Agent] State dictionary lacks a valid 'metadata' dictionary. Skipping Strategy 1.")
+        logger.info(f"[Portfolio Agent] No valid config retrieved via get_config() or passed argument.")
 
-    # ---- STRATEGY 2: Use State Values (Secondary) ----
-    if state and isinstance(state, dict):
-        # Access state values, often within a 'values' key if nested
-        state_values = state.get("values", state) # Check for common 'values' nesting
-        if isinstance(state_values, dict):
-            state_val_account_id = state_values.get("account_id")
-            state_val_user_id = state_values.get("user_id")
-            if state_val_account_id:
-                logger.info(f"[Portfolio Agent] Using account_id from state values: {state_val_account_id}")
-                _LAST_VALID_ACCOUNT_ID = state_val_account_id
-                if state_val_user_id: _LAST_VALID_USER_ID = state_val_user_id
-                return state_val_account_id
-            if state_val_user_id and not current_user_id:
-                current_user_id = state_val_user_id
-                _LAST_VALID_USER_ID = state_val_user_id
-                logger.info(f"[Portfolio Agent] User ID found in state values: {current_user_id}, will check config then try Supabase lookup.")
-            else:
-                logger.info(f"[Portfolio Agent] State values checked, but no new account_id or user_id found.")
-        else:
-            logger.info(f"[Portfolio Agent] State['values'] is not a dictionary or state itself is not dictionary-like for values. Skipping parts of Strategy 2.")
-    else:
-        logger.info(f"[Portfolio Agent] State is not a valid dictionary or not provided for value check. Skipping Strategy 2.")
-
-    # ---- STRATEGY 3: Use Config (Tertiary) ----
-    if config and isinstance(config, dict) and isinstance(config.get('configurable'), dict):
-        config_account_id = config['configurable'].get('account_id')
-        config_user_id = config['configurable'].get('user_id')
-        if config_account_id: # If account_id is directly in config
-            logger.info(f"[Portfolio Agent] Using account_id from config: {config_account_id}")
-            _LAST_VALID_ACCOUNT_ID = config_account_id
-            if config_user_id: _LAST_VALID_USER_ID = config_user_id
-            return config_account_id
-        if config_user_id and not current_user_id: # If user_id is in config and not already found
-            current_user_id = config_user_id
-            _LAST_VALID_USER_ID = config_user_id
-            logger.info(f"[Portfolio Agent] User ID found in config: {current_user_id}, will try Supabase lookup.")
-        else:
-            logger.info(f"[Portfolio Agent] Config found but no new account_id or user_id information.")
-    else:
-        logger.info(f"[Portfolio Agent] Config is not a valid dictionary or lacks 'configurable'. Skipping Strategy 3.")
-
-    # ---- STRATEGY 4: Use User ID (from any source) for Supabase Lookup ----
+    # ---- STRATEGY 2: Use User ID (from config if available) for Supabase Lookup ----
     if current_user_id:
-        logger.info(f"[Portfolio Agent] Attempting Supabase lookup for user_id: {current_user_id}")
+        logger.info(f"[Portfolio Agent] Attempting Supabase lookup for user_id from config: {current_user_id}")
         try:
             db_account_id = get_user_alpaca_account_id(current_user_id)
             if db_account_id:
@@ -150,12 +105,12 @@ def get_account_id(state=None, config=None) -> str:
         except Exception as e:
             logger.error(f"[Portfolio Agent] Error during Supabase lookup for {current_user_id}: {e}", exc_info=True)
 
-    # ---- STRATEGY 5: Use last known valid account_id ----
+    # ---- STRATEGY 3: Use last known valid account_id ----
     if _LAST_VALID_ACCOUNT_ID:
         logger.info(f"[Portfolio Agent] Using last known valid account_id: {_LAST_VALID_ACCOUNT_ID}")
         return _LAST_VALID_ACCOUNT_ID
 
-    # ---- STRATEGY 6: Try to get account_id from last known user_id ----
+    # ---- STRATEGY 4: Try to get account_id from last known user_id ----
     if _LAST_VALID_USER_ID:
         logger.info(f"[Portfolio Agent] Attempting Supabase lookup for last known user_id: {_LAST_VALID_USER_ID}")
         try:
@@ -168,6 +123,7 @@ def get_account_id(state=None, config=None) -> str:
              logger.error(f"[Portfolio Agent] Error during Supabase lookup for last known user {_LAST_VALID_USER_ID}: {e}", exc_info=True)
 
     # ---- FALLBACK ----
+    fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
     logger.error("[Portfolio Agent] CRITICAL: Using fallback account_id - all retrieval strategies failed")
     return fallback_account_id
 
@@ -198,7 +154,7 @@ def retrieve_portfolio_positions(state=None, config=None) -> List:
         position.cost_basis = '1917.76'
         position.avg_entry_price = '239.72'
     """
-    account_id = get_account_id(state=state, config=config)
+    account_id = get_account_id(config=config)
     try:
         all_positions = broker_client.get_all_positions_for_account(account_id=account_id)
         return all_positions
@@ -278,7 +234,7 @@ def analyze_and_rebalance_portfolio(state=None, config=None) -> str:
         if not positions_data:
              # Handle case where positions couldn't be retrieved
              # Maybe check account status?
-             account_id = get_account_id(state=state, config=config)
+             account_id = get_account_id(config=config)
              return f"Could not retrieve portfolio positions for account {account_id}. Please ensure the account is active and funded."
 
         # Get user strategy (currently static, uses config for account_id)
@@ -319,7 +275,7 @@ def get_portfolio_summary(state=None, config=None) -> str:
         # Get positions using context
         positions_data = retrieve_portfolio_positions(state=state, config=config)
         if not positions_data:
-             account_id = get_account_id(state=state, config=config)
+             account_id = get_account_id(config=config)
              # Consider more specific error based on Alpaca client response if available
              return f"Could not retrieve portfolio positions for account {account_id}. The portfolio might be empty or the account inactive."
 
@@ -368,7 +324,7 @@ def get_user_investment_strategy(state=None, config=None) -> Dict:
     # In the future, this might retrieve actual user preferences from a database
     # For now, we're using a static aggressive growth strategy
 
-    account_id = get_account_id(state=state, config=config)
+    account_id = get_account_id(config=config)
     logger.info(f"[Portfolio Agent] Determining investment strategy for account: {account_id}")
     
     target_portfolio = TargetPortfolio.create_aggressive_growth_portfolio()

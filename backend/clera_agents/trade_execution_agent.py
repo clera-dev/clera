@@ -5,6 +5,7 @@ from langchain_core.tools import tool
 from langgraph.types import interrupt
 from langgraph.pregel import Pregel # Import if needed to understand config structure
 from langgraph.config import get_config # Import get_config
+from langchain_core.runnables.config import RunnableConfig
 
 import os
 import logging
@@ -36,102 +37,55 @@ broker_client = BrokerClient(
 _LAST_VALID_ACCOUNT_ID = None
 _LAST_VALID_USER_ID = None
 
-def get_account_id(state=None, config=None) -> str:
+def get_account_id(config: RunnableConfig = None) -> str:
     """Get the account ID for the human.
-    
-    Prioritizes state metadata, then state values, then config, 
-    then last known values, and finally Supabase lookup.
-    
+
+    Primarily uses get_config() when running in LangGraph Cloud.
+    Falls back to last known ID or Supabase lookup if needed.
+
     Args:
-        state: Optional state dictionary (should contain a 'metadata' key).
-        config: Optional config dictionary (contains configurable).
-        
+        config: Optional RunnableConfig (automatically passed or retrieved).
+
     Returns:
-        str: Account ID to use for operations
+        str: Account ID to use for operations.
     """
     global _LAST_VALID_ACCOUNT_ID, _LAST_VALID_USER_ID
-    
-    # Try to get the config directly from langgraph.config if not provided
-    if config is None:
-        try:
-            config = get_config()
-            logger.info(f"[Trade Agent] Retrieved config via get_config(): {config}")
-        except Exception as e:
-            # Log a warning but don't stop execution, as other strategies might work
-            logger.warning(f"[Trade Agent] Failed to get config via get_config(), proceeding with other strategies: {e}")
-            config = None # Ensure config remains None if retrieval failed
 
-    fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
-    
     current_user_id = None
     current_account_id = None
 
-    logger.info(f"[Trade Agent] recieved state: {state} and config: {config}")
+    # ---- STRATEGY 1: Use get_config() (Primary for LangGraph Cloud) ----
+    retrieved_config = config
+    if retrieved_config is None:
+        try:
+            retrieved_config = get_config()
+            logger.info(f"[Trade Agent] Retrieved config via get_config(): {retrieved_config}")
+        except Exception as e:
+            logger.warning(f"[Trade Agent] Failed to get config via get_config(), proceeding with fallback strategies: {e}")
+            retrieved_config = None
 
+    if retrieved_config and isinstance(retrieved_config.get('configurable'), dict):
+        configurable = retrieved_config['configurable']
+        current_account_id = configurable.get('account_id')
+        current_user_id = configurable.get('user_id') # Get user_id as well
 
-    # ---- STRATEGY 1: Use State Metadata (Primary - LangGraph Cloud Pattern) ----
-    if state and isinstance(state, dict) and isinstance(state.get("metadata"), dict):
-        metadata = state["metadata"]
-        meta_account_id = metadata.get("account_id")
-        meta_user_id = metadata.get("user_id")
-        if meta_account_id:
-            logger.info(f"[Trade Agent] Using account_id from state metadata: {meta_account_id}")
-            _LAST_VALID_ACCOUNT_ID = meta_account_id
-            if meta_user_id: _LAST_VALID_USER_ID = meta_user_id
-            return meta_account_id
-        if meta_user_id:
-            current_user_id = meta_user_id
-            _LAST_VALID_USER_ID = meta_user_id
-            logger.info(f"[Trade Agent] User ID found in state metadata: {current_user_id}, will check other sources then try Supabase lookup.")
+        if current_account_id:
+            logger.info(f"[Trade Agent] Using account_id from config: {current_account_id}")
+            _LAST_VALID_ACCOUNT_ID = current_account_id
+            if current_user_id: _LAST_VALID_USER_ID = current_user_id
+            return current_account_id
+        elif current_user_id:
+             _LAST_VALID_USER_ID = current_user_id
+             logger.info(f"[Trade Agent] User ID found in config ({current_user_id}), but no account_id. Will try Supabase lookup.")
         else:
-            logger.info(f"[Trade Agent] State metadata found but no account_id or user_id.")
+             logger.info(f"[Trade Agent] Config retrieved but lacks account_id and user_id.")
     else:
-        logger.info(f"[Trade Agent] State dictionary lacks a valid 'metadata' dictionary. Skipping Strategy 1.")
+        logger.info(f"[Trade Agent] No valid config retrieved via get_config() or passed argument.")
 
-    # ---- STRATEGY 2: Use State Values (Secondary) ----
-    if state and isinstance(state, dict):
-        # Access state values, often within a 'values' key if nested
-        state_values = state.get("values", state) # Check for common 'values' nesting
-        if isinstance(state_values, dict):
-            state_val_account_id = state_values.get("account_id")
-            state_val_user_id = state_values.get("user_id")
-            if state_val_account_id:
-                logger.info(f"[Trade Agent] Using account_id from state values: {state_val_account_id}")
-                _LAST_VALID_ACCOUNT_ID = state_val_account_id
-                if state_val_user_id: _LAST_VALID_USER_ID = state_val_user_id
-                return state_val_account_id
-            if state_val_user_id and not current_user_id:
-                current_user_id = state_val_user_id
-                _LAST_VALID_USER_ID = state_val_user_id
-                logger.info(f"[Trade Agent] User ID found in state values: {current_user_id}, will check config then try Supabase lookup.")
-            else:
-                 logger.info(f"[Trade Agent] State values checked, but no new account_id or user_id found.")
-        else:
-             logger.info(f"[Trade Agent] State['values'] is not a dictionary or state itself is not dictionary-like for values. Skipping parts of Strategy 2.")
-    else:
-        logger.info(f"[Trade Agent] State is not a valid dictionary or not provided for value check. Skipping Strategy 2.")
 
-    # ---- STRATEGY 3: Use Config (Tertiary) ----
-    if config and isinstance(config, dict) and isinstance(config.get('configurable'), dict):
-        config_account_id = config['configurable'].get('account_id')
-        config_user_id = config['configurable'].get('user_id')
-        if config_account_id: # If account_id is directly in config
-            logger.info(f"[Trade Agent] Using account_id from config: {config_account_id}")
-            _LAST_VALID_ACCOUNT_ID = config_account_id
-            if config_user_id: _LAST_VALID_USER_ID = config_user_id
-            return config_account_id
-        if config_user_id and not current_user_id: # If user_id is in config and not already found
-            current_user_id = config_user_id
-            _LAST_VALID_USER_ID = config_user_id
-            logger.info(f"[Trade Agent] User ID found in config: {current_user_id}, will try Supabase lookup.")
-        else:
-            logger.info(f"[Trade Agent] Config found but no new account_id or user_id information.")
-    else:
-        logger.info(f"[Trade Agent] Config is not a valid dictionary or lacks 'configurable'. Skipping Strategy 3.")
-
-    # ---- STRATEGY 4: Use User ID (from any source) for Supabase Lookup ----
+    # ---- STRATEGY 2: Use User ID (from config if available) for Supabase Lookup ----
     if current_user_id:
-        logger.info(f"[Trade Agent] Attempting Supabase lookup for user_id: {current_user_id}")
+        logger.info(f"[Trade Agent] Attempting Supabase lookup for user_id from config: {current_user_id}")
         try:
             db_account_id = get_user_alpaca_account_id(current_user_id)
             if db_account_id:
@@ -143,12 +97,12 @@ def get_account_id(state=None, config=None) -> str:
         except Exception as e:
             logger.error(f"[Trade Agent] Error during Supabase lookup for {current_user_id}: {e}", exc_info=True)
 
-    # ---- STRATEGY 5: Use last known valid account_id ----
+    # ---- STRATEGY 3: Use last known valid account_id ----
     if _LAST_VALID_ACCOUNT_ID:
         logger.info(f"[Trade Agent] Using last known valid account_id: {_LAST_VALID_ACCOUNT_ID}")
         return _LAST_VALID_ACCOUNT_ID
 
-    # ---- STRATEGY 6: Try to get account_id from last known user_id ----
+    # ---- STRATEGY 4: Try to get account_id from last known user_id ----
     if _LAST_VALID_USER_ID:
         logger.info(f"[Trade Agent] Attempting Supabase lookup for last known user_id: {_LAST_VALID_USER_ID}")
         try:
@@ -161,6 +115,7 @@ def get_account_id(state=None, config=None) -> str:
              logger.error(f"[Trade Agent] Error during Supabase lookup for last known user {_LAST_VALID_USER_ID}: {e}", exc_info=True)
 
     # ---- FALLBACK ----
+    fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
     logger.error("[Trade Agent] CRITICAL: Using fallback account_id - all retrieval strategies failed")
     return fallback_account_id
 
@@ -172,54 +127,54 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
     Inputs:
         ticker: str - The stock symbol (e.g., 'AAPL')
         notional_amount: float - The dollar amount to buy (min $1.00)
-        state: Optional state dictionary.
-        config: Optional config dictionary (contains account_id, user_id).
+        state: Graph state (passed automatically).
+        config: Run configuration (passed automatically).
     """
     # Use combined state/config logic to get account_id
-    account_id = get_account_id(state=state, config=config) 
-    
+    account_id = get_account_id(config=config) # Pass config explicitly if needed by get_account_id
+
     logger.info(f"[Trade Agent] Initiating BUY for {ticker} (${notional_amount}) for account {account_id}")
-    
+
     # Validate notional amount
     if not isinstance(notional_amount, (int, float)) or notional_amount < 1:
         err_msg = f"Error: Invalid notional amount '{notional_amount}'. It must be a number of at least $1.00."
         logger.error(f"[Trade Agent] Validation failed: {err_msg}")
         return err_msg
-    
+
     # Validate ticker format (simple check)
-    ticker = str(ticker).strip().upper() 
+    ticker = str(ticker).strip().upper()
     if not ticker or not ticker.isalnum(): # Basic check, might need refinement
         err_msg = f"Error: Invalid ticker symbol '{ticker}'. Please provide a valid stock symbol."
         logger.error(f"[Trade Agent] Validation failed: {err_msg}")
         return err_msg
-    
-    # Format notional amount for confirmation message
-    notional_amount_formatted = f"{notional_amount:.2f}" 
 
-    # Potential interruption point
-    try:
-        confirmation_prompt = (
-            f"TRADE CONFIRMATION REQUIRED: Buy ${notional_amount_formatted} worth of {ticker}.\n\n"
-            f"Please confirm with 'yes' to execute or 'no' to cancel this trade."
-        )
-        og_user_confirmation = interrupt(confirmation_prompt)
-        user_confirmation = str(og_user_confirmation).lower().strip()
-        logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
-    except Exception as e:
-         logger.error(f"[Trade Agent] Error during trade confirmation interrupt: {e}", exc_info=True)
-         return "Trade not executed: Failed to get confirmation."
+    # Format notional amount for confirmation message
+    notional_amount_formatted = f"{notional_amount:.2f}"
+
+    # --- Interrupt for Confirmation --- 
+    # Let GraphInterrupt propagate if raised by interrupt()
+    confirmation_prompt = (
+        f"TRADE CONFIRMATION REQUIRED: Buy ${notional_amount_formatted} worth of {ticker}.\n\n"
+        f"Please confirm with 'yes' to execute or 'no' to cancel this trade."
+    )
+    # This call will raise GraphInterrupt if confirmation is needed
+    og_user_confirmation = interrupt(confirmation_prompt)
+    # --- Code below only executes after resume --- 
+    
+    user_confirmation = str(og_user_confirmation).lower().strip()
+    logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
     # Check rejection
     if any(rejection in user_confirmation for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
         logger.info(f"[Trade Agent] Trade CANCELED by user ({ticker} ${notional_amount_formatted})")
         return "Trade canceled: You chose not to proceed with this transaction."
-    
+
     # Check explicit confirmation
     if not any(approval in user_confirmation for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
         logger.warning(f"[Trade Agent] Unclear trade confirmation received: '{user_confirmation}'")
         return "Trade not executed: Unclear confirmation. Please try again with a clear 'yes' or 'no'."
 
-    # Submit the order
+    # Submit the order (This part still needs error handling for API failures)
     try:
         logger.info(f"[Trade Agent] Submitting BUY order for {ticker} (${notional_amount_formatted})")
         result = _submit_market_order(account_id, ticker, notional_amount, OrderSide.BUY)
@@ -237,45 +192,47 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
     Inputs:
         ticker: str - The stock symbol (e.g., 'AAPL')
         notional_amount: float - The dollar amount to sell (min $1.00)
-        state: Optional state dictionary.
-        config: Optional config dictionary (contains account_id, user_id).
+        state: Graph state (passed automatically).
+        config: Run configuration (passed automatically).
     """
-    account_id = get_account_id(state=state, config=config)
+    account_id = get_account_id(config=config) # Pass config explicitly
     logger.info(f"[Trade Agent] Initiating SELL for {ticker} (${notional_amount}) for account {account_id}")
 
     if not isinstance(notional_amount, (int, float)) or notional_amount < 1:
         err_msg = f"Error: Invalid notional amount '{notional_amount}'. It must be a number of at least $1.00."
         logger.error(f"[Trade Agent] Validation failed: {err_msg}")
         return err_msg
-    
+
     ticker = str(ticker).strip().upper()
     if not ticker or not ticker.isalnum():
         err_msg = f"Error: Invalid ticker symbol '{ticker}'. Please provide a valid stock symbol."
         logger.error(f"[Trade Agent] Validation failed: {err_msg}")
         return err_msg
-        
-    notional_amount_formatted = f"{notional_amount:.2f}" 
 
-    try:
-        confirmation_prompt = (
-            f"TRADE CONFIRMATION REQUIRED: Sell ${notional_amount_formatted} worth of {ticker}.\n\n"
-            f"Please confirm with 'yes' to execute or 'no' to cancel this trade."
-        )
-        og_user_confirmation = interrupt(confirmation_prompt)
-        user_confirmation = str(og_user_confirmation).lower().strip()
-        logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
-    except Exception as e:
-         logger.error(f"[Trade Agent] Error during trade confirmation interrupt: {e}", exc_info=True)
-         return "Trade not executed: Failed to get confirmation."
+    notional_amount_formatted = f"{notional_amount:.2f}"
+
+    # --- Interrupt for Confirmation --- 
+    # Let GraphInterrupt propagate if raised by interrupt()
+    confirmation_prompt = (
+        f"TRADE CONFIRMATION REQUIRED: Sell ${notional_amount_formatted} worth of {ticker}.\n\n"
+        f"Please confirm with 'yes' to execute or 'no' to cancel this trade."
+    )
+    # This call will raise GraphInterrupt if confirmation is needed
+    og_user_confirmation = interrupt(confirmation_prompt)
+    # --- Code below only executes after resume --- 
+
+    user_confirmation = str(og_user_confirmation).lower().strip()
+    logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
     if any(rejection in user_confirmation for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
         logger.info(f"[Trade Agent] Trade CANCELED by user ({ticker} ${notional_amount_formatted})")
         return "Trade canceled: You chose not to proceed with this transaction."
-    
+
     if not any(approval in user_confirmation for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
         logger.warning(f"[Trade Agent] Unclear trade confirmation received: '{user_confirmation}'")
         return "Trade not executed: Unclear confirmation. Please try again with a clear 'yes' or 'no'."
 
+    # Submit the order (This part still needs error handling for API failures)
     try:
         logger.info(f"[Trade Agent] Submitting SELL order for {ticker} (${notional_amount_formatted})")
         result = _submit_market_order(account_id, ticker, notional_amount, OrderSide.SELL)

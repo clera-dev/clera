@@ -39,28 +39,11 @@ interface ChatProps {
   onTitleUpdated?: (sessionId: string, newTitle: string) => void;
 }
 
-// Helper function adjusted to filter for supervisor-orchestrated messages
+// Helper function simplified to mainly pass through human/assistant messages 
+// and rely on thread.interrupt for interrupt handling.
 function convertMessageFormat(lgMsg: LangGraphMessage): Message | null { 
-    // Check if we're dealing with a messages-tuple format [message, metadata]
-    if (Array.isArray(lgMsg) && lgMsg.length === 2) {
-        const [message, metadata] = lgMsg;
-        
-        // Check if this message is from a node other than "Clera"
-        // We only want to show messages from the main "Clera" agent
-        if (metadata && 'langgraph_node' in metadata) {
-            // If node name isn't "Clera" or "agent", filter it out
-            // Sometimes the main agent is called "agent" in LangGraph
-            if (metadata.langgraph_node !== 'Clera' && metadata.langgraph_node !== 'agent') {
-                return null;
-            }
-        }
-        
-        // Now process the actual message part
-        return convertMessageFormat(message);
-    }
     
-    // Process non-tuple format messages (original handling)
-    // Allow human messages
+    // Direct pass-through for human messages
     if (lgMsg.type === 'human') {
       const content = typeof lgMsg.content === 'string' ? lgMsg.content : JSON.stringify(lgMsg.content);
       return {
@@ -69,49 +52,47 @@ function convertMessageFormat(lgMsg: LangGraphMessage): Message | null {
       };
     }
 
-    // Process AI messages
+    // Process AI messages, primarily from the main agent ('Clera')
     if (lgMsg.type === 'ai') {
-        // Check for the 'name' attribute in lgMsg which indicates messages from specific worker agents
-        const hasAgentName = 'name' in lgMsg && !!lgMsg.name;
-        
-        // Filter out all messages with tool calls
+        // Optionally, add a basic check if messages absolutely must come *only* from Clera
+        // This might not be necessary if the supervisor setup ensures only Clera sends final responses.
+        // if ('name' in lgMsg && lgMsg.name && lgMsg.name !== 'Clera') {
+        //     return null; // Filter out messages explicitly named from other agents
+        // }
+
+        // Filter out messages with tool calls, as these are intermediate steps
         if (lgMsg.tool_calls && lgMsg.tool_calls.length > 0) {
             return null;
         }
-        
-        // Filter out messages from specific worker agents (with 'name' attribute)
-        // We only want to display messages without 'name' or with name='Clera'
-        if (hasAgentName && lgMsg.name !== 'Clera') {
-            return null;
-        }
-        
+
         // Handle different content formats
+        let content = '';
         if (typeof lgMsg.content === 'string') {
+            content = lgMsg.content;
+        } else if (Array.isArray(lgMsg.content)) {
+             // Handle array of content blocks (common in newer SDKs)
+             content = lgMsg.content
+                 // Ensure item is an object and has type 'text' before accessing text
+                .filter(item => item && typeof item === 'object' && item.type === 'text')
+                .map(item => item.text) // Now safe to access item.text
+                .join('');
+             // Optionally handle other content types if needed, e.g., image URLs
+        } else {
+            // Attempt to stringify unknown content types, or filter out
+             // content = JSON.stringify(lgMsg.content);
+             return null; // Filter out if content format is not recognized/handled
+        }
+
+        // Only return if there is actual text content
+        if (content.trim()) {
             return {
                 role: 'assistant', 
-                content: lgMsg.content
+                content: content
             };
-        } else if (Array.isArray(lgMsg.content) && lgMsg.content.length > 0) {
-            // Handle content that might be an array of text chunks
-            // This is common in newer LangGraph SDK versions
-            const textContent = lgMsg.content
-                .filter(item => item && typeof item === 'object' && 'text' in item)
-                .map(item => item.text)
-                .join('');
-                
-            if (textContent) {
-                return {
-                    role: 'assistant',
-                    content: textContent
-                };
-            }
         }
-        
-        // Filter out other content formats we can't handle
-        return null;
     }
 
-    // Filter out all other message types (e.g., 'tool', 'system')
+    // Filter out all other message types (e.g., 'tool', 'system') by default
     return null;
 }
 
