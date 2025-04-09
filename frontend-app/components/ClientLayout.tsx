@@ -52,7 +52,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             setIsMobileSidebarOpen={setIsMobileSidebarOpen} 
           />
         )}
-        <main className={`flex-1 ${shouldShowSidebar ? "lg:ml-64" : ""}`}>
+        <main className="flex-1 w-full overflow-x-hidden">
           {children}
         </main>
       </div>

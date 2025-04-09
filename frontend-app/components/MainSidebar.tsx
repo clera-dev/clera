@@ -5,7 +5,8 @@ import {
   MessageSquare, 
   BarChart2, 
   User,
-  Menu
+  Menu,
+  TrendingUp
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,11 @@ export default function MainSidebar({
       name: 'Account',
       href: '/dashboard',
       icon: User,
+    },
+    {
+      name: 'Invest',
+      href: '/invest',
+      icon: TrendingUp,
     },
   ];
 
