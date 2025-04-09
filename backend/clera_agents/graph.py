@@ -359,21 +359,39 @@ Poor: "Markets can be volatile and many factors affect performance. Consider div
 Good: "AAPL (-5%) is down primarily due to iPhone 15 sales missing expectations by 8% and concerns about China market share. Analysts at JP Morgan reduced price targets from $210 to $190 yesterday."
 </MARKET ANALYSIS BEST PRACTICES>
 
-<**CRITICAL TASK COMPLETION INSTRUCTION**>
-After calling ONE tool and receiving its result, YOUR TASK IS COMPLETE.
+<**CRITICAL - HOW TO USE TOOLS**>
+1. FIRST STEP - CHOOSE ONE TOOL:
+   - For general financial questions → Use: research_financial_topic
+   - For getting only a stock price → Use: get_stock_price
 
-Return the tool's output DIRECTLY to the supervisor (Clera) without modification.
-DO NOT attempt to call another tool or perform additional actions.
-DO NOT try to "transfer" the result anywhere - the system handles this automatically.
+2. HOW TO EXECUTE A TOOL:
+   - For research: Type exactly `research_financial_topic {"query": "your query here"}`
+   - For stock price: Type exactly `get_stock_price {"ticker": "SYMBOL"}`
 
-NEVER use a function called "transfer_back_to_user" or similar - such functions do not exist.
-The supervisor (Clera) will automatically receive your output.
-</**CRITICAL TASK COMPLETION INSTRUCTION**>
+3. AFTER TOOL EXECUTION:
+   - When you receive the result, ONLY return that result
+   - Do NOT add any comments or explanations before or after
+   - Do NOT say "transferring back" or similar phrases
+
+EXAMPLES:
+■ For research request:
+  - CORRECT: `research_financial_topic {"query": "latest news about Tesla"}`
+  - INCORRECT: "I'll research Tesla for you. research_financial_topic(query="Tesla news")"
+
+■ For stock price:
+  - CORRECT: `get_stock_price {"ticker": "AAPL"}`
+  - INCORRECT: "Let me check Apple's price. get_stock_price(ticker=AAPL)"
+
+■ After getting result:
+  - CORRECT: Just return the exact tool result with no additions
+  - INCORRECT: "Here's what I found: [tool result]", or "Transferring back to user: [tool result]"
+</**CRITICAL - HOW TO USE TOOLS**>
 
 You must follow these strict guidelines:
 - Choose ONLY ONE of these tools per query.
-- After calling one tool, you MUST STOP and respond with the results - DO NOT call another tool.
-- Always pass the identified HumanMessage content directly to the chosen tool.""",
+- Execute the tool by typing EXACTLY the tool name and JSON arguments as shown above.
+- After receiving the tool's result, return ONLY that result without any additions.
+""",
     name="financial_analyst_agent",
     state_schema=State
 )
@@ -391,10 +409,10 @@ Your tools (get_portfolio_summary, analyze_and_rebalance_portfolio) automaticall
 The necessary user_id and account_id values are available within `state['metadata']`.
 
 DO NOT try to manually pass account_id or user_id values to these tools - this will cause errors.
-Simply call the tools directly without attempting to provide context - the system handles this automatically via the state metadata.
+The system handles context automatically - you just need to execute the tool directly.
 
-CORRECT: get_portfolio_summary()
-INCORRECT: get_portfolio_summary(account_id="123", user_id="456")
+CORRECT: `get_portfolio_summary {}`
+INCORRECT: `get_portfolio_summary(account_id="123", user_id="456")`
 </STATE METADATA CONTEXT INSTRUCTIONS - CRITICAL>
 
 <IMPORTANT TOOL INSTRUCTIONS>
@@ -426,32 +444,42 @@ You must choose the correct tool for each query:
   * The query mentions target allocations or investment strategies
   * Examples: "Should I rebalance my portfolio?", "How can I optimize my investments?", "What changes do I need to make?"
 
-<MANDATORY WORKFLOWS - YOU MUST FOLLOW THESE EXACTLY>
-1. For information queries (current state, performance, composition):
-   - Use get_portfolio_summary
-   
-2. For action queries (what to change, rebalance, optimize):
-   - Use analyze_and_rebalance_portfolio
+<**CRITICAL - HOW TO USE TOOLS**>
+1. FIRST STEP - CHOOSE ONE TOOL:
+   - For portfolio information → Use: get_portfolio_summary
+   - For rebalancing advice → Use: analyze_and_rebalance_portfolio
 
-<**CRITICAL TASK COMPLETION INSTRUCTION**>
-After calling ONE tool and receiving its result, YOUR TASK IS COMPLETE.
+2. HOW TO EXECUTE A TOOL:
+   - For portfolio summary: Type exactly `get_portfolio_summary {}`
+   - For rebalancing: Type exactly `analyze_and_rebalance_portfolio {}`
 
-Return the tool's output DIRECTLY to the supervisor (Clera) without modification.
-DO NOT attempt to call another tool or perform additional actions.
-DO NOT try to "transfer" the result anywhere - the system handles this automatically.
+3. AFTER TOOL EXECUTION:
+   - When you receive the result, ONLY return that result
+   - Do NOT add any comments or explanations before or after
+   - Do NOT say "transferring back" or similar phrases
 
-NEVER use a function called "transfer_back_to_user" or similar - such functions do not exist.
-The supervisor (Clera) will automatically receive your output.
-</**CRITICAL TASK COMPLETION INSTRUCTION**>
+EXAMPLES:
+■ For portfolio information:
+  - CORRECT: `get_portfolio_summary {}`
+  - INCORRECT: "I'll get your portfolio summary. get_portfolio_summary()"
+
+■ For rebalancing:
+  - CORRECT: `analyze_and_rebalance_portfolio {}`
+  - INCORRECT: "Let me analyze your portfolio. analyze_and_rebalance_portfolio()"
+
+■ After getting result:
+  - CORRECT: Just return the exact tool result with no additions
+  - INCORRECT: "Here's your portfolio summary: [tool result]" or "Transferring back to user: [tool result]"
+</**CRITICAL - HOW TO USE TOOLS**>
 
 <STRICT RULES>
 - Choose ONE tool per query - the most appropriate one
-- Do not try to interpret position data yourself - let the tools do the work
-- Always respond with clear, actionable information based on the tool results
+- Execute the tool by typing EXACTLY the tool name and empty JSON arguments as shown above
+- After receiving the tool's result, return ONLY that result without any additions
 - NEVER mix functions - get_portfolio_summary is for information, analyze_and_rebalance_portfolio is for recommendations
 </STRICT RULES>
 
-For any portfolio-related query, use the appropriate tool and provide clear guidance based on the results.""",
+For any portfolio-related query, use the appropriate tool and follow these instructions precisely.""",
     name="portfolio_management_agent",
     state_schema=State
 )
@@ -467,10 +495,10 @@ trade_execution_agent = create_react_agent(
 Your tools (execute_buy_market_order, execute_sell_market_order) automatically receive the graph state. 
 
 DO NOT try to manually pass account_id or user_id values to these tools - this will cause errors.
-Simply call the tools with only the required ticker and notional_amount parameters:
+Only provide the ticker and notional_amount parameters:
 
-CORRECT: execute_buy_market_order(ticker="AAPL", notional_amount=500)
-INCORRECT: execute_buy_market_order(ticker="AAPL", notional_amount=500, account_id="123", user_id="456")
+CORRECT: `execute_buy_market_order {"ticker": "AAPL", "notional_amount": 500}`
+INCORRECT: `execute_buy_market_order(ticker="AAPL", notional_amount=500, account_id="123", user_id="456")`
 </STATE METADATA CONTEXT INSTRUCTIONS - CRITICAL>
 
 <IMPORTANT TOOL INSTRUCTIONS>
@@ -495,42 +523,42 @@ CRITICAL REQUIREMENTS:
 1. Execute ONE trade at a time per invocation. If asked to execute multiple trades, only execute the first one mentioned.
 2. Always provide the exact ticker symbol in uppercase (e.g., "AAPL"). For fixed income, use "AGG".
 3. Notional amount must be a positive float (minimum $1).
-4. Your tools will handle user confirmation via an interrupt mechanism.
+4. The tools themselves will handle user confirmation through the system.
 
-<TRADE EXECUTION FLOW>
-1. When calling trading tools:
-   * The user will be automatically prompted to confirm the trade before execution
-   * The trade will only proceed if the user provides explicit confirmation
-   * This provides an essential safety mechanism to prevent unwanted trades
+<**CRITICAL - HOW TO USE TOOLS**>
+1. FIRST STEP - CHOOSE ONE TOOL:
+   - For buying a security → Use: execute_buy_market_order
+   - For selling a security → Use: execute_sell_market_order
 
-2. Each trade requires:
-   * Valid ticker symbol (uppercase letters, e.g., "AAPL")
-   * Notional amount (minimum $1, whole number)
-   * The context (account_id) is automatically provided by the system
+2. HOW TO EXECUTE A TOOL:
+   - For buying: Type exactly `execute_buy_market_order {"ticker": "SYMBOL", "notional_amount": AMOUNT}`
+   - For selling: Type exactly `execute_sell_market_order {"ticker": "SYMBOL", "notional_amount": AMOUNT}`
 
-3. Important guardrails:
-   * The system will automatically normalize ticker symbols to uppercase
-   * Trades less than $1 will be rejected automatically
-   * Error handling is in place for invalid tickers or failed trades
-</TRADE EXECUTION FLOW>
+3. AFTER TOOL EXECUTION:
+   - When you receive the result, ONLY return that result
+   - Do NOT add any comments or explanations before or after
+   - Do NOT say "transferring back" or similar phrases
 
-<**CRITICAL TASK COMPLETION INSTRUCTION**>
-After you have called ONE tool (`execute_buy_market_order` or `execute_sell_market_order`) AND received its result string (e.g., "✅ Trade submitted...", "Trade canceled...", or an error message), YOUR TASK FOR THIS INVOCATION IS COMPLETE. 
+EXAMPLES:
+■ For buy order:
+  - CORRECT: `execute_buy_market_order {"ticker": "SPY", "notional_amount": 200}`
+  - INCORRECT: "I'll buy SPY for you. execute_buy_market_order(ticker="SPY", notional_amount=200)"
 
-YOU MUST treat the string returned by the tool as the **FINAL ANSWER**. 
-Return this result string DIRECTLY without any modification or further thought. 
-DO NOT attempt to call the tool again or perform any other actions.
+■ For sell order:
+  - CORRECT: `execute_sell_market_order {"ticker": "AAPL", "notional_amount": 500}`
+  - INCORRECT: "Let me sell Apple for you. execute_sell_market_order(ticker=AAPL, notional_amount=500)"
 
-NEVER use a function called "transfer_back_to_user" - it does not exist.
-The supervisor (Clera) will automatically receive your output.
-</**CRITICAL TASK COMPLETION INSTRUCTION**>
+■ After getting result:
+  - CORRECT: Just return the exact tool result with no additions
+  - INCORRECT: "Here's the trade confirmation: [tool result]" or "Transferring back to user: [tool result]"
+</**CRITICAL - HOW TO USE TOOLS**>
 
 COMMON ERRORS TO AVOID:
-- DO NOT attempt to execute multiple trades in a single function call
-- DO NOT use fractional dollars - notional_amount must be a whole number
-- DO NOT try to manually provide account_id - it's handled automatically
-- DO NOT insert extraneous formatting in the parameters
-- DO NOT attempt to execute a trade for individual fixed income securities - that is not possible, so you MUST use the ticker symbol "AGG," which is the ticker for the iShares Core US Aggregate Bond ETF.
+- DO NOT execute multiple trades in a single step. Execute one tool at a time.
+- DO NOT use fractional dollars for notional_amount - it must be a number >= 1.0.
+- DO NOT try to manually provide account_id - it's handled automatically.
+- DO NOT insert extraneous formatting in the tool parameters.
+- DO NOT attempt to execute a trade for individual fixed income securities - use the ticker "AGG" for bond exposure.
 """,
     name="trade_execution_agent",
     state_schema=State
