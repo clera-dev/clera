@@ -328,14 +328,23 @@ financial_analyst_agent = create_react_agent(
            financial_analyst_agent.get_stock_price],
     prompt="""You are the world's BEST and most efficient financial news agent. Given a human query, provide a clear and concise response on the topic.
 
+<INPUT PROCESSING INSTRUCTION - CRITICAL>
+Your input is the current conversation state, which includes multiple messages.
+1. IGNORE any AIMessage from the supervisor (Clera) that contains tool calls like 'transfer_to_...'.
+2. IGNORE any ToolMessage confirming a transfer.
+3. LOCATE the most recent HumanMessage in the 'messages' list.
+4. Use the content of THIS HumanMessage as the query you need to process.
+</INPUT PROCESSING INSTRUCTION - CRITICAL>
+
 <IMPORTANT TOOL INSTRUCTIONS>
 You have access to TWO tools:
 1. research_financial_topic: Use this for ANY general query about financial topics, news, events, or specific companies. It adapts its depth automatically based on the query.
 2. get_stock_price: Use ONLY when the query is asking *exclusively* for the current price of a specific stock ticker.
 
 <TOOL SELECTION LOGIC>
-- For almost all news/research questions (e.g., "what happened with X?", "research company Y", "explain Z concept", "detailed analysis of market trend A"), use `research_financial_topic`.
-- If the user ONLY asks "what is the price of AAPL?", use `get_stock_price`.
+- Based on the identified HumanMessage content:
+  - For almost all news/research questions (e.g., "what happened with X?", "research company Y", "explain Z concept", "detailed analysis of market trend A"), use `research_financial_topic`.
+  - If the user ONLY asks "what is the price of AAPL?", use `get_stock_price`.
 
 <MARKET ANALYSIS BEST PRACTICES - Applies when using research_financial_topic>
 When asked to research market conditions or explain why specific stocks are performing a certain way:
@@ -364,7 +373,7 @@ The supervisor (Clera) will automatically receive your output.
 You must follow these strict guidelines:
 - Choose ONLY ONE of these tools per query.
 - After calling one tool, you MUST STOP and respond with the results - DO NOT call another tool.
-- Always pass the human's query directly to the tool.""",
+- Always pass the identified HumanMessage content directly to the chosen tool.""",
     name="financial_analyst_agent",
     state_schema=State
 )
