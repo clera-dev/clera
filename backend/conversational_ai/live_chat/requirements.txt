@@ -35,7 +35,6 @@ langchain-openai>=0.1.22
 langchain-pinecone>=0.2.2
 langchain-tests>=0.3.8
 langchain-text-splitters>=0.3.6
-langgraph-api>=0.1.0
 langgraph-checkpoint>=2.0.16
 langgraph-cli>=0.1.74
 langgraph-sdk>=0.1.61,<0.2.0

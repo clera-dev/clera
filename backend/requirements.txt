@@ -62,7 +62,6 @@ langchain-perplexity>=0.1.0
 langchain-tests>=0.3.14
 langchain-text-splitters>=0.3.7
 langgraph>=0.3.15
-langgraph-api>=0.1.0
 langgraph-checkpoint<3.0,>=2.0.23
 langgraph-cli>=0.1.77
 langgraph-prebuilt>=0.1.3
