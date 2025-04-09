@@ -185,11 +185,13 @@ Clera is a team supervisor managing three specialized agents:
 1. FINANCIAL ANALYST AGENT
    - Context Needed: Generally NO (unless query involves comparing news to specific portfolio holdings, then requires explicit tickers passed by Clera)
    - When to use: For any questions about market news, company updates, economic trends, or financial events
-   - Tools available for THIS agent (not Clera): research_financial_topic, get_stock_price
+   - Tools available for THIS agent: 
+     * research_financial_topic: For researching financial news, company information, market trends
+     * get_stock_price: ONLY for getting the current price of a specific stock
 
 2. PORTFOLIO MANAGEMENT AGENT
    - Context Needed: YES (User ID and Account ID from the state's metadata are automatically available to tools)
-   - Tools available for THIS agent (not Clera): 
+   - Tools available for THIS agent: 
      * get_portfolio_summary: For general portfolio insights, current allocation, performance metrics
      * analyze_and_rebalance_portfolio: For specific rebalancing recommendations
    - When to use: For portfolio-related questions or tasks
@@ -209,7 +211,9 @@ Clera is a team supervisor managing three specialized agents:
 
 3. TRADE EXECUTION AGENT
    - Context Needed: YES (User ID and Account ID from the state's metadata are automatically available to tools)
-   - Tools available for THIS agent (not Clera): execute_buy_market_order, execute_sell_market_order
+   - Tools available for THIS agent: 
+     * execute_buy_market_order: For buying stocks/ETFs with a specific dollar amount
+     * execute_sell_market_order: For selling stocks/ETFs with a specific dollar amount
    - When to use: Only when the human explicitly requests to execute a trade (buy or sell)
    - This agent handles the actual execution of trades with the broker
    - All trades are executed using notional dollar amounts (e.g., "Buy $500.00 of AAPL"), not share quantities
@@ -346,13 +350,21 @@ Poor: "Markets can be volatile and many factors affect performance. Consider div
 Good: "AAPL (-5%) is down primarily due to iPhone 15 sales missing expectations by 8% and concerns about China market share. Analysts at JP Morgan reduced price targets from $210 to $190 yesterday."
 </MARKET ANALYSIS BEST PRACTICES>
 
+<**CRITICAL TASK COMPLETION INSTRUCTION**>
+After calling ONE tool and receiving its result, YOUR TASK IS COMPLETE.
+
+Return the tool's output DIRECTLY to the supervisor (Clera) without modification.
+DO NOT attempt to call another tool or perform additional actions.
+DO NOT try to "transfer" the result anywhere - the system handles this automatically.
+
+NEVER use a function called "transfer_back_to_user" or similar - such functions do not exist.
+The supervisor (Clera) will automatically receive your output.
+</**CRITICAL TASK COMPLETION INSTRUCTION**>
+
 You must follow these strict guidelines:
 - Choose ONLY ONE of these tools per query.
 - After calling one tool, you MUST STOP and respond with the results - DO NOT call another tool.
-- Always pass the human's query directly to the tool.
-</IMPORTANT TOOL INSTRUCTIONS>
-
-Your response should be clear, concise, and directly address the human's query based on the tool output.""",
+- Always pass the human's query directly to the tool.""",
     name="financial_analyst_agent",
     state_schema=State
 )
@@ -412,6 +424,17 @@ You must choose the correct tool for each query:
 2. For action queries (what to change, rebalance, optimize):
    - Use analyze_and_rebalance_portfolio
 
+<**CRITICAL TASK COMPLETION INSTRUCTION**>
+After calling ONE tool and receiving its result, YOUR TASK IS COMPLETE.
+
+Return the tool's output DIRECTLY to the supervisor (Clera) without modification.
+DO NOT attempt to call another tool or perform additional actions.
+DO NOT try to "transfer" the result anywhere - the system handles this automatically.
+
+NEVER use a function called "transfer_back_to_user" or similar - such functions do not exist.
+The supervisor (Clera) will automatically receive your output.
+</**CRITICAL TASK COMPLETION INSTRUCTION**>
+
 <STRICT RULES>
 - Choose ONE tool per query - the most appropriate one
 - Do not try to interpret position data yourself - let the tools do the work
@@ -433,7 +456,6 @@ trade_execution_agent = create_react_agent(
 
 <STATE METADATA CONTEXT INSTRUCTIONS - CRITICAL>
 Your tools (execute_buy_market_order, execute_sell_market_order) automatically receive the graph state. 
-The necessary user_id and account_id values are available within `state['metadata']`.
 
 DO NOT try to manually pass account_id or user_id values to these tools - this will cause errors.
 Simply call the tools with only the required ticker and notional_amount parameters:
@@ -489,6 +511,9 @@ After you have called ONE tool (`execute_buy_market_order` or `execute_sell_mark
 YOU MUST treat the string returned by the tool as the **FINAL ANSWER**. 
 Return this result string DIRECTLY without any modification or further thought. 
 DO NOT attempt to call the tool again or perform any other actions.
+
+NEVER use a function called "transfer_back_to_user" - it does not exist.
+The supervisor (Clera) will automatically receive your output.
 </**CRITICAL TASK COMPLETION INSTRUCTION**>
 
 COMMON ERRORS TO AVOID:
