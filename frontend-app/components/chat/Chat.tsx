@@ -13,6 +13,7 @@ import {
 } from '@/utils/api/chat-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { SendIcon, XIcon, RefreshCcw, CheckIcon, BanIcon } from 'lucide-react';
 import ChatMessage, { ChatMessageProps } from './ChatMessage';
 import UserAvatar from './UserAvatar';
@@ -39,56 +40,59 @@ interface ChatProps {
   onTitleUpdated?: (sessionId: string, newTitle: string) => void;
 }
 
-// Helper function simplified to mainly pass through human/assistant messages 
+// Helper function simplified to mainly pass through human/assistant messages
 // and rely on thread.interrupt for interrupt handling.
-function convertMessageFormat(lgMsg: LangGraphMessage): Message | null { 
-    
+function convertMessageFormat(lgMsg: LangGraphMessage): Message | null {
+
     // Direct pass-through for human messages
     if (lgMsg.type === 'human') {
       const content = typeof lgMsg.content === 'string' ? lgMsg.content : JSON.stringify(lgMsg.content);
       return {
-          role: 'user', 
+          role: 'user',
           content: content
       };
     }
 
-    // Process AI messages, primarily from the main agent ('Clera')
+    // Process AI messages
     if (lgMsg.type === 'ai') {
-        // Optionally, add a basic check if messages absolutely must come *only* from Clera
-        // This might not be necessary if the supervisor setup ensures only Clera sends final responses.
-        // if ('name' in lgMsg && lgMsg.name && lgMsg.name !== 'Clera') {
-        //     return null; // Filter out messages explicitly named from other agents
-        // }
+        // Filter out messages not explicitly named 'Clera'
+        // Use optional chaining and type assertion as needed for safety.
+        if ((lgMsg as any)?.name !== 'Clera') {
+            return null; // Filter out if not from Clera
+        }
 
-        // Filter out messages with tool calls, as these are intermediate steps
+        // Filter out messages with tool calls
         if (lgMsg.tool_calls && lgMsg.tool_calls.length > 0) {
             return null;
         }
 
-        // Handle different content formats
+        // Handle different content formats for Clera's messages
         let content = '';
         if (typeof lgMsg.content === 'string') {
             content = lgMsg.content;
         } else if (Array.isArray(lgMsg.content)) {
-             // Handle array of content blocks (common in newer SDKs)
+             // Handle array of content blocks, safely filtering for text items using a type guard
              content = lgMsg.content
-                 // Ensure item is an object and has type 'text' before accessing text
-                .filter(item => item && typeof item === 'object' && item.type === 'text')
+                .filter((item): item is { type: 'text'; text: string } => // Type guard
+                    typeof item === 'object' &&
+                    item !== null &&
+                    item.type === 'text' &&
+                    typeof (item as any).text === 'string' // Check text property exists and is string
+                )
                 .map(item => item.text) // Now safe to access item.text
                 .join('');
-             // Optionally handle other content types if needed, e.g., image URLs
         } else {
-            // Attempt to stringify unknown content types, or filter out
-             // content = JSON.stringify(lgMsg.content);
              return null; // Filter out if content format is not recognized/handled
         }
 
         // Only return if there is actual text content
         if (content.trim()) {
             return {
-                role: 'assistant', 
+                role: 'assistant',
                 content: content
             };
+        } else {
+             return null; // Filter out empty messages too
         }
     }
 
@@ -118,7 +122,8 @@ export default function Chat({
   const assistantId = process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID || 'agent'; // The graph ID/name to run
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
 
   // --- LangGraph useStream Hook --- 
   // Specify InterruptType in the hook's generics
@@ -158,6 +163,12 @@ export default function Chat({
 
     const contentToSend = trimmedInput;
     setInput('');
+
+    // Reset textarea height after sending
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'; // Reset height to recalculate
+      inputRef.current.rows = 1; // Reset rows
+    }
 
     // Check if this is the first message (no user messages in the conversation yet)
     const isFirstMessage = !messagesToDisplay.some(msg => msg.role === 'user');
@@ -222,6 +233,23 @@ export default function Chat({
 
   }, [input, isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, messagesToDisplay, hasTitleBeenUpdated, onTitleUpdated]); // Added new dependencies
 
+  // Auto-adjust textarea height
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'; // Reset height to recalculate based on content
+      const scrollHeight = inputRef.current.scrollHeight;
+      // Set a max height (e.g., corresponds to max-h-[200px])
+      const maxHeight = 200;
+      if (scrollHeight > maxHeight) {
+        inputRef.current.style.height = `${maxHeight}px`;
+        inputRef.current.style.overflowY = 'auto'; // Show scrollbar if max height reached
+      } else {
+        inputRef.current.style.height = `${scrollHeight}px`;
+        inputRef.current.style.overflowY = 'hidden'; // Hide scrollbar if below max height
+      }
+    }
+  }, [input]); // Re-run when input changes
+
   // Handle interrupt confirmation
   const handleInterruptConfirmation = useCallback((confirmationString: 'yes' | 'no') => { 
     console.log("Resuming interrupt with value:", confirmationString);
@@ -246,10 +274,20 @@ export default function Chat({
     }
   }, [isInterrupting, thread, userId, accountId]); // Add userId and accountId
 
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messagesToDisplay]);
+  // Auto-scroll: Only scroll down if user is near the bottom
+  // useEffect(() => {
+  //   const scrollElement = scrollContainerRef.current;
+  //   if (scrollElement) {
+  //     // Access the direct scrollable child (often the first child)
+  //     const viewport = scrollElement.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+  //     if (viewport) {
+  //       const isScrolledToBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100; // Threshold of 100px
+  //       if (isScrolledToBottom) {
+  //         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  //       }
+  //     }
+  //   }
+  // }, [messagesToDisplay]); // Keep dependency array the same
 
   // Focus input
   useEffect(() => {
@@ -314,7 +352,7 @@ export default function Chat({
         </div>
       )}
       
-      <ScrollArea className="flex-1 overflow-y-auto p-4 space-y-4">
+      <ScrollArea ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messagesToDisplay.map((msg: Message, index: number) => (
             <ChatMessage 
             key={`msg-${index}`}
@@ -358,16 +396,17 @@ export default function Chat({
         {errorMessage && (
             <div className="text-red-500 text-sm mb-2">Error: {errorMessage}</div>
         )}
-        <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="flex space-x-2">
-          <Input
+        <form onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleSendMessage(); }} className="flex items-end space-x-2">
+          <Textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
             placeholder={isInterrupting ? "Confirm or deny above..." : "Ask about your portfolio..."}
             disabled={isProcessing || isInterrupting}
-            className="flex-1"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !isProcessing && !isInterrupting) {
+            className="flex-1 resize-none min-h-[40px] max-h-[200px]"
+            rows={1}
+            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+              if (e.key === 'Enter' && !e.shiftKey && !isProcessing && !isInterrupting) {
                 e.preventDefault(); 
                 handleSendMessage();
               }

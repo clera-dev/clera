@@ -40,7 +40,7 @@ export default function ChatMessage({ message, isLast }: ChatMessageProps) {
           ? "bg-primary text-primary-foreground" 
           : "bg-muted",
       )}>
-        <div className="prose dark:prose-invert prose-sm break-words">
+        <div className="prose dark:prose-invert prose-sm break-words whitespace-pre-wrap">
           <ReactMarkdown>{message.content}</ReactMarkdown>
           {showCursor && (
             <span className="animate-pulse ml-1">▏</span>

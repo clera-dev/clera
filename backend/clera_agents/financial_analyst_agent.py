@@ -1,4 +1,4 @@
-#financial_news_agent.py
+#financial_analyst_agent.py
 
 # This file will be used to build the financial news agent.
 # It will be used to search for financial news and summarize it.
@@ -57,7 +57,7 @@ Query: {query}
 Query: {query}
 """
 
-    messages = [SystemMessage(content=research_prompt)] # Removed HumanMessage as query is in prompt
+    messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
     try:
         # Use the standard perplexity model for efficiency unless deep research is needed?
         # For now, standard model should handle prompt instructions.

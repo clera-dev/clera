@@ -17,6 +17,7 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 
 # Import our Supabase helper
 from utils.supabase import get_user_alpaca_account_id
+from .financial_analyst_agent import get_stock_quote
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -153,9 +154,11 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
 
     # --- Interrupt for Confirmation --- 
     # Let GraphInterrupt propagate if raised by interrupt()
+    stock_quote = get_stock_quote(ticker)
+    price = stock_quote[0]['price']
     confirmation_prompt = (
-        f"TRADE CONFIRMATION REQUIRED: Buy ${notional_amount_formatted} worth of {ticker}.\n\n"
-        f"Please confirm with 'yes' to execute or 'no' to cancel this trade."
+        f"TRADE CONFIRMATION REQUIRED: Buy ${notional_amount_formatted} worth of {ticker} (current price: ${price}).\n\n"
+        f"Please confirm with 'Yes' to execute or 'No' to cancel this trade."
     )
     # This call will raise GraphInterrupt if confirmation is needed
     og_user_confirmation = interrupt(confirmation_prompt)
@@ -213,9 +216,11 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
 
     # --- Interrupt for Confirmation --- 
     # Let GraphInterrupt propagate if raised by interrupt()
+    stock_quote = get_stock_quote(ticker)
+    price = stock_quote[0]['price']
     confirmation_prompt = (
-        f"TRADE CONFIRMATION REQUIRED: Sell ${notional_amount_formatted} worth of {ticker}.\n\n"
-        f"Please confirm with 'yes' to execute or 'no' to cancel this trade."
+        f"TRADE CONFIRMATION REQUIRED: Sell ${notional_amount_formatted} worth of {ticker} (current price: ${price}).\n\n"
+        f"Please confirm with 'Yes' to execute or 'No' to cancel this trade."
     )
     # This call will raise GraphInterrupt if confirmation is needed
     og_user_confirmation = interrupt(confirmation_prompt)
