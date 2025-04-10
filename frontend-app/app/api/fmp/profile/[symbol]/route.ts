@@ -4,7 +4,12 @@ export async function GET(
   request: Request,
   { params }: { params: { symbol: string } }
 ) {
-  const symbol = params.symbol;
+  //const sessionId = params.id; // Access id directly from destructured params
+  // Instead of directly accessing params.id, await params first:
+  const { symbol } = await params;
+  //const sessionId = id;
+
+  //const symbol = params.symbol;
   const apiKey = process.env.FINANCIAL_MODELING_PREP_API_KEY;
 
   if (!apiKey) {

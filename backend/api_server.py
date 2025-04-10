@@ -12,9 +12,10 @@ import logging
 from typing import List, Dict, Any, Optional
 from enum import Enum
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import uuid
+import requests
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header
@@ -106,16 +107,49 @@ from alpaca.broker.models import (
     Contact,
     Identity,
     Disclosures,
-    Agreement
+    Agreement,
+    Account
 )
 from alpaca.broker.requests import CreateAccountRequest
 from alpaca.broker.enums import TaxIdType, FundingSource, AgreementType
+
+# Import Alpaca MarketDataClient
+from alpaca.data.live.stock import StockDataStream
+from alpaca.data.historical.stock import StockHistoricalDataClient
+from alpaca.data.requests import StockLatestTradeRequest
+
+# Import Alpaca TradingClient for assets
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import GetAssetsRequest
+from alpaca.trading.enums import AssetClass, AssetStatus
+
+# Constants for Asset Caching
+ASSET_CACHE_FILE = os.path.join(os.path.dirname(__file__), "data", "tradable_assets.json")
+ASSET_CACHE_TTL_HOURS = 24 # Time-to-live for the cache in hours
+
+# Ensure the data directory exists
+os.makedirs(os.path.join(os.path.dirname(__file__), "data"), exist_ok=True)
 
 # Initialize Alpaca broker client
 broker_client = BrokerClient(
     api_key=os.getenv("BROKER_API_KEY"),
     secret_key=os.getenv("BROKER_SECRET_KEY"),
     sandbox=True  # Set to False for production
+)
+
+# Initialize Alpaca MarketDataClient using Trading API keys (APCA_...)
+market_data_client = StockHistoricalDataClient(
+    api_key=os.getenv("APCA_API_KEY_ID"),      # Use Trading API Key ID
+    secret_key=os.getenv("APCA_API_SECRET_KEY"),  # Use Trading API Secret
+    # The client usually infers paper/live from keys or endpoint defaults.
+    # explicit url_override typically not needed if using paper keys.
+)
+
+# Initialize Alpaca TradingClient using Trading API keys (APCA_...)
+trading_client = TradingClient(
+    api_key=os.getenv("APCA_API_KEY_ID"),
+    secret_key=os.getenv("APCA_API_SECRET_KEY"),
+    paper=True # Assuming paper trading based on previous context
 )
 
 def get_broker_client():
@@ -363,6 +397,42 @@ async def get_company_info(ticker: str):
             "success": False,
             "message": f"Error retrieving company information: {str(e)}"
         }, status_code=500)
+
+@app.get("/api/market/latest-trade/{ticker}")
+async def get_latest_trade_price(ticker: str):
+    """Get the latest trade price for a stock ticker."""
+    try:
+        ticker = ticker.upper().strip()
+        logger.info(f"Received latest trade request for ticker: {ticker}")
+
+        request_params = StockLatestTradeRequest(symbol_or_symbols=ticker)
+        latest_trade = market_data_client.get_stock_latest_trade(request_params)
+
+        # latest_trade is a dictionary where keys are symbols
+        if ticker in latest_trade:
+            trade_data = latest_trade[ticker]
+            # Convert trade object to dict if necessary, or access attributes
+            price = getattr(trade_data, 'price', None)
+            timestamp = getattr(trade_data, 'timestamp', None)
+
+            if price is None:
+                 logger.warning(f"Could not extract price from trade data for {ticker}: {trade_data}")
+                 raise HTTPException(status_code=404, detail=f"Could not retrieve latest price for {ticker}")
+
+            logger.info(f"Latest trade for {ticker}: Price={price} at {timestamp}")
+            return JSONResponse({
+                "success": True,
+                "symbol": ticker,
+                "price": price,
+                "timestamp": timestamp.isoformat() if timestamp else None
+            })
+        else:
+            logger.warning(f"No latest trade data found for ticker: {ticker}")
+            raise HTTPException(status_code=404, detail=f"No latest trade data found for {ticker}")
+
+    except Exception as e:
+        logger.error(f"Error getting latest trade for {ticker}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error retrieving latest trade price: {str(e)}")
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
@@ -875,7 +945,6 @@ async def get_ach_relationships(
                     api_key = broker_client._client.api_key
                     secret_key = broker_client._client.secret_key
                     
-                    import requests
                     url = f"{base_url}/v1/accounts/{alpaca_account_id}/ach_relationships"
                     headers = {
                         "accept": "application/json",
@@ -1081,441 +1150,129 @@ async def get_ach_relationships_for_account(
         logger.error(f"Error getting ACH relationships: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.get("/get-account-info/{account_id}")
-async def get_account_info(
-    account_id: str,
-    x_api_key: str = Header(None)
-):
-    """
-    Get the account information including cash balance from Alpaca.
-    """
-    # Validate API key
-    api_key_env = os.getenv("BACKEND_API_KEY")
-    if x_api_key != api_key_env:
-        logger.error("API key validation failed")
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    
+@app.get("/api/account/{account_id}/balance", response_model=dict)
+async def get_account_balance(account_id: str):
+    """Fetch key balance details for a specific Alpaca account using the Broker SDK."""
     try:
-        # Get a broker client instance
-        client = get_broker_client()
+        logger.info(f"Fetching balance for account: {account_id} using BrokerClient.get_trade_account_by_id")
         
-        # Get account details to get latest cash balance
-        account_details = get_account_details(account_id, broker_client=client)
+        # Ensure broker client is initialized (it should be globally)
+        if not broker_client:
+             logger.error("Broker client is not initialized.")
+             raise HTTPException(status_code=500, detail="Server configuration error: Broker client not available.")
+             
+        # Use the correct SDK method
+        account_info = broker_client.get_trade_account_by_id(account_id)
         
-        # Get the transfers to calculate total funded amount
-        transfers = get_transfers_for_account(account_id, broker_client=client)
-        
-        # Calculate total successful deposits
-        total_funded = 0.0
-        for transfer in transfers:
-            if transfer.status == "COMPLETE" and transfer.direction == "INCOMING":
-                total_funded += float(transfer.amount)
-        
-        # Extract cash balance - In Broker API, it's in last_equity field
-        # The structure might be a dictionary or an object with attributes
-        current_cash = 0.0
-        
-        if hasattr(account_details, 'last_equity'):
-            # If it's an object with attributes
-            current_cash = float(account_details.last_equity or 0)
-        elif isinstance(account_details, dict) and 'last_equity' in account_details:
-            # If it's a dictionary
-            current_cash = float(account_details['last_equity'] or 0)
-        elif hasattr(account_details, 'cash'):
-            # Fallback to cash field if available
-            current_cash = float(account_details.cash or 0)
-        elif isinstance(account_details, dict) and 'cash' in account_details:
-            # If it's a dictionary
-            current_cash = float(account_details['cash'] or 0)
-        
-        logger.info(f"Account {account_id} current cash: {current_cash}, total funded: {total_funded}")
-        
-        return {
-            "total_funded": total_funded,
-            "current_balance": current_cash,
-            "currency": "USD"
+        # Extract relevant balance figures from the Account object
+        balance_data = {
+            "buying_power": float(account_info.buying_power),
+            "cash": float(account_info.cash),
+            "portfolio_value": float(account_info.portfolio_value),
+            "currency": account_info.currency
         }
-    except Exception as e:
-        logger.error(f"Error getting account info: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/save-conversation")
-async def save_chat_conversation(
-    request: SaveConversationRequest,
-    api_key: str = Depends(verify_api_key)
-):
-    """Save a chat conversation to the database."""
-    try:
-        # Log the request
-        logger.info(f"Saving conversation for user {request.user_id}")
         
-        # Save the conversation
-        result = save_conversation(
-            user_id=request.user_id,
-            portfolio_id=request.portfolio_id,
-            message=request.message,
-            response=request.response
+        logger.info(f"Successfully fetched balance for {account_id}: {balance_data}")
+        return {"success": True, "data": balance_data}
+        
+    except Exception as e:
+        logger.error(f"Error fetching balance for account {account_id}: {e}", exc_info=True)
+        # Consider checking for specific Alpaca API errors if possible
+        # For now, return a generic error
+        raise HTTPException(status_code=500, detail=f"Failed to fetch account balance.")
+
+# --- Endpoint for Tradable Assets (with Caching) ---
+async def _fetch_and_cache_assets():
+    """Fetches assets from Alpaca and saves them to the cache file."""
+    try:
+        logger.info("Fetching fresh tradable assets from Alpaca...")
+        search_params = GetAssetsRequest(
+            asset_class=AssetClass.US_EQUITY,
+            status=AssetStatus.ACTIVE
         )
-        
-        if not result:
-            return JSONResponse({
-                "success": False,
-                "message": "Failed to save conversation"
-            }, status_code=500)
-        
-        return JSONResponse({
-            "success": True,
-            "message": "Conversation saved successfully",
-            "data": result
-        })
-    
-    except Exception as e:
-        logger.error(f"Error saving conversation: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": f"Error saving conversation: {str(e)}"
-        }, status_code=500)
+        assets = trading_client.get_all_assets(search_params)
+        tradable_assets = [
+            {"symbol": asset.symbol, "name": asset.name}
+            for asset in assets
+            if asset.tradable
+        ]
+        # Sort assets alphabetically by symbol before caching
+        tradable_assets.sort(key=lambda x: x['symbol'])
 
-@app.post("/get-conversations")
-async def get_chat_conversations(
-    request: GetConversationsRequest,
-    api_key: str = Depends(verify_api_key)
-):
-    """Get chat conversations for a user."""
-    try:
-        # Log the request
-        logger.info(f"Getting conversations for user {request.user_id}")
-        
-        # Get the conversations
-        if request.portfolio_id:
-            # Get conversations for specific portfolio
-            conversations = get_portfolio_conversations(
-                user_id=request.user_id,
-                portfolio_id=request.portfolio_id,
-                limit=request.limit or 50
-            )
+        # Save to cache file
+        with open(ASSET_CACHE_FILE, 'w') as f:
+            json.dump(tradable_assets, f)
+        logger.info(f"Successfully cached {len(tradable_assets)} tradable assets to {ASSET_CACHE_FILE}")
+        return tradable_assets
+    except Exception as e:
+        logger.error(f"Failed to fetch or cache assets from Alpaca: {e}", exc_info=True)
+        # Return empty list or re-raise, depending on desired error handling
+        # If the cache exists, we might want to return the stale cache instead of failing
+        if os.path.exists(ASSET_CACHE_FILE):
+             logger.warning("Returning potentially stale asset cache due to fetch error.")
+             try:
+                 with open(ASSET_CACHE_FILE, 'r') as f:
+                     return json.load(f)
+             except Exception as read_err:
+                  logger.error(f"Failed to read stale cache file {ASSET_CACHE_FILE}: {read_err}")
+                  return [] # Give up and return empty
         else:
-            # Get all conversations for user
-            conversations = get_user_conversations(
-                user_id=request.user_id,
-                limit=request.limit or 50
-            )
-        
+             return [] # No cache and fetch failed
+
+@app.get("/api/market/assets")
+async def get_tradable_assets():
+    """Get a list of tradable US equity assets, using local cache."""
+    try:
+        assets_data = []
+        refresh_needed = False
+
+        if os.path.exists(ASSET_CACHE_FILE):
+            try:
+                file_mod_time = datetime.fromtimestamp(os.path.getmtime(ASSET_CACHE_FILE))
+                if datetime.now() - file_mod_time > timedelta(hours=ASSET_CACHE_TTL_HOURS):
+                    logger.info(f"Asset cache file {ASSET_CACHE_FILE} is older than {ASSET_CACHE_TTL_HOURS} hours. Refreshing.")
+                    refresh_needed = True
+                else:
+                    logger.info(f"Reading tradable assets from cache file: {ASSET_CACHE_FILE}")
+                    with open(ASSET_CACHE_FILE, 'r') as f:
+                        assets_data = json.load(f)
+            except Exception as e:
+                logger.error(f"Error reading or checking cache file {ASSET_CACHE_FILE}, attempting refresh: {e}")
+                refresh_needed = True
+        else:
+            logger.info(f"Asset cache file {ASSET_CACHE_FILE} not found. Fetching initial data.")
+            refresh_needed = True
+
+        if refresh_needed:
+            assets_data = await _fetch_and_cache_assets()
+
+        logger.info(f"Returning {len(assets_data)} tradable assets.")
         return JSONResponse({
             "success": True,
-            "conversations": conversations
+            "assets": assets_data
         })
-    
-    except Exception as e:
-        logger.error(f"Error getting conversations: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": f"Error getting conversations: {str(e)}"
-        }, status_code=500)
 
-@app.post("/create-chat-session")
-async def create_new_chat_session(
-    request: CreateSessionRequest,
-    api_key: str = Depends(verify_api_key)
-):
-    """Create a new chat session."""
+    except Exception as e:
+        # This outer catch is for unexpected errors in the endpoint logic itself
+        logger.error(f"Unexpected error in get_tradable_assets endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error retrieving assets.")
+
+# --- Endpoint to Force Refresh Asset Cache ---
+@app.post("/api/market/assets/refresh")
+async def refresh_tradable_assets_cache(api_key: str = Depends(verify_api_key)):
+    """Forces a refresh of the locally cached tradable assets list."""
     try:
-        # Log the request
-        logger.info(f"Creating chat session for user {request.user_id}")
-        
-        # Create the chat session
-        session = create_chat_session(
-            user_id=request.user_id,
-            portfolio_id=request.portfolio_id,
-            title=request.title
-        )
-        
-        if not session:
-            return JSONResponse({
-                "success": False,
-                "message": "Failed to create chat session"
-            }, status_code=500)
-        
+        logger.info("Forcing refresh of tradable assets cache...")
+        refreshed_assets = await _fetch_and_cache_assets()
         return JSONResponse({
             "success": True,
-            "message": "Chat session created successfully",
-            "session": session
+            "message": f"Successfully refreshed asset cache. Found {len(refreshed_assets)} assets.",
+            "count": len(refreshed_assets)
         })
-    
     except Exception as e:
-        logger.error(f"Error creating chat session: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": f"Error creating chat session: {str(e)}"
-        }, status_code=500)
-
-@app.post("/get-chat-sessions")
-async def get_user_chat_sessions(
-    request: GetSessionsRequest,
-    api_key: str = Depends(verify_api_key)
-):
-    """Get all chat sessions for a user."""
-    try:
-        # Log the request
-        logger.info(f"Getting chat sessions for user {request.user_id}")
-        
-        # Get the chat sessions
-        sessions = get_chat_sessions(
-            user_id=request.user_id,
-            portfolio_id=request.portfolio_id
-        )
-        
-        # Process sessions into the expected format
-        formatted_sessions = []
-        for session in sessions:
-            # Convert createdAt to ISO string
-            created_at = session.get("created_at", "")
-            
-            formatted_sessions.append({
-                "id": session.get("id", ""),
-                "title": session.get("title", ""),
-                "createdAt": created_at,
-                "messages": []  # We'll populate this later if needed
-            })
-        
-        return JSONResponse({
-            "success": True,
-            "sessions": formatted_sessions
-        })
-    
-    except Exception as e:
-        logger.error(f"Error getting chat sessions: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": f"Error getting chat sessions: {str(e)}"
-        }, status_code=500)
-
-@app.post("/get-session-conversations")
-async def get_session_conversations(
-    request: dict,
-    api_key: str = Depends(verify_api_key)
-):
-    """Retrieve all conversations for a specific chat session."""
-    try:
-        session_id = request.get('session_id')
-        user_id = request.get('user_id')
-        
-        if not session_id or not user_id:
-            return JSONResponse({
-                "success": False,
-                "message": "Session ID and user ID are required",
-                "messages": []
-            }, status_code=400)
-        
-        logger.info(f"Getting conversations for session {session_id}, user {user_id}")
-        
-        # Connect to Supabase
-        from utils.supabase.db_client import get_supabase_client, conversations_to_messages
-        
-        try:
-            # Create Supabase client
-            supabase = get_supabase_client()
-            
-            # Query the conversations table for this session and user
-            response = supabase.table("conversations") \
-                .select("message, response, created_at") \
-                .eq("session_id", session_id) \
-                .eq("user_id", user_id) \
-                .order("created_at", desc=False) \
-                .execute()
-            
-            # Check for errors
-            if response.data is None and hasattr(response, 'error') and response.error:
-                logger.error(f"Supabase error fetching conversations: {response.error}")
-                return JSONResponse({
-                    "success": False,
-                    "message": f"Database error: {response.error.message}",
-                    "messages": []
-                }, status_code=500)
-            
-            # Convert database records to chat message format
-            if response.data:
-                chat_messages = conversations_to_messages(response.data)
-                logger.info(f"Found {len(chat_messages)} messages for session {session_id}")
-                return JSONResponse({
-                    "success": True,
-                    "messages": chat_messages
-                })
-            else:
-                logger.info(f"No conversations found for session {session_id}")
-                return JSONResponse({
-                    "success": True,
-                    "messages": []
-                })
-        except Exception as e:
-            logger.error(f"Error fetching session conversations: {e}", exc_info=True)
-            return JSONResponse({
-                "success": False,
-                "message": f"Error fetching session conversations: {str(e)}",
-                "messages": []
-            }, status_code=500)
-    
-    except Exception as e:
-        logger.error(f"Error processing request: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": f"Error processing request: {str(e)}",
-            "messages": []
-        }, status_code=500)
-
-@app.post("/save-conversation-with-session")
-async def save_conversation_to_session(
-    request: SaveConversationWithSessionRequest,
-    api_key: str = Depends(verify_api_key)
-):
-    """Save a conversation to a specific chat session."""
-    try:
-        # Log the request
-        logger.info(f"Saving conversation to session {request.session_id}")
-        
-        # Save the conversation
-        conversation = save_conversation_with_session(
-            user_id=request.user_id,
-            portfolio_id=request.portfolio_id,
-            message=request.message,
-            response=request.response,
-            session_id=request.session_id
-        )
-        
-        if not conversation:
-            return JSONResponse({
-                "success": False,
-                "message": "Failed to save conversation"
-            }, status_code=500)
-        
-        return JSONResponse({
-            "success": True,
-            "message": "Conversation saved successfully",
-            "conversation": conversation
-        })
-    
-    except Exception as e:
-        logger.error(f"Error saving conversation: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": f"Error saving conversation: {str(e)}"
-        }, status_code=500)
-
-@app.post("/count-session-messages")
-async def count_session_messages(
-    request: dict,
-    api_key: str = Depends(verify_api_key)
-):
-    """Count the number of messages in a chat session."""
-    try:
-        # Log the request
-        logger.info(f"Counting messages for session {request.get('session_id')}")
-        
-        session_id = request.get('session_id')
-        user_id = request.get('user_id')
-        
-        if not session_id or not user_id:
-            return JSONResponse({
-                "success": False,
-                "message": "Session ID and user ID are required",
-                "count": 0
-            }, status_code=400)
-        
-        # Connect to Supabase
-        from utils.supabase.db_client import get_supabase_client
-        
-        try:
-            # Create Supabase client
-            supabase = get_supabase_client()
-            
-            # Count messages for this session
-            response = supabase.table("conversations") \
-                .select("*", count="exact") \
-                .eq("session_id", session_id) \
-                .eq("user_id", user_id) \
-                .execute()
-            
-            # Extract the count
-            count = response.count if hasattr(response, 'count') else 0
-            
-            return JSONResponse({
-                "success": True,
-                "count": count
-            })
-        except Exception as e:
-            logger.error(f"Error counting session messages: {e}", exc_info=True)
-            return JSONResponse({
-                "success": False,
-                "message": f"Error counting session messages: {str(e)}",
-                "count": 0
-            }, status_code=500)
-    
-    except Exception as e:
-        logger.error(f"Error counting session messages: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": f"Error counting session messages: {str(e)}",
-            "count": 0
-        }, status_code=500)
-
-@app.post("/update-chat-session-title")
-async def update_chat_session_title(
-    request: dict,
-    api_key: str = Depends(verify_api_key)
-):
-    """Update the title of a chat session."""
-    try:
-        # Log the request
-        logger.info(f"Updating title for session {request.get('session_id')}")
-        
-        session_id = request.get('session_id')
-        title = request.get('title')
-        user_id = request.get('user_id')
-        
-        if not session_id or not title or not user_id:
-            return JSONResponse({
-                "success": False,
-                "message": "Session ID, title, and user ID are required"
-            }, status_code=400)
-        
-        # Connect to Supabase
-        from utils.supabase.db_client import get_supabase_client
-        
-        try:
-            # Create Supabase client
-            supabase = get_supabase_client()
-            
-            # Update the session title
-            response = supabase.table("chat_sessions") \
-                .update({"title": title}) \
-                .eq("id", session_id) \
-                .eq("user_id", user_id) \
-                .execute()
-            
-            # Check if the update was successful
-            if not response.data:
-                return JSONResponse({
-                    "success": False,
-                    "message": "Failed to update chat session title"
-                }, status_code=404)
-            
-            return JSONResponse({
-                "success": True,
-                "message": "Chat session title updated successfully"
-            })
-        except Exception as e:
-            logger.error(f"Error updating chat session title: {e}", exc_info=True)
-            return JSONResponse({
-                "success": False,
-                "message": f"Error updating chat session title: {str(e)}"
-            }, status_code=500)
-    
-    except Exception as e:
-        logger.error(f"Error updating chat session title: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": f"Error updating chat session title: {str(e)}"
-        }, status_code=500)
+        logger.error(f"Error during forced asset cache refresh: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to refresh asset cache: {str(e)}")
+# --- End Cache Refresh Endpoint ---
 
 if __name__ == "__main__":
     import uvicorn

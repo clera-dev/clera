@@ -42,6 +42,27 @@ A new "Invest" section has been added to the frontend application (`frontend-app
     *   Added `NEXT_PUBLIC_APCA_API_KEY_ID`, `NEXT_PUBLIC_APCA_API_SECRET_KEY`, `NEXT_PUBLIC_APCA_PAPER` to `frontend-app/.env.local` for potential future frontend Alpaca SDK usage (though currently search uses mock data).
     *   Added `FINANCIAL_MODELING_PREP_API_KEY` to `frontend-app/.env.local` for use by the server-side API routes.
 
+**Update (2024-07-26): Buy Functionality Added**
+
+*   **Available Balance Display:**
+    *   A new backend endpoint `/api/account/{account_id}/balance` was added to `backend/api_server.py` to fetch `buying_power`, `cash`, etc., using the Alpaca Broker API.
+    *   The `InvestPage` now fetches this balance when an `accountId` is available from `localStorage`.
+    *   A fixed footer appears at the bottom of the viewport on the `/invest` page when a stock is selected, displaying the user's available buying power.
+*   **Invest Button & Modal:**
+    *   The fixed footer includes an "$ Invest" button.
+    *   Clicking this button opens a `BuyOrderModal` (`frontend-app/components/invest/BuyOrderModal.tsx`) built using Shadcn UI `Dialog`.
+*   **Buy Order Modal Features:**
+    *   Displays the selected symbol.
+    *   Fetches and displays the latest market price using the Alpaca Market Data API client-side (`alpaca.getLatestTrade`).
+    *   Provides a dollar amount input field and a custom number pad.
+    *   Includes a "Place Order" button with a teal-to-green gradient.
+*   **Order Submission:**
+    *   The "Place Order" button sends a `POST` request to the existing `/api/trade` endpoint in the backend (`backend/api_server.py`).
+    *   The request includes `accountId`, `ticker`, `notional_amount`, and `side: 'BUY'`.
+    *   User feedback (loading, success, error) is provided using `react-hot-toast`.
+*   **Helper Functions:**
+    *   `formatCurrency` and `formatNumber` functions were moved from `StockInfoCard.tsx` to `frontend-app/lib/utils.ts` for reusability.
+
 **Security Considerations:**
-*   The FMP API key is securely handled server-side via Next.js API routes.
-*   The Alpaca API keys (`NEXT_PUBLIC_...`) are currently configured for potential frontend use but are *not* actively used by the stock search component yet (it uses mock data). If the frontend directly uses these Alpaca keys later (e.g., for fetching the full asset list), be mindful of the security risks of exposing keys client-side in production. Proxying through the backend is recommended for production environments.
+*   Trade execution remains securely handled by the backend `/api/trade` endpoint using the Broker API client.
+*   Market price fetching for the modal uses the Alpaca Market Data API keys (`NEXT_PUBLIC_...`) client-side, which is generally acceptable, but trade execution keys remain backend-only.

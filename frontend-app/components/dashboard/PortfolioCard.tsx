@@ -69,7 +69,7 @@ export default function PortfolioCard({ alpacaAccountId }: PortfolioCardProps) {
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground flex items-center">
               <DollarSign className="h-4 w-4 mr-1 text-green-500" />
-              Total Amount Funded
+              Total Portfolio Value
             </span>
             
             {loading ? (

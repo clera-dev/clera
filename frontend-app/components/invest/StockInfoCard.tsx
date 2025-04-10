@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 interface StockInfoCardProps {
   symbol: string;
@@ -70,27 +71,6 @@ interface PriceTargetSummary {
   allTimeAvgPriceTarget: number;
   publishers?: string; // Often a stringified JSON array
 }
-
-// Helper to format large numbers
-const formatNumber = (num: number | null | undefined): string => {
-  if (num === null || num === undefined) return 'N/A';
-  if (Math.abs(num) >= 1e12) {
-    return (num / 1e12).toFixed(2) + 'T';
-  }
-  if (Math.abs(num) >= 1e9) {
-    return (num / 1e9).toFixed(2) + 'B';
-  }
-  if (Math.abs(num) >= 1e6) {
-    return (num / 1e6).toFixed(2) + 'M';
-  }
-  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
-
-// Helper to format currency
-const formatCurrency = (num: number | null | undefined, currency: string = 'USD'): string => {
-  if (num === null || num === undefined) return 'N/A';
-  return num.toLocaleString(undefined, { style: 'currency', currency: currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
 
 export default function StockInfoCard({ symbol }: StockInfoCardProps) {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
