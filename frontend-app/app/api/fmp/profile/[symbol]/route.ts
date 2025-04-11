@@ -2,14 +2,10 @@ import { NextResponse } from 'next/server';
 
 export async function GET(
   request: Request,
-  { params }: { params: { symbol: string } }
+  { params }: { params: Promise<{ symbol: string }> }
 ) {
-  //const sessionId = params.id; // Access id directly from destructured params
-  // Instead of directly accessing params.id, await params first:
   const { symbol } = await params;
-  //const sessionId = id;
 
-  //const symbol = params.symbol;
   const apiKey = process.env.FINANCIAL_MODELING_PREP_API_KEY;
 
   if (!apiKey) {
@@ -38,14 +34,11 @@ export async function GET(
     }
     const data = await response.json();
 
-    // FMP often returns an array, even for a single symbol profile
     if (Array.isArray(data) && data.length > 0) {
       return NextResponse.json(data[0]); 
     } else if (Array.isArray(data) && data.length === 0) {
-      // Handle cases where the symbol might be valid but FMP returns an empty array
       return NextResponse.json({ error: `No profile data found for symbol: ${symbol}` }, { status: 404 });
     } else {
-      // Handle unexpected response format
       console.error(`Unexpected FMP API response format for profile ${symbol}:`, data);
       return NextResponse.json({ error: 'Received unexpected data format from FMP.' }, { status: 500 });
     }
