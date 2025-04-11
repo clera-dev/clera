@@ -43,8 +43,8 @@ export default function ChatButton({ accountId }: ChatButtonProps) {
         Chat with Clera
       </Button>
       
-      {/* Chat interface */}
-      {isOpen && (
+      {/* Chat interface - Only render if isOpen AND userId exists */}
+      {isOpen && userId && (
         <div className="fixed bottom-6 right-6 w-[400px] h-[600px] z-50">
           <Chat 
             accountId={accountId}

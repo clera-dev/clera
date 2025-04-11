@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET(
   request: Request,
-  { params }: { params: { symbol: string } }
+  { params }: { params: Promise<{ symbol: string }> }
 ) {
   //const sessionId = params.id; // Access id directly from destructured params
   // Instead of directly accessing params.id, await params first:

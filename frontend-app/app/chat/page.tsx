@@ -12,6 +12,7 @@ const CURRENT_SESSION_KEY = 'cleraCurrentChatSession';
 
 export default function ChatPage() {
   const [accountId, setAccountId] = useState('');
+  const [userId, setUserId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
@@ -19,10 +20,12 @@ export default function ChatPage() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   useEffect(() => {
-    // Load account ID and restore current session ID from localStorage
+    // Load account ID and user ID, restore current session ID from localStorage
     if (typeof window !== 'undefined') {
       const storedAccountId = localStorage.getItem('alpacaAccountId') || '';
+      const storedUserId = localStorage.getItem('userId');
       setAccountId(storedAccountId);
+      setUserId(storedUserId);
       
       // Try to restore the current session if it exists
       const storedSessionId = localStorage.getItem(CURRENT_SESSION_KEY);
@@ -98,10 +101,10 @@ export default function ChatPage() {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  if (!accountId) {
+  if (!accountId || !userId) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-muted-foreground">Loading user data...</p>
       </div>
     );
   }
@@ -138,6 +141,7 @@ export default function ChatPage() {
         <div className="h-[calc(100vh-4rem)]">
           <Chat 
             accountId={accountId} 
+            userId={userId}
             onClose={() => {}} 
             isFullscreen={true} 
             sessionId={currentSessionId}
