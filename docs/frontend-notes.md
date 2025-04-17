@@ -366,7 +366,153 @@ To run the application locally:
 
 ## Deployment
 
-The application is configured for deployment on Vercel (based on the presence of deployment-related components).
+The frontend application is deployed through Vercel for production environments:
+
+- The production build is automatically generated through Vercel's CI/CD pipeline
+- Environment variables are configured in the Vercel project settings
+- Custom domains and SSL certificates are managed through Vercel
+- Automatic preview deployments are available for pull requests
+
+The Vercel deployment provides:
+- Global CDN distribution
+- Edge caching for improved performance
+- Automatic HTTPS with SSL certificates
+- Continuous deployment from the GitHub repository
+
+### Vercel Deployment Configuration
+
+#### Project Configuration
+
+The frontend is configured in Vercel with the following settings:
+
+1. **Build Configuration**:
+   - Framework Preset: `Next.js`
+   - Build Command: `next build`
+   - Output Directory: `.next`
+   - Install Command: `npm install`
+   - Node.js Version: 18.x
+
+2. **Domain Configuration**:
+   - Production Domain: `app.clera.ai`
+   - Automatic SSL/TLS certificates
+   - Custom DNS records for domain verification
+
+3. **Environment Variables**:
+   Vercel manages environment variables across different deployment environments:
+
+   **Production Environment**:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   NEXT_PUBLIC_BACKEND_URL=https://api.clera.ai
+   PLAID_ENV=production
+   NEXT_PUBLIC_BASE_URL=https://app.clera.ai
+   ```
+
+   **Preview Environments**:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://your-staging-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-staging-anon-key
+   NEXT_PUBLIC_BACKEND_URL=https://api-staging.clera.ai
+   PLAID_ENV=sandbox
+   NEXT_PUBLIC_BASE_URL=https://staging.clera.ai
+   ```
+
+4. **Git Integration**:
+   - Connected to the GitHub repository
+   - Auto-deployment on commits to the `main` branch
+   - Preview deployments for pull requests
+   - Protection rules for production deployment
+
+5. **Performance Optimizations**:
+   - Image Optimization API enabled
+   - Automatic compression and minification
+   - Edge caching with configurable TTL
+   - Incremental Static Regeneration (ISR) for dynamic content
+
+#### Deployment Process
+
+1. **Automatic Deployments**:
+   - Push to `main` branch triggers production build
+   - Vercel runs build process:
+     ```bash
+     npm install
+     next build
+     ```
+   - Production deployments automatically aliased to primary domain
+
+2. **Preview Deployments**:
+   - Pull requests generate unique preview URLs
+   - Format: `clera-git-{branch-name}-{team-name}.vercel.app`
+   - Enables easy testing and review before merging
+
+3. **Rollbacks**:
+   - Previous deployments are preserved
+   - One-click rollback from Vercel dashboard
+   - Automatic rollback configuration for failed deployments
+
+### Backend Integration
+
+The frontend connects to both backend components:
+
+1. **AWS-Hosted Backend API**:
+   - REST API calls to the AWS ELB endpoint:
+     `http://clera--Publi-3zZfi5RHJKzZ-523282791.us-west-1.elb.amazonaws.com`
+   - Authentication via API keys
+   - Handles broker account creation and management
+   - Manages ACH funding through Plaid integration
+   - Environment-specific configuration with `NEXT_PUBLIC_BACKEND_URL`
+
+2. **LangGraph AI Services**:
+   - Communicates with AI agents hosted on LangGraph
+   - WebSocket connections for real-time AI interactions
+   - Setup through environment variables
+   - Request routing through the AWS backend API
+
+### Environment Management
+
+The frontend uses different environment configurations for development stages:
+
+1. **Local Development**:
+   - `.env.local` file with development settings
+   - Points to local backend and LangGraph servers
+   - Supabase local emulator or development project
+   - Plaid sandbox environment
+
+2. **Staging Environment**:
+   - Connected to staging backend services
+   - Uses separate Supabase project
+   - Plaid sandbox for testing bank connections
+   - Full feature testing before production
+
+3. **Production Environment**:
+   - Production backend services integration via:
+     `http://clera--Publi-3zZfi5RHJKzZ-523282791.us-west-1.elb.amazonaws.com`
+   - Live Supabase database
+   - Plaid production for real bank connections
+   - Strict security policies
+
+### Performance Monitoring
+
+Vercel provides performance analytics:
+
+1. **Web Vitals Monitoring**:
+   - Core Web Vitals tracking
+   - Real User Monitoring (RUM)
+   - Page load performance metrics
+   - First Input Delay (FID) and Largest Contentful Paint (LCP)
+
+2. **Error Tracking**:
+   - Runtime error logging
+   - API failure reporting
+   - Client-side exception handling
+   - Integration with error monitoring services
+
+3. **Usage Analytics**:
+   - Bandwidth consumption
+   - Request counts
+   - Function invocations
+   - Build minutes tracking
 
 ## Integration with Backend
 

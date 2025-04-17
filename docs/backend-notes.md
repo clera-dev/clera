@@ -331,11 +331,296 @@ The system uses environment variables (in `.env` file) for configuration:
 
 ## Deployment
 
-The backend supports:
+The backend uses a hybrid deployment model:
 
+1. **Non-AI Agent Logic (API Server, Broker Integration, etc.)**
+   - Deployed on AWS using:
+     - ECS (Elastic Container Service) for containerized workloads
+     - AWS Copilot for deployment orchestration 
+     - Load balancing through AWS Application Load Balancer
+     - Environment variables managed through AWS Parameter Store
+     - Production monitoring and logging with CloudWatch
+   - Production API accessible at:
+     `http://clera--Publi-3zZfi5RHJKzZ-523282791.us-west-1.elb.amazonaws.com`
+
+2. **AI Agent Workflow (LangGraph)**
+   - Hosted on dedicated LangGraph servers
+   - Defined in the project's `langgraph.json` configuration file
+   - Connects to the main backend through API calls
+   - Environment variables for AI services managed separately
+   - Specialized scaling for AI workload requirements
+
+This split architecture allows for optimized resource allocation between standard web services and more compute-intensive AI processing.
+
+### AWS Copilot Deployment Details
+
+The AWS-hosted components are deployed using AWS Copilot, which orchestrates ECS services, networking, and related AWS resources:
+
+#### Manifest Structure
+```
+backend/copilot/
+├── api-service/           # API service configuration
+│   └── manifest.yml       # Service manifest
+├── environments/          # Environment configurations
+│   └── production/        # Production environment
+│       └── manifest.yml   # Environment manifest
+└── pipelines/             # CI/CD pipeline configuration
+```
+
+#### Service Manifest Configuration
+The `api-service` is configured as a Load Balanced Web Service in `backend/copilot/api-service/manifest.yml`, with the following key configuration:
+
+```yaml
+# The manifest for the "api-service" service
+name: api-service
+type: Load Balanced Web Service
+
+http:
+  path: '/'
+  healthcheck:
+    path: '/api/health'
+    healthy_threshold: 2
+    unhealthy_threshold: 5
+    interval: 30s
+    timeout: 15s
+
+image:
+  build:
+    dockerfile: Dockerfile
+    context: .
+    platform: linux/amd64
+    no_cache: true
+  port: 8000
+
+cpu: 1024      # 1 vCPU
+memory: 2048   # 2 GB RAM
+platform: linux/amd64
+count: 1
+exec: true
+
+# Environment variables and secrets management
+variables:
+  # Static environment variables
+  PYTHONUNBUFFERED: "1"
+  WORKERS: "4"
+  # Additional environment variables...
+
+secrets:
+  # Integration with SSM Parameter Store
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: /clera-api/production/next_public_supabase_anon_key
+  OPENAI_API_KEY: /clera-api/production/openai_api_key
+  # Additional secrets...
+
+# Environment-specific overrides
+environments:
+  production:
+    variables:
+      LOG_LEVEL: "info"
+    deployment:
+      rolling: 'recreate'
+      deployment_controller:
+        type: ECS
+      circuit_breaker:
+        enable: true
+        rollback: true
+    logging:
+      retention: 30
+    observability:
+      tracing: awsxray
+```
+
+#### Deployment Process
+
+1. **Initial Setup**:
+   ```bash
+   copilot app init clera-api
+   copilot env init --name production
+   copilot svc init --name api-service --svc-type "Load Balanced Web Service"
+   ```
+
+2. **Deployment**:
+   ```bash
+   copilot svc deploy --name api-service --env production
+   ```
+
+3. **Continuous Deployment Pipeline**:
+   ```bash
+   copilot pipeline init
+   copilot pipeline deploy
+   ```
+
+#### Secrets Management
+
+AWS Copilot integrates with AWS Systems Manager Parameter Store for secure secrets management:
+
+1. **Storing Secrets**:
+   ```bash
+   # Create a parameter
+   aws ssm put-parameter \
+     --name /clera-api/production/openai_api_key \
+     --value "sk-..." \
+     --type SecureString
+   ```
+
+2. **Accessing in Application**:
+   Secrets are automatically injected as environment variables at runtime.
+
+3. **Automated Setup Script**:
+   The project includes a `setup-aws-secrets.sh` script that creates required parameters in SSM.
+
+#### Health Checks and Monitoring
+
+- **Health Check Endpoint**: `/api/health` provides basic API server status
+- **CloudWatch Alarms**: Configured for CPU, memory, and service availability
+- **X-Ray Tracing**: Enabled for production environment for detailed request tracing
+
+#### Common Deployment Issues and Fixes
+
+1. **YAML Syntax Errors in Manifest**:
+   - Always validate YAML syntax before deploying with `yamllint`
+   - Watch for indentation errors and string formatting issues
+   - Fix: Use proper YAML formatting and indentation
+
+2. **Service Deployment Failures**:
+   - Check CloudWatch Logs at `/aws/ecs/clera-api-production-api-service`
+   - View cluster events with `copilot svc logs`
+   - Fix: Address application errors or resource constraints
+
+3. **Secret Access Issues**:
+   - Ensure SSM parameters exist in the correct region and with exact matching paths
+   - Check IAM permissions for the ECS task role
+   - Fix: Run `setup-aws-secrets.sh` or create missing parameters manually
+
+4. **Container Health Check Failures**:
+   - The container must return a 200 status on `/api/health` within the timeout period
+   - Adjust healthcheck settings for slow-starting applications
+   - Fix: Increase timeout or improve startup performance
+
+#### Scaling Configuration
+
+The service uses autoscaling based on CPU and memory metrics:
+
+```yaml
+count:
+  range: 1-10
+  cpu_percentage: 70
+  memory_percentage: 80
+```
+
+This configures the service to autoscale between 1 and 10 tasks based on 70% CPU utilization or 80% memory utilization.
+
+#### Service Endpoints
+
+After successful deployment, the service is accessible through the AWS Application Load Balancer URL:
+
+```
+http://clera--Publi-3zZfi5RHJKzZ-523282791.us-west-1.elb.amazonaws.com
+```
+
+This endpoint serves:
+- REST API for frontend communication
+- Health check at `/api/health`
+- All brokerage and financial API integrations
+- Proxy requests to LangGraph services
+
+For production usage, this URL is typically:
+1. Hidden behind a custom domain with proper DNS configuration
+2. Secured with HTTPS/TLS certificates
+3. Protected with WAF (Web Application Firewall) rules
+
+### LangGraph Deployment Details
+
+The AI Agent workflow is deployed on dedicated LangGraph servers, separate from the main AWS infrastructure. This architecture optimizes for AI workloads that have different scaling characteristics than traditional web services.
+
+#### LangGraph Configuration
+
+The agent deployment is defined in the `langgraph.json` file at the project root:
+
+```json
+{
+  "dockerfile_lines": [],
+  "graphs": {
+    "agent": "./backend/clera_agents/graph.py:graph" 
+  },
+  "env": "./backend/.env",
+  "dependencies": ["./backend"],
+  "store": {
+    "index": {
+      "embed": "openai:text-embedding-3-small",
+      "dims": 1536,
+      "fields": ["$"]
+    }
+  }
+}
+```
+
+This configuration specifies:
+
+1. **Agent Graph**: The main agent workflow is defined in `./backend/clera_agents/graph.py` as the `graph` object
+2. **Environment Variables**: Loaded from `./backend/.env`
+3. **Dependencies**: The entire `./backend` directory is included
+4. **Vector Store**: Uses OpenAI's text-embedding-3-small model with 1536 dimensions
+
+#### Deployment Process
+
+1. **Initial Setup**:
+   - LangGraph account and project configuration
+   - API key generation for service authentication
+   - Environment variable configuration
+
+2. **Deployment**:
+   - Direct deployment from GitHub repository
+   - Automatic updates when changes are pushed to the main branch
+   - Version control and rollback capabilities
+
+3. **Integration Points**:
+   - The AWS backend communicates with LangGraph using REST API calls
+   - Frontend can initiate AI workflows through the backend API
+   - Long-running agent sessions are maintained on LangGraph servers
+
+#### Security Configuration
+
+1. **Authentication**:
+   - API key-based authentication for backend-to-LangGraph communication
+   - No direct frontend-to-LangGraph communication (always proxied through backend)
+   - Key rotation policies for production environments
+
+2. **Data Handling**:
+   - Sensitive user data remains in AWS backend
+   - Only necessary context is passed to LangGraph
+   - Compliance with data privacy regulations
+
+#### Monitoring and Observability
+
+1. **LangGraph Monitoring**:
+   - Agent execution traces for debugging
+   - Performance metrics for response times
+   - Error tracking and alerting
+   - Usage statistics for billing and capacity planning
+
+2. **Integration with AWS Monitoring**:
+   - Cross-service request tracking
+   - End-to-end latency measurement
+   - Correlation of backend events with LangGraph execution
+
+#### Scaling and Performance
+
+1. **Auto-scaling**:
+   - Automatic scaling based on request volume
+   - Reserved capacity for critical workloads
+   - Burst capacity for peak usage periods
+
+2. **Performance Optimizations**:
+   - Response caching for common queries
+   - Optimized model selection based on workload
+   - Efficient context management to reduce token usage
+
+### Local Development
+
+For local development, both components can be run locally:
 - Local development with Docker and Docker Compose
 - VS Code Dev Containers for easy setup
-- Production deployment on AWS (ECS, EKS)
+- Support for running LangGraph locally during development
 
 ## Development Configuration
 
