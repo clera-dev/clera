@@ -1,0 +1,114 @@
+# The manifest for the "api-service" service.
+# Read the full specification for the "Load Balanced Web Service" type at:
+#  https://aws.github.io/copilot-cli/docs/manifest/lb-web-service/
+
+# Your service name will be used in naming your resources like log groups, ECS services, etc.
+name: api-service
+type: Load Balanced Web Service
+
+# Distribute traffic to your service.
+http:
+  # Requests to this path will be forwarded to your service.
+  # To match all requests you can use the "/" path.
+  path: '/'
+  # You can specify a custom health check path. The default is "/".
+  healthcheck:
+    path: '/api/health'
+    healthy_threshold: 2
+    unhealthy_threshold: 5 # Allow more retries before failing
+    interval: 30s        # Increase interval slightly
+    timeout: 15s         # Increase timeout
+
+# Configuration for your containers and service.
+image:
+  # Docker build arguments. For additional overrides: https://aws.github.io/copilot-cli/docs/manifest/lb-web-service/#image-build
+  build:
+    dockerfile: Dockerfile
+    context: . # Use the directory containing 'copilot/' (i.e., 'backend/') as the context
+    platform: linux/amd64 # Explicitly build for x86_64 architecture
+    no_cache: true # Force rebuild without using cache layers
+  # Port exposed through your container to route traffic to it.
+  port: 8000
+
+cpu: 1024      # Increase CPU slightly more
+memory: 2048   # Increase Memory more, Python apps can be memory hungry
+platform: linux/amd64 #linux/x86_64  # See https://aws.github.io/copilot-cli/docs/manifest/lb-web-service/#platform
+count: 1       # Number of tasks that should be running in your service.
+exec: true     # Enable running commands in your container.
+network:
+  connect: true # Enable Service Connect for intra-environment traffic between services.
+
+# Optional fields for more advanced use-cases.
+variables:                    # Pass genuinely static environment variables here.
+  PYTHONUNBUFFERED: "1"
+  WORKERS: "4" # Adjust based on CPU/Memory if needed
+  BIND_PORT: "8000"
+  APP_HOME: "/app"
+  LANGSMITH_TRACING: "true"                            # Static value
+  LANGSMITH_ENDPOINT: "https://api.smith.langchain.com" # Static value
+  BROKER_BASE_URL: "https://paper-api.alpaca.markets"  # Static value for sandbox
+  ALPACA_ENVIRONMENT: "sandbox"                        # Static value for sandbox
+  PLAID_ENV: "sandbox"                                 # Static value for sandbox
+  # BACKEND_PUBLIC_URL will be set via secrets from SSM if needed dynamically
+
+secrets:                      # Pass secrets AND dynamic config from AWS SSM Parameter Store.
+  # IMPORTANT: Run ./setup-aws-secrets.sh or ./deploy-to-aws.sh to create these before deploying.
+  # Secrets
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: /clera-api/production/next_public_supabase_anon_key
+  SUPABASE_SERVICE_ROLE_KEY: /clera-api/production/supabase_service_role_key
+  GROQ_API_KEY: /clera-api/production/groq_api_key
+  OPENAI_API_KEY: /clera-api/production/openai_api_key
+  PINECONE_API_KEY: /clera-api/production/pinecone_api_key
+  ANTHROPIC_API_KEY: /clera-api/production/anthropic_api_key
+  TAVILY_API_KEY: /clera-api/production/tavily_api_key
+  PPLX_API_KEY: /clera-api/production/pplx_api_key
+  RETELL_API_KEY: /clera-api/production/retell_api_key
+  LANGSMITH_API_KEY: /clera-api/production/langsmith_api_key
+  LANGGRAPH_API_KEY: /clera-api/production/langgraph_api_key
+  BROKER_API_KEY: /clera-api/production/broker_api_key
+  BROKER_SECRET_KEY: /clera-api/production/broker_secret_key
+  APCA_API_KEY_ID: /clera-api/production/apca_api_key_id
+  APCA_API_SECRET_KEY: /clera-api/production/apca_api_secret_key
+  FINANCIAL_MODELING_PREP_API_KEY: /clera-api/production/financial_modeling_prep_api_key
+  CARTESIA_API_KEY: /clera-api/production/cartesia_api_key
+  DEEPGRAM_API_KEY: /clera-api/production/deepgram_api_key
+  LIVEKIT_API_KEY: /clera-api/production/livekit_api_key
+  LIVEKIT_API_SECRET: /clera-api/production/livekit_api_secret
+  BACKEND_API_KEY: /clera-api/production/backend_api_key # Used for API key auth
+  PLAID_CLIENT_ID: /clera-api/production/plaid_client_id
+  PLAID_SECRET: /clera-api/production/plaid_secret
+  # Dynamic Config fetched from SSM
+  NEXT_PUBLIC_SUPABASE_URL: /clera-api/production/next_public_supabase_url
+  SUPABASE_URL: /clera-api/production/supabase_url
+  LANGGRAPH_API_URL: /clera-api/production/langgraph_api_url
+  LIVEKIT_URL: /clera-api/production/livekit_url
+  # Add BACKEND_PUBLIC_URL here if it needs to be fetched dynamically, e.g.:
+  # BACKEND_PUBLIC_URL: /clera-api/production/backend_public_url 
+
+# You can override any of the values defined above by environment.
+environments:
+  production:
+    variables:
+      LOG_LEVEL: "info"
+      # Override static vars here if needed for production, e.g.:
+      # ALPACA_ENVIRONMENT: "live"
+      # PLAID_ENV: "development" 
+      # BROKER_BASE_URL: "https://api.alpaca.markets"
+    secrets:
+      # Override SSM path per environment if needed, e.g.:
+      # BROKER_API_KEY: /clera-api/prod/broker_api_key # Note the different path
+      # No overrides needed for secrets path in this case
+    deployment:
+      rolling: 'recreate'   # Stops existing tasks before new ones are started for faster deployments.
+      # Increase deployment timeouts
+      deployment_controller:
+        type: ECS # or CODE_DEPLOY
+      # Consider re-enabling rollback alarms once stable
+      # rollback_alarms: [] # Explicitly disable rollback alarms if they cause issues
+      circuit_breaker:
+        enable: true
+        rollback: true
+    logging:
+      retention: 30
+    observability:
+      tracing: awsxray # Enable X-Ray tracing if desired for deeper debugging

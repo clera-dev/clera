@@ -2,173 +2,189 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { redirect } from "next/navigation";
 import UserDashboard from "@/components/dashboard/UserDashboard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Terminal } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+// Define a more accurate type for account details based on Supabase fetch
+interface FetchedAccountDetails {
+  bankName?: string | null; 
+  bankAccountLast4?: string | null;
+  latestTransferAmount?: number | null; 
+  latestTransferStatus?: string | null;
+}
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [userData, setUserData] = useState<{ 
     firstName: string; 
     lastName: string;
   } | null>(null);
-  const [accountDetails, setAccountDetails] = useState<{
-    bankAccountNumber: string;
-    bankRoutingNumber: string;
-    transferAmount?: string;
-  } | null>(null);
+  const [accountDetails, setAccountDetails] = useState<FetchedAccountDetails | null>(null);
 
   useEffect(() => {
-    const fetchUserData = async () => {
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const supabase = createClient();
         
-        // Check auth status
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
+        // 1. Check auth status
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
           console.log("User not authenticated, redirecting to sign-in");
-          return redirect("/sign-in");
+          window.location.href = "/sign-in";
+          return; 
         }
         
-        // Store user ID in localStorage for chat functionality
-        try {
-          localStorage.setItem('userId', user.id);
-          console.log("Stored user ID in localStorage:", user.id);
-        } catch (err) {
-          console.error("Error storing user ID in localStorage:", err);
-        }
-        
-        // Get user data from user_onboarding
+        // 2. Get user first/last name from user_onboarding
+        let firstName = "User";
+        let lastName = "";
         try {
           const { data: onboardingData, error: onboardingError } = await supabase
             .from('user_onboarding')
-            .select('onboarding_data')
+            .select('onboarding_data') 
             .eq('user_id', user.id)
-            .single();
+            .maybeSingle();
           
+          if (onboardingError) {
+            console.warn("Warning fetching onboarding data:", onboardingError.message);
+          }
+
           if (onboardingData && onboardingData.onboarding_data) {
             const parsedData = typeof onboardingData.onboarding_data === 'string' 
               ? JSON.parse(onboardingData.onboarding_data) 
               : onboardingData.onboarding_data;
             
-            console.log("Found user onboarding data:", {
-              firstName: parsedData.firstName || "Not found",
-              lastName: parsedData.lastName || "Not found"
-            });
-            
-            setUserData({
-              firstName: parsedData.firstName || '',
-              lastName: parsedData.lastName || ''
-            });
-          } else {
-            // If onboarding data not found, use default values
-            console.log("No onboarding data found, using default values");
-            setUserData({
-              firstName: "User",
-              lastName: ""
-            });
+            firstName = parsedData?.firstName || firstName;
+            lastName = parsedData?.lastName || lastName;
           }
-        } catch (error) {
-          console.log("Error fetching onboarding data, using default values:", error);
-          setUserData({
-            firstName: "User",
-            lastName: ""
-          });
-        }
-        
-        // Get data from localStorage since we know the tables don't exist
-        let localBankAccountNumber = '';
-        let localBankRoutingNumber = '';
-        let localTransferAmount = '';
-        let localAlpacaAccountId = '';
-        let localRelationshipId = '';
-        let localTransferId = '';
-        
-        // Run this in a try/catch since localStorage might not be available in SSR
-        try {
-          localBankAccountNumber = localStorage.getItem('bankAccountNumber') || '';
-          localBankRoutingNumber = localStorage.getItem('bankRoutingNumber') || '';
-          localTransferAmount = localStorage.getItem('transferAmount') || '';
-          localAlpacaAccountId = localStorage.getItem('alpacaAccountId') || '';
-          localRelationshipId = localStorage.getItem('relationshipId') || '';
-          localTransferId = localStorage.getItem('transferId') || '';
-          
-          console.log("Found localStorage data:", {
-            accountNumber: localBankAccountNumber ? "Present" : "Missing",
-            routingNumber: localBankRoutingNumber ? "Present" : "Missing",
-            transferAmount: localTransferAmount ? "Present" : "Missing",
-            alpacaAccountId: localAlpacaAccountId ? "Present" : "Missing",
-            relationshipId: localRelationshipId ? "Present" : "Missing",
-            transferId: localTransferId ? "Present" : "Missing"
-          });
-        } catch (err) {
-          console.error("Error accessing localStorage:", err);
-        }
-        
-        // Check if we have localStorage data to use
-        const hasLocalData = localBankAccountNumber && localBankRoutingNumber && 
-                           localAlpacaAccountId && localRelationshipId;
+          setUserData({ firstName, lastName });
+          console.log("Dashboard: User name data set:", { firstName, lastName });
 
-        if (hasLocalData) {
-          // Use localStorage data since the database tables don't exist yet
-          console.log("Using localStorage data for account details");
-          setAccountDetails({
-            bankAccountNumber: localBankAccountNumber,
-            bankRoutingNumber: localBankRoutingNumber,
-            transferAmount: localTransferAmount || undefined
-          });
-        } else {
-          // No data found, but don't redirect - set default account details
-          console.log("No bank data found, but staying on dashboard with defaults");
-          setAccountDetails({
-            bankAccountNumber: "xxxx-xxxx-0000",
-            bankRoutingNumber: "121000358",
-            transferAmount: undefined
-          });
+        } catch (err) {
+          console.error("Error processing onboarding data:", err);
+          setUserData({ firstName: "User", lastName: "" });
         }
-        
-      } catch (error) {
-        console.error("Error fetching user data:", error);
-        
-        // Set some default values instead of redirecting
-        setUserData({
-          firstName: "User",
-          lastName: ""
-        });
-        
+
+        // 3. Fetch latest bank connection details
+        let bankName: string | null = null;
+        let bankAccountLast4: string | null = null;
+        try {
+            const { data: bankData, error: bankError } = await supabase
+                .from('user_bank_connections')
+                .select('bank_name, last_4')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (bankError) {
+                console.warn("Warning fetching bank connection:", bankError.message);
+            }
+            if (bankData) {
+                bankName = bankData.bank_name;
+                bankAccountLast4 = bankData.last_4;
+                console.log("Dashboard: Bank details found:", { bankName, bankAccountLast4 });
+            } else {
+                 console.log("Dashboard: No bank connection found for user.");
+            }
+        } catch (err) {
+             console.error("Error fetching bank connection details:", err);
+        }
+
+        // 4. Fetch latest transfer details
+        let latestTransferAmount: number | null = null;
+        let latestTransferStatus: string | null = null;
+        try {
+            const { data: transferData, error: transferError } = await supabase
+                .from('user_transfers')
+                .select('amount, status')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            
+            if (transferError) {
+                 console.warn("Warning fetching transfer data:", transferError.message);
+            }
+            if (transferData) {
+                latestTransferAmount = transferData.amount;
+                latestTransferStatus = transferData.status;
+                console.log("Dashboard: Transfer details found:", { latestTransferAmount, latestTransferStatus });
+            } else {
+                 console.log("Dashboard: No transfer data found for user.");
+            }
+        } catch (err) {
+            console.error("Error fetching transfer details:", err);
+        }
+
+        // 5. Set the combined account details state
         setAccountDetails({
-          bankAccountNumber: "xxxx-xxxx-0000",
-          bankRoutingNumber: "121000358",
-          transferAmount: undefined
+            bankName,
+            bankAccountLast4,
+            latestTransferAmount,
+            latestTransferStatus
         });
+        
+      } catch (err: any) {
+        console.error("Error fetching dashboard data:", err);
+        setError(err.message || "Failed to load dashboard data.");
+        setUserData(null);
+        setAccountDetails(null);
       } finally {
         setLoading(false);
       }
     };
     
-    fetchUserData();
+    fetchDashboardData();
   }, []);
   
   if (loading) {
     return (
       <div className="flex-1 w-full flex flex-col p-4 sm:p-6 md:p-8">
-        <Skeleton className="h-10 w-3/4 mb-4" />
-        <Skeleton className="h-6 w-1/2 mb-8" />
-        <Skeleton className="h-32 w-full mb-8" />
-        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-10 w-1/2 mb-4" /> 
+        <Skeleton className="h-6 w-1/3 mb-8" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-40 w-full" />
+        </div>
       </div>
     );
   }
   
-  if (!userData || !accountDetails) {
-    return redirect("/protected");
+  if (error) {
+      return (
+        <div className="flex items-center justify-center h-full p-4">
+            <Alert variant="destructive" className="max-w-md">
+                <Terminal className="h-4 w-4" />
+                <AlertTitle>Error Loading Dashboard</AlertTitle>
+                <AlertDescription>
+                    {error}
+                    <br />
+                    <Button variant="link" className="p-0 h-auto mt-2" onClick={() => window.location.reload()}>Try Reloading</Button>
+                </AlertDescription>
+            </Alert>
+        </div>
+     );
+  }
+
+  if (!userData) {
+     return (
+         <div className="flex items-center justify-center h-full p-4">
+             <p className="text-muted-foreground">Could not load user information. Please try refreshing.</p>
+         </div>
+     );
   }
   
   return (
     <div className="flex-1 w-full flex flex-col p-4 sm:p-6 md:p-8">
       <UserDashboard 
         firstName={userData.firstName}
-        accountDetails={accountDetails}
+        accountDetails={accountDetails || {}}
       />
     </div>
   );

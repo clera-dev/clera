@@ -21,14 +21,6 @@ export default function MainSidebar({
   setIsMobileSidebarOpen
 }: MainSidebarProps) {
   const pathname = usePathname();
-  const [alpacaAccountId, setAlpacaAccountId] = useState<string>('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedAccountId = localStorage.getItem('alpacaAccountId') || '';
-      setAlpacaAccountId(storedAccountId);
-    }
-  }, []);
 
   const navItems = [
     {

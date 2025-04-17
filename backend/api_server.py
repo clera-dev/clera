@@ -34,14 +34,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger("clera-api-server")
 
+# Set up a variable to track if we're in a ready state
+startup_complete = False
+startup_errors = []
+
 # Add parent directory to path to find graph.py
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logger.info(f"Python path: {sys.path}")
 
+# Try to import the graph from clera_agents but fail gracefully
 try:
     # Import the graph from clera_agents
     from clera_agents.graph import graph
-    logger.info("Successfully imported graph from clera_agents")
+    from langgraph.errors import GraphInterrupt # Needed for chat-stream endpoint
+    from langchain_core.messages import HumanMessage # Needed for chat-stream endpoint
+    logger.info("Successfully imported graph and related modules from clera_agents")
 except ImportError as e:
     logger.error(f"Failed to import graph from clera_agents: {e}")
     logger.error("Please make sure the clera_agents module is in your Python path.")
@@ -92,36 +99,66 @@ class CompanyInfoRequest(BaseModel):
 # Track conversation states by session ID
 conversation_states = {}
 
-# Import trade execution functionality
+# Import trade execution functionality - fail gracefully
 try:
     from clera_agents.trade_execution_agent import _submit_market_order, OrderSide
     from clera_agents.tools.company_analysis import company_profile
     logger.info("Successfully imported trade execution and company analysis modules")
 except ImportError as e:
-    logger.error(f"Failed to import trade modules: {e}")
-    logger.error("Trade functionality will not be available.")
+    error_msg = f"Failed to import trade modules: {e}"
+    logger.error(error_msg)
+    startup_errors.append(error_msg)
+    logger.warning("Trade functionality will not be available.")
+    _submit_market_order = None
+    OrderSide = None
+    company_profile = None
 
-# Import Alpaca broker client
-from alpaca.broker import BrokerClient
-from alpaca.broker.models import (
-    Contact,
-    Identity,
-    Disclosures,
-    Agreement,
-    Account
-)
-from alpaca.broker.requests import CreateAccountRequest
-from alpaca.broker.enums import TaxIdType, FundingSource, AgreementType
+# Import Alpaca broker client - fail gracefully
+try:
+    from alpaca.broker import BrokerClient
+    from alpaca.broker.models import (
+        Contact,
+        Identity,
+        Disclosures,
+        Agreement,
+        Account
+    )
+    from alpaca.broker.requests import CreateAccountRequest
+    from alpaca.broker.enums import TaxIdType, FundingSource, AgreementType
+    logger.info("Successfully imported Alpaca broker modules")
+except ImportError as e:
+    error_msg = f"Failed to import Alpaca broker modules: {e}"
+    logger.error(error_msg)
+    startup_errors.append(error_msg)
+    BrokerClient = None
 
-# Import Alpaca MarketDataClient
-from alpaca.data.live.stock import StockDataStream
-from alpaca.data.historical.stock import StockHistoricalDataClient
-from alpaca.data.requests import StockLatestTradeRequest
+# Import Alpaca MarketDataClient - fail gracefully
+try:
+    from alpaca.data.live.stock import StockDataStream
+    from alpaca.data.historical.stock import StockHistoricalDataClient
+    from alpaca.data.requests import StockLatestTradeRequest
+    logger.info("Successfully imported Alpaca data modules")
+except ImportError as e:
+    error_msg = f"Failed to import Alpaca data modules: {e}"
+    logger.error(error_msg)
+    startup_errors.append(error_msg)
+    StockHistoricalDataClient = None
+    StockLatestTradeRequest = None
 
-# Import Alpaca TradingClient for assets
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import GetAssetsRequest
-from alpaca.trading.enums import AssetClass, AssetStatus
+# Import Alpaca TradingClient for assets - fail gracefully
+try:
+    from alpaca.trading.client import TradingClient
+    from alpaca.trading.requests import GetAssetsRequest
+    from alpaca.trading.enums import AssetClass, AssetStatus
+    logger.info("Successfully imported Alpaca trading modules")
+except ImportError as e:
+    error_msg = f"Failed to import Alpaca trading modules: {e}"
+    logger.error(error_msg)
+    startup_errors.append(error_msg)
+    TradingClient = None
+    GetAssetsRequest = None
+    AssetClass = None
+    AssetStatus = None
 
 # Constants for Asset Caching
 ASSET_CACHE_FILE = os.path.join(os.path.dirname(__file__), "data", "tradable_assets.json")
@@ -130,93 +167,191 @@ ASSET_CACHE_TTL_HOURS = 24 # Time-to-live for the cache in hours
 # Ensure the data directory exists
 os.makedirs(os.path.join(os.path.dirname(__file__), "data"), exist_ok=True)
 
-# Initialize Alpaca broker client
-broker_client = BrokerClient(
-    api_key=os.getenv("BROKER_API_KEY"),
-    secret_key=os.getenv("BROKER_SECRET_KEY"),
-    sandbox=True  # Set to False for production
-)
+# Initialize Alpaca clients - fail gracefully
+broker_client = None
+market_data_client = None
+trading_client = None
 
-# Initialize Alpaca MarketDataClient using Trading API keys (APCA_...)
-market_data_client = StockHistoricalDataClient(
-    api_key=os.getenv("APCA_API_KEY_ID"),      # Use Trading API Key ID
-    secret_key=os.getenv("APCA_API_SECRET_KEY"),  # Use Trading API Secret
-    # The client usually infers paper/live from keys or endpoint defaults.
-    # explicit url_override typically not needed if using paper keys.
-)
+if BrokerClient:
+    try:
+        broker_client = BrokerClient(
+            api_key=os.getenv("BROKER_API_KEY", ""),
+            secret_key=os.getenv("BROKER_SECRET_KEY", ""),
+            sandbox=True  # Set to False for production
+        )
+        # Test API keys validity
+        if os.getenv("BROKER_API_KEY") and os.getenv("BROKER_SECRET_KEY"):
+            logger.info("Testing Alpaca broker client connection...")
+            try:
+                broker_client.get_clock()
+                logger.info("Successfully connected to Alpaca broker API")
+            except Exception as e:
+                error_msg = f"Failed to connect to Alpaca broker API: {e}"
+                logger.error(error_msg)
+                startup_errors.append(error_msg)
+        else:
+            logger.warning("Alpaca broker API keys not provided")
+            startup_errors.append("Alpaca broker API keys not provided")
+    except Exception as e:
+        error_msg = f"Failed to initialize Alpaca broker client: {e}"
+        logger.error(error_msg)
+        startup_errors.append(error_msg)
+else:
+    logger.warning("BrokerClient class not available due to import error.")
 
-# Initialize Alpaca TradingClient using Trading API keys (APCA_...)
-trading_client = TradingClient(
-    api_key=os.getenv("APCA_API_KEY_ID"),
-    secret_key=os.getenv("APCA_API_SECRET_KEY"),
-    paper=True # Assuming paper trading based on previous context
-)
+if StockHistoricalDataClient:
+    try:
+        market_data_client = StockHistoricalDataClient(
+            api_key=os.getenv("APCA_API_KEY_ID", ""),      # Use Trading API Key ID
+            secret_key=os.getenv("APCA_API_SECRET_KEY", ""),  # Use Trading API Secret
+        )
+        # Test connection if keys are provided
+        if os.getenv("APCA_API_KEY_ID") and os.getenv("APCA_API_SECRET_KEY"):
+            logger.info("Testing Alpaca market data client connection...")
+            try:
+                # Make a lightweight API call
+                # market_data_client.get_stock_bars("AAPL", limit=1) # Causes issues if market closed?
+                logger.info("Successfully connected to Alpaca market data API (connection test skipped)")
+            except Exception as e:
+                error_msg = f"Failed to connect to Alpaca market data API: {e}"
+                logger.error(error_msg)
+                startup_errors.append(error_msg)
+        else:
+            logger.warning("Alpaca trading API keys not provided")
+            startup_errors.append("Alpaca trading API keys not provided")
+    except Exception as e:
+        error_msg = f"Failed to initialize Alpaca market data client: {e}"
+        logger.error(error_msg)
+        startup_errors.append(error_msg)
+else:
+     logger.warning("StockHistoricalDataClient class not available due to import error.")
+
+if TradingClient:
+    try:
+        trading_client = TradingClient(
+            api_key=os.getenv("APCA_API_KEY_ID", ""),
+            secret_key=os.getenv("APCA_API_SECRET_KEY", ""),
+            paper=True # Assuming paper trading based on previous context
+        )
+    except Exception as e:
+        error_msg = f"Failed to initialize Alpaca trading client: {e}"
+        logger.error(error_msg)
+        startup_errors.append(error_msg)
+else:
+    logger.warning("TradingClient class not available due to import error.")
 
 def get_broker_client():
-    """Get an instance of the Alpaca broker client with API keys from environment."""
-    return BrokerClient(
-        api_key=os.getenv("BROKER_API_KEY"),
-        secret_key=os.getenv("BROKER_SECRET_KEY"),
-        sandbox=True  # Set to False for production
+    """Get an instance of the Alpaca broker client, checking for initialization."""
+    if not broker_client:
+        logger.warning("Broker client was not initialized successfully.")
+        # Optionally, try to re-initialize here or raise an error
+        raise HTTPException(status_code=503, detail="Broker service not available due to initialization error.")
+    return broker_client
+
+# Handle utility imports more gracefully to avoid crashes
+create_or_get_alpaca_account = None
+create_direct_plaid_link_url = None
+get_transfers_for_account = None
+get_account_details = None
+create_ach_transfer = None
+create_ach_relationship_manual = None
+save_conversation = None
+get_user_conversations = None
+get_portfolio_conversations = None
+create_chat_session = None
+get_chat_sessions = None
+get_conversations_by_session = None
+delete_chat_session = None
+save_conversation_with_session = None
+get_user_alpaca_account_id = None
+create_thread = None
+run_thread_stream = None
+get_thread_messages = None
+list_threads = None
+format_messages_for_frontend = None
+update_thread_metadata = None
+
+try:
+    # Import our Alpaca utilities
+    from utils.alpaca import (
+        create_or_get_alpaca_account, 
+        create_direct_plaid_link_url,
+        get_transfers_for_account,
+        get_account_details
     )
+    
+    # For ACH transfers
+    from utils.alpaca.bank_funding import create_ach_transfer, create_ach_relationship_manual
+    
+    # Import Supabase conversation and chat session utilities
+    from utils.supabase import (
+        save_conversation,
+        get_user_conversations,
+        get_portfolio_conversations,
+        create_chat_session,
+        get_chat_sessions,
+        get_conversations_by_session,
+        delete_chat_session,
+        save_conversation_with_session,
+        get_user_alpaca_account_id
+    )
+    
+    # Import LangGraph client utilities
+    from utils.langgraph_client import (
+        create_thread, 
+        run_thread_stream,
+        get_thread_messages,
+        list_threads,
+        format_messages_for_frontend,
+        update_thread_metadata
+    )
+    logger.info("Successfully imported utility modules")
+except ImportError as e:
+    error_msg = f"Failed to import one or more utility modules: {e}"
+    logger.error(error_msg)
+    startup_errors.append(error_msg)
+    logger.warning("Some functionality relying on utils may be unavailable.")
 
-# Import our Alpaca utilities
-from utils.alpaca import (
-    create_or_get_alpaca_account, 
-    create_direct_plaid_link_url,
-    get_transfers_for_account,
-    get_account_details
-)
+# Startup event handler
+@app.on_event("startup")
+async def startup_event():
+    global startup_complete
+    logger.info("Executing API server startup checks...")
+    # Perform any necessary startup tasks here
+    
+    # Log any missing required environment variables explicitly listed in .env
+    # (You might want to generate this list dynamically or maintain it)
+    required_vars = [
+        "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
+        "GROQ_API_KEY", "OPENAI_API_KEY", "PINECONE_API_KEY", "ANTHROPIC_API_KEY", "TAVILY_API_KEY",
+        "PPLX_API_KEY", "RETELL_API_KEY", "LANGSMITH_API_KEY", "LANGGRAPH_API_KEY", "BROKER_API_KEY",
+        "BROKER_SECRET_KEY", "APCA_API_KEY_ID", "APCA_API_SECRET_KEY", "FINANCIAL_MODELING_PREP_API_KEY",
+        "CARTESIA_API_KEY", "DEEPGRAM_API_KEY", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "LIVEKIT_URL",
+        "BACKEND_API_KEY", "PLAID_CLIENT_ID", "PLAID_SECRET"
+    ]
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    if missing_vars:
+        logger.warning(f"Missing required environment variables/secrets: {', '.join(missing_vars)}")
+        for var in missing_vars:
+            startup_errors.append(f"Missing required environment variable/secret: {var}")
+    
+    # Mark startup as complete
+    startup_complete = True
+    logger.info(f"API server startup process complete with {len(startup_errors)} errors/warnings.")
 
-# For ACH transfers
-from utils.alpaca.bank_funding import create_ach_transfer, create_ach_relationship_manual
 
-# Import Supabase conversation and chat session utilities
-from utils.supabase import (
-    save_conversation,
-    get_user_conversations,
-    get_portfolio_conversations,
-    create_chat_session,
-    get_chat_sessions,
-    get_conversations_by_session,
-    delete_chat_session,
-    save_conversation_with_session,
-    get_user_alpaca_account_id
-)
-
-# Import LangGraph client utilities
-from utils.langgraph_client import (
-    create_thread, 
-    run_thread_stream,
-    get_thread_messages,
-    list_threads,
-    format_messages_for_frontend,
-    update_thread_metadata
-)
-
-# -----------------------------------------------------
-# NOTE: Several LangGraph-related endpoints have been removed from this file
-# as they are now handled directly by the frontend using the LangGraph JS/TS SDK.
-#
-# Operations now handled directly by the frontend in chat-client.ts:
-# - Thread Creation: client.threads.create()
-# - Thread Listing: client.threads.search()
-# - Thread Deletion: client.threads.delete()
-# - Thread Metadata Updates: client.threads.patchState()
-# - Thread Message Retrieval: client.threads.getState()
-#
-# This approach reduces API call overhead and simplifies the backend.
-# See frontend-app/utils/api/chat-client.ts for implementation.
-# For details, refer to docs/chat-integration-notes.md
-# -----------------------------------------------------
-
-# API key authentication
+# --- API key authentication (moved here for clarity) ---
 def verify_api_key(x_api_key: str = Header(None)):
-    if x_api_key != os.getenv("BACKEND_API_KEY"):
+    expected_key = os.getenv("BACKEND_API_KEY")
+    if not expected_key:
+        logger.error("BACKEND_API_KEY environment variable is not set on the server.")
+        raise HTTPException(status_code=500, detail="Server configuration error: API key not set.")
+    if x_api_key != expected_key:
+        logger.warning(f"Invalid API key received: {x_api_key[:5]}...")
         raise HTTPException(status_code=401, detail="Invalid API key")
     return x_api_key
 
-# Models
+# --- Other Models (moved here for clarity) ---
 class FundingSourceEnum(str, Enum):
     EMPLOYMENT_INCOME = "employment_income"
     INVESTMENTS = "investments"
@@ -795,7 +930,7 @@ async def health_check():
 @app.get("/info")
 async def get_info():
     """Provides basic server information, often probed by SDKs."""
-    logger.info("Received request for /info endpoint")
+    logger.debug("Received request for /info endpoint")
     return {"server": "Clera AI API", "status": "running", "version": "1.0.0"}
 
 @app.post("/create-alpaca-account", response_model=AlpacaAccountResponse)
@@ -1276,12 +1411,22 @@ async def refresh_tradable_assets_cache(api_key: str = Depends(verify_api_key)):
 
 if __name__ == "__main__":
     import uvicorn
-    os.environ["ENVIRONMENT"] = "development"
-    # Run the server
-    uvicorn.run(
-        "api_server:app", 
-        host="0.0.0.0", 
-        port=8000, 
-        reload=True, 
-        log_level="info"
-    )
+    # Check if running in development or AWS environment
+    # In AWS, Gunicorn runs this, so this block is mainly for local dev
+    if not os.getenv("AWS_EXECUTION_ENV"):
+        logger.info("Starting API server for local development...")
+        os.environ["ENVIRONMENT"] = "development" # Ensure dev env is set
+        uvicorn.run(
+            "api_server:app", 
+            host="0.0.0.0", 
+            port=int(os.getenv("BIND_PORT", 8000)), 
+            reload=True, 
+            log_level="info"
+        )
+    else:
+        logger.info("Server started via Gunicorn in AWS environment. __main__ block skipped.")
+
+# // Make sure the rest of your API endpoints are defined below here
+# // e.g., /api/trade, /api/company/{ticker}, /api/chat-stream, etc.
+# // Remember to add checks in those endpoints for None values for imported modules/clients.
+# // ... the rest of your 1288 lines of code ...

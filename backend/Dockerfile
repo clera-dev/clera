@@ -1,19 +1,74 @@
-FROM langchain/langgraph-api:3.11
+# --- Builder Stage ---
+# Use an official Python runtime as a parent image
+FROM python:3.11-slim AS builder
 
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
+# Set work directory
+WORKDIR /app
 
-# -- Adding local package . --
-ADD . /deps/backend
-# -- End of local package . --
+# Install system dependencies if needed (e.g., for libraries like numpy or specific drivers)
+# RUN apt-get update && apt-get install -y --no-install-recommends some-package && rm -rf /var/lib/apt/lists/*
 
-# -- Installing all local dependencies --
-RUN PYTHONDONTWRITEBYTECODE=1 pip install --no-cache-dir -c /api/constraints.txt -e /deps/*
-# -- End of local dependencies install --
-ENV LANGGRAPH_STORE='{"index": {"embed": "openai:text-embedding-3-small", "dims": 1536, "fields": ["$"]}}'
-ENV LANGSERVE_GRAPHS='{"agent": "/deps/backend/clera_agents/graph.py:graph"}'
+# Install Python dependencies
+# Copy only requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --upgrade pip
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
-WORKDIR /deps/backend
+# --- Runtime Stage ---
+# Use a slim Python image for the final stage
+FROM python:3.11-slim
 
+# Set environment variables with defaults to prevent startup failures
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV APP_HOME=/app
+ENV WORKERS=4
+ENV BIND_PORT=8000
+
+WORKDIR $APP_HOME
+
+# Install system dependencies required at runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    iputils-ping \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dependencies from wheels built in the builder stage
+COPY --from=builder /wheels /wheels
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/* \
+    && rm -rf /wheels
+
+# Copy application code
+COPY . .
+
+# Make scripts executable
+RUN chmod +x /app/entrypoint.sh
+RUN chmod +x /app/aws-entrypoint.sh
+
+# Create a non-root user and group
+RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser
+
+# Change ownership of the app directory
+RUN chown -R appuser:appuser $APP_HOME
+
+# Switch to the non-root user
+USER appuser
+
+# Expose the port the app runs on
+EXPOSE 8000
+
+# Add HEALTHCHECK instruction - use a simpler curl-based check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+  CMD curl --fail http://localhost:8000/api/health || exit 1
+
+# Set the AWS-specific entrypoint script for more diagnostics
+ENTRYPOINT ["/app/aws-entrypoint.sh"]
 
 # Use the official Python image from the Docker Hub
 #FROM python:3.12-slim
