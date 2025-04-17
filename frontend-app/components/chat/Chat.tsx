@@ -36,6 +36,8 @@ interface ChatProps {
   sessionId?: string; // This will be the thread_id for useStream
   initialMessages?: Message[]; // Use the Message type imported above
   onMessageSent?: () => void;
+  onQuerySent?: () => Promise<void>;
+  isLimitReached: boolean;
   onSessionCreated?: (sessionId: string) => void;
   onTitleUpdated?: (sessionId: string, newTitle: string) => void;
 }
@@ -108,6 +110,8 @@ export default function Chat({
   sessionId: initialSessionId, // Rename to initialThreadId for clarity?
   initialMessages = [], // Keep initialMessages for potential display before stream connects?
   onMessageSent,
+  onQuerySent,
+  isLimitReached,
   onSessionCreated,
   onTitleUpdated
 }: ChatProps) {
@@ -117,7 +121,7 @@ export default function Chat({
   const [hasTitleBeenUpdated, setHasTitleBeenUpdated] = useState(false);
   
   // TODO: Get these from environment variables
-  const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL || 'http://localhost:8000'; // Ensure this points to your FastAPI server
+  const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL || 'http://localhost:8000';
   const apiKey = process.env.NEXT_PUBLIC_LANGGRAPH_API_KEY; // Optional, depends on backend auth
   const assistantId = process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID || 'agent'; // The graph ID/name to run
   

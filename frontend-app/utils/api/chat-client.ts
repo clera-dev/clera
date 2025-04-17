@@ -2,6 +2,7 @@
 
 import { Client } from '@langchain/langgraph-sdk';
 import { Message as LangGraphMessage } from '@langchain/langgraph-sdk';
+import { createClient } from "@/utils/supabase/client";
 
 export type Message = {
   role: 'system' | 'user' | 'assistant';
@@ -594,4 +595,65 @@ function convertLangGraphMessages(messages: LangGraphMessage[]): Message[] {
   }
   
   return convertedMessages;
+}
+
+/**
+ * Retrieves the number of queries a user has made today (PST).
+ */
+export async function getUserDailyQueryCount(userId: string): Promise<number> {
+  if (!userId) {
+    console.error('User ID is required to fetch query count.');
+    return 0; // Or throw an error
+  }
+
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase.rpc('get_user_query_count_today_pst', {
+      p_user_id: userId,
+    });
+
+    if (error) {
+      console.error('Error fetching user daily query count:', error);
+      // Decide how to handle error - return 0, -1, or throw?
+      // Returning 0 might falsely allow queries if the check fails.
+      // Throwing might be better but needs handling upstream.
+      throw error; // Let the caller handle the error state
+    }
+
+    console.log(`User ${userId} daily query count: ${data}`);
+    return data ?? 0;
+  } catch (error) {
+    console.error('Exception fetching user daily query count:', error);
+    throw error; // Re-throw for upstream handling
+  }
+}
+
+/**
+ * Records that a user has made a query by calling the Supabase RPC function.
+ */
+export async function recordUserQuery(userId: string): Promise<void> {
+  if (!userId) {
+    console.error('User ID is required to record a query.');
+    return; // Or throw an error
+  }
+
+  const supabase = createClient();
+  try {
+    const { error } = await supabase.rpc('record_user_query', {
+      p_user_id: userId,
+    });
+
+    if (error) {
+      console.error('Error recording user query:', error);
+      // Decide on error handling: maybe log and continue, or throw?
+      // If recording fails, the user might get more queries than allowed.
+      // Throwing might be safer.
+      throw error;
+    }
+
+    console.log(`Recorded query for user ${userId}`);
+  } catch (error) {
+    console.error('Exception recording user query:', error);
+    throw error; // Re-throw for upstream handling
+  }
 } 

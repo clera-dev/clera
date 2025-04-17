@@ -2,7 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { PlusIcon } from 'lucide-react';
-import { Message, createChatSession, getChatSessions } from '@/utils/api/chat-client';
+import { 
+  Message, 
+  // createChatSession, // Handled by Chat component interaction with SDK
+  // getChatSessions, // Handled by Sidebar
+  getUserDailyQueryCount, 
+  recordUserQuery
+} from '@/utils/api/chat-client';
+import { DAILY_QUERY_LIMIT, DAILY_QUERY_LIMIT_MESSAGE } from '@/lib/constants'; // Import limit and message
 import Chat from '@/components/chat/Chat';
 import ChatSidebar from '@/components/chat/history/ChatSidebar';
 import { Button } from '@/components/ui/button';
@@ -23,11 +30,17 @@ export default function ChatPage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isLoading, setIsLoading] = useState(true); // Unified loading state
   const [error, setError] = useState<string | null>(null); // Unified error state
+  const [queryCount, setQueryCount] = useState<number>(0); // State for query count
+  const [isLimitReached, setIsLimitReached] = useState<boolean>(false); // State for limit status
 
   useEffect(() => {
     const initializeChat = async () => {
       setIsLoading(true);
       setError(null);
+      setQueryCount(0); // Reset count on initialization
+      setIsLimitReached(false);
+
+      let currentUserId: string | null = null; // Temp variable for user ID
 
       try {
         // 1. Fetch User ID from Supabase Auth
@@ -37,7 +50,7 @@ export default function ChatPage() {
         if (authError || !user) {
           throw new Error(authError?.message || "User not authenticated. Cannot load chat.");
         }
-        const currentUserId = user.id;
+        currentUserId = user.id; // Assign to temp variable
         setUserId(currentUserId);
         console.log("ChatPage: User ID found:", currentUserId);
 
@@ -49,7 +62,18 @@ export default function ChatPage() {
         setAccountId(fetchedAccountId);
         console.log("ChatPage: Alpaca Account ID found:", fetchedAccountId);
 
-        // 3. Restore current chat session ID from localStorage (if exists)
+        // 3. Fetch initial query count for the user
+        if (currentUserId) { // Check if user ID was successfully fetched
+          const count = await getUserDailyQueryCount(currentUserId);
+          setQueryCount(count);
+          setIsLimitReached(count >= DAILY_QUERY_LIMIT);
+          console.log(`ChatPage: Initial query count: ${count}, Limit reached: ${count >= DAILY_QUERY_LIMIT}`);
+        } else {
+          // This case should ideally not happen due to the auth check above
+          throw new Error("Failed to get user ID before fetching query count."); 
+        }
+
+        // 4. Restore current chat session ID from localStorage (if exists)
         if (typeof window !== 'undefined') {
           const storedSessionId = localStorage.getItem(CURRENT_SESSION_KEY);
           if (storedSessionId) {
@@ -127,9 +151,26 @@ export default function ChatPage() {
     setInitialMessages([]); // Let Chat component load messages
   };
 
-  // Function to handle when a chat message is sent successfully
-  const handleChatSent = () => {
-    setRefreshTrigger(prev => prev + 1);
+  // Function to handle recording a query and updating the count
+  const handleQuerySent = async () => {
+    if (!userId) {
+      console.error("Cannot record query: User ID not available.");
+      // Potentially show an error to the user?
+      return;
+    }
+    try {
+      await recordUserQuery(userId);
+      const newCount = queryCount + 1;
+      setQueryCount(newCount);
+      setIsLimitReached(newCount >= DAILY_QUERY_LIMIT);
+      console.log(`ChatPage: Query recorded. New count: ${newCount}, Limit reached: ${newCount >= DAILY_QUERY_LIMIT}`);
+      // Trigger sidebar refresh if needed (e.g., if it shows usage info)
+      setRefreshTrigger(prev => prev + 1); 
+    } catch (error) {
+      console.error("Failed to record user query:", error);
+      // Show error to user? Should we prevent further interaction?
+      setError("Failed to record your query. Please try again later or contact support.");
+    }
   };
 
   // Add handler for session creation from Chat component
@@ -220,7 +261,8 @@ export default function ChatPage() {
             isFullscreen={true} 
             sessionId={currentSessionId}
             initialMessages={initialMessages} // Pass potentially empty array
-            onMessageSent={handleChatSent}
+            onQuerySent={handleQuerySent} // Pass the new handler
+            isLimitReached={isLimitReached} // Pass limit status
             onSessionCreated={handleSessionCreated}
             onTitleUpdated={handleTitleUpdated}
             // key={currentSessionId || 'new'} // Force re-render on session change
