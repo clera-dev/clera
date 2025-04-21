@@ -22,7 +22,7 @@ phases:
       - pipeline=$(cat $CODEBUILD_SRC_DIR/copilot/pipelines/clera-main/manifest.yml | ruby -ryaml -rjson -e 'puts JSON.pretty_generate(YAML.load(ARGF))')
       - echo "Pipeline JSON:"
       - echo "$pipeline"
-      - pl_envs=$(echo $pipeline | jq -r '.stages[].name')
+      - "pl_envs=$(echo $pipeline | jq -r '.stages[].name')"
       - echo "Environment names: $pl_envs"
       # Find all the local services in the workspace.
       - svc_ls_result=$(./copilot-linux svc ls --local --json)
