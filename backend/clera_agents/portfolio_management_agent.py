@@ -212,18 +212,12 @@ def create_rebalance_instructions(positions_data: List, target_portfolio_type: O
         return f"Error processing portfolio data: {str(e)}"
 
 
-@tool("analyze_and_rebalance_portfolio")
-def analyze_and_rebalance_portfolio(state=None, config=None) -> str:
-    """Complete function to retrieve portfolio positions, analyze them, and provide rebalancing instructions.
+@tool("rebalance_instructions")
+def rebalance_instructions(state=None, config=None) -> str:
+    """Generate one-time rebalancing recommendations for the user's portfolio.
     
-    This is a simplified function that handles the entire rebalancing process in one step, including:
-    1. Retrieving the current portfolio positions
-    2. Converting and analyzing the positions
-    3. Generating rebalancing instructions based on the target portfolio type
-    
-    Args:
-        state: The current conversation state.
-        config: The current run configuration.
+    This function retrieves the current portfolio positions, analyzes them against the user's
+    investment strategy, and provides specific buy/sell recommendations to optimize the portfolio.
     
     Returns:
         str: A detailed set of instructions for rebalancing the portfolio
@@ -249,13 +243,13 @@ def analyze_and_rebalance_portfolio(state=None, config=None) -> str:
         )
         
     except Exception as e:
-        logger.error(f"[Portfolio Agent] Error in analyze_and_rebalance_portfolio tool: {e}", exc_info=True)
+        logger.error(f"[Portfolio Agent] Error in rebalance_instructions tool: {e}", exc_info=True)
         return f"Error analyzing portfolio: {str(e)}"
 
 
 @tool("get_portfolio_summary")
 def get_portfolio_summary(state=None, config=None) -> str:
-    """Generate a comprehensive summary of the user's investment portfolio.
+    """Generate a one-time comprehensive summary of the user's investment portfolio.
     
     This tool provides a detailed analysis of the portfolio including:
     - Total portfolio value and asset allocation
@@ -264,12 +258,8 @@ def get_portfolio_summary(state=None, config=None) -> str:
     - Concentration risk identification
     - Comparison to target allocation based on investment strategy
     
-    Args:
-        state: The current conversation state.
-        config: The current run configuration.
-    
     Returns:
-        str: A formatted summary of the portfolio with detailed metrics
+        str: Formatted portfolio summary with detailed metrics
     """
     try:
         # Get positions using context

@@ -35,13 +35,15 @@ deep_research_perplexity = ChatPerplexity(
     temperature=0.4
 )
 
-@tool("research_financial_topic")
-def research_financial_topic(query: str) -> str:
-    """Research financial topics, news, events, market data, or specific companies. Adapts depth based on the query.
-    - Use for general financial questions, news updates, or company research.
-    - Provides concise, factual, up-to-date information by default.
-    - Performs more in-depth research ONLY if the query explicitly asks for "detailed" or "in-depth" analysis.
-    Input should be a specific financial research question.
+@tool("web_search")
+def web_search(query: str) -> str:
+    """Simple one-step search tool for financial information.
+    
+    Args:
+        query (str): The search query
+        
+    Returns:
+        str: Search results
     """
     # Determine if in-depth research is requested
     is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
@@ -64,7 +66,7 @@ Query: {query}
         response = chat_perplexity.invoke(messages)
         return response.content
     except Exception as e:
-        return f"Error researching financial topic: {e}"
+        return f"Error searching for information: {e}"
 
 @tool("build_investment_themes")
 def build_investment_themes(query: str) -> str:
@@ -81,8 +83,11 @@ def build_investment_themes(query: str) -> str:
 def get_stock_price(ticker: str) -> str:
     """Get the current price of a stock.
     
-    Input:
-        ticker: str
+    Args:
+        ticker (str): The stock symbol to get the price for
+        
+    Returns:
+        str: The current stock price information
     """
 
     stock_quote = get_stock_quote(ticker)
