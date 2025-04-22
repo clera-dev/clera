@@ -54,17 +54,24 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
   }
 
   // 2. Fallback to Supabase
-  console.log("Alpaca Account ID not found in localStorage or invalid. Fetching from Supabase...");
+  console.log("Alpaca Account ID: Attempting Supabase fallback.");
   const supabase = createClient(); // Use the client-side Supabase client
+  console.log("Alpaca Account ID: Supabase client potentially created.");
 
   try {
+    console.log("Alpaca Account ID: Attempting to get user.");
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      console.error("Error getting user for Supabase fetch:", authError);
+    if (authError) {
+      console.error("Alpaca Account ID: Supabase auth error:", authError);
+      return null;
+    }
+    if (!user) {
+      console.warn("Alpaca Account ID: No authenticated user found via Supabase.");
       return null; // Cannot fetch without user
     }
 
+    console.log("Alpaca Account ID: User found:", user.id, ". Attempting DB query.");
     const { data: onboardingData, error: dbError } = await supabase
       .from('user_onboarding')
       .select('alpaca_account_id')
@@ -72,28 +79,31 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
       .maybeSingle(); // Use maybeSingle to handle cases where the record might not exist yet
 
     if (dbError) {
-      console.error("Error fetching Alpaca Account ID from Supabase:", dbError);
+      console.error("Alpaca Account ID: Supabase DB query error:", dbError);
       return null;
     }
 
+    console.log("Alpaca Account ID: Supabase DB query successful. Data:", onboardingData);
+
     if (onboardingData && onboardingData.alpaca_account_id) {
       const fetchedId = onboardingData.alpaca_account_id;
-      console.log("Retrieved Alpaca Account ID from Supabase:", fetchedId);
-      
+      console.log("Alpaca Account ID: Retrieved from Supabase:", fetchedId);
+
       // 3. Store fetched ID back into localStorage
       try {
         localStorage.setItem('alpacaAccountId', fetchedId);
-        console.log("Stored fetched Alpaca Account ID into localStorage.");
+        console.log("Alpaca Account ID: Stored fetched ID into localStorage.");
       } catch (storageError) {
-        console.error("Error storing fetched Alpaca Account ID to localStorage:", storageError);
+        console.error("Alpaca Account ID: Error storing fetched ID to localStorage:", storageError);
       }
       return fetchedId;
     } else {
-      console.log("Alpaca Account ID not found in Supabase for user:", user.id);
+      console.warn("Alpaca Account ID: Not found in Supabase onboarding data for user:", user.id);
+      // Optionally store 'not_found' or similar in localStorage to prevent repeated checks?
       return null;
     }
   } catch (error) {
-    console.error("Unexpected error fetching Alpaca Account ID:", error);
+    console.error("Alpaca Account ID: Unexpected error during Supabase fallback:", error);
     return null;
   }
 };
