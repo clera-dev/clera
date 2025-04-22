@@ -149,7 +149,7 @@ jobs:
           file: ./backend/coverage.xml
           fail_ci_if_error: false
 
-  build:
+  docker-build:
     name: Build Docker Image
     runs-on: ubuntu-latest
     needs: [test]
@@ -199,29 +199,18 @@ jobs:
           sarif_file: 'trivy-results.sarif'
           category: trivy
 
-  deploy-staging:
-    name: Deploy to Staging
+  trigger-aws-copilot-deploy:
+    name: Trigger AWS Copilot Pipeline
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [docker-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: staging
     steps:
-      - name: Deploy to staging
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsOIDCRole
+          aws-region: us-west-2
+      - name: Start Copilot pipeline execution
         run: |
-          echo "Deploying to staging environment..."
-          # Add your deployment commands here
-          # This could use curl, AWS CLI, or specialized GitHub Actions
-          
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [deploy-staging]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: production
-    # This ensures manual approval before deploying to production
-    # Create this environment in GitHub repository settings
-    steps:
-      - name: Deploy to production
-        run: |
-          echo "Deploying to production environment..."
-          # Add your production deployment commands here 
+          PIPELINE_NAME="clera-main"
+          aws codepipeline start-pipeline-execution --name "$PIPELINE_NAME"

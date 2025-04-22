@@ -1,3 +1,9 @@
+# -----------------------------------------------------------------------------
+# ⚠️  DEPRECATED: The backend is now deployed automatically by the AWS Copilot
+# ⚠️  CodePipeline defined in backend/copilot/pipelines/clera-main.  This
+# ⚠️  script is kept only for disaster‑recovery or local troubleshooting.
+# -----------------------------------------------------------------------------
+
 #!/bin/sh
 # Exit immediately if a command exits with a non-zero status
 #!/bin/bash

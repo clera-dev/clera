@@ -26,7 +26,8 @@ image:
     dockerfile: Dockerfile
     context: . # Use the directory containing 'copilot/' (i.e., 'backend/') as the context
     platform: linux/amd64 # Explicitly build for x86_64 architecture
-    no_cache: true # Force rebuild without using cache layers
+    no_cache: false # Force rebuild without using cache layers
+  tag: ${CODEBUILD_RESOLVED_SOURCE_VERSION}
   # Port exposed through your container to route traffic to it.
   port: 8000
 
