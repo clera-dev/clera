@@ -1,23 +1,117 @@
-# Clera 
+# Clera Financial AI Platform
 
-This is a monorepo that contains all the code pertaining to building Clera. Monorepos made CI/CD pipelines, testing, and onboarding future engineers a lot simpler.
+Clera is a financial AI platform leveraging advanced language models and agent-based architecture to provide financial analysis, portfolio management, brokerage services, and conversational capabilities. This monorepo contains all the code pertaining to building Clera, simplifying CI/CD pipelines, testing, and onboarding.
 
-Here is a breakdown of what's going on:
+## Project Structure
 
-## backend
-All of our (mainly) python AI logic is housed here.
+The monorepo is organized into the following main directories:
 
-### Analysis of subfolders
-...
+-   `backend/`: Contains the Python-based backend services, including AI logic, API servers, and broker integrations.
+-   `frontend-app/`: Houses the Next.js frontend application for `app.askclera.com`.
+-   `docs/`: Documentation for the project, including detailed notes on backend and frontend architecture.
+-   `packages/`: Shared code and utilities utilized across different parts of the stack.
 
-## frontend-app
-This is our code for the frontend of app.askclera.com.
+## Backend (`backend/`)
 
-## website
-This is our code for askclera.com - our informational website.
+The backend powers Clera's core functionalities, built primarily with Python.
 
-## docs
-This is where we'll document this entire repo to easily track how everything is being built.
+**Key Components:**
 
-## packages
-Here we're housing code that can be utilized by the entire stack. 
+*   **API Server (`api_server.py`):** A FastAPI application providing RESTful endpoints for chat, trade execution, company info, health checks, and Alpaca/Plaid operations (account creation, ACH funding).
+*   **WebSocket Server (`server.py`):** Enables real-time communication, financial RAG, vector database connections (Pinecone), and voice capabilities (Retell integration).
+*   **AI Agents (`clera_agents/`):** Utilizes LangGraph for orchestrating specialized agents:
+    *   Financial Analyst Agent
+    *   Portfolio Management Agent
+    *   Trade Execution Agent
+    *   Includes tools for portfolio and company analysis.
+*   **Chatbots (`clera_chatbots/`):** Various chatbot implementations (frontend-facing, RAG-enabled with Perplexity/Llama).
+*   **Conversational AI (`conversational_ai/`):** Integrates voice features using LiveKit, Deepgram (STT), and Cartesia (TTS).
+*   **Broker Integration (`utils/alpaca/`):** Handles Alpaca Broker API interactions for account creation, management, and ACH funding via Plaid or manual entry.
+
+**Technologies:**
+
+*   Python, FastAPI, Uvicorn
+*   LangGraph, LangChain
+*   LLMs: Groq, Perplexity, Anthropic Claude
+*   Vector DB: Pinecone
+*   Broker API: Alpaca
+*   Bank Integration: Plaid
+*   Voice: LiveKit, Deepgram, Cartesia, Retell
+*   Database: Supabase (via API)
+
+**Deployment:**
+
+*   A hybrid model:
+    *   Non-AI logic (API Server, integrations) deployed on AWS ECS using AWS Copilot.
+    *   AI Agent workflows hosted on dedicated LangGraph servers.
+*   Backend API accessible via AWS Load Balancer.
+
+*(See `docs/backend-notes.md` for more details)*
+
+## Frontend (`frontend-app/`)
+
+The frontend provides the user interface for interacting with Clera, built with Next.js and TypeScript.
+
+**Key Components:**
+
+*   **App Router (`app/`):** Organizes routes, including authentication pages, API routes, dashboard, and protected areas.
+*   **Authentication:** Integrates with Supabase for user sign-up, sign-in, email verification, password reset, and protected routes using middleware and server actions.
+*   **UI Components (`components/`):** Reusable components built with TailwindCSS and Shadcn UI, including forms, cards, buttons, and theme switching.
+*   **Broker Onboarding (`components/onboarding/`):** A multi-step flow guiding users through Alpaca account creation (contact info, personal details, disclosures, agreements).
+*   **Bank Connection & Funding:** Supports bank account linking via Plaid (OAuth) or manual entry, and initiating ACH transfers.
+*   **Dashboard (`app/dashboard/`):** Displays Alpaca account info, connected banks, transfer history, and funding status.
+*   **Supabase Integration (`utils/supabase/`):** Uses client and server components for interacting with Supabase Auth and Database (storing onboarding status, bank connections, transfers).
+
+**Technologies:**
+
+*   Next.js (App Router), React, TypeScript
+*   TailwindCSS, Shadcn UI
+*   Supabase (Auth, Database)
+*   State Management: React Hooks, Server Actions
+*   API Communication: Fetch API, Server Actions
+
+**Deployment:**
+
+*   Deployed via Vercel.
+*   Utilizes Vercel's CI/CD, environment variable management, preview deployments, and global CDN.
+*   Connects to the AWS-hosted backend API and LangGraph services.
+
+*(See `docs/frontend-notes.md` for more details)*
+
+## Packages (`packages/`)
+
+Houses shared code, utilities, or configurations that can be utilized by both the frontend and backend applications, promoting code reuse and consistency.
+
+## Documentation (`docs/`)
+
+Contains detailed documentation about the project's architecture, setup, components, and deployment strategies. Key documents include:
+
+*   `backend-notes.md`: In-depth information about the backend system.
+*   `frontend-notes.md`: In-depth information about the frontend application.
+
+## Getting Started
+
+*(High-level steps - refer to specific `README.md` files within `backend/` and `frontend-app/` for detailed setup instructions)*
+
+1.  **Clone the repository:**
+    ```bash
+    git clone <repository-url>
+    cd clera
+    ```
+2.  **Configure Environment Variables:** Set up necessary `.env` files in both `backend/` and `frontend-app/` with API keys and service configurations (Supabase, Alpaca, Plaid, AI models, AWS credentials, etc.). Refer to `.env.example` files if available.
+3.  **Install Dependencies:**
+    *   **Backend:** `cd backend && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
+    *   **Frontend:** `cd frontend-app && npm install` (or `yarn install`)
+4.  **Run Development Servers:**
+    *   **Backend:** `cd backend && uvicorn api_server:app --reload` (and potentially `uvicorn server:app --reload --port=8080` for WebSocket)
+    *   **Frontend:** `cd frontend-app && npm run dev` (or `yarn dev`)
+5.  **Access Applications:**
+    *   Frontend typically available at `http://localhost:3000`.
+    *   Backend API typically available at `http://localhost:8000`.
+
+## Deployment Summary
+
+*   **Backend:** Deployed to AWS ECS via AWS Copilot (non-AI parts) and LangGraph (AI agents). Requires AWS and LangGraph setup.
+*   **Frontend:** Deployed to Vercel, connected to the production backend endpoints. Requires Vercel project setup and environment variable configuration.
+
+Refer to the `docs/` directory and specific service manifests (`copilot/`, `langgraph.json`) for detailed deployment configurations. 
