@@ -149,6 +149,7 @@ embeddings.py
 
 # personal notes and trackers
 notes.md
+todo.md
 
 # langgraph
 .langgraph_api/

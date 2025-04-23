@@ -179,6 +179,7 @@ export default function Chat({
             if (newSession && newSession.id) {
                 targetThreadId = newSession.id;
                 console.log("New session created successfully:", targetThreadId);
+                setCurrentThreadId(targetThreadId);
                 if (onSessionCreated) {
                     onSessionCreated(targetThreadId); // Notify parent immediately
                 }
