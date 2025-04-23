@@ -118,6 +118,8 @@ export default function Chat({
   const [input, setInput] = useState('');
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(initialSessionId || null);
   const [isCreatingSession, setIsCreatingSession] = useState(false); // Added loading state for session creation
+  // State to hold the first message temporarily until threadId is set and acknowledged
+  const [pendingFirstMessage, setPendingFirstMessage] = useState<string | null>(null);
   
   // TODO: Get these from environment variables
   const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL || 'http://localhost:8000';
@@ -152,7 +154,57 @@ export default function Chat({
   const isInterrupting = interrupt !== undefined; 
   const interruptMessage = isInterrupting ? String(interrupt.value) : null; 
 
-  // Handle input submission
+  // --- Effect to handle submitting the *first* message ---
+  useEffect(() => {
+    // Check if we just set a new thread ID and have a pending message
+    if (currentThreadId && pendingFirstMessage && !isProcessing) { // Ensure not already processing
+      const contentToSend = pendingFirstMessage;
+      console.log(`useEffect detected new threadId ${currentThreadId} and pending message "${contentToSend}". Submitting...`);
+      setPendingFirstMessage(null); // Clear pending state immediately
+
+      // Construct Input for the FIRST message
+      // The backend graph should append this message to the new thread's state.
+      const runInput = {
+          messages: [{ type: 'human' as const, content: contentToSend }],
+      };
+      const runConfig = {
+        configurable: { user_id: userId, account_id: accountId },
+        stream_mode: 'messages-tuple' as const
+      };
+
+      console.log(`Submitting FIRST message via thread.submit to thread ${currentThreadId}:`, runInput, "with config:", runConfig);
+      try {
+          thread.submit(runInput, {
+              config: runConfig,
+              optimisticValues(prev) {
+                  const prevMessages = prev.messages ?? [];
+                  const newMessage: LangGraphMessage = {
+                      type: 'human' as const,
+                      content: contentToSend, // Use the captured contentToSend
+                      id: `temp-${Date.now()}`
+                  };
+                  // Important: Optimistic update should reflect the state *after* this message
+                  return { ...prev, messages: [...prevMessages, newMessage] };
+              },
+          });
+
+          // Callbacks for the first message submission initiation
+          onMessageSent?.();
+           // Execute async onQuerySent without awaiting here to avoid blocking effect
+          if (onQuerySent) {
+            onQuerySent().catch(err => console.error("Error in onQuerySent for first message:", err));
+          }
+
+      } catch (err) {
+          console.error("Error calling thread.submit for first message from useEffect:", err);
+          // Potentially reset pending message or show error to user
+          // setPendingFirstMessage(contentToSend); // Option: Retry? Or clear?
+      }
+    }
+  }, [currentThreadId, pendingFirstMessage, thread, userId, accountId, onMessageSent, onQuerySent, isProcessing]); // Added isProcessing to dependencies
+  // --- End Effect for first message ---
+
+  // Handle input submission (for new sessions OR subsequent messages)
   const handleSendMessage = useCallback(async () => {
     const trimmedInput = input.trim();
     if (!trimmedInput || isProcessing || isInterrupting) return;
@@ -168,84 +220,84 @@ export default function Chat({
 
     let targetThreadId = currentThreadId;
 
-    // --- Explicit Session Creation Logic --- 
+    // --- Handle Session Creation OR Subsequent Message ---
     if (targetThreadId === null) {
-        setIsCreatingSession(true); // Start loading indicator
+        // --- This is the FIRST message in a new chat ---
+        setIsCreatingSession(true); // Start loading indicator for session creation
         console.log("No current thread ID. Attempting to create new session...");
         try {
             const newTitle = formatChatTitle(contentToSend);
+            // Pass accountId and userId correctly
             const newSession = await createChatSession(accountId, userId, newTitle);
-            
+
             if (newSession && newSession.id) {
                 targetThreadId = newSession.id;
                 console.log("New session created successfully:", targetThreadId);
+
+                // 1. Set the pending message content
+                setPendingFirstMessage(contentToSend);
+                // 2. Update the thread ID state - this will trigger the useEffect
                 setCurrentThreadId(targetThreadId);
+
                 if (onSessionCreated) {
                     onSessionCreated(targetThreadId); // Notify parent immediately
                 }
+                // 3. DO NOT submit here - the useEffect will handle it once currentThreadId is set.
             } else {
-                throw new Error("Failed to create chat session.");
+                throw new Error("Failed to create chat session or received invalid response.");
             }
         } catch (err) {
             console.error("Error creating session in handleSendMessage:", err);
             // TODO: Show error to user?
-            setIsCreatingSession(false); // Stop loading indicator on error
-            return; // Prevent sending message if session creation fails
+            // Clear pending message if session creation fails?
+             setPendingFirstMessage(null);
         } finally {
              setIsCreatingSession(false); // Stop loading indicator
         }
-    }
-    // --- End Explicit Session Creation Logic --- 
-    
-    if (!targetThreadId) {
-        console.error("Cannot send message: targetThreadId is still null after creation attempt.");
-        return;
-    }
+    } else {
+        // --- This is a SUBSEQUENT message in an existing chat ---
+        console.log(`Submitting SUBSEQUENT message to thread ${targetThreadId}`);
 
-    // --- Construct Input with FULL History --- 
-    // Get current raw messages from the hook state
-    const currentRawMessages = thread.messages || [];
-    // Create the new raw message in LangGraphMessage format
-    const newRawHumanMessage: LangGraphMessage = { type: 'human', content: contentToSend };
-    // Combine existing raw messages with the new one for the input payload
-    const runInput = {
-        messages: [...currentRawMessages, newRawHumanMessage],
-    };
-    // --- End Construct Input with FULL History ---
-    
-    const runConfig = {
-      configurable: {
-        user_id: userId,
-        account_id: accountId
-      },
-      stream_mode: 'messages-tuple' 
-    };
+        // --- MODIFIED: Send only the new message for subsequent messages ---
+        // LangGraph server maintains thread state, so we only need to send the new message
+        const runInput = {
+            messages: [{ type: 'human' as const, content: contentToSend }],
+        };
+        
+        const runConfig = {
+          configurable: {
+            user_id: userId,
+            account_id: accountId
+          },
+          stream_mode: 'messages-tuple' as const // Ensure consistent stream mode
+        };
 
-    console.log(`Submitting input via thread.submit to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
-    try {
-        thread.submit(runInput, { // Pass the input with full history
-            config: runConfig,
-            optimisticValues(prev) {
-                // Optimistic update still just adds the single new message locally
-                const prevMessages = prev.messages ?? [];
-                const newMessage: LangGraphMessage = { 
-                    type: 'human' as const, 
-                    content: contentToSend,
-                    id: `temp-${Date.now()}` 
-                };
-                return { ...prev, messages: [...prevMessages, newMessage] };
-            },
-        });
+        console.log(`Submitting subsequent input via thread.submit to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
+        try {
+            thread.submit(runInput, {
+                config: runConfig,
+                optimisticValues(prev) {
+                    // Optimistic update still adds the single new message locally 
+                    const prevMessages = prev.messages ?? [];
+                    const newMessage: LangGraphMessage = {
+                        type: 'human' as const,
+                        content: contentToSend,
+                        id: `temp-${Date.now()}`
+                    };
+                    return { ...prev, messages: [...prevMessages, newMessage] };
+                },
+            });
 
-        // Callbacks after successful submission initiation
-        onMessageSent?.(); 
-        await onQuerySent?.(); // Added await and call to onQuerySent
+            // Callbacks after successful submission initiation for subsequent messages
+            onMessageSent?.();
+            await onQuerySent?.(); // Keep await here for subsequent messages
 
-    } catch (err) {
-        console.error("Error calling thread.submit:", err);
+        } catch (err) {
+            console.error("Error calling thread.submit for subsequent message:", err);
+        }
     }
 
-  }, [input, isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent]); // Added onQuerySent to dependency array
+  }, [input, isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession]); // Added missing dependencies
 
   // Auto-adjust textarea height
   useEffect(() => {
@@ -321,6 +373,8 @@ export default function Chat({
           setInput(''); // Clear input when switching threads
           // Reset any potential creation state just in case
           setIsCreatingSession(false);
+          // Also clear any pending first message if the thread context changes
+          setPendingFirstMessage(null);
       }
       
   }, [initialSessionId, currentThreadId]); 

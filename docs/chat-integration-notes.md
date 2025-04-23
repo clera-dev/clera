@@ -25,6 +25,32 @@ The primary change involves the frontend application interacting directly with t
     *   **Receiving Messages**: Agent responses are streamed or received via the SDK methods. Helper functions (e.g., `convertLangGraphMessages`) adapt the LangGraph message format for frontend display.
     *   **Retrieving History**: Full message history for a thread is loaded using `client.threads.getState()`.
 
+### Message Submission Pattern
+
+**IMPORTANT**: LangGraph maintains thread state server-side. When submitting messages to an existing thread:
+
+1. **First Message**: When creating a new thread, submit just the single message:
+   ```typescript
+   // For the first message in a new thread
+   const runInput = {
+     messages: [{ type: 'human', content: messageText }],
+   };
+   ```
+
+2. **Subsequent Messages**: For subsequent messages, also send ONLY the new message, not the full history:
+   ```typescript
+   // For subsequent messages in existing threads
+   const runInput = {
+     messages: [{ type: 'human', content: messageText }],
+   };
+   ```
+
+The LangGraph server maintains the complete thread state and conversation history. Sending the full message history in subsequent messages can lead to state inconsistencies and lost messages, particularly when refreshing or navigating away from the page after submitting only a single message.
+
+This pattern is implemented in the `Chat.tsx` component, where:
+- First messages trigger thread creation and are submitted via a `useEffect` hook monitoring `pendingFirstMessage`
+- Subsequent messages are submitted directly in the `handleSendMessage` callback, sending only the new message
+
 ### Agent Context Handling (`alpaca_account_id`, `user_id`)
 
 A key challenge with the direct SDK approach is providing user-specific context (like Alpaca account ID and Supabase user ID) to the LangGraph agents (`portfolio_management_agent.py`, `trade_execution_agent.py`). The current implementation uses the following approach:
