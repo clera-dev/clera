@@ -179,7 +179,6 @@ export default function Chat({
             if (newSession && newSession.id) {
                 targetThreadId = newSession.id;
                 console.log("New session created successfully:", targetThreadId);
-                setCurrentThreadId(targetThreadId); // Update internal state
                 if (onSessionCreated) {
                     onSessionCreated(targetThreadId); // Notify parent immediately
                 }
@@ -237,13 +236,15 @@ export default function Chat({
             },
         });
 
+        // Callbacks after successful submission initiation
         onMessageSent?.(); 
+        await onQuerySent?.(); // Added await and call to onQuerySent
 
     } catch (err) {
         console.error("Error calling thread.submit:", err);
     }
 
-  }, [input, isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, onSessionCreated, onMessageSent]);
+  }, [input, isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent]); // Added onQuerySent to dependency array
 
   // Auto-adjust textarea height
   useEffect(() => {

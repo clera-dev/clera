@@ -306,3 +306,36 @@ Remain the same (Portfolio Analysis, Market Insights, Trade Execution).
 2. Enhanced Visualization
 3. Advanced Personalization
 4. Advanced Conversation Management
+
+## Query Limiting (`isLimitReached`)
+
+To manage usage and potentially implement tiered subscription levels, the application includes a mechanism to limit the number of queries a user can make per day.
+
+1.  **Tracking Queries (Backend - Supabase)**:
+    *   A table `user_daily_queries` stores a timestamp for each query made by a user (`user_id`).
+    *   RLS policies ensure users can only insert/select their own query records.
+    *   An RPC function `get_user_query_count_today_pst(p_user_id uuid)` counts the queries for a given user within the current day (defined by PST timezone). This uses `SECURITY DEFINER` to bypass RLS for counting purposes.
+    *   An RPC function `record_user_query(p_user_id uuid)` inserts a new record into `user_daily_queries`. It verifies that the provided `p_user_id` matches the authenticated user (`auth.uid()`) before inserting.
+
+2.  **Frontend State (`chat/page.tsx`)**:
+    *   The main chat page component (`frontend-app/app/chat/page.tsx`) maintains state variables:
+        *   `queryCount`: Stores the number of queries made by the user today.
+        *   `isLimitReached`: A boolean flag indicating if the user has reached their daily limit.
+    *   On initialization (`useEffect`), the component fetches the initial count using a frontend utility function (e.g., `getUserDailyQueryCount`) that calls the `get_user_query_count_today_pst` Supabase RPC. It sets `isLimitReached` based on comparing this count to a defined constant (e.g., `DAILY_QUERY_LIMIT`).
+    *   A function `handleQuerySent` is defined to:
+        *   Call a frontend utility (e.g., `recordUserQuery`) that invokes the `record_user_query` Supabase RPC to log the new query.
+        *   Increment the local `queryCount` state.
+        *   Update the `isLimitReached` state based on the new count and the limit.
+
+3.  **Passing the Limit Status (`Chat.tsx`)**:
+    *   The `isLimitReached` state from `chat/page.tsx` is passed down as a prop to the `<Chat>` component (`frontend-app/components/chat/Chat.tsx`).
+    *   The `handleQuerySent` function from `chat/page.tsx` is passed as the `onQuerySent` prop to the `<Chat>` component. This callback should be invoked by the `<Chat>` component after successfully submitting a message to the agent.
+
+4.  **UI Enforcement (Inside `Chat.tsx` - Inferred)**:
+    *   Although not explicitly shown in all snippets, the `<Chat>` component is expected to use the `isLimitReached` prop to modify the UI when the limit is met. Common implementations include:
+        *   Disabling the message input field (`<Textarea>`).
+        *   Disabling the send button.
+        *   Displaying a message to the user indicating the limit has been reached.
+
+5.  **Subscription Tiers (Future)**:
+    *   Currently, the limit seems based on a single constant (`DAILY_QUERY_LIMIT`). Future enhancements could involve fetching the user's specific query limit based on their subscription tier from the backend (e.g., from the `profiles` table or a dedicated subscriptions table) instead of using a hardcoded constant. The fetched limit would then be used in the comparison to set `isLimitReached`.

@@ -107,3 +107,53 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
     return null;
   }
 };
+
+// --- Query Limit Helpers ---
+
+/**
+ * Calls Supabase RPC to get the number of queries made by the user today (PST).
+ * @param userId The UUID of the user.
+ * @returns Promise<number> The number of queries made today.
+ */
+export const getUserDailyQueryCount = async (userId: string): Promise<number> => {
+  if (!userId) {
+    console.error("getUserDailyQueryCount: userId is required.");
+    throw new Error("User ID is required.");
+  }
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('get_user_query_count_today_pst', {
+    p_user_id: userId 
+  });
+
+  if (error) {
+    console.error("Error fetching user daily query count:", error);
+    throw error; // Re-throw the error to be handled by the caller
+  }
+
+  console.log(`Query count for user ${userId}: ${data}`);
+  return data ?? 0; // Return 0 if data is null/undefined
+};
+
+/**
+ * Calls Supabase RPC to record that a user has made a query.
+ * @param userId The UUID of the user making the query.
+ * @returns Promise<void>
+ */
+export const recordUserQuery = async (userId: string): Promise<void> => {
+  if (!userId) {
+    console.error("recordUserQuery: userId is required.");
+    throw new Error("User ID is required.");
+  }
+  const supabase = createClient();
+  const { error } = await supabase.rpc('record_user_query', { 
+    p_user_id: userId 
+  });
+
+  if (error) {
+    console.error("Error recording user query:", error);
+    throw error; // Re-throw the error
+  }
+   console.log(`Recorded query for user ${userId}`);
+};
+
+// --- End Query Limit Helpers ---
