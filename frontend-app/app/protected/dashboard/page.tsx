@@ -163,7 +163,7 @@ export default function DashboardPage() {
       <UserDashboard 
         firstName={userData.firstName}
         // Pass accountDetails directly, let the component handle null/undefined fields
-        accountDetails={accountDetails || {}} 
+        accountDetails={accountDetails} 
       />
     </div>
   );
