@@ -457,7 +457,7 @@ The frontend connects to both backend components:
 
 1. **AWS-Hosted Backend API**:
    - REST API calls to the AWS ELB endpoint:
-     `http://clera--Publi-3zZfi5RHJKzZ-523282791.us-west-1.elb.amazonaws.com`
+     `https://clera--publi-3zzfi5rhjkzz-523282791.us-west-1.elb.amazonaws.com`
    - Authentication via API keys
    - Handles broker account creation and management
    - Manages ACH funding through Plaid integration
@@ -487,7 +487,7 @@ The frontend uses different environment configurations for development stages:
 
 3. **Production Environment**:
    - Production backend services integration via:
-     `http://clera--Publi-3zZfi5RHJKzZ-523282791.us-west-1.elb.amazonaws.com`
+     `https://clera--publi-3zzfi5rhjkzz-523282791.us-west-1.elb.amazonaws.com`
    - Live Supabase database
    - Plaid production for real bank connections
    - Strict security policies

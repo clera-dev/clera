@@ -42,6 +42,7 @@ export type ChatSession = {
   id: string;
   title: string;
   createdAt: string;
+  updatedAt: string;
   messages: Message[];
 };
 
@@ -91,9 +92,14 @@ export function groupChatsByDate(chats: ChatSession[]): {
     older: []
   };
 
+  // Sort chats by updatedAt (most recent first) BEFORE grouping
+  const sortedChats = [...chats].sort((a, b) => 
+    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+
   // Process each chat
-  return chats.reduce((acc, chat) => {
-    const chatDate = new Date(chat.createdAt);
+  return sortedChats.reduce((acc, chat) => {
+    const chatDate = new Date(chat.updatedAt);
     
     // Strip time for date comparison
     const chatDateStripped = new Date(
@@ -268,27 +274,29 @@ export async function updateChatSessionTitle(sessionId: string, title: string): 
  * Creates a new chat session (thread) directly using LangGraph SDK
  */
 export async function createChatSession(
-  portfolioId: string,
+  accountId: string,
+  userId: string,
   title: string = "New Conversation"
 ): Promise<{ id: string } | null> {
+  if (!userId) {
+    console.error('Cannot create chat session: User ID is required.');
+    return null;
+  }
+  if (!accountId) {
+    console.error('Cannot create chat session: Account ID is required.');
+    return null;
+  }
+
   try {
-    console.log(`Creating new chat session with title: ${title}`);
+    console.log(`Creating new chat session with title: ${title}, userId: ${userId}, accountId: ${accountId}`);
     const client = getLangGraphClient();
     
-    // Get user ID from localStorage (assuming it's stored there after login)
-    const userId = localStorage.getItem('userId');
-    
-    if (!userId) {
-      console.warn('No user ID found in localStorage for thread creation');
-    }
-    
-    // Create thread with metadata
+    // Create thread with metadata including userId and accountId
     const thread = await client.threads.create({
       metadata: {
-        user_id: userId || 'anonymous',
-        account_id: portfolioId,
+        user_id: userId,
+        account_id: accountId,
         title: title,
-        created_at: new Date().toISOString()
       }
     });
     
@@ -390,7 +398,8 @@ export async function getChatSessions(
     const threads = await client.threads.search({
       metadata: {
         user_id: userId
-      }
+      },
+      limit: 20 // Added limit parameter
     });
     
     // Format threads as ChatSessions
@@ -400,6 +409,7 @@ export async function getChatSessions(
         id: thread.thread_id,
         title: (metadata.title as string) || "New Conversation",
         createdAt: thread.created_at || new Date().toISOString(),
+        updatedAt: thread.updated_at || new Date().toISOString(),
         messages: []
       };
     });

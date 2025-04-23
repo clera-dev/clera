@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -8,25 +8,18 @@ import Chat from './Chat';
 
 interface ChatButtonProps {
   accountId: string;
+  userId: string;
+  isLimitReached: boolean;
+  onQuerySent: () => Promise<void>;
 }
 
-export default function ChatButton({ accountId }: ChatButtonProps) {
+export default function ChatButton({
+  accountId,
+  userId,
+  isLimitReached,
+  onQuerySent
+}: ChatButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [userId, setUserId] = useState<string | undefined>(undefined);
-  
-  // Get the user ID from localStorage on mount
-  useEffect(() => {
-    try {
-      const storedUserId = localStorage.getItem('userId');
-      setUserId(storedUserId || undefined);
-      
-      if (!storedUserId) {
-        console.error("No user ID found in localStorage");
-      }
-    } catch (error) {
-      console.error("Error accessing localStorage for userId:", error);
-    }
-  }, []);
   
   return (
     <>
@@ -43,13 +36,15 @@ export default function ChatButton({ accountId }: ChatButtonProps) {
         Chat with Clera
       </Button>
       
-      {/* Chat interface - Only render if isOpen AND userId exists */}
-      {isOpen && userId && (
+      {/* Chat interface - Renders if isOpen (userId is guaranteed by parent) */}
+      {isOpen && (
         <div className="fixed bottom-6 right-6 w-[400px] h-[600px] z-50">
           <Chat 
             accountId={accountId}
             userId={userId}
             onClose={() => setIsOpen(false)}
+            isLimitReached={isLimitReached}
+            onQuerySent={onQuerySent}
           />
         </div>
       )}

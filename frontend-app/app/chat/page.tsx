@@ -186,6 +186,12 @@ export default function ChatPage() {
     setRefreshTrigger(prev => prev + 1);
   };
 
+  // Handler for when a message is sent (new or existing thread)
+  const handleMessageSent = () => {
+    console.log("ChatPage: Message sent, triggering sidebar refresh.");
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   // Loading State
   if (isLoading) {
     return (
@@ -264,7 +270,7 @@ export default function ChatPage() {
             onQuerySent={handleQuerySent} // Pass the new handler
             isLimitReached={isLimitReached} // Pass limit status
             onSessionCreated={handleSessionCreated}
-            onTitleUpdated={handleTitleUpdated}
+            onMessageSent={handleMessageSent} // Added this line
             // key={currentSessionId || 'new'} // Force re-render on session change
           />
         </div>

@@ -10,7 +10,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -150,6 +149,7 @@ embeddings.py
 
 # personal notes and trackers
 notes.md
+todo.md
 
 # langgraph
 .langgraph_api/
