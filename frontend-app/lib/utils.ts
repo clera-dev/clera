@@ -88,7 +88,7 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
     if (onboardingData && onboardingData.alpaca_account_id) {
       const fetchedId = onboardingData.alpaca_account_id;
       console.log("Alpaca Account ID: Retrieved from Supabase:", fetchedId);
-
+      
       // 3. Store fetched ID back into localStorage
       try {
         localStorage.setItem('alpacaAccountId', fetchedId);

@@ -26,10 +26,10 @@ export default function ChatHistoryItem({
   const formattedDate = (() => {
     try {
       // Check if we have a valid date value
-      if (!session.createdAt) return 'Recently';
+      if (!session.updatedAt) return 'Recently';
       
       // Validate date is parseable
-      const date = new Date(session.createdAt);
+      const date = new Date(session.updatedAt);
       if (isNaN(date.getTime())) return 'Recently';
       
       return formatDistanceToNow(date, { addSuffix: true });

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
 """
-API server for Clera AI chat.
-This provides a simple API to interact with the graph.py implementation.
+API server for Clera AI. provides endpoints for chat, trade, and company analysis.
 """
 
 import os

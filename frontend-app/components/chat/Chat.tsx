@@ -9,6 +9,7 @@ import {
   loadChatHistory,
   formatChatTitle,
   updateChatThreadTitle,
+  createChatSession,
   ChatSession
 } from '@/utils/api/chat-client';
 import { Button } from '@/components/ui/button';
@@ -39,7 +40,6 @@ interface ChatProps {
   onQuerySent?: () => Promise<void>;
   isLimitReached: boolean;
   onSessionCreated?: (sessionId: string) => void;
-  onTitleUpdated?: (sessionId: string, newTitle: string) => void;
 }
 
 // Helper function simplified to mainly pass through human/assistant messages
@@ -113,12 +113,11 @@ export default function Chat({
   onQuerySent,
   isLimitReached,
   onSessionCreated,
-  onTitleUpdated
 }: ChatProps) {
   // State managed by useStream replaces manual message/loading state
   const [input, setInput] = useState('');
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(initialSessionId || null);
-  const [hasTitleBeenUpdated, setHasTitleBeenUpdated] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false); // Added loading state for session creation
   
   // TODO: Get these from environment variables
   const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL || 'http://localhost:8000';
@@ -137,13 +136,6 @@ export default function Chat({
     assistantId, 
     threadId: currentThreadId, 
     messagesKey: 'messages',
-    onThreadId: (id) => { 
-      console.log("useStream using threadId:", id);
-      if (id !== currentThreadId) {
-        setCurrentThreadId(id);
-        if (onSessionCreated) onSessionCreated(id);
-      }
-    },
     onError: (err: unknown) => {  
         console.error("useStream Hook Error:", err);
     },
@@ -154,14 +146,14 @@ export default function Chat({
   const messagesToDisplay: Message[] = (thread.messages || [])
     .map(convertMessageFormat)
     .filter((msg): msg is Message => msg !== null); 
-  const isProcessing = thread.isLoading;
+  const isProcessing = thread.isLoading || isCreatingSession;
   const error = thread.error;
   const interrupt = thread.interrupt; 
   const isInterrupting = interrupt !== undefined; 
   const interruptMessage = isInterrupting ? String(interrupt.value) : null; 
 
   // Handle input submission
-  const handleSendMessage = useCallback(() => {
+  const handleSendMessage = useCallback(async () => {
     const trimmedInput = input.trim();
     if (!trimmedInput || isProcessing || isInterrupting) return;
 
@@ -174,68 +166,84 @@ export default function Chat({
       inputRef.current.rows = 1; // Reset rows
     }
 
-    // Check if this is the first message (no user messages in the conversation yet)
-    const isFirstMessage = !messagesToDisplay.some(msg => msg.role === 'user');
+    let targetThreadId = currentThreadId;
+
+    // --- Explicit Session Creation Logic --- 
+    if (targetThreadId === null) {
+        setIsCreatingSession(true); // Start loading indicator
+        console.log("No current thread ID. Attempting to create new session...");
+        try {
+            const newTitle = formatChatTitle(contentToSend);
+            const newSession = await createChatSession(accountId, userId, newTitle);
+            
+            if (newSession && newSession.id) {
+                targetThreadId = newSession.id;
+                console.log("New session created successfully:", targetThreadId);
+                setCurrentThreadId(targetThreadId); // Update internal state
+                if (onSessionCreated) {
+                    onSessionCreated(targetThreadId); // Notify parent immediately
+                }
+            } else {
+                throw new Error("Failed to create chat session.");
+            }
+        } catch (err) {
+            console.error("Error creating session in handleSendMessage:", err);
+            // TODO: Show error to user?
+            setIsCreatingSession(false); // Stop loading indicator on error
+            return; // Prevent sending message if session creation fails
+        } finally {
+             setIsCreatingSession(false); // Stop loading indicator
+        }
+    }
+    // --- End Explicit Session Creation Logic --- 
     
-    // Input for the graph run
+    if (!targetThreadId) {
+        console.error("Cannot send message: targetThreadId is still null after creation attempt.");
+        return;
+    }
+
+    // --- Construct Input with FULL History --- 
+    // Get current raw messages from the hook state
+    const currentRawMessages = thread.messages || [];
+    // Create the new raw message in LangGraphMessage format
+    const newRawHumanMessage: LangGraphMessage = { type: 'human', content: contentToSend };
+    // Combine existing raw messages with the new one for the input payload
     const runInput = {
-        messages: [{ type: 'human' as const, content: contentToSend }],
+        messages: [...currentRawMessages, newRawHumanMessage],
     };
+    // --- End Construct Input with FULL History ---
     
-    // Configurable context to pass accountId and userId
-    // Ensure backend graph reads from config.configurable
     const runConfig = {
       configurable: {
         user_id: userId,
-        account_id: accountId // Pass the received accountId prop
+        account_id: accountId
       },
-      stream_mode: 'messages-tuple' // Use messages-tuple mode for proper filtering
+      stream_mode: 'messages-tuple' 
     };
 
-    console.log("Submitting input via thread.submit:", runInput, "with config:", runConfig);    
+    console.log(`Submitting input via thread.submit to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
     try {
-      thread.submit(runInput, {
-          config: runConfig, // Pass the config object
-          optimisticValues(prev) {
-            const prevMessages = prev.messages ?? [];
-            // Optimistic update uses LangGraphMessage format
-            const newMessage: LangGraphMessage = { 
-                type: 'human' as const, 
-                content: contentToSend,
-                id: `temp-${Date.now()}` 
-            };
-            return { ...prev, messages: [...prevMessages, newMessage] };
-          },
+        thread.submit(runInput, { // Pass the input with full history
+            config: runConfig,
+            optimisticValues(prev) {
+                // Optimistic update still just adds the single new message locally
+                const prevMessages = prev.messages ?? [];
+                const newMessage: LangGraphMessage = { 
+                    type: 'human' as const, 
+                    content: contentToSend,
+                    id: `temp-${Date.now()}` 
+                };
+                return { ...prev, messages: [...prevMessages, newMessage] };
+            },
         });
-      
-      // If this is the first message and we have a thread ID, update the title
-      if (isFirstMessage && currentThreadId && !hasTitleBeenUpdated) {
-        const newTitle = formatChatTitle(contentToSend);
-        console.log(`Updating thread title to: ${newTitle}`);
-        
-        // Update the title in the database
-        updateChatThreadTitle(currentThreadId, newTitle)
-          .then(success => {
-            if (success) {
-              console.log(`Successfully updated title for thread ${currentThreadId}`);
-              setHasTitleBeenUpdated(true);
-              // Notify parent component if callback exists
-              if (onTitleUpdated) {
-                onTitleUpdated(currentThreadId, newTitle);
-              }
-            } else {
-              console.error(`Failed to update title for thread ${currentThreadId}`);
-            }
-          })
-          .catch(err => {
-            console.error('Error updating chat title:', err);
-          });
-      }
+
+        onMessageSent?.(); 
+
     } catch (err) {
         console.error("Error calling thread.submit:", err);
     }
 
-  }, [input, isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, messagesToDisplay, hasTitleBeenUpdated, onTitleUpdated]); // Added new dependencies
+  }, [input, isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, onSessionCreated, onMessageSent]);
 
   // Auto-adjust textarea height
   useEffect(() => {
@@ -300,29 +308,20 @@ export default function Chat({
     }
   }, [isProcessing, isInterrupting]);
 
-  // Update internal state and clear input when the session ID prop changes
+  // Update internal state when the session ID prop changes (e.g., new chat started or existing selected)
   useEffect(() => {
-      console.log("Chat component received session/thread ID prop:", initialSessionId);
+      console.log("Chat component received session/thread ID prop change:", initialSessionId);
       const newThreadId = initialSessionId ?? null;
-      setCurrentThreadId(newThreadId);
       
-      // Clear input when starting a new chat (ID becomes null)
-      if (newThreadId === null) {
-          setInput('');
-          setHasTitleBeenUpdated(false); // Reset the title update tracker for new chats
-          // Optionally clear displayed messages if desired, though useStream might handle this
-          // setMessages([]); // This might conflict with useStream state
-      } else {
-          // For existing threads, check if they already have a custom title
-          // If the title is not "New Conversation", then it's already been updated
-          setHasTitleBeenUpdated(false); // We'll check based on API responses instead
+      // Update state only if prop is different from current state
+      if (newThreadId !== currentThreadId) {
+          setCurrentThreadId(newThreadId);
+          setInput(''); // Clear input when switching threads
+          // Reset any potential creation state just in case
+          setIsCreatingSession(false);
       }
       
-      // Reset interrupt state if session changes
-      // Note: thread.interrupt should update automatically based on the new thread state fetched by useStream
-      // We don't need manual reset for isInterrupting/interruptMessage derived from thread.interrupt
-
-  }, [initialSessionId]);
+  }, [initialSessionId, currentThreadId]); 
 
   // Create a string representation of the error, or null if no error
   const errorMessage = error ? (error instanceof Error ? error.message : String(error)) : null;
@@ -416,18 +415,22 @@ export default function Chat({
               }
             }}
           />
-          {isProcessing ? (
+          {isProcessing && !thread.isLoading ? ( // Show stop only for stream loading, not session creation
+              <Button type="button" size="icon" disabled={true} title="Creating session...">
+                  <RefreshCcw size={18} className="animate-spin" /> 
+              </Button>
+          ) : isProcessing ? (
             <Button type="button" variant="destructive" size="icon" onClick={() => thread.stop?.()} title="Stop generation">
               <XIcon size={18} />
             </Button>
           ) : (
-          <Button 
-            type="submit" 
+            <Button 
+              type="submit" 
               disabled={!input.trim() || isProcessing || isInterrupting}
-            size="icon"
-          >
-            <SendIcon size={18} />
-          </Button>
+              size="icon"
+            >
+              <SendIcon size={18} />
+            </Button>
           )}
         </form>
       </div>

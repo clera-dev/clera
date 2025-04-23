@@ -146,5 +146,6 @@ docker-compose.yml
 get-pip.py
 
 # Project specific
-langgraph.json
 embeddings.py
+
+.langgraph_api/
