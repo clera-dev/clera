@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { OnboardingData } from "./OnboardingTypes";
 import { Check as CheckIcon, XCircle as XCircleIcon, Link as LinkIcon } from "lucide-react";
+import { usePostOnboardingNavigation } from "@/utils/navigation";
 
 interface SubmissionSuccessStepProps {
   data: OnboardingData;
@@ -24,6 +25,7 @@ export default function SubmissionSuccessStep({
   onReset 
 }: SubmissionSuccessStepProps) {
   const router = useRouter();
+  const { navigateAfterOnboarding } = usePostOnboardingNavigation();
   const [isConnectingBank, setIsConnectingBank] = useState(false);
   const [bankConnected, setBankConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -133,7 +135,7 @@ export default function SubmissionSuccessStep({
         
         <div className="flex justify-center">
           <Button 
-            onClick={() => router.push('/protected')}
+            onClick={navigateAfterOnboarding}
             className="px-8"
           >
             Continue to Dashboard

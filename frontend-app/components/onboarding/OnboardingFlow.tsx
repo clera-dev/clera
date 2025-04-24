@@ -14,6 +14,7 @@ import { createAlpacaAccount } from "@/utils/api/alpaca";
 import { saveOnboardingData } from "@/utils/api/onboarding-client";
 import { OnboardingStatus } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { usePostOnboardingNavigation } from "@/utils/navigation";
 
 // Define the Step type
 type Step = "welcome" | "contact" | "personal" | "disclosures" | "agreements" | "success";
@@ -34,6 +35,7 @@ interface OnboardingFlowProps {
 
 export default function OnboardingFlow({ userId, initialData }: OnboardingFlowProps) {
   const router = useRouter();
+  const { navigateAfterOnboarding } = usePostOnboardingNavigation();
   const [currentStep, setCurrentStep] = useState<Step>("welcome");
   const [onboardingData, setOnboardingData] = useState<OnboardingData>(
     initialData || initialOnboardingData
@@ -63,6 +65,21 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
     }
   }, [currentStep, onboardingData]);
 
+  // Check for intended redirect on mount
+  useEffect(() => {
+    // Set a cookie to capture any intended redirect if the user tries to navigate away
+    const path = window.location.pathname;
+    if (path === '/protected') {
+      const cookies = document.cookie.split(';');
+      const redirectCookie = cookies.find(cookie => cookie.trim().startsWith('intended_redirect='));
+      
+      if (!redirectCookie) {
+        // If there's no redirect cookie yet, set default to dashboard
+        document.cookie = 'intended_redirect=/dashboard; Path=/; Max-Age=3600; SameSite=Strict';
+      }
+    }
+  }, []);
+
   const updateData = (newData: Partial<OnboardingData>) => {
     setOnboardingData(prev => ({ ...prev, ...newData }));
   };
@@ -87,6 +104,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
 
   const saveOnboardingProgress = async () => {
     try {
+      // Update the status in the database to 'in_progress'
       const result = await saveOnboardingData(userId, onboardingData, 'in_progress');
       if (!result.success && result.error) {
         console.error('Error saving progress:', result.error);
@@ -129,7 +147,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           await saveOnboardingData(
             userId,
             onboardingData,
-            'submitted',
+            'submitted', // Set status to 'submitted' in database
             {
               // We don't have the account ID and number, but we can mark it as existing
               accountStatus: 'ACCOUNT_EXISTS'
@@ -153,7 +171,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
       await saveOnboardingData(
         userId,
         onboardingData,
-        'submitted',
+        'submitted', // Set status to 'submitted' in database
         {
           accountId: result.data?.id,
           accountNumber: result.data?.account_number,
@@ -170,10 +188,6 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
       setSubmitting(false);
       nextStep();
     }
-  };
-
-  const finishOnboarding = () => {
-    router.push('/protected');
   };
 
   const renderCurrentStep = () => {

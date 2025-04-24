@@ -11,11 +11,13 @@ import { useRouter } from "next/navigation";
 interface ManualBankFormProps {
   alpacaAccountId: string;
   userName: string;
+  onTransferComplete?: () => void; // Add callback for dialog usage
 }
 
 export default function ManualBankForm({ 
   alpacaAccountId,
-  userName
+  userName,
+  onTransferComplete
 }: ManualBankFormProps) {
   const router = useRouter();
   const [bankAccountType, setBankAccountType] = useState<"CHECKING" | "SAVINGS">("CHECKING");
@@ -48,17 +50,24 @@ export default function ManualBankForm({
           );
           
           if (activeRelationship) {
-            console.log("Found active relationship, redirecting to dashboard:", activeRelationship.id);
+            console.log("Found active relationship:", activeRelationship.id);
             
-            // Store data in localStorage before redirecting
+            // Store data in localStorage
             localStorage.setItem('alpacaAccountId', alpacaAccountId);
             localStorage.setItem('relationshipId', activeRelationship.id);
             localStorage.setItem('bankAccountNumber', `xxxx-xxxx-${activeRelationship.bank_account_last4 || '0000'}`);
             localStorage.setItem('bankRoutingNumber', "121000358");
             
-            // Redirect to dashboard immediately
-            router.replace('/dashboard');
-            return true;
+            // If we're in a dialog, use the relationship directly
+            if (onTransferComplete) {
+              setBankConnected(true);
+              setRelationshipId(activeRelationship.id);
+              return true;
+            } else {
+              // Otherwise redirect to dashboard
+              router.replace('/dashboard');
+              return true;
+            }
           }
         }
       }
@@ -75,7 +84,7 @@ export default function ManualBankForm({
   // Call the check on component mount
   useEffect(() => {
     checkExistingRelationship();
-  }, [alpacaAccountId]);
+  }, [alpacaAccountId, onTransferComplete]);
 
   const isFormValid = () => {
     return (
@@ -124,26 +133,46 @@ export default function ManualBankForm({
       
       if (!response.ok) {
         if (responseData.message && responseData.message.includes("Using existing ACH relationship")) {
-          // If we're using an existing relationship, store info and redirect to dashboard
-          console.log("Using existing relationship, redirecting to dashboard:", responseData.id);
+          // If we're using an existing relationship
+          console.log("Using existing relationship:", responseData.id);
           
           localStorage.setItem('alpacaAccountId', alpacaAccountId);
           localStorage.setItem('relationshipId', responseData.id);
           localStorage.setItem('bankAccountNumber', bankAccountNumber);
           localStorage.setItem('bankRoutingNumber', bankRoutingNumber);
           
-          router.replace('/dashboard');
-          return;
+          // When in dialog mode with onTransferComplete callback, don't show transfer form
+          // but notify the parent we've finished adding the bank
+          if (onTransferComplete) {
+            console.log("Notifying parent that bank connection is complete");
+            onTransferComplete();
+            return;
+          } else {
+            // Otherwise redirect to dashboard
+            router.replace('/dashboard');
+            return;
+          }
         }
         
         throw new Error(responseData.error || JSON.stringify(responseData));
       }
       
       // If successful, update the state
-      setBankConnected(true);
-      setRelationshipId(responseData.id);
+      console.log("Bank connected successfully with relationshipId:", responseData.id);
       localStorage.setItem('alpacaAccountId', alpacaAccountId);
       localStorage.setItem('relationshipId', responseData.id);
+      
+      // When in dialog mode with onTransferComplete callback, don't show transfer form
+      // but notify the parent we've finished adding the bank
+      if (onTransferComplete) {
+        console.log("Notifying parent that bank connection is complete");
+        onTransferComplete();
+        return;
+      }
+      
+      // Only set these states if we're not using the callback
+      setBankConnected(true);
+      setRelationshipId(responseData.id);
       
     } catch (error) {
       console.error('Error connecting bank:', error);
@@ -153,14 +182,25 @@ export default function ManualBankForm({
     }
   };
 
-  // If the bank is connected successfully, show the transfer form
-  if (bankConnected && relationshipId) {
+  // Handle transfer completion
+  const handleTransferComplete = (amount: string) => {
+    if (onTransferComplete) {
+      onTransferComplete();
+    } else {
+      router.replace('/dashboard');
+    }
+  };
+
+  // Only show transfer form when not in dialog mode 
+  // (when onTransferComplete is not provided)
+  if (bankConnected && relationshipId && !onTransferComplete) {
     return (
       <TransferForm 
         alpacaAccountId={alpacaAccountId}
         relationshipId={relationshipId}
         bankAccountNumber={bankAccountNumber}
         bankRoutingNumber={bankRoutingNumber}
+        onTransferComplete={handleTransferComplete}
       />
     );
   }

@@ -3,8 +3,11 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Link as LinkIcon, PlusCircle } from "lucide-react";
-import BankConnectionButton from "@/components/funding/BankConnectionButton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PlusCircle, Wallet, ExternalLink } from "lucide-react";
+import ManualBankForm from "@/components/funding/ManualBankForm";
+import TransferForm from "@/components/funding/TransferForm";
+import { useRouter } from "next/navigation";
 
 interface BankAccount {
   id: string;
@@ -13,143 +16,266 @@ interface BankAccount {
   createdAt: string;
   bankName?: string;
   nickname?: string;
+  last4?: string;
 }
 
 interface BankConnectionsCardProps {
   alpacaAccountId?: string;
   email?: string;
+  userName?: string;
 }
 
 export default function BankConnectionsCard({
   alpacaAccountId,
-  email
+  email,
+  userName = 'User'
 }: BankConnectionsCardProps) {
+  const router = useRouter();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAddBank, setShowAddBank] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [view, setView] = useState<'banks' | 'addBank' | 'transfer'>('banks');
+  const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
+  const [transferCompleted, setTransferCompleted] = useState(false);
+
+  const fetchBankAccounts = async () => {
+    if (!alpacaAccountId) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const response = await fetch(`/api/broker/bank-status?accountId=${alpacaAccountId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        console.warn(`Bank status API returned ${response.status}: ${response.statusText}`);
+        throw new Error("Failed to fetch bank accounts");
+      }
+
+      const data = await response.json();
+      console.log("Bank relationships response:", data);
+      
+      if (data.relationships && Array.isArray(data.relationships)) {
+        setBankAccounts(data.relationships.map((rel: any) => ({
+          id: rel.id,
+          status: rel.status,
+          accountId: rel.account_id,
+          createdAt: rel.created_at,
+          bankName: rel.bank_name || "Bank Account",
+          nickname: rel.nickname,
+          last4: rel.bank_account_last4
+        })));
+      }
+    } catch (error) {
+      console.error("Error fetching bank accounts:", error);
+      setError("Could not load bank accounts");
+      // Set empty array rather than leaving undefined
+      setBankAccounts([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchBankAccounts = async () => {
-      if (!alpacaAccountId) {
-        setIsLoading(false);
-        return;
+    if (isDialogOpen) {
+      fetchBankAccounts();
+    }
+  }, [alpacaAccountId, isDialogOpen]);
+
+  const handleOpenDialog = () => {
+    setIsDialogOpen(true);
+    setView('banks');
+    setSelectedBankId(null);
+    setTransferCompleted(false);
+  };
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+    // Reset back to banks view for next open
+    setView('banks');
+  };
+
+  const handleAddBank = () => {
+    // Show a warning if there's already a bank connected
+    if (bankAccounts.length > 0) {
+      if (window.confirm(
+        "IMPORTANT: Alpaca only allows one active bank connection at a time.\n\n" +
+        "If you continue, you will: \n" +
+        "1. Need to enter new bank details\n" + 
+        "2. Delete your existing connection ONLY after confirming\n" +
+        "3. Create a new connection with your new bank details\n\n" +
+        "Your existing bank connection will remain until you complete the form and submit.\n\n" +
+        "Continue to replace your bank account?"
+      )) {
+        setView('addBank');
       }
+    } else {
+      setView('addBank');
+    }
+  };
 
-      try {
-        setIsLoading(true);
-        setError(null);
+  const handleBankClick = (bankId: string) => {
+    setSelectedBankId(bankId);
+    localStorage.setItem('relationshipId', bankId);
+    setView('transfer');
+  };
 
-        const response = await fetch(`/api/broker/bank-status?accountId=${alpacaAccountId}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
+  const handleTransferComplete = (amount: string) => {
+    setTransferCompleted(true);
+    
+    try {
+      localStorage.setItem('transferAmount', amount);
+    } catch (e) {
+      console.error("Error saving transfer amount to localStorage:", e);
+    }
+    
+    // Add delay to show success message before closing
+    setTimeout(() => {
+      handleCloseDialog();
+      router.refresh();
+    }, 2000);
+  };
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch bank accounts");
-        }
-
-        const data = await response.json();
-        
-        if (data.relationships && Array.isArray(data.relationships)) {
-          setBankAccounts(data.relationships.map((rel: any) => ({
-            id: rel.id,
-            status: rel.status,
-            accountId: rel.account_id,
-            createdAt: rel.created_at,
-            bankName: rel.bank_name,
-            nickname: rel.nickname
-          })));
-        }
-      } catch (error) {
-        console.error("Error fetching bank accounts:", error);
-        setError("Could not load bank accounts");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
+  const handleBankAdded = () => {
+    // After a bank is added, go back to the list of banks
     fetchBankAccounts();
-  }, [alpacaAccountId]);
-
-  const handleAddBankClick = () => {
-    setShowAddBank(true);
+    setView('banks');
   };
 
   return (
     <Card>
       <CardHeader className="pb-2 flex flex-row items-center justify-between">
         <CardTitle className="text-lg">Connected Banks</CardTitle>
-        {bankAccounts.length > 0 && !showAddBank && (
-          <Button 
-            size="sm" 
-            variant="outline" 
-            className="h-8 gap-1"
-            onClick={handleAddBankClick}
-          >
-            <PlusCircle className="h-3.5 w-3.5" />
-            Add Bank
-          </Button>
-        )}
       </CardHeader>
       <CardContent className="space-y-4">
-        {isLoading ? (
-          <div className="flex justify-center py-4">
-            <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full" />
-          </div>
-        ) : error ? (
-          <div className="text-sm text-red-500">{error}</div>
-        ) : showAddBank || bankAccounts.length === 0 ? (
-          <div className="space-y-4">
-            {bankAccounts.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Add another bank account to fund your Alpaca account.
-              </p>
+        <Button 
+          onClick={handleOpenDialog}
+          className="w-full flex gap-2 items-center justify-center bg-primary text-white hover:bg-primary/90"
+        >
+          <PlusCircle className="h-4 w-4" />
+          Add Funds
+        </Button>
+
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="sm:max-w-md bg-black text-white">
+            <DialogHeader className="pb-2 border-b border-gray-700">
+              <DialogTitle className="text-xl text-white">
+                {view === 'banks' ? 'Add Funds' : 
+                 view === 'addBank' ? 'Add a Bank Account' : 'Transfer Funds'}
+              </DialogTitle>
+            </DialogHeader>
+
+            {error && view === 'banks' && (
+              <div className="p-4 my-2 border border-red-600 rounded-lg bg-red-900/50">
+                <p className="text-red-200 text-sm">{error}</p>
+              </div>
             )}
-            <BankConnectionButton alpacaAccountId={alpacaAccountId} email={email} />
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {bankAccounts.map((account) => (
-              <div 
-                key={account.id} 
-                className="flex items-center justify-between border p-3 rounded-lg"
-              >
-                <div className="space-y-1">
-                  <p className="font-medium">
-                    {account.bankName || account.nickname || "Bank Account"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Connected on {new Date(account.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-block h-2 w-2 rounded-full ${
-                    account.status === 'APPROVED' ? 'bg-green-500' : 
-                    account.status === 'QUEUED' ? 'bg-yellow-500' : 'bg-gray-500'
-                  }`} />
-                  <span className="text-xs font-medium capitalize">
-                    {account.status.toLowerCase()}
-                  </span>
+
+            {isLoading && view === 'banks' ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+              </div>
+            ) : view === 'banks' ? (
+              <div className="grid gap-5 py-5">
+                {/* Connected Bank Accounts Section */}
+                {bankAccounts.length > 0 ? (
+                  <>
+                    <h3 className="text-white font-medium text-lg">Select a bank to transfer funds from</h3>
+                    {bankAccounts.map((account) => (
+                      <div 
+                        key={account.id}
+                        className="cursor-pointer rounded-lg border border-gray-700 transition-colors shadow-sm hover:shadow hover:border-primary bg-gray-800/50" 
+                        onClick={() => handleBankClick(account.id)}
+                      >
+                        <div className="p-4 flex items-center gap-4">
+                          <div className="bg-primary/20 p-3 rounded-full">
+                            <Wallet className="h-6 w-6 text-primary-foreground" />
+                          </div>
+                          <div>
+                            <h3 className="font-medium text-white text-lg">
+                              {account.bankName || account.nickname || "Bank Account"}
+                              {account.last4 && (
+                                <span className="ml-2 text-gray-300">
+                                  •••• {account.last4}
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-sm text-gray-400">
+                              Connected on {new Date(account.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="p-4 bg-blue-900/30 rounded-lg border border-blue-700">
+                    <p className="text-blue-200">
+                      No connected bank accounts found. Please add a new bank account to fund your account.
+                    </p>
+                  </div>
+                )}
+
+                {/* Add New Bank Option */}
+                <div className="mt-4 pt-4 border-t border-gray-700">
+                  <h3 className="text-white font-medium mb-3 text-lg">
+                    {bankAccounts.length > 0 ? "Replace existing bank account" : "Add a bank account"}
+                  </h3>
+                  {bankAccounts.length > 0 && (
+                    <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded-lg">
+                      <p className="text-yellow-200 text-sm">
+                        Note: Alpaca only allows one active bank connection. Adding a new bank will replace your current connection.
+                      </p>
+                    </div>
+                  )}
+                  <div 
+                    className="cursor-pointer rounded-lg border border-gray-700 transition-colors shadow-sm hover:shadow hover:border-primary bg-gray-800/50" 
+                    onClick={handleAddBank}
+                  >
+                    <div className="p-4 flex items-center gap-4">
+                      <div className="bg-primary/20 p-3 rounded-full">
+                        <PlusCircle className="h-6 w-6 text-primary-foreground" />
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-white text-lg">
+                          {bankAccounts.length > 0 ? "Replace bank account" : "Enter bank account details"}
+                        </h3>
+                        <p className="text-sm text-gray-400">
+                          {bankAccounts.length > 0 
+                            ? "Replace your existing bank connection with a new one" 
+                            : "Add a new bank account to fund your investments"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            ))}
-            
-            <div className="text-center pt-2">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-xs gap-1"
-                onClick={handleAddBankClick}
-              >
-                <PlusCircle className="h-3 w-3" />
-                Add another bank account
-              </Button>
-            </div>
-          </div>
-        )}
+            ) : view === 'addBank' ? (
+              <div className="pt-2">
+                <ManualBankForm
+                  alpacaAccountId={alpacaAccountId || ''}
+                  userName={userName}
+                  onTransferComplete={handleBankAdded}
+                />
+              </div>
+            ) : view === 'transfer' && selectedBankId ? (
+              <TransferForm
+                alpacaAccountId={alpacaAccountId || ''}
+                relationshipId={selectedBankId}
+                onTransferComplete={handleTransferComplete}
+              />
+            ) : null}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

@@ -9,9 +9,32 @@
 #!/bin/bash
 echo "Starting container with architecture: $(uname -m)"
 echo "Checking for /api/health endpoint..."
-sleep 5
-curl -v http://localhost:8000/api/health || echo "Health check failed during startup"
 
+# Add more robust health check with proper retries at startup
+MAX_RETRIES=10
+RETRY_INTERVAL=5
+RETRY_COUNT=0
+
+# Wait for the server to fully start before checking health
+echo "Waiting for API server to start..."
+sleep 15
+
+# More robust health check with retries
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  echo "Attempt $((RETRY_COUNT+1))/$MAX_RETRIES to check health endpoint..."
+  if curl -s --fail http://localhost:8000/api/health; then
+    echo "Health check passed!"
+    break
+  else
+    echo "Health check not ready yet, retrying in $RETRY_INTERVAL seconds..."
+    RETRY_COUNT=$((RETRY_COUNT+1))
+    sleep $RETRY_INTERVAL
+  fi
+done
+
+# Even if health check fails, continue with startup - the HEALTHCHECK in Dockerfile
+# will let ECS determine if container is healthy later
+echo "Proceeding with startup regardless of initial health check result"
 
 set -e
 

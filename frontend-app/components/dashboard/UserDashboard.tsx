@@ -141,7 +141,7 @@ export default function UserDashboard({
           </Alert>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="w-full">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-medium">Bank Account Details</CardTitle>
@@ -173,28 +173,6 @@ export default function UserDashboard({
             </div>
           </CardContent>
         </Card>
-        
-        {isLoadingAccountId ? (
-            <Card>
-                <CardHeader className="pb-2">
-                    <Skeleton className="h-6 w-3/4" />
-                </CardHeader>
-                <CardContent>
-                    <Skeleton className="h-10 w-full" />
-                </CardContent>
-            </Card>
-        ) : alpacaAccountId ? (
-            <PortfolioCard alpacaAccountId={alpacaAccountId} />
-        ) : (
-             <Card>
-                <CardHeader className="pb-2">
-                    <CardTitle className="text-lg font-medium">Portfolio</CardTitle>
-                </CardHeader>
-                <CardContent>
-                   <p className="text-sm text-muted-foreground">Account ID not available.</p>
-                </CardContent>
-            </Card>
-        )}
       </div>
       
       {canShowChat && (
