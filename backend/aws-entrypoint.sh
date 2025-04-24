@@ -1,42 +1,47 @@
+#!/bin/bash
 # -----------------------------------------------------------------------------
 # ⚠️  DEPRECATED: The backend is now deployed automatically by the AWS Copilot
 # ⚠️  CodePipeline defined in backend/copilot/pipelines/clera-main.  This
 # ⚠️  script is kept only for disaster‑recovery or local troubleshooting.
 # -----------------------------------------------------------------------------
 
-#!/bin/sh
 # Exit immediately if a command exits with a non-zero status
-#!/bin/bash
-echo "Starting container with architecture: $(uname -m)"
-echo "Checking for /api/health endpoint..."
+set -e
 
-# Add more robust health check with proper retries at startup
+echo "Starting container with architecture: $(uname -m)"
+
+# Robust health check with retries during startup
 MAX_RETRIES=10
 RETRY_INTERVAL=5
 RETRY_COUNT=0
 
-# Wait for the server to fully start before checking health
+# Wait a bit for the server process to potentially start
 echo "Waiting for API server to start..."
 sleep 15
 
-# More robust health check with retries
+# Retry loop for health check
+echo "Performing startup health check..."
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   echo "Attempt $((RETRY_COUNT+1))/$MAX_RETRIES to check health endpoint..."
-  if curl -s --fail http://localhost:8000/api/health; then
+  # Use curl with -s (silent) and -f (fail fast) for the check
+  if curl -sf http://localhost:8000/api/health > /dev/null; then
     echo "Health check passed!"
     break
   else
     echo "Health check not ready yet, retrying in $RETRY_INTERVAL seconds..."
     RETRY_COUNT=$((RETRY_COUNT+1))
+    # Exit if max retries reached
+    if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+        echo "ERROR: Health check failed after $MAX_RETRIES attempts. Exiting."
+        # Consider exiting with an error if startup *depends* on health check
+        # exit 1 
+        # For now, we continue as the Docker HEALTHCHECK will take over
+        echo "Warning: Proceeding with startup despite failed initial health check."
+        break # Exit the loop anyway
+    fi
     sleep $RETRY_INTERVAL
   fi
 done
-
-# Even if health check fails, continue with startup - the HEALTHCHECK in Dockerfile
-# will let ECS determine if container is healthy later
-echo "Proceeding with startup regardless of initial health check result"
-
-set -e
 
 echo "=========== AWS Environment Startup =========="
 echo "Timestamp: $(date)"
@@ -80,7 +85,7 @@ exec gunicorn \
   --log-level info \
   --access-logfile - \
   --error-logfile - \
-  api_server:app # Application module MUST come last after all options 
+  api_server:app # Application module MUST come last after all options
 
 
 #exec gunicorn \
