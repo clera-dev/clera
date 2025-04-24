@@ -1183,6 +1183,45 @@ async def initiate_ach_transfer(
         logger.error(f"Error creating ACH transfer: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Define request model for ACH relationship deletion
+class DeleteACHRelationshipRequest(BaseModel):
+    accountId: str
+    achRelationshipId: str
+
+@app.post("/delete-ach-relationship")
+async def delete_ach_relationship(
+    request: DeleteACHRelationshipRequest,
+    x_api_key: str = Header(None)
+):
+    # Validate API key
+    api_key_env = os.getenv("BACKEND_API_KEY")
+    if x_api_key != api_key_env:
+        logger.error("API key validation failed")
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    try:
+        # Log the request
+        logger.info(f"Deleting ACH relationship {request.achRelationshipId} for account {request.accountId}")
+        
+        # Get a broker client instance
+        client = get_broker_client()
+        
+        # Delete the ACH relationship
+        client.delete_ach_relationship_for_account(
+            account_id=request.accountId,
+            relationship_id=request.achRelationshipId
+        )
+        
+        # Return success
+        logger.info(f"Successfully deleted ACH relationship {request.achRelationshipId}")
+        return {
+            "success": True,
+            "message": f"Successfully deleted ACH relationship {request.achRelationshipId}"
+        }
+    except Exception as e:
+        logger.error(f"Error deleting ACH relationship: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/process-plaid-token")
 async def process_plaid_token(
     request: PlaidTokenRequest,

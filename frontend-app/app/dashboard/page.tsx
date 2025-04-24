@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import UserDashboard from "@/components/dashboard/UserDashboard";
+import BankConnectionsCard from "@/components/dashboard/BankConnectionsCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
@@ -24,6 +25,8 @@ export default function DashboardPage() {
     lastName: string;
   } | null>(null);
   const [accountDetails, setAccountDetails] = useState<FetchedAccountDetails | null>(null);
+  const [alpacaAccountId, setAlpacaAccountId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -32,7 +35,7 @@ export default function DashboardPage() {
       try {
         const supabase = createClient();
         
-        // 1. Check auth status
+        // 1. Check auth status using getUser (more secure than getSession)
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
           console.log("User not authenticated, redirecting to sign-in");
@@ -40,13 +43,17 @@ export default function DashboardPage() {
           return; 
         }
         
-        // 2. Get user first/last name from user_onboarding
+        // Save user email for future use
+        setUserEmail(user.email || null);
+        
+        // 2. Get user first/last name and alpaca account ID from user_onboarding
         let firstName = "User";
         let lastName = "";
+        let alpacaId = null;
         try {
           const { data: onboardingData, error: onboardingError } = await supabase
             .from('user_onboarding')
-            .select('onboarding_data') 
+            .select('onboarding_data, alpaca_account_id') 
             .eq('user_id', user.id)
             .maybeSingle();
           
@@ -54,16 +61,32 @@ export default function DashboardPage() {
             console.warn("Warning fetching onboarding data:", onboardingError.message);
           }
 
-          if (onboardingData && onboardingData.onboarding_data) {
-            const parsedData = typeof onboardingData.onboarding_data === 'string' 
-              ? JSON.parse(onboardingData.onboarding_data) 
-              : onboardingData.onboarding_data;
+          if (onboardingData) {
+            if (onboardingData.onboarding_data) {
+              const parsedData = typeof onboardingData.onboarding_data === 'string' 
+                ? JSON.parse(onboardingData.onboarding_data) 
+                : onboardingData.onboarding_data;
+              
+              firstName = parsedData?.firstName || firstName;
+              lastName = parsedData?.lastName || lastName;
+            }
             
-            firstName = parsedData?.firstName || firstName;
-            lastName = parsedData?.lastName || lastName;
+            alpacaId = onboardingData.alpaca_account_id;
+            if (alpacaId) {
+              console.log(`Found Alpaca account ID: ${alpacaId}`);
+              setAlpacaAccountId(alpacaId);
+              
+              // Store in localStorage for access by other components
+              try {
+                localStorage.setItem('alpacaAccountId', alpacaId);
+              } catch (e) {
+                console.error("Error storing alpacaAccountId in localStorage:", e);
+              }
+            } else {
+              console.warn("No Alpaca account ID found in onboarding data");
+            }
           }
           setUserData({ firstName, lastName });
-          console.log("Dashboard: User name data set:", { firstName, lastName });
 
         } catch (err) {
           console.error("Error processing onboarding data:", err);
@@ -90,7 +113,17 @@ export default function DashboardPage() {
                 bankAccountLast4 = bankData.last_4;
                 console.log("Dashboard: Bank details found:", { bankName, bankAccountLast4 });
             } else {
-                 console.log("Dashboard: No bank connection found for user.");
+                 console.log("Dashboard: No bank connection found in database");
+                 
+                 // Try to get from localStorage as fallback
+                 try {
+                   const storedBankName = localStorage.getItem('bankName');
+                   const storedLast4 = localStorage.getItem('bankLast4');
+                   if (storedBankName) bankName = storedBankName;
+                   if (storedLast4) bankAccountLast4 = storedLast4;
+                 } catch (e) {
+                   console.error("Error reading bank data from localStorage:", e);
+                 }
             }
         } catch (err) {
              console.error("Error fetching bank connection details:", err);
@@ -116,7 +149,18 @@ export default function DashboardPage() {
                 latestTransferStatus = transferData.status;
                 console.log("Dashboard: Transfer details found:", { latestTransferAmount, latestTransferStatus });
             } else {
-                 console.log("Dashboard: No transfer data found for user.");
+                console.log("Dashboard: No transfer data found in database");
+                
+                // Try to get from localStorage as fallback
+                try {
+                  const storedAmount = localStorage.getItem('transferAmount');
+                  if (storedAmount) {
+                    latestTransferAmount = parseFloat(storedAmount);
+                    latestTransferStatus = "PENDING"; // Default status for localStorage data
+                  }
+                } catch (e) {
+                  console.error("Error reading transfer data from localStorage:", e);
+                }
             }
         } catch (err) {
             console.error("Error fetching transfer details:", err);
@@ -133,8 +177,26 @@ export default function DashboardPage() {
       } catch (err: any) {
         console.error("Error fetching dashboard data:", err);
         setError(err.message || "Failed to load dashboard data.");
-        setUserData(null);
-        setAccountDetails(null);
+        
+        // Try to recover using localStorage data
+        try {
+          const storedFirstName = localStorage.getItem('firstName') || "User";
+          setUserData({ firstName: storedFirstName, lastName: "" });
+          
+          const storedAccountId = localStorage.getItem('alpacaAccountId');
+          if (storedAccountId) setAlpacaAccountId(storedAccountId);
+          
+          // Set minimal account details from localStorage
+          setAccountDetails({
+            bankName: localStorage.getItem('bankName'),
+            bankAccountLast4: localStorage.getItem('bankLast4'),
+            latestTransferAmount: localStorage.getItem('transferAmount') ? 
+              parseFloat(localStorage.getItem('transferAmount')!) : null,
+            latestTransferStatus: "PENDING"
+          });
+        } catch (storageErr) {
+          console.error("Failed to recover from localStorage:", storageErr);
+        }
       } finally {
         setLoading(false);
       }
@@ -156,7 +218,7 @@ export default function DashboardPage() {
     );
   }
   
-  if (error) {
+  if (error && !userData) {
       return (
         <div className="flex items-center justify-center h-full p-4">
             <Alert variant="destructive" className="max-w-md">
@@ -182,10 +244,29 @@ export default function DashboardPage() {
   
   return (
     <div className="flex-1 w-full flex flex-col p-4 sm:p-6 md:p-8">
+      {error && (
+        <Alert className="mb-6">
+          <Terminal className="h-4 w-4" />
+          <AlertTitle>Note</AlertTitle>
+          <AlertDescription>
+            Some account information may be incomplete. {error}
+          </AlertDescription>
+        </Alert>
+      )}
+      
       <UserDashboard 
         firstName={userData.firstName}
         accountDetails={accountDetails || {}}
       />
+      
+      {/* Bank Connections Card with Add Funds Button */}
+      <div className="mt-6">
+        <BankConnectionsCard 
+          alpacaAccountId={alpacaAccountId || undefined}
+          email={userEmail || undefined}
+          userName={userData.firstName}
+        />
+      </div>
     </div>
   );
 } 

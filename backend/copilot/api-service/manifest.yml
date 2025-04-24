@@ -15,9 +15,9 @@ http:
   healthcheck:
     path: '/api/health'
     healthy_threshold: 2
-    unhealthy_threshold: 5 # Allow more retries before failing
-    interval: 30s        # Increase interval slightly
-    timeout: 15s         # Increase timeout
+    unhealthy_threshold: 10 # Increased to allow more retries before failing
+    interval: 45s          # Increased interval to match Dockerfile healthcheck
+    timeout: 15s           # Increased timeout for health check
 
 # Configuration for your containers and service.
 image:
@@ -102,10 +102,11 @@ environments:
     deployment:
       rolling: 'recreate'   # Stops existing tasks before new ones are started for faster deployments.
       # Increase deployment timeouts
+      minimum_healthy_percent: 0    # Allow all tasks to be stopped before starting new ones
+      maximum_percent: 200          # Allow double the number of tasks during deployment
       deployment_controller:
         type: ECS # or CODE_DEPLOY
-      # Consider re-enabling rollback alarms once stable
-      # rollback_alarms: [] # Explicitly disable rollback alarms if they cause issues
+      # Configure circuit breaker - enable rollback but with more lenient settings
       circuit_breaker:
         enable: true
         rollback: true

@@ -63,9 +63,12 @@ USER appuser
 # Expose the port the app runs on
 EXPOSE 8000
 
-# Add HEALTHCHECK instruction - use a simpler curl-based check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-  CMD curl --fail http://localhost:8000/api/health || exit 1
+# Improved HEALTHCHECK configuration with more generous settings for AWS ECS
+# Increased start period to 3 minutes to allow the app time to fully initialize
+# Increased interval to 45s to reduce check frequency
+# Increased timeout to 15s to allow for slower responses under load
+HEALTHCHECK --interval=45s --timeout=15s --start-period=180s --retries=3 \
+  CMD curl --silent --fail http://localhost:8000/api/health || exit 1
 
 # Set the AWS-specific entrypoint script for more diagnostics
 ENTRYPOINT ["/app/aws-entrypoint.sh"]

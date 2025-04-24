@@ -17,8 +17,8 @@ source:
   properties:
     branch: main
     repository: https://github.com/clera-dev/clera
-    # Optional: specify the name of an existing CodeStar Connections connection.
-    # connection_name: a-connection
+    # Uncomment and specify your connection name if you have one
+    connection_name: copilot-clera-main
 
 # This section defines the order of the environments your pipeline will deploy to.
 stages:

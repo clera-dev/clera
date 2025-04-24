@@ -18,7 +18,7 @@ export default function ManualBankEntry({
   if (!alpacaAccountId) {
     return (
       <div className="text-red-500">
-        Account ID not found. Please contact support.
+        Account ID not found. Please try refreshing or contact support.
       </div>
     );
   }
@@ -35,9 +35,9 @@ export default function ManualBankEntry({
   return (
     <Button 
       onClick={() => setShowForm(true)}
-      className="flex items-center gap-2"
+      className="flex items-center gap-2 w-full"
     >
-      Enter Account Details Manually
+      Enter Bank Account Details Manually
     </Button>
   );
 } 

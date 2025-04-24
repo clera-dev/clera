@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import AccountInfoCard from "@/components/dashboard/AccountInfoCard";
 import TransfersCard from "@/components/dashboard/TransfersCard";
 import ManualBankEntry from "@/components/funding/ManualBankEntry";
+import OnboardingStatusSetter from "@/components/onboarding/OnboardingStatusSetter";
 
 export default async function ProtectedPage() {
   const supabase = await createClient();
@@ -41,6 +42,7 @@ export default async function ProtectedPage() {
   if (!hasCompletedOnboarding) {
     return (
       <div className="flex-1 w-full flex flex-col p-4 sm:p-6 md:p-8">
+        <OnboardingStatusSetter status={onboardingData?.status || 'incomplete'} />
         <OnboardingFlow 
           userId={user.id} 
           initialData={onboardingData?.onboarding_data}
@@ -52,6 +54,7 @@ export default async function ProtectedPage() {
   // If onboarding is complete, show regular protected content
   return (
     <div className="flex-1 w-full flex flex-col gap-6 p-4 sm:p-6 md:p-8">
+      <OnboardingStatusSetter status={onboardingData?.status || 'incomplete'} />
       <div className="w-full">
         <h1 className="text-3xl font-bold mb-6">
           {profile?.first_name ? `Welcome to Clera` : 'Welcome to Clera'}

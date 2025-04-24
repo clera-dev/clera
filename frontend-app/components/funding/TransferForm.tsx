@@ -80,28 +80,11 @@ export default function TransferForm({
       setIsTransferring(true);
       setError(null);
       
-      // First check if a transfer has already been initiated
-      const existingTransferId = localStorage.getItem('transferId');
-      if (existingTransferId) {
-        console.log("Using existing transfer ID:", existingTransferId);
-        
-        // Save data again with the existing transfer ID
-        saveDataToLocalStorage(existingTransferId);
-        
-        // Redirect to dashboard without making a new transfer
-        console.log("Transfer already exists, navigating to dashboard");
-        setTransferCompleted(true);
-        
-        if (onTransferComplete) {
-          onTransferComplete(amount);
-        }
-        
-        router.replace('/dashboard');
-        return;
-      }
-      
-      // If no existing transfer, save basic data first
+      // Save basic data first
       saveDataToLocalStorage();
+      
+      // Always attempt to create a new transfer
+      console.log("Initiating new transfer with relationshipId:", relationshipId);
       
       const response = await fetch('/api/broker/transfer', {
         method: 'POST',
@@ -123,16 +106,17 @@ export default function TransferForm({
       
       setTransferCompleted(true);
       
-      if (onTransferComplete) {
-        onTransferComplete(amount);
-      }
-      
-      // Save data again with the transfer ID
+      // Save data with the new transfer ID
       saveDataToLocalStorage(data.id);
       
-      console.log("Transfer successful, navigating to dashboard");
-      
-      router.replace('/dashboard');
+      if (onTransferComplete) {
+        console.log("Transfer successful, calling completion callback");
+        onTransferComplete(amount);
+      } else {
+        // Only redirect if we don't have a callback
+        console.log("Transfer successful, navigating to dashboard");
+        router.replace('/dashboard');
+      }
       
     } catch (error) {
       console.error('Error initiating transfer:', error);
@@ -141,6 +125,22 @@ export default function TransferForm({
       setIsTransferring(false);
     }
   };
+
+  // If transfer is completed and we don't have a callback (for dialog-based use),
+  // show a success message
+  if (transferCompleted && !onTransferComplete) {
+    return (
+      <div className="w-full max-w-md mx-auto">
+        <div className="p-4 mb-6 border border-green-200 rounded-lg bg-green-50">
+          <h4 className="font-medium text-green-800 mb-1">Transfer initiated!</h4>
+          <p className="text-green-700 text-sm">
+            Your transfer of ${parseFloat(amount).toFixed(2)} has been initiated. 
+            Funds may take 1-3 business days to process.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md mx-auto">
