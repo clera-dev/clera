@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from "@supabase/ssr";
 
 // Paths that are always accessible regardless of auth state
-const publicPaths = ['/sign-in', '/sign-up', '/auth/callback', '/auth/confirm', '/protected/reset-password'];
+const publicPaths = ['/', '/sign-in', '/sign-up', '/auth/callback', '/auth/confirm', '/protected/reset-password'];
 
 // Paths that are accessible only after onboarding is complete
 const protectedPostOnboardingPaths = [
