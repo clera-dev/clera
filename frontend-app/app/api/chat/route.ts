@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     console.log(`Sending request with user_id: ${requestData.user_id} and account_id: ${requestData.account_id}`);
     
     // Get backend URL from environment variable
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
     
     // Always use the chat-with-account endpoint 
     const endpoint = `${backendUrl}/api/chat-with-account`;

@@ -69,9 +69,9 @@ const formatPercentage = (value: string | number | null | undefined): string => 
     } else {
         numericValue = null;
     }
-    // Assuming the input is like '0.05' for 5% - multiply by 100
+
     if (numericValue === null || isNaN(numericValue)) return '--.--%';
-    return `${(numericValue * 100).toFixed(2)}%`;
+    return `${numericValue.toFixed(2)}%`;
 };
 
 const HoldingsTable: React.FC<HoldingsTableProps> = ({ positions, isLoading }) => {
@@ -95,45 +95,38 @@ const HoldingsTable: React.FC<HoldingsTableProps> = ({ positions, isLoading }) =
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[200px]">Symbol</TableHead>
-          <TableHead>Qty</TableHead>
-          <TableHead>Avg Cost</TableHead>
+          <TableHead className="w-[200px]">Name</TableHead>
+          <TableHead>Ticker</TableHead>
+          <TableHead>Initial Price</TableHead>
+          <TableHead>Current Price</TableHead>
+          <TableHead>Number of Shares</TableHead>
           <TableHead>Market Value</TableHead>
-          <TableHead>Day's Gain</TableHead>
-          <TableHead className="text-right">Total Gain</TableHead>
-          <TableHead className="text-right">Portfolio %</TableHead>
+          <TableHead>Total Return</TableHead>
+          <TableHead className="text-right">Weight (%)</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {positions.map((pos) => {
           const isGainPositive = parseFloat(pos.unrealized_pl) >= 0;
-          const isDayGainPositive = parseFloat(pos.change_today) >= 0; // Or use unrealized_intraday_pl
           const gainColor = isGainPositive ? 'text-green-500' : 'text-red-500';
-          const dayGainColor = isDayGainPositive ? 'text-green-500' : 'text-red-500';
+          const returnPercent = parseFloat(pos.unrealized_plpc) * 100; // Convert from decimal to percentage
 
           return (
             <TableRow key={pos.asset_id}>
               <TableCell className="font-medium">
-                <div className="flex flex-col">
-                  <span>{pos.symbol}</span>
-                  <span className="text-xs text-muted-foreground truncate" title={pos.name || pos.symbol}>{pos.name || pos.symbol}</span>
-                </div>
+                <span className="truncate" title={pos.name || pos.symbol}>{pos.name || pos.symbol}</span>
               </TableCell>
-              <TableCell>{parseFloat(pos.qty).toLocaleString()}</TableCell>
+              <TableCell>{pos.symbol}</TableCell>
               <TableCell>{formatCurrency(pos.avg_entry_price)}</TableCell>
+              <TableCell>{formatCurrency(pos.current_price)}</TableCell>
+              <TableCell>{parseFloat(pos.qty).toLocaleString()}</TableCell>
               <TableCell>{formatCurrency(pos.market_value)}</TableCell>
-              <TableCell className={dayGainColor}>
-                 <div className="flex items-center">
-                    {isDayGainPositive ? <ArrowUpRight className="h-3 w-3 mr-1"/> : <ArrowDownRight className="h-3 w-3 mr-1"/>}
-                    {formatCurrency(pos.unrealized_intraday_pl)} ({formatPercentage(pos.unrealized_intraday_plpc)})
-                 </div>
-              </TableCell>
-              <TableCell className={`${gainColor} text-right`}>
-                <div className="flex flex-col items-end">
-                     <span>{formatCurrency(pos.unrealized_pl)}</span>
-                     <span className="text-xs">({formatPercentage(pos.unrealized_plpc)})</span>
+              <TableCell className={gainColor}>
+                <div className="flex items-center">
+                  {isGainPositive ? <ArrowUpRight className="h-3 w-3 mr-1"/> : <ArrowDownRight className="h-3 w-3 mr-1"/>}
+                  {formatPercentage(returnPercent)}
                 </div>
-                </TableCell>
+              </TableCell>
               <TableCell className="text-right">{pos.weight !== undefined ? `${pos.weight.toFixed(2)}%` : '--%'}</TableCell>
             </TableRow>
           );

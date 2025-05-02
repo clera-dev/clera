@@ -3,7 +3,13 @@ const nextConfig = {
   // transpilePackages: ['@alpacahq/alpaca-trade-api'], // No longer needed
   async rewrites() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    
     return [
+      // WebSocket endpoint - proxied through the API server on port 8000
+      {
+        source: '/ws/portfolio/:accountId',
+        destination: `${backendUrl}/ws/portfolio/:accountId`,
+      },
       // Specific proxy rules for backend API endpoints
       {
         source: '/api/market/:path*',

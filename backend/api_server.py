@@ -21,8 +21,11 @@ import contextlib
 from decouple import config
 import aiohttp
 import traceback
+import httpx
+from fastapi import WebSocket
+from starlette.websockets import WebSocketState
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -2051,6 +2054,229 @@ async def get_account_orders(
     except Exception as e:
         logger.error(f"Error fetching orders for {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error fetching orders.")
+
+@app.get("/api/portfolio/value")
+async def get_portfolio_value(accountId: str = Query(..., description="Alpaca account ID")):
+    """
+    Get current portfolio value and today's return for an account.
+    
+    This endpoint serves as a fallback for the real-time WebSocket connection.
+    It calculates the portfolio value and today's return similar to the 
+    portfolio calculator service.
+    """
+    try:
+        # Get portfolio value from Redis if available
+        redis_client = await get_redis_client()
+        if redis_client:
+            last_portfolio_key = f"last_portfolio:{accountId}"
+            last_portfolio_data = await redis_client.get(last_portfolio_key)
+            
+            if last_portfolio_data:
+                # Return the cached portfolio data
+                return json.loads(last_portfolio_data)
+        
+        # If not in Redis, calculate using broker client
+        broker_client = get_broker_client()
+        
+        # Get positions
+        positions = broker_client.get_all_positions_for_account(accountId)
+        
+        # Get account information for cash balance
+        account = broker_client.get_trade_account_by_id(accountId)
+        cash_balance = float(account.cash)
+        
+        # Calculate total portfolio value
+        portfolio_value = cash_balance
+        for position in positions:
+            # Get position value
+            quantity = float(position.qty)
+            price = float(position.current_price)
+            position_value = quantity * price
+            portfolio_value += position_value
+        
+        # Get base value for "Today's Return" calculation
+        base_value = 0.0
+        try:
+            account_info = broker_client.get_account_by_id(accountId)
+            base_value = float(account_info.last_equity)
+            
+            # Ensure we have a valid base value
+            if base_value <= 0:
+                base_value = portfolio_value  # Fallback
+        except Exception as e:
+            logger.warning(f"Error getting base value for account {accountId}: {e}")
+            base_value = portfolio_value  # Fallback
+        
+        # Calculate today's return
+        today_return = portfolio_value - base_value
+        today_return_percent = (today_return / base_value * 100) if base_value > 0 else 0
+        
+        # Format for display
+        today_return_formatted = f"+${today_return:.2f}" if today_return >= 0 else f"-${abs(today_return):.2f}"
+        today_return_percent_formatted = f"({today_return_percent:.2f}%)"
+        
+        # Prepare response
+        response = {
+            "account_id": accountId,
+            "total_value": f"${portfolio_value:.2f}",
+            "today_return": f"{today_return_formatted} {today_return_percent_formatted}",
+            "raw_value": portfolio_value,
+            "raw_return": today_return,
+            "raw_return_percent": today_return_percent,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Cache it in Redis if client available
+        if redis_client:
+            await redis_client.set(last_portfolio_key, json.dumps(response))
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting portfolio value: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error calculating portfolio value: {str(e)}"
+        )
+
+# Helper function to get a Redis client
+async def get_redis_client():
+    """Get a Redis client for caching."""
+    try:
+        import redis.asyncio as aioredis
+        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_db = int(os.getenv("REDIS_DB", "0"))
+        
+        client = aioredis.Redis(
+            host=redis_host,
+            port=redis_port,
+            db=redis_db,
+            decode_responses=True
+        )
+        
+        # Test connection
+        await client.ping()
+        return client
+    except ImportError:
+        logger.warning("Redis async client not available, caching disabled")
+        return None
+    except Exception as e:
+        logger.error(f"Error connecting to Redis: {e}")
+        return None
+
+# Add this WebSocket endpoint to proxy WebSocket connections to the WebSocket server
+@app.websocket("/ws/portfolio/{account_id}")
+async def websocket_proxy(websocket: WebSocket, account_id: str):
+    """
+    Proxy WebSocket connections to the dedicated WebSocket server.
+    
+    This allows frontend clients to connect to the API server on port 8000
+    while the actual WebSocket handling happens on the dedicated server on port 8001.
+    """
+    # Get WebSocket server URL from environment or use default
+    websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
+    websocket_host = os.getenv("WEBSOCKET_HOST", "localhost")
+    websocket_url = f"ws://{websocket_host}:{websocket_port}"
+    
+    logger.info(f"WebSocket connection request for account {account_id}")
+    
+    # Track if we've already closed the client connection
+    client_closed = False
+    
+    # Accept the connection from the client
+    try:
+        await websocket.accept()
+    except RuntimeError as e:
+        logger.error(f"Error accepting WebSocket connection: {e}")
+        return
+    
+    # Create a connection to the WebSocket server
+    try:
+        # Simple health check
+        try:
+            async with httpx.AsyncClient() as client:
+                health_response = await client.get(
+                    f"http://{websocket_host}:{websocket_port}/health", 
+                    timeout=2.0
+                )
+                if health_response.status_code != 200:
+                    logger.error(f"WebSocket server health check failed: {health_response.status_code}")
+                    if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
+                        await websocket.close(code=1013, reason="WebSocket server is unavailable")
+                        client_closed = True
+                    return
+        except Exception as e:
+            logger.error(f"Error connecting to WebSocket server: {e}")
+            if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
+                await websocket.close(code=1013, reason="WebSocket server is unavailable")
+                client_closed = True
+            return
+            
+        # Use websockets library for more robust connection handling
+        import websockets
+        
+        target_ws_uri = f"{websocket_url}/ws/portfolio/{account_id}"
+        logger.info(f"Connecting to WebSocket server at {target_ws_uri}")
+        
+        # Set up the connection parameters with a reasonable timeout
+        async with websockets.connect(
+            target_ws_uri, 
+            ping_interval=30,
+            ping_timeout=10,
+            close_timeout=5
+        ) as ws_server:
+            # Set up message forwarding in both directions
+            done = asyncio.Future()
+            
+            # Forward client -> server messages
+            async def forward_client_to_server():
+                try:
+                    while True:
+                        data = await websocket.receive_text()
+                        await ws_server.send(data)
+                except Exception as e:
+                    logger.error(f"Error forwarding client to server: {e}")
+                    done.set_result(None)
+            
+            # Forward server -> client messages
+            async def forward_server_to_client():
+                try:
+                    while True:
+                        data = await ws_server.recv()
+                        await websocket.send_text(data)
+                except Exception as e:
+                    logger.error(f"Error forwarding server to client: {e}")
+                    done.set_result(None)
+            
+            # Create and run the forwarding tasks
+            client_to_server = asyncio.create_task(forward_client_to_server())
+            server_to_client = asyncio.create_task(forward_server_to_client())
+            
+            # Wait for either task to complete (connection closed on either end)
+            await done
+            
+            # Clean up tasks
+            for task in [client_to_server, server_to_client]:
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+                    
+    except websockets.exceptions.WebSocketException as e:
+        logger.error(f"WebSocket connection error: {e}")
+    except Exception as e:
+        logger.error(f"Error in WebSocket proxy: {e}")
+    finally:
+        # Only try to close if not already closed
+        if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
+            try:
+                await websocket.close()
+                client_closed = True
+            except Exception as e:
+                logger.error(f"Error closing WebSocket connection: {e}")
 
 if __name__ == "__main__":
     import uvicorn

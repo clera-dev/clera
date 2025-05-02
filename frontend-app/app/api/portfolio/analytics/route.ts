@@ -10,11 +10,11 @@ export async function GET(request: NextRequest) {
   }
 
   // --- Fetch from actual backend ---
-  const backendUrl = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+  const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
   const backendApiKey = process.env.BACKEND_API_KEY;
 
-  if (!backendUrl || !backendApiKey) {
-    console.error("Portfolio Analytics API Route Error: Backend URL or API Key not configured.");
+  if (!backendUrl) {
+    console.error("Portfolio Analytics API Route Error: Backend URL not configured.");
     return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
   }
 
@@ -22,13 +22,20 @@ export async function GET(request: NextRequest) {
   console.log(`Proxying request to: ${targetUrl}`);
 
   try {
+    // Prepare headers
+    const headers: HeadersInit = {
+      'Accept': 'application/json'
+    };
+    
+    // Add API key if available
+    if (backendApiKey) {
+      headers['x-api-key'] = backendApiKey;
+    }
+    
     const backendResponse = await fetch(targetUrl, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'x-api-key': backendApiKey // Securely add the API key here
-      },
-       cache: 'no-store' // Ensure fresh data
+      headers,
+      cache: 'no-store' // Ensure fresh data
     });
 
     const responseBody = await backendResponse.text();

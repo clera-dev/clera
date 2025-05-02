@@ -15,6 +15,7 @@ import WhatIfCalculator from '@/components/portfolio/WhatIfCalculator';
 import HoldingsTable from '@/components/portfolio/HoldingsTable';
 import TransactionsTable from '@/components/portfolio/TransactionsTable';
 import AddFundsButton from '@/components/portfolio/AddFundsButton';
+import LivePortfolioValue from '@/components/portfolio/LivePortfolioValue';
 
 interface PortfolioHistoryData {
   timestamp: number[];
@@ -145,6 +146,7 @@ export default function PortfolioPage() {
   const [portfolioHistory, setPortfolioHistory] = useState<PortfolioHistoryData | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<string>('1Y');
   const [assetDetailsMap, setAssetDetailsMap] = useState<Record<string, AssetDetails>>({});
+  const activitiesEndpointAvailable = React.useRef<boolean | null>(null);
 
   const fetchData = async (url: string, options: RequestInit = {}): Promise<any> => {
     try {
@@ -155,11 +157,46 @@ export default function PortfolioPage() {
           'Content-Type': 'application/json',
         },
       });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`API Error (${response.status}): ${errorData.detail || response.statusText}`);
+      
+      // Handle 404s specifically to avoid parse errors
+      if (response.status === 404) {
+        console.warn(`Resource not found: ${url}`);
+        
+        // For activities endpoint, return an empty array instead of throwing
+        if (url.includes('activities')) {
+          return [];
+        }
+        
+        throw new Error(`Resource not found: ${url}`);
       }
-      return await response.json();
+      
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        let errorMessage: string;
+        
+        // Check if response is JSON before trying to parse it
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.detail || `API error: ${response.statusText}`;
+          } catch (parseError) {
+            errorMessage = `API Error (${response.status}): ${response.statusText}`;
+          }
+        } else {
+          errorMessage = `API Error (${response.status}): ${response.statusText}`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      // Check content type before parsing as JSON
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        return await response.json();
+      } else {
+        console.warn(`Response is not JSON: ${url}`);
+        return null;
+      }
     } catch (err) {
       console.error(`Error fetching ${url}:`, err);
       throw err;
@@ -226,7 +263,7 @@ export default function PortfolioPage() {
         setError(null);
         try {
             const positionsUrl = `/api/portfolio/positions?accountId=${accountId}`;
-            const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100`;
+            const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
             const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}`;
             const allTimeUrl = `/api/portfolio/history?accountId=${accountId}&period=MAX`;
             
@@ -247,10 +284,11 @@ export default function PortfolioPage() {
             const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
                 const details = await fetchAssetDetails(pos.symbol);
                 const marketValue = safeParseFloat(pos.market_value);
+                const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
                 return {
                     ...pos,
                     name: details?.name || pos.symbol,
-                    weight: totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0,
+                    weight: weight,
                 };
             }));
             if (isMounted) setPositions(enrichedPositions);
@@ -258,6 +296,42 @@ export default function PortfolioPage() {
             const initialHistoryUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
             const initialHistory = await fetchData(initialHistoryUrl);
             if (isMounted) setPortfolioHistory(initialHistory);
+
+            // Only try to load activities if we haven't determined its availability yet or if it's available
+            if (activitiesEndpointAvailable.current !== false) {
+              try {
+                const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100`;
+                const response = await fetch(activitiesUrl);
+                
+                // Cache the availability result to avoid repeated calls
+                activitiesEndpointAvailable.current = response.status !== 404;
+                
+                // If the activities endpoint doesn't exist (404), just continue without it
+                if (response.status === 404) {
+                  console.warn('Activities endpoint not available, using only orders data');
+                } else if (response.ok) {
+                  // Only process if the response was successful
+                  const activitiesData = await response.json();
+                  
+                  // If we have activities data, combine it with orders for a complete transaction history
+                  if (activitiesData && Array.isArray(activitiesData) && activitiesData.length > 0) {
+                    // Merge activities with orders for a complete transaction history
+                    const combinedTransactions = [...ordersData, ...activitiesData];
+                    // Sort by date (newest first)
+                    combinedTransactions.sort((a, b) => {
+                      const dateA = new Date(a.created_at || a.date || 0);
+                      const dateB = new Date(b.created_at || b.date || 0);
+                      return dateB.getTime() - dateA.getTime();
+                    });
+                    if (isMounted) setOrders(combinedTransactions);
+                  }
+                }
+              } catch (error) {
+                console.warn("Could not fetch activities, using orders only:", error);
+                // Mark the activities endpoint as unavailable to avoid future attempts
+                activitiesEndpointAvailable.current = false;
+              }
+            }
 
         } catch (err: any) {
             if (isMounted) setError(`Failed to load initial portfolio data: ${err.message}`);
@@ -268,7 +342,18 @@ export default function PortfolioPage() {
 
     loadInitialStaticData();
 
-    return () => { isMounted = false; };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadInitialStaticData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => { 
+      isMounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
 
   }, [accountId]);
 
@@ -276,7 +361,6 @@ export default function PortfolioPage() {
      if (!accountId || !selectedTimeRange) return;
      if (isLoading && !portfolioHistory && positions.length === 0 && !analytics) return;
 
-     // Add check to prevent redundant API calls
      const currentPeriod = portfolioHistory?.timeframe;
      if (portfolioHistory && currentPeriod === selectedTimeRange) return;
 
@@ -357,8 +441,91 @@ export default function PortfolioPage() {
     <div className="p-6 max-w-7xl mx-auto space-y-8 dark bg-background text-foreground">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Your Portfolio</h1>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => {
+            if (accountId) {
+              setIsLoading(true);
+              const loadInitialStaticData = async () => {
+                try {
+                  const positionsUrl = `/api/portfolio/positions?accountId=${accountId}`;
+                  const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
+                  const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}`;
+                  
+                  const [positionsData, ordersData, analyticsData] = await Promise.all([
+                    fetchData(positionsUrl),
+                    fetchData(ordersUrl),
+                    fetchData(analyticsUrl),
+                  ]);
+                  
+                  setAnalytics(analyticsData);
+                  setOrders(ordersData);
+                  
+                  // Only try to load activities if previously determined to be available
+                  if (activitiesEndpointAvailable.current === true) {
+                    try {
+                      const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100`;
+                      const activitiesData = await fetchData(activitiesUrl);
+                      
+                      // If we have activities data, combine it with orders for a complete transaction history
+                      if (activitiesData && Array.isArray(activitiesData) && activitiesData.length > 0) {
+                        // Merge activities with orders for a complete transaction history
+                        const combinedTransactions = [...ordersData, ...activitiesData];
+                        // Sort by date (newest first)
+                        combinedTransactions.sort((a, b) => {
+                          const dateA = new Date(a.created_at || a.date || 0);
+                          const dateB = new Date(b.created_at || b.date || 0);
+                          return dateB.getTime() - dateA.getTime();
+                        });
+                        setOrders(combinedTransactions);
+                      }
+                    } catch (error) {
+                      console.warn("Could not fetch activities, using orders only:", error);
+                      // Update our knowledge about the endpoint
+                      activitiesEndpointAvailable.current = false;
+                    }
+                  }
+                  
+                  const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);
+                  
+                  const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
+                    const details = await fetchAssetDetails(pos.symbol);
+                    const marketValue = safeParseFloat(pos.market_value);
+                    
+                    const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
+                    
+                    return {
+                      ...pos,
+                      name: details?.name || pos.symbol,
+                      weight: weight,
+                    };
+                  }));
+                  
+                  setPositions(enrichedPositions);
+                  
+                } catch (err: any) {
+                  setError(`Failed to refresh portfolio data: ${err.message}`);
+                } finally {
+                  setIsLoading(false);
+                }
+              };
+              
+              loadInitialStaticData();
+            }
+          }}
+          className="mr-2"
+        >
+          <RefreshCw className="h-4 w-4 mr-1" />
+          Refresh
+        </Button>
         <AddFundsButton accountId={accountId} />
       </div>
+      
+      {/* Real-time Portfolio Value */}
+      {accountId && (
+        <LivePortfolioValue accountId={accountId} />
+      )}
       
       <Card className="bg-card shadow-lg">
         <CardHeader>

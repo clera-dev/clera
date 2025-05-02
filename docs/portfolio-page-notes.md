@@ -376,8 +376,8 @@ redis_client = redis.Redis(host='localhost', port=6379, db=0)
 pubsub = redis_client.pubsub()
 
 # Initialize Alpaca StockDataStream with TRADING/MARKET DATA API credentials (not Broker credentials)
-market_api_key = os.getenv("MARKET_API_KEY")
-market_secret_key = os.getenv("MARKET_SECRET_KEY")
+market_api_key = os.getenv("APCA_API_KEY_ID")
+market_secret_key = os.getenv("APCA_API_SECRET_KEY")
 stock_stream = StockDataStream(market_api_key, market_secret_key)
 
 # Track which symbols we're monitoring
@@ -729,5 +729,190 @@ This optimized architecture provides several key benefits:
 - Only provide portfolio data for accounts a user is authorized to access
 
 This optimized architecture ensures highly efficient real-time portfolio tracking that can scale to millions of users with minimal additional overhead.
+
+## Real-Time Portfolio Value Tracking System Updates
+
+### Recent Improvements and Bug Fixes
+
+We've made several important fixes to the real-time portfolio value tracking system to improve stability, reliability, and error handling. These changes address key issues that were preventing the system from functioning correctly:
+
+1. **Fixed Market Data Consumer Event Loop Issue**:
+   - **Problem**: The Alpaca SDK was attempting to call `asyncio.run()` inside an already running event loop, causing a runtime error.
+   - **Solution**: Implemented direct WebSocket connection handling instead of using the built-in `stock_stream.run()` method. This properly integrates with our existing event loop.
+   - **Code Change**: Rewritten the connection management in `market_data_consumer.py` to directly manage the WebSocket connection lifecycle.
+
+2. **Improved WebSocket Error Handling in Frontend**:
+   - **Problem**: WebSocket error objects were causing JSON serialization errors when logged to console.
+   - **Solution**: Modified error handling to avoid attempting to serialize the error object directly.
+   - **Additional Improvements**:
+     - Added validation for account ID before attempting connection
+     - Enhanced error and connection state logging
+     - Implemented proper reconnection logic with backoff
+
+3. **Fixed JSON Serialization of UUID Objects**:
+   - **Problem**: The `asset_id` field from Alpaca (which is a UUID object) was causing JSON serialization errors.
+   - **Solution**: Explicitly convert UUID to string before attempting JSON serialization.
+   - **Scope**: Updated all instances where position data is serialized to JSON for Redis caching.
+
+4. **Added Comprehensive Testing**:
+   - Created a dedicated WebSocket server test to verify connectivity and responsiveness
+   - Implemented proper integration test for the real-time data flow
+   - Added graceful test skipping when services aren't running
+
+### Running the Real-Time System
+
+To run the complete real-time portfolio value tracking system locally:
+
+1. **Start Redis**: `brew services start redis`
+2. **Run all services**:
+   ```bash
+   cd backend
+   source venv/bin/activate  # Use direct activation instead of activate.sh
+   python -m portfolio_realtime.run_services
+   ```
+3. **Configure frontend**: Add `NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8001` to `.env.local`
+4. **Run frontend**: `cd frontend-app && npm run dev`
+
+These improvements result in a more stable and reliable real-time portfolio value tracking system that properly handles errors and edge cases while maintaining high performance and scalability.
+
+## WebSocket Proxy Architecture and AWS Deployment Guide
+
+### WebSocket Architecture Overview
+
+The real-time portfolio value tracking system uses a WebSocket architecture with the following components:
+
+1. **Frontend WebSocket Client**: Connects to relative path `/ws/portfolio/{accountId}`
+2. **Next.js API Route Proxy**: Acts as a proxy between frontend and backend WebSocket server
+3. **API Server (Port 8000)**: Handles HTTP requests and proxies WebSocket connections
+4. **WebSocket Server (Port 8001)**: Dedicated service for real-time WebSocket communication
+
+The data flow follows this path:
+1. Frontend connects to WebSocket at `/ws/portfolio/{accountId}`
+2. Next.js proxy forwards the connection to the API server at port 8000
+3. API server proxies the WebSocket connection to the dedicated WebSocket server on port 8001
+4. WebSocket server maintains the connection and sends real-time portfolio updates
+
+### AWS Deployment Configuration
+
+For AWS deployment with Copilot, you only need to deploy **two services**:
+
+1. **API Server** (Port 8000): Handles both HTTP API requests and WebSocket proxying
+2. **WebSocket Server** (Port 8001): Dedicated WebSocket service 
+
+You do **not** need to expose both ports publicly. Only the API server (port 8000) needs to be publicly accessible.
+
+#### Required Configuration in Copilot
+
+Update your Copilot service definition files in `backend/copilot/`:
+
+1. **API Server Service (`api/manifest.yml`)**:
+   ```yaml
+   # Add or update these configurations
+   http:
+     path: '/'
+     healthcheck:
+       path: '/health'
+       healthy_threshold: 2
+       unhealthy_threshold: 2
+       timeout: 5
+       interval: 10
+   
+   # Ensure WebSocket protocol is allowed
+   variables:
+     ALLOWED_ORIGINS: '*'  # Configure more specifically in production
+     WEBSOCKET_TIMEOUT: 300  # Timeout in seconds (5 minutes)
+   
+   # Add permission to communicate with the WebSocket service
+   network:
+     connect: true
+   ```
+
+2. **WebSocket Server Service (`websocket/manifest.yml`)**:
+   ```yaml
+   # This service does NOT need public exposure
+   # It will be internally accessible by the API service
+   
+   http:
+     # Internal health check endpoint
+     healthcheck:
+       path: '/health'
+       healthy_threshold: 2
+       unhealthy_threshold: 2
+       timeout: 5
+       interval: 10
+   
+   # Important: Ensure sufficient connection time
+   variables:
+     HEARTBEAT_INTERVAL: 30  # Seconds
+     CONNECTION_TIMEOUT: 300  # Seconds
+   ```
+
+3. **Environment Variables Configuration**:
+   Both services need these key environment variables:
+   ```yaml
+   variables:
+     # Redis connection for inter-service communication
+     REDIS_HOST: '${REDIS_ENDPOINT}'  # Use Copilot-managed Redis
+     REDIS_PORT: 6379
+     
+     # Service discovery - allows API server to find WebSocket server
+     WEBSOCKET_HOST: 'websocket.${APP_NAME}.${COPILOT_ENVIRONMENT_NAME}.internal'
+     WEBSOCKET_PORT: 8001
+   ```
+
+### Networking Configuration
+
+The most important aspect is ensuring proper communication between services:
+
+1. **Service Discovery**: The API server needs to know how to reach the WebSocket server.
+   - Copilot sets up internal DNS automatically. Use the service name: `websocket.${APP_NAME}.${COPILOT_ENVIRONMENT_NAME}.internal`
+
+2. **Security Groups**: Ensure the security groups allow communication between services:
+   ```yaml
+   # In api/manifest.yml
+   network:
+     security-groups:
+       - allow-internal-traffic
+   ```
+
+### Handling WebSocket Protocol
+
+WebSockets use the standard HTTP upgrade mechanism. Ensure your load balancer settings are configured to handle WebSocket connections:
+
+```yaml
+# In copilot/environments/[env-name]/manifest.yml
+http:
+  public:
+    ingress:
+      timeout: 300  # Set timeout to match WebSocket timeout
+    protocol: 'HTTPS'  # Required for WSS (secure WebSockets)
+```
+
+### Deployment Process
+
+Your existing CI/CD pipeline that deploys on pushes to main should work without modification if the above configurations are in place. Here's the exact process:
+
+1. Push changes to main branch
+2. CI/CD pipeline triggers Copilot deployment
+3. API server and WebSocket server are deployed as separate services
+4. Redis is used for inter-service communication
+5. Load balancer configurations are updated to handle WebSocket connections
+
+No additional manual steps are required beyond setting up the configuration files properly.
+
+### Verifying Deployment
+
+To verify that WebSocket functionality is working correctly:
+
+1. Check load balancer logs for successful WebSocket upgrades
+2. Monitor CloudWatch metrics for WebSocket connections and messages
+3. Test from the frontend using browser console: 
+   ```javascript
+   const ws = new WebSocket('wss://your-api-url.amazonaws.com/ws/portfolio/account-id');
+   ws.onmessage = (event) => console.log(event.data);
+   ws.onclose = (event) => console.log('Connection closed', event.code, event.reason);
+   ```
+
+Remember that WebSocket connections use the `wss://` protocol (secure WebSockets) in production rather than `ws://` used in local development.
 
 

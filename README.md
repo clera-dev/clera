@@ -114,4 +114,144 @@ Contains detailed documentation about the project's architecture, setup, compone
 *   **Backend:** Deployed to AWS ECS via AWS Copilot (non-AI parts) and LangGraph (AI agents). Requires AWS and LangGraph setup.
 *   **Frontend:** Deployed to Vercel, connected to the production backend endpoints. Requires Vercel project setup and environment variable configuration.
 
-Refer to the `docs/` directory and specific service manifests (`copilot/`, `langgraph.json`) for detailed deployment configurations. 
+Refer to the `docs/` directory and specific service manifests (`copilot/`, `langgraph.json`) for detailed deployment configurations.
+
+# Real-Time Portfolio Value Tracking System
+
+This system provides real-time updates of portfolio values for users of the Clera financial platform. It efficiently tracks the value of users' investment portfolios with minimal latency, enabling a responsive and engaging user experience.
+
+## Architecture
+
+The system consists of the following components:
+
+1. **Symbol Collector**: Periodically scans all user accounts and creates a list of unique symbols that need to be monitored
+2. **Market Data Consumer**: Subscribes to Alpaca's real-time market data for all tracked symbols
+3. **Portfolio Calculator**: Computes portfolio values using the latest prices and account positions
+4. **WebSocket Server**: Maintains connections with frontend clients and pushes portfolio updates
+5. **Frontend Component**: Displays real-time portfolio values to users
+
+## Prerequisites
+
+- Python 3.9+
+- Redis server running
+- Alpaca account with API keys (both Broker and Market Data API keys)
+- Node.js 16+ (for frontend)
+
+## Installation
+
+### Backend
+
+1. Install the required Python packages:
+
+```bash
+pip install redis alpaca-py fastapi uvicorn python-dotenv
+```
+
+2. Configure environment variables:
+
+Create a `.env` file in the backend directory with the following variables:
+
+```
+# Alpaca API credentials
+BROKER_API_KEY=your_broker_api_key
+BROKER_SECRET_KEY=your_broker_secret_key
+APCA_API_KEY_ID=your_market_data_api_key # same as trading API key
+APCA_API_SECRET=your_market_data_secret_key # same as trading API key
+ALPACA_SANDBOX=true  # Set to false for production
+
+# Redis configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+
+# Service configuration
+SYMBOL_COLLECTION_INTERVAL=300  # Seconds
+PRICE_TTL=3600  # Seconds
+MIN_UPDATE_INTERVAL=2  # Seconds
+RECALCULATION_INTERVAL=30  # Seconds
+WEBSOCKET_PORT=8001
+WEBSOCKET_HOST=0.0.0.0
+```
+
+### Frontend
+
+Add the WebSocket URL to your frontend environment variables:
+
+```
+NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8001
+```
+
+## Running the System
+
+### Option 1: Run all services together
+
+```bash
+cd backend
+python -m portfolio_realtime.run_services
+```
+
+This will start all services in parallel.
+
+### Option 2: Run services individually
+
+For development or debugging, you can run each service in a separate terminal:
+
+```bash
+# Terminal 1 - Symbol Collector
+cd backend
+python -m portfolio_realtime.symbol_collector
+
+# Terminal 2 - Market Data Consumer
+cd backend
+python -m portfolio_realtime.market_data_consumer
+
+# Terminal 3 - Portfolio Calculator
+cd backend
+python -m portfolio_realtime.portfolio_calculator
+
+# Terminal 4 - WebSocket Server
+cd backend
+python -m portfolio_realtime.websocket_server
+```
+
+## Frontend Integration
+
+To use the real-time portfolio value component in your frontend:
+
+```jsx
+import LivePortfolioValue from '@/components/portfolio/LivePortfolioValue';
+
+// In your component:
+<LivePortfolioValue accountId={accountId} />
+```
+
+## System Performance
+
+- The system is designed to be highly efficient, even with a large number of users
+- Market data is subscribed to only once per symbol, regardless of how many users hold that asset
+- Redis is used for fast data storage and inter-service communication
+- Updates are throttled to avoid overwhelming clients
+
+## Monitoring and Testing
+
+- Each service includes logging that can be used for monitoring
+- The WebSocket server provides a `/health` endpoint for status checks
+- Run tests with: `cd backend && python -m unittest discover tests`
+
+## Deployment Considerations
+
+- For production, host Redis with proper persistence and replication
+- Use secure WebSocket connections (WSS) in production
+- Scale the WebSocket server horizontally behind a load balancer for high availability
+- Configure proper authentication for WebSocket connections
+
+## Troubleshooting
+
+- Check Redis connection if services are not communicating
+- Verify Alpaca API keys have the necessary permissions
+- Ensure market data subscriptions are properly configured
+- Look for error messages in the service logs
+
+## License
+
+This project is proprietary and confidential. Unauthorized copying, transferring, or reproduction of the contents of this repository, via any medium, is strictly prohibited. 

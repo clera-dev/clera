@@ -10,8 +10,13 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { assetId: string } } // Correct way to get params in Route Handlers
 ) {
-  // Properly await params before accessing
-  const assetIdOrSymbol = params?.assetId;
+  // In Next.js App Router, params doesn't need to be awaited as it's already resolved
+  // but we should check if it exists before accessing properties
+  if (!params) {
+    return NextResponse.json({ detail: 'Missing route parameters' }, { status: 400 });
+  }
+
+  const assetIdOrSymbol = params.assetId;
 
   if (!assetIdOrSymbol) {
     return NextResponse.json({ detail: 'Asset ID or Symbol is required' }, { status: 400 });

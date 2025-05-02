@@ -89,7 +89,7 @@ req = StockQuotesRequest(
     limit = 2,                                              # specify limit
 )
 stock_historical_data_client.get_stock_quotes(req).df
-# get latest quotes by symbol
+ get latest quotes by symbol
 req = StockQuotesRequest(
     symbol_or_symbols = [symbol],
 )
@@ -106,7 +106,7 @@ symbols = [symbol]
 stock_data_stream_client.subscribe_quotes(stock_data_stream_handler, *symbols)
 stock_data_stream_client.subscribe_trades(stock_data_stream_handler, *symbols)
 
-stock_data_stream_client.run()
+stock_data_stream_client.run()#
 
 
 # Python functions with broker client

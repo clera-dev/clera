@@ -31,10 +31,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ detail: 'Alpaca Account ID is required' }, { status: 400 });
   }
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const backendUrl = process.env.BACKEND_URL;
   if (!backendUrl) {
-    console.error("Error: NEXT_PUBLIC_BACKEND_URL environment variable is not set.");
-    return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
+    console.error("Error: BACKEND_URL environment variable is not set.");
+    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
   }
 
   // Retrieve the backend API key securely from server-side environment variables
