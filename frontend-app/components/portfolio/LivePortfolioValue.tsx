@@ -15,7 +15,7 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [connectionAttempts, setConnectionAttempts] = useState<number>(0);
 
-    // Function to attempt reconnection
+    // Function to attempt WebSocket connection
     const connectWebSocket = () => {
         // Only create a new connection if we don't have one already
         if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
@@ -23,14 +23,6 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         }
         
         try {
-            // Use a relative URL that will go through the Next.js proxy which we've configured
-            // The proxy will forward the request to the API server
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host; // Use the frontend host (with Next.js proxy)
-            const websocketUrl = `${protocol}//${host}/ws/portfolio/${accountId}`;
-            
-            console.log(`Connecting to WebSocket at ${websocketUrl} (attempt ${connectionAttempts + 1})`);
-            
             // Check if accountId is valid before attempting to connect
             if (!accountId || accountId === 'undefined') {
                 console.log('Invalid account ID, cannot connect to WebSocket');
@@ -38,10 +30,31 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
                 return;
             }
             
+            // Use relative URL through Next.js proxy - this will be rewritten based on next.config.mjs
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host; // Include port if present
+            const websocketUrl = `${protocol}//${host}/ws/portfolio/${accountId}`;
+            
+            console.log(`Connecting to WebSocket at ${websocketUrl} (attempt ${connectionAttempts + 1})`);
+            
             const ws = new WebSocket(websocketUrl);
+            
+            // Set a connection timeout
+            const connectionTimeout = setTimeout(() => {
+                if (ws.readyState !== WebSocket.OPEN) {
+                    console.log('WebSocket connection timeout');
+                    ws.close();
+                    
+                    // Try again with an incremented attempt count
+                    const newAttempts = connectionAttempts + 1;
+                    setConnectionAttempts(newAttempts);
+                    setTimeout(connectWebSocket, Math.min(2000 * newAttempts, 10000));
+                }
+            }, 5000);
             
             // Connection opened
             ws.addEventListener('open', () => {
+                clearTimeout(connectionTimeout);
                 console.log('WebSocket connection established successfully');
                 setIsConnected(true);
                 setIsLoading(false);
@@ -66,12 +79,13 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
                         setIsLoading(false);
                     }
                 } catch (error) {
-                    console.log('Error parsing WebSocket message');
+                    console.log('Error parsing WebSocket message:', error);
                 }
             });
             
             // Connection closed
             ws.addEventListener('close', (event) => {
+                clearTimeout(connectionTimeout);
                 // Add more detailed logging for connection closure
                 console.log(`WebSocket connection closed, code: ${event.code}, reason: ${event.reason || 'No reason provided'}`, {
                     readyState: ws.readyState,
@@ -92,6 +106,7 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
             
             // Handle errors
             ws.addEventListener('error', (event) => {
+                clearTimeout(connectionTimeout);
                 // Add more detailed error logging
                 console.error('WebSocket connection error occurred', {
                     readyState: ws.readyState,
@@ -105,7 +120,7 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
             
             setSocket(ws);
         } catch (error) {
-            console.log('Error creating WebSocket connection');
+            console.log('Error creating WebSocket connection:', error);
             // Ensure we try to reconnect even after a connection creation error
             const newAttempts = connectionAttempts + 1;
             setConnectionAttempts(newAttempts);
@@ -119,16 +134,14 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         connectWebSocket();
         
         // Set up ping interval to keep connection alive
-        // Use a more frequent ping interval (15 seconds instead of 30)
-        // And use a proper ping/pong structure that the WebSocket server understands
         const pingInterval = setInterval(() => {
             if (socket && socket.readyState === WebSocket.OPEN) {
-                // Send a JSON heartbeat message instead of plain 'ping'
+                // Send a JSON heartbeat message
                 socket.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
             }
-        }, 15000); // Send ping every 15 seconds (more frequent)
+        }, 15000); // Send ping every 15 seconds
         
-        // Add a reconnection mechanism in case the connection is still lost
+        // Add a reconnection mechanism in case the connection is lost
         const reconnectInterval = setInterval(() => {
             if (!isConnected || (socket && socket.readyState !== WebSocket.OPEN)) {
                 console.log('Reconnection check: WebSocket not connected, attempting reconnect');
@@ -141,23 +154,12 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
             clearInterval(pingInterval);
             clearInterval(reconnectInterval);
             
-            // Only close if we're really unmounting the component
-            // Using a small delay to prevent unnecessary close/reopen cycles
-            const socketToClose = socket;
-            if (socketToClose) {
-                // Instead of immediate closure, use a delayed approach
-                setTimeout(() => {
-                    // Only close if this is still the active socket and it's open
-                    if (socketToClose === socket && 
-                        (socketToClose.readyState === WebSocket.OPEN || 
-                         socketToClose.readyState === WebSocket.CONNECTING)) {
-                        console.log('Component unmounting, closing WebSocket connection');
-                        socketToClose.close(1000, 'Component unmounted');
-                    }
-                }, 1000);
+            if (socket) {
+                console.log('Component unmounting, closing WebSocket connection');
+                socket.close(1000, 'Component unmounted');
             }
         };
-    }, [accountId, isConnected]); // Also depend on connection status
+    }, [accountId, isConnected]); // Re-run effect if accountId changes
     
     // Fallback to fetch data if WebSocket fails
     useEffect(() => {
@@ -176,7 +178,7 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
                         setIsLoading(false);
                     }
                 } catch (error) {
-                    console.log('Error fetching portfolio data');
+                    console.log('Error fetching portfolio data:', error);
                 }
             }, 3000);
         }

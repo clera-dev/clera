@@ -208,6 +208,8 @@ export default function PortfolioPage() {
         return assetDetailsMap[symbolOrId];
     }
     try {
+        // Use the Next.js API route that properly includes the API key
+        // This will go through /app/api/assets/[assetId]/route.ts instead of directly to the backend
         const url = `/api/assets/${symbolOrId}`;
         const details = await fetchData(url);
         setAssetDetailsMap(prev => ({ ...prev, [symbolOrId]: details }));
@@ -615,7 +617,7 @@ export default function PortfolioPage() {
       <Tabs defaultValue="holdings" className="w-full">
           <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
           <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
-          <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Transaction History</TabsTrigger>
+          <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
         </TabsList>
 
         <TabsContent value="holdings">

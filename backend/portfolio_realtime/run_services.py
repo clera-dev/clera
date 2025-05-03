@@ -41,6 +41,24 @@ load_dotenv()
 # Flag to signal all services to shut down
 shutdown_flag = False
 
+# Check Redis connection before starting
+def check_redis_connection():
+    """Check if Redis is running and accessible."""
+    try:
+        import redis
+        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_db = int(os.getenv("REDIS_DB", "0"))
+        
+        client = redis.Redis(host=redis_host, port=redis_port, db=redis_db)
+        client.ping()
+        logger.info(f"Redis connection confirmed at {redis_host}:{redis_port}")
+        return True
+    except Exception as e:
+        logger.error(f"Cannot connect to Redis: {e}")
+        logger.error(f"Make sure Redis is running at {redis_host}:{redis_port}")
+        return False
+
 async def run_symbol_collector():
     """Run the Symbol Collector service."""
     try:
@@ -122,9 +140,13 @@ async def run_websocket_server():
     """Run the WebSocket Server."""
     try:
         logger.info("Starting WebSocket Server...")
-        # API server is already on port 8000, so we need to use 8001 for WebSocket server
-        port = int(os.getenv("WEBSOCKET_PORT", "8001"))  # Use environment variable with default 8001
-        host = os.getenv("WEBSOCKET_HOST", "0.0.0.0")
+        
+        # Always use port 8001 for the WebSocket server to ensure consistency
+        # Port 8000 is reserved for the API server
+        port = int(os.getenv("WEBSOCKET_PORT", "8001"))
+        host = os.getenv("WEBSOCKET_HOST", "localhost")  # Use localhost instead of 0.0.0.0 for better compatibility
+        
+        logger.info(f"WebSocket server configured to run on {host}:{port}")
         
         config = uvicorn.Config(
             websocket_app,
@@ -155,6 +177,11 @@ def handle_signal(sig_num, frame):
 
 async def main():
     """Main entry point to run all services."""
+    # Check Redis connection first
+    if not check_redis_connection():
+        logger.error("Cannot proceed without Redis connection. Exiting.")
+        return
+        
     # Register signal handlers
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)

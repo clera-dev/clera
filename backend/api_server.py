@@ -401,9 +401,18 @@ def verify_api_key(x_api_key: str = Header(None)):
     if not expected_key:
         logger.error("BACKEND_API_KEY environment variable is not set on the server.")
         raise HTTPException(status_code=500, detail="Server configuration error: API key not set.")
+    
+    # Handle None values safely
+    if x_api_key is None:
+        logger.warning("API key is missing")
+        raise HTTPException(status_code=401, detail="API key is required")
+        
     if x_api_key != expected_key:
-        logger.warning(f"Invalid API key received: {x_api_key[:5]}...")
+        # Safe slicing for logging
+        key_preview = x_api_key[:5] if len(x_api_key) > 5 else x_api_key
+        logger.warning(f"Invalid API key received: {key_preview}...")
         raise HTTPException(status_code=401, detail="Invalid API key")
+    
     return x_api_key
 
 # --- Other Models (moved here for clarity) ---
@@ -1965,7 +1974,7 @@ async def get_portfolio_analytics(
 async def get_asset_details(
     symbol_or_asset_id: str,
     client = Depends(get_broker_client), # Original: client: BrokerClient
-    api_key: str = Depends(verify_api_key) # Add authentication
+    api_key: str = Depends(verify_api_key) # Add API key validation
 ):
     """Endpoint to fetch details for a specific asset."""
     logger.info(f"Fetching asset details for {symbol_or_asset_id}")
@@ -2174,10 +2183,10 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
     This allows frontend clients to connect to the API server on port 8000
     while the actual WebSocket handling happens on the dedicated server on port 8001.
     """
-    # Get WebSocket server URL from environment or use default
+    # Get WebSocket server URLs to try - try both possible ports
     websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
-    websocket_host = os.getenv("WEBSOCKET_HOST", "localhost")
-    websocket_url = f"ws://{websocket_host}:{websocket_port}"
+    # Always use 'localhost' for WebSocket server to avoid IP resolution issues
+    websocket_host = "localhost"
     
     logger.info(f"WebSocket connection request for account {account_id}")
     
@@ -2192,31 +2201,36 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
         return
     
     # Create a connection to the WebSocket server
+    server_available = False
+    ws_server = None
+    import websockets
+    
+    # Try to check if the WebSocket server is available
     try:
-        # Simple health check
-        try:
-            async with httpx.AsyncClient() as client:
-                health_response = await client.get(
-                    f"http://{websocket_host}:{websocket_port}/health", 
-                    timeout=2.0
-                )
-                if health_response.status_code != 200:
-                    logger.error(f"WebSocket server health check failed: {health_response.status_code}")
-                    if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
-                        await websocket.close(code=1013, reason="WebSocket server is unavailable")
-                        client_closed = True
-                    return
-        except Exception as e:
-            logger.error(f"Error connecting to WebSocket server: {e}")
-            if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
-                await websocket.close(code=1013, reason="WebSocket server is unavailable")
-                client_closed = True
-            return
+        async with httpx.AsyncClient() as client:
+            # Use the websocket server's health endpoint 
+            health_response = await client.get(
+                f"http://{websocket_host}:{websocket_port}/health", 
+                timeout=2.0
+            )
+            if health_response.status_code == 200:
+                logger.info(f"WebSocket server health check successful on port {websocket_port}")
+                server_available = True
+            else:
+                logger.warning(f"WebSocket server health check failed on port {websocket_port}: {health_response.status_code}")
+    except Exception as e:
+        logger.warning(f"Error connecting to WebSocket server on port {websocket_port}: {e}")
+    
+    if not server_available:
+        logger.error("Error connecting to WebSocket server: Could not reach WebSocket server")
+        if not client_closed:
+            await websocket.close(code=1013, reason="WebSocket server is unavailable")
+            client_closed = True
+        return
             
-        # Use websockets library for more robust connection handling
-        import websockets
-        
-        target_ws_uri = f"{websocket_url}/ws/portfolio/{account_id}"
+    # Now try to establish the websocket connection
+    try:
+        target_ws_uri = f"ws://{websocket_host}:{websocket_port}/ws/portfolio/{account_id}"
         logger.info(f"Connecting to WebSocket server at {target_ws_uri}")
         
         # Set up the connection parameters with a reasonable timeout
@@ -2277,6 +2291,35 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
                 client_closed = True
             except Exception as e:
                 logger.error(f"Error closing WebSocket connection: {e}")
+
+# Add this health endpoint for websocket proxy health checks
+@app.get("/ws/health")
+async def websocket_health_check():
+    """Health check endpoint specifically for WebSocket proxy functionality."""
+    return {
+        "status": "healthy",
+        "service": "api-server-websocket-proxy",
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/portfolio/activities")
+async def get_portfolio_activities(
+    accountId: str = Query(..., description="Alpaca account ID"),
+    limit: Optional[int] = 100
+):
+    """
+    Get transaction and account activities for a portfolio.
+    
+    This endpoint is not yet implemented, but is handled to properly return
+    a 404 status code with a clear message so the frontend can gracefully degrade.
+    """
+    logger.info(f"Activities endpoint requested for account {accountId}, but not implemented yet")
+    
+    # Return a 404 to indicate that the feature is not available
+    raise HTTPException(
+        status_code=404,
+        detail="Portfolio activities endpoint not yet implemented"
+    )
 
 if __name__ == "__main__":
     import uvicorn

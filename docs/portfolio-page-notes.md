@@ -775,6 +775,60 @@ To run the complete real-time portfolio value tracking system locally:
 
 These improvements result in a more stable and reliable real-time portfolio value tracking system that properly handles errors and edge cases while maintaining high performance and scalability.
 
+## Quick Start Guide: Running the Real-Time Portfolio System Locally
+
+To quickly set up and run the real-time portfolio value tracking system on your local machine:
+
+### 1. Prerequisites
+- Ensure you have Redis installed and running
+- Ensure you have all Python dependencies installed in your virtual environment
+
+### 2. Start All Required Services
+
+Start these services in separate terminal windows:
+
+**Terminal 1: Redis** (if not already running)
+```bash
+brew services start redis
+```
+
+**Terminal 2: Portfolio Real-Time Services**
+```bash
+cd backend
+source venv/bin/activate  # Use direct activation instead of activate.sh
+python -m portfolio_realtime.run_services
+```
+
+**Terminal 3: API Server**
+```bash
+cd backend
+source venv/bin/activate
+python api_server.py
+```
+
+**Terminal 4: Frontend**
+```bash
+cd frontend-app
+npm run dev
+```
+
+### 3. Access the Portfolio Page
+
+Open your browser and navigate to: http://localhost:3000/portfolio
+
+You should now see real-time portfolio value updates during market hours. The LivePortfolioValue component will automatically connect to the WebSocket server and display current portfolio values and today's return.
+
+### 4. Verify WebSocket Connection
+
+To verify the WebSocket connection is working:
+1. Open your browser's developer tools (F12)
+2. Go to the "Network" tab
+3. Filter by "WS" to see WebSocket connections
+4. You should see a connection to `ws://localhost:8001/ws/portfolio/{accountId}`
+5. The connection should show a status of "Connected"
+
+For more detailed information about the system's architecture and deployment, see the sections below.
+
 ## WebSocket Proxy Architecture and AWS Deployment Guide
 
 ### WebSocket Architecture Overview

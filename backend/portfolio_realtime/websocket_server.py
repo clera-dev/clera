@@ -183,8 +183,12 @@ manager = ConnectionManager()
 @app.websocket("/ws/portfolio/{account_id}")
 async def websocket_endpoint(websocket: WebSocket, account_id: str):
     """Handle WebSocket connections for a specific account."""
-    await manager.connect(websocket, account_id)
+    logger.info(f"Incoming WebSocket connection for account {account_id}")
+    
     try:
+        await manager.connect(websocket, account_id)
+        logger.info(f"WebSocket connection accepted for {account_id}")
+        
         # After connection is established, send initial portfolio data
         await send_initial_portfolio_data(websocket, account_id)
         
@@ -230,12 +234,20 @@ async def health_check():
     # Get connection stats
     stats = manager.get_connection_stats()
     
+    # Include server port
+    server_port = os.getenv("WEBSOCKET_PORT", "8001")
+    
+    # Include more detailed information
     return {
         "status": "healthy",
         "redis": redis_status,
         "connections": stats["connections"],
         "accounts": stats["accounts"],
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "port": server_port,
+        "host": os.getenv("WEBSOCKET_HOST", "0.0.0.0"),
+        "version": "1.0.2",  # Increment version to track changes
+        "service": "websocket-server"
     }
 
 async def send_initial_portfolio_data(websocket: WebSocket, account_id: str):

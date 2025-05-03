@@ -67,6 +67,149 @@ Provides real-time communication capabilities using WebSockets. Features:
 - Integration with Retell for voice capabilities
 - Real-time LLM response streaming
 
+### Real-Time Portfolio Value Tracking System (portfolio_realtime/)
+
+A distributed system for providing real-time portfolio value updates during market hours. The architecture consists of:
+
+1. **Multiple Interconnected Services**:
+   - `symbol_collector.py`: Collects all unique symbols across user portfolios
+   - `market_data_consumer.py`: Subscribes to real-time market data for tracked symbols
+   - `portfolio_calculator.py`: Calculates portfolio values using latest prices
+   - `websocket_server.py`: Maintains WebSocket connections with clients
+
+2. **Data Flow Architecture**:
+   - Frontend connects to `/ws/portfolio/{accountId}` WebSocket endpoint
+   - Next.js proxy forwards to API Server (port 8000)
+   - API Server proxies to dedicated WebSocket Server (port 8001)
+   - WebSocket Server maintains client connections and sends updates
+   - Redis used as shared cache and message broker between components
+
+3. **Key Features**:
+   - Centralized market data subscription (subscribe once per symbol)
+   - Shared price cache for efficient portfolio calculations
+   - Heartbeat mechanism to keep connections alive
+   - Automatic reconnection with exponential backoff
+   - Proper error handling and logging
+
+#### Running Locally
+
+To run the complete system locally, you need:
+
+1. **Start Redis**:
+   ```bash
+   brew services start redis  # macOS
+   # OR
+   sudo systemctl start redis-server  # Linux
+   ```
+
+2. **Run all services together**:
+   ```bash
+   cd backend
+   source venv/bin/activate  # Use direct venv activation
+   python -m portfolio_realtime.run_services
+   ```
+
+3. **Configure frontend**:
+   Add to `.env.local`:
+   ```
+   NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8001
+   ```
+
+4. **Start API server (in separate terminal)**:
+   ```bash
+   cd backend
+   source venv/bin/activate
+   python api_server.py
+   ```
+
+5. **Start frontend (in separate terminal)**:
+   ```bash
+   cd frontend-app
+   npm run dev
+   ```
+
+#### AWS Deployment
+
+For AWS deployment, two services are needed:
+
+1. **API Server** (Port 8000)
+   - Handles HTTP API requests
+   - Proxies WebSocket connections to WebSocket Server
+   - Requires WebSocket protocol support in load balancer settings
+
+2. **WebSocket Server** (Port 8001)
+   - Dedicated service for WebSocket connections
+   - Only accessible internally from API Server (not directly exposed)
+   - Uses Redis for inter-service communication
+
+**Required AWS Copilot Configuration**:
+
+1. Update the API Server manifest (`backend/copilot/api-service/manifest.yml`):
+   ```yaml
+   # Add or update these configurations
+   http:
+     path: '/'
+     healthcheck:
+       path: '/health'
+       healthy_threshold: 2
+       unhealthy_threshold: 2
+       timeout: 5
+       interval: 10
+   
+   # Ensure WebSocket protocol is allowed
+   variables:
+     ALLOWED_ORIGINS: '*'  # Configure more specifically in production
+     WEBSOCKET_TIMEOUT: 300  # Timeout in seconds (5 minutes)
+   
+   # Add permission to communicate with the WebSocket service
+   network:
+     connect: true
+   ```
+
+2. Create a WebSocket Server manifest (`backend/copilot/websocket-service/manifest.yml`):
+   ```yaml
+   # WebSocket server service definition
+   name: websocket-service
+   type: Backend Service
+   
+   # Internal health check endpoint
+   http:
+     healthcheck:
+       path: '/health'
+       healthy_threshold: 2
+       unhealthy_threshold: 2
+       timeout: 5
+       interval: 10
+   
+   # Important: Ensure sufficient connection time
+   variables:
+     HEARTBEAT_INTERVAL: 30  # Seconds
+     CONNECTION_TIMEOUT: 300  # Seconds
+     REDIS_HOST: '${REDIS_ENDPOINT}'
+     REDIS_PORT: 6379
+     WEBSOCKET_PORT: 8001
+     WEBSOCKET_HOST: '0.0.0.0'
+   
+   # Service discovery configuration
+   network:
+     vpc:
+       placement: 'private'
+   ```
+
+3. Update load balancer settings in environment manifest to support WebSockets:
+   ```yaml
+   # In copilot/environments/[env-name]/manifest.yml
+   http:
+     public:
+       ingress:
+         timeout: 300  # Set timeout to match WebSocket timeout
+       protocol: 'HTTPS'  # Required for WSS (secure WebSockets)
+   ```
+
+For detailed testing and deployment steps, see:
+- `docs/portfolio_realtime_setup.md`
+- `docs/portfolio-page-notes.md`
+
 ### Agent Architecture (clera_agents/)
 
 The system uses LangGraph to orchestrate multiple specialized agents:

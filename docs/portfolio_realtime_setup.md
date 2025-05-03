@@ -1,6 +1,42 @@
 # Portfolio Real-Time System Production Setup Guide
 
-This guide provides instructions for setting up the real-time portfolio value tracking system in a production environment.
+## Quick Start Guide
+
+To quickly run the real-time portfolio value tracking system locally, follow these steps:
+
+### 1. Start Redis
+```bash
+brew services start redis  # macOS
+# OR
+sudo systemctl start redis-server  # Linux
+```
+
+### 2. Start All Portfolio Real-Time Services
+```bash
+cd backend
+source venv/bin/activate  # Use direct activation instead of activate.sh
+python -m portfolio_realtime.run_services
+```
+
+### 3. Start API Server (in a separate terminal)
+```bash
+cd backend
+source venv/bin/activate
+python api_server.py
+```
+
+### 4. Start Frontend (in a separate terminal)
+```bash
+cd frontend-app
+npm run dev
+```
+
+### 5. Access the Portfolio Page
+Open your browser and navigate to: http://localhost:3000/portfolio
+
+That's it! You should now see real-time portfolio value updates on the Portfolio page.
+
+For detailed setup, configuration, and deployment information, continue reading the sections below.
 
 ## Local Development and Testing
 
