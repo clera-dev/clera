@@ -1,0 +1,38 @@
+name: websocket-service
+type: Backend Service
+
+# Internal health check endpoint
+http:
+  path: '/health'
+  healthcheck:
+    path: '/health'
+    healthy_threshold: 2
+    unhealthy_threshold: 2
+    timeout: 5s
+    interval: 10s
+
+# Configure container
+image:
+  build:
+    dockerfile: Dockerfile.websocket
+    context: .
+    platform: linux/amd64
+  port: 8001
+
+cpu: 512      # 0.5 vCPU
+memory: 1024  # 1 GB RAM
+count: 1      # Can be adjusted based on load
+platform: linux/amd64
+exec: true
+
+# Environment variables
+variables:
+  WEBSOCKET_PORT: 8001
+  WEBSOCKET_HOST: "0.0.0.0"
+  HEARTBEAT_INTERVAL: 30
+  CONNECTION_TIMEOUT: 300
+  
+# Service discovery configuration
+network:
+  vpc:
+    placement: 'private' 

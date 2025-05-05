@@ -524,43 +524,34 @@ export default function PortfolioPage() {
         <AddFundsButton accountId={accountId} />
       </div>
       
-      {/* Real-time Portfolio Value */}
+      {/* Real-time Portfolio Value with integrated chart */}
       {accountId && (
-        <LivePortfolioValue accountId={accountId} />
+        <Card className="bg-card shadow-lg">
+          <CardHeader>
+            <CardTitle className="text-lg font-medium">Portfolio Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-0">
+            <LivePortfolioValue accountId={accountId} />
+            
+            {!portfolioHistory && isLoading ? (
+              <Skeleton className="h-80 w-full mt-6" />
+            ) : portfolioHistory ? (
+              <div className="mt-4">
+                <PortfolioHistoryChart
+                  data={portfolioHistory}
+                  timeRange={selectedTimeRange}
+                  setTimeRange={setSelectedTimeRange}
+                  allTimeReturnAmount={null}
+                  allTimeReturnPercent={null}
+                />
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-center p-4 mt-6">Could not load portfolio history. {error}</p>
+            )}
+          </CardContent>
+        </Card>
       )}
       
-      <Card className="bg-card shadow-lg">
-        <CardHeader>
-          <div className="text-right text-sm">
-             <span className="text-muted-foreground mr-2">All Time:</span>
-             {allTimePerformance.amount !== null && allTimePerformance.percent !== null ? (
-                <span className={`font-semibold ${allTimePerformance.amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {allTimePerformance.amount >= 0 ? '+' : ''}
-                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(allTimePerformance.amount)}
-                    ({(allTimePerformance.percent * 100).toFixed(2)}%)
-                </span>
-             ) : (
-                <span className="text-muted-foreground italic">Calculating...</span>
-             )}
-          </div>
-        </CardHeader>
-         <CardContent>
-           {!portfolioHistory && isLoading ? (
-             <Skeleton className="h-80 w-full" />
-           ) : portfolioHistory ? (
-             <PortfolioHistoryChart
-               data={portfolioHistory}
-               timeRange={selectedTimeRange}
-               setTimeRange={setSelectedTimeRange}
-               allTimeReturnAmount={allTimePerformance.amount}
-               allTimeReturnPercent={allTimePerformance.percent}
-             />
-           ) : (
-              <p className="text-muted-foreground text-center p-4">Could not load portfolio history. {error}</p>
-           )}
-         </CardContent>
-       </Card>
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <Card className="bg-card shadow-lg">
             <CardHeader>

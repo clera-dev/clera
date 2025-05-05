@@ -14,10 +14,18 @@ http:
   # You can specify a custom health check path. The default is "/".
   healthcheck:
     path: '/api/health'
-    healthy_threshold: 2
+    healthy_threshold: 3
     unhealthy_threshold: 10 # Increased to allow more retries before failing
-    interval: 45s          # Increased interval to match Dockerfile healthcheck
-    timeout: 15s           # Increased timeout for health check
+    interval: 60s          # Increased interval for better stability
+    timeout: 30s           # Increased timeout for health check
+  # Add WebSocket support
+  deregistration_delay: 60s # Lower deregistration delay (default is 300s)
+  stickiness: true # Enable session stickiness for WebSocket connections
+  # Increase idle timeout for WebSocket connections
+  additional_rules:
+    - path: '/ws/*'
+      healthcheck:
+        path: '/api/health'
 
 # Configuration for your containers and service.
 image:
@@ -27,7 +35,6 @@ image:
     context: . # Use the directory containing 'copilot/' (i.e., 'backend/') as the context
     platform: linux/amd64 # Explicitly build for x86_64 architecture
     no_cache: false # Force rebuild without using cache layers
-  tag: ${CODEBUILD_RESOLVED_SOURCE_VERSION}
   # Port exposed through your container to route traffic to it.
   port: 8000
 
@@ -50,6 +57,10 @@ variables:                    # Pass genuinely static environment variables here
   BROKER_BASE_URL: "https://paper-api.alpaca.markets"  # Static value for sandbox
   ALPACA_ENVIRONMENT: "sandbox"                        # Static value for sandbox
   PLAID_ENV: "sandbox"                                 # Static value for sandbox
+  # Configuration for WebSocket proxying
+  WEBSOCKET_SERVICE_URL: "websocket-service.production.clera-api.internal:8001" # Service discovery endpoint
+  WEBSOCKET_TIMEOUT: "300" # 5 minutes timeout for WebSocket connections
+  WEBSOCKET_CONNECT_TIMEOUT: "5" # 5 seconds timeout for initial WebSocket connection
   # BACKEND_PUBLIC_URL will be set via secrets from SSM if needed dynamically
 
 secrets:                      # Pass secrets AND dynamic config from AWS SSM Parameter Store.
@@ -78,6 +89,8 @@ secrets:                      # Pass secrets AND dynamic config from AWS SSM Par
   BACKEND_API_KEY: /clera-api/production/backend_api_key # Used for API key auth
   PLAID_CLIENT_ID: /clera-api/production/plaid_client_id
   PLAID_SECRET: /clera-api/production/plaid_secret
+  REDIS_HOST: /clera-api/production/redis_host # Redis host for WebSocket service
+  REDIS_PORT: /clera-api/production/redis_port # Redis port for WebSocket service
   # Dynamic Config fetched from SSM
   NEXT_PUBLIC_SUPABASE_URL: /clera-api/production/next_public_supabase_url
   SUPABASE_URL: /clera-api/production/supabase_url

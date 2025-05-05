@@ -155,3 +155,5 @@ todo.md
 .langgraph_api/
 
 * 2.*
+
+/backend/coverage_report

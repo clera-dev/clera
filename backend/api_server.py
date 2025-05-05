@@ -2183,12 +2183,18 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
     This allows frontend clients to connect to the API server on port 8000
     while the actual WebSocket handling happens on the dedicated server on port 8001.
     """
-    # Get WebSocket server URLs to try - try both possible ports
-    websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
-    # Always use 'localhost' for WebSocket server to avoid IP resolution issues
-    websocket_host = "localhost"
+    # Get WebSocket server URL from environment variable
+    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
     
-    logger.info(f"WebSocket connection request for account {account_id}")
+    # Split host and port if a combined URL is provided
+    if ":" in websocket_service_url:
+        websocket_host, websocket_port = websocket_service_url.split(":", 1)
+    else:
+        # Fallback to default values if not in expected format
+        websocket_host = websocket_service_url
+        websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
+    
+    logger.info(f"WebSocket connection request for account {account_id}, connecting to {websocket_host}:{websocket_port}")
     
     # Track if we've already closed the client connection
     client_closed = False
@@ -2200,87 +2206,72 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
         logger.error(f"Error accepting WebSocket connection: {e}")
         return
     
-    # Create a connection to the WebSocket server
-    server_available = False
-    ws_server = None
+    # Don't try to check server availability - this can cause health check issues
+    # Instead, assume the WebSocket server is available and handle connection errors gracefully
     import websockets
     
-    # Try to check if the WebSocket server is available
-    try:
-        async with httpx.AsyncClient() as client:
-            # Use the websocket server's health endpoint 
-            health_response = await client.get(
-                f"http://{websocket_host}:{websocket_port}/health", 
-                timeout=2.0
-            )
-            if health_response.status_code == 200:
-                logger.info(f"WebSocket server health check successful on port {websocket_port}")
-                server_available = True
-            else:
-                logger.warning(f"WebSocket server health check failed on port {websocket_port}: {health_response.status_code}")
-    except Exception as e:
-        logger.warning(f"Error connecting to WebSocket server on port {websocket_port}: {e}")
-    
-    if not server_available:
-        logger.error("Error connecting to WebSocket server: Could not reach WebSocket server")
-        if not client_closed:
-            await websocket.close(code=1013, reason="WebSocket server is unavailable")
-            client_closed = True
-        return
-            
-    # Now try to establish the websocket connection
     try:
         target_ws_uri = f"ws://{websocket_host}:{websocket_port}/ws/portfolio/{account_id}"
         logger.info(f"Connecting to WebSocket server at {target_ws_uri}")
         
         # Set up the connection parameters with a reasonable timeout
-        async with websockets.connect(
-            target_ws_uri, 
-            ping_interval=30,
-            ping_timeout=10,
-            close_timeout=5
-        ) as ws_server:
-            # Set up message forwarding in both directions
-            done = asyncio.Future()
-            
-            # Forward client -> server messages
-            async def forward_client_to_server():
-                try:
-                    while True:
-                        data = await websocket.receive_text()
-                        await ws_server.send(data)
-                except Exception as e:
-                    logger.error(f"Error forwarding client to server: {e}")
-                    done.set_result(None)
-            
-            # Forward server -> client messages
-            async def forward_server_to_client():
-                try:
-                    while True:
-                        data = await ws_server.recv()
-                        await websocket.send_text(data)
-                except Exception as e:
-                    logger.error(f"Error forwarding server to client: {e}")
-                    done.set_result(None)
-            
-            # Create and run the forwarding tasks
-            client_to_server = asyncio.create_task(forward_client_to_server())
-            server_to_client = asyncio.create_task(forward_server_to_client())
-            
-            # Wait for either task to complete (connection closed on either end)
-            await done
-            
-            # Clean up tasks
-            for task in [client_to_server, server_to_client]:
-                if not task.done():
-                    task.cancel()
+        connect_timeout = float(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5"))
+        
+        # Handle connection errors gracefully
+        try:
+            # Use a shorter connection timeout to avoid blocking health checks
+            async with websockets.connect(
+                target_ws_uri, 
+                ping_interval=30,
+                ping_timeout=10,
+                close_timeout=5,
+                open_timeout=connect_timeout  # Short timeout for initial connection
+            ) as ws_server:
+                # Set up message forwarding in both directions
+                done = asyncio.Future()
+                
+                # Forward client -> server messages
+                async def forward_client_to_server():
                     try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
-                    
-    except websockets.exceptions.WebSocketException as e:
-        logger.error(f"WebSocket connection error: {e}")
+                        while True:
+                            data = await websocket.receive_text()
+                            await ws_server.send(data)
+                    except Exception as e:
+                        logger.error(f"Error forwarding client to server: {e}")
+                        done.set_result(None)
+                
+                # Forward server -> client messages
+                async def forward_server_to_client():
+                    try:
+                        while True:
+                            data = await ws_server.recv()
+                            await websocket.send_text(data)
+                    except Exception as e:
+                        logger.error(f"Error forwarding server to client: {e}")
+                        done.set_result(None)
+                
+                # Create and run the forwarding tasks
+                client_to_server = asyncio.create_task(forward_client_to_server())
+                server_to_client = asyncio.create_task(forward_server_to_client())
+                
+                # Wait for either task to complete (connection closed on either end)
+                await done
+                
+                # Clean up tasks
+                for task in [client_to_server, server_to_client]:
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+        except websockets.exceptions.WebSocketException as e:
+            logger.error(f"WebSocket connection error: {e}")
+            if not client_closed:
+                await websocket.send_text(json.dumps({
+                    "error": "Could not connect to WebSocket service",
+                    "detail": str(e)
+                }))
     except Exception as e:
         logger.error(f"Error in WebSocket proxy: {e}")
     finally:
@@ -2296,9 +2287,23 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
 @app.get("/ws/health")
 async def websocket_health_check():
     """Health check endpoint specifically for WebSocket proxy functionality."""
+    # Get WebSocket service URL from environment variable
+    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
+    
+    # Split host and port if needed
+    if ":" in websocket_service_url:
+        websocket_host, websocket_port = websocket_service_url.split(":", 1)
+    else:
+        websocket_host = websocket_service_url
+        websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
+    
+    # Return healthy status without checking actual connectivity
+    # This prevents health check failures during startup when WebSocket service might not be available
     return {
         "status": "healthy",
         "service": "api-server-websocket-proxy",
+        "websocket_host": websocket_host,
+        "websocket_port": websocket_port,
         "timestamp": datetime.now().isoformat()
     }
 

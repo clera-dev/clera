@@ -197,35 +197,32 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         </div>
     ) : null;
 
+    // Determine if today's return is positive or negative
+    const isPositiveReturn = !todayReturn.startsWith('-');
+    const returnColor = isPositiveReturn ? 'text-[#22c55e]' : 'text-[#ef4444]';
+
     return (
-        <Card className="shadow-md bg-card">
-            <CardHeader className="pb-2">
-                <CardTitle className="text-lg font-medium">Portfolio Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="space-y-4">
-                    <div className="flex justify-between items-baseline">
-                        <span className="text-sm text-muted-foreground">Current Value</span>
-                        <span className="text-2xl font-bold">
-                            {isLoading ? 
-                                <div className="h-7 w-24 bg-gray-200 animate-pulse rounded-md"></div> :
-                                totalValue
-                            }
-                        </span>
-                    </div>
-                    <div className="flex justify-between items-baseline">
-                        <span className="text-sm text-muted-foreground">Today's Return</span>
-                        <span className="text-xl font-medium">
-                            {isLoading ? 
-                                <div className="h-6 w-32 bg-gray-200 animate-pulse rounded-md"></div> :
-                                todayReturn
-                            }
-                        </span>
-                    </div>
-                    {debugInfo}
-                </div>
-            </CardContent>
-        </Card>
+        <div className="space-y-4">
+            <div className="flex justify-between items-baseline">
+                <span className="text-sm text-muted-foreground">Current Value</span>
+                <span className="text-2xl font-bold">
+                    {isLoading ? 
+                        <div className="h-7 w-24 bg-gray-200 animate-pulse rounded-md"></div> :
+                        totalValue
+                    }
+                </span>
+            </div>
+            <div className="flex justify-between items-baseline">
+                <span className="text-sm text-muted-foreground">Today's Return</span>
+                <span className={`text-xl font-medium ${isLoading ? '' : returnColor}`}>
+                    {isLoading ? 
+                        <div className="h-6 w-32 bg-gray-200 animate-pulse rounded-md"></div> :
+                        todayReturn
+                    }
+                </span>
+            </div>
+            {debugInfo}
+        </div>
     );
 };
 

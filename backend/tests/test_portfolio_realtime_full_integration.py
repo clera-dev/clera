@@ -13,6 +13,7 @@ import time
 import uuid
 import websockets
 from unittest.mock import patch, MagicMock, AsyncMock
+from datetime import datetime
 
 # Add parent directory to path for imports
 import sys
@@ -40,69 +41,84 @@ def redis_client():
 
 @pytest.fixture
 def mock_broker_client():
-    """Create a mock broker client."""
-    with patch('portfolio_realtime.symbol_collector.BrokerClient') as mock_broker:
+    """Create a mock broker client for full integration tests."""
+    # Use the correct path for patching BrokerClient used by multiple components
+    # Patching it where it's imported in each module is safer
+    with patch('portfolio_realtime.symbol_collector.BrokerClient') as mock_broker_symbol, \
+         patch('portfolio_realtime.portfolio_calculator.BrokerClient') as mock_broker_calc:
+
+        # Use the same mock instance for both patches to ensure consistency
         mock_instance = MagicMock()
-        mock_broker.return_value = mock_instance
-        
-        # Mock account positions
+        mock_broker_symbol.return_value = mock_instance
+        mock_broker_calc.return_value = mock_instance
+
         test_account_id = "test-account-123"
-        test_positions = [
-            {
-                "symbol": "AAPL",
-                "qty": "10",
-                "current_price": "150.00",
-                "market_value": "1500.00"
-            },
-            {
-                "symbol": "MSFT",
-                "qty": "5",
-                "current_price": "300.00",
-                "market_value": "1500.00"
-            }
+
+        # Helper to create mock Alpaca Position objects
+        def create_mock_position(symbol, qty, price):
+            pos = MagicMock()
+            pos.symbol = symbol
+            pos.qty = str(qty)
+            pos.market_value = str(float(qty) * float(price))
+            pos.cost_basis = str(float(qty) * float(price) * 0.95)
+            pos.unrealized_pl = str(float(pos.market_value) - float(pos.cost_basis))
+            cost_basis_float = float(pos.cost_basis)
+            pos.unrealized_plpc = str(float(pos.unrealized_pl) / cost_basis_float) if cost_basis_float != 0 else '0'
+            pos.current_price = str(price)
+            pos.asset_id = MagicMock()  # Use MagicMock for UUID if not needed
+            pos.avg_entry_price = str(float(price) * 0.95)
+            pos.side = 'long'
+            pos.asset_class = 'us_equity'
+            pos.asset_marginable = True
+            pos.exchange = 'NASDAQ'
+            return pos
+
+        # Mock positions for the test account
+        test_positions_objects = [
+            create_mock_position("AAPL", 10, 150.00),
+            create_mock_position("MSFT", 5, 300.00)
         ]
-        
-        # Mock account details
+
+        # Mock the AllAccountsPositions object returned by get_all_accounts_positions
+        mock_all_positions_response = MagicMock()
+        mock_all_positions_response.positions = {
+            test_account_id: test_positions_objects
+        }
+        mock_instance.get_all_accounts_positions.return_value = mock_all_positions_response
+
+        # Mock account details needed by PortfolioCalculator
         mock_account = MagicMock()
         mock_account.cash = "1000.00"
-        mock_account.last_equity = "3900.00"
-        mock_account.portfolio_value = "4000.00"
-        mock_account.equity = "4000.00"
-        
-        # Configure mock methods
-        mock_instance.get_all_accounts.return_value = [MagicMock(id=test_account_id)]
-        mock_instance.get_all_positions_for_account.return_value = test_positions
+        mock_account.last_equity = "3900.00" # For base value calculation
+        mock_account.portfolio_value = "4000.00" # Fallback base value
+        mock_account.equity = "4000.00" # Fallback base value
         mock_instance.get_account_by_id.return_value = mock_account
         mock_instance.get_trade_account_by_id.return_value = mock_account
-        
-        # Mock get_all_accounts_positions for SymbolCollector
-        # Create a mock AllAccountsPositions object
-        mock_all_accounts_positions = MagicMock()
-        
-        # Each position needs to be a proper object with symbol attribute
-        position_objects = []
-        for pos in test_positions:
-            position_obj = MagicMock()
-            position_obj.symbol = pos["symbol"]
-            position_obj.qty = pos["qty"]
-            position_obj.current_price = pos["current_price"]
-            position_obj.market_value = pos["market_value"]
-            position_obj.cost_basis = "0.00"
-            position_obj.unrealized_pl = "0.00"
-            position_obj.unrealized_plpc = "0.00"
-            position_obj.asset_id = uuid.uuid4()
-            position_obj.asset_class = "us_equity"
-            position_obj.asset_marginable = True
-            position_obj.avg_entry_price = "0.00"
-            position_obj.side = "long"
-            position_obj.exchange = "NASDAQ"
-            position_objects.append(position_obj)
-            
-        # Set up the positions dictionary in the mock
-        mock_all_accounts_positions.positions = {test_account_id: position_objects}
-        mock_instance.get_all_accounts_positions.return_value = mock_all_accounts_positions
-        
-        yield mock_instance, test_account_id, test_positions
+
+        # Expected serialized data for verification in tests
+        expected_serialized_positions = [
+             {
+                'symbol': 'AAPL',
+                'qty': '10',
+                'market_value': '1500.0',
+                'cost_basis': '1425.0',
+                'unrealized_pl': '75.0',
+                'unrealized_plpc': '0.05263157894736842',
+                'current_price': '150.0'
+            },
+            {
+                'symbol': 'MSFT',
+                'qty': '5',
+                'market_value': '1500.0',
+                'cost_basis': '1425.0',
+                'unrealized_pl': '75.0',
+                'unrealized_plpc': '0.05263157894736842',
+                'current_price': '300.0'
+            }
+        ]
+
+        # Yield the mock instance and test data
+        yield mock_instance, test_account_id, expected_serialized_positions
 
 @pytest.mark.asyncio
 async def test_symbol_collection_to_redis(redis_client, mock_broker_client):
@@ -125,6 +141,28 @@ async def test_symbol_collection_to_redis(redis_client, mock_broker_client):
     # Verify positions were stored in Redis
     positions_key = f'account_positions:{test_account_id}'
     assert redis_client.exists(positions_key)
+    
+    # Get the stored positions
+    stored_positions = json.loads(redis_client.get(positions_key))
+    
+    # Verify key fields instead of exact equality (handles formatting differences)
+    assert len(stored_positions) == len(test_positions)
+    
+    # Check symbols match
+    stored_symbols = {pos['symbol'] for pos in stored_positions}
+    expected_symbols = {pos['symbol'] for pos in test_positions}
+    assert stored_symbols == expected_symbols, f"Stored symbols {stored_symbols} don't match expected {expected_symbols}"
+    
+    # For each expected position, find the matching stored position and check fields
+    for expected_pos in test_positions:
+        symbol = expected_pos['symbol']
+        matching_pos = next((pos for pos in stored_positions if pos['symbol'] == symbol), None)
+        assert matching_pos is not None, f"No position found for symbol {symbol}"
+        
+        # Verify key numeric fields
+        assert float(matching_pos['qty']) == float(expected_pos['qty'])
+        assert abs(float(matching_pos['market_value']) - float(expected_pos['market_value'])) < 0.01
+        assert abs(float(matching_pos['current_price']) - float(expected_pos['current_price'])) < 0.01
     
     # Verify symbols were stored in Redis
     symbols_key = 'tracked_symbols'
@@ -194,6 +232,102 @@ async def test_market_data_to_portfolio_update(redis_client, mock_broker_client)
         # Verify portfolio value has increased
         assert updated_portfolio["raw_value"] > initial_raw_value
         assert updated_portfolio["total_value"] != initial_portfolio["total_value"]
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(15) # Add timeout
+async def test_cash_update_flow(redis_client, mock_broker_client):
+    """Test the flow when only the cash balance changes."""
+    mock_instance, test_account_id, test_positions_data = mock_broker_client
+
+    # --- Initial Setup ---
+    # 1. Store initial positions and symbols (as if SymbolCollector ran)
+    redis_client.set(f'account_positions:{test_account_id}', json.dumps(test_positions_data))
+    redis_client.set('tracked_symbols', json.dumps(["AAPL", "MSFT"]))
+
+    # 2. Store initial prices
+    redis_client.set("price:AAPL", "150.00")
+    redis_client.set("price:MSFT", "300.00")
+
+    # 3. Mock initial account state (cash = 1000)
+    initial_account = MagicMock()
+    initial_account.cash = "1000.00"
+    initial_account.last_equity = "3900.00" # Base value for return calc
+    mock_instance.get_trade_account_by_id.return_value = initial_account
+    mock_instance.get_account_by_id.return_value = initial_account # For base value
+
+    # 4. Instantiate Calculator
+    calculator = PortfolioCalculator(
+        redis_host='localhost',
+        redis_port=6379,
+        redis_db=0,
+        broker_api_key='test-key',
+        broker_secret_key='test-secret',
+        sandbox=True
+    )
+
+    # 5. Perform initial calculation
+    initial_portfolio_data = calculator.calculate_portfolio_value(test_account_id)
+    assert initial_portfolio_data is not None
+    # Initial value: 10 * 150 (AAPL) + 5 * 300 (MSFT) + 1000 (Cash) = 1500 + 1500 + 1000 = 4000
+    assert initial_portfolio_data["raw_value"] == pytest.approx(4000.00)
+    assert initial_portfolio_data["total_value"] == "$4000.00"
+    # Initial return: 4000 (current) - 3900 (base) = 100
+    assert initial_portfolio_data["raw_return"] == pytest.approx(100.00)
+
+    # --- Simulate Cash Update ---
+    # 6. Mock updated account state (cash = 2000)
+    updated_account = MagicMock()
+    updated_account.cash = "2000.00" # Cash increased by 1000
+    updated_account.last_equity = "3900.00" # Base value unchanged
+    mock_instance.get_trade_account_by_id.return_value = updated_account
+    mock_instance.get_account_by_id.return_value = updated_account # Keep consistent
+
+    # --- Trigger Recalculation & Verify ---
+    # 7. Set up Redis listener for the result
+    pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+    pubsub.subscribe('portfolio_updates')
+    await asyncio.sleep(0.1) # Allow time for subscription
+
+    # 8. Trigger recalculation by simulating a price update for AAPL
+    price_update_message = json.dumps({
+        'symbol': 'AAPL',
+        'price': 151.00, # Simulate small price change
+        'timestamp': datetime.now().isoformat()
+    })
+    redis_client.publish('price_updates', price_update_message)
+
+    # 9. Start the calculator's listener in the background
+    # We need to run the listener part of the calculator to process the price update
+    listen_task = asyncio.create_task(calculator.listen_for_price_updates())
+    await asyncio.sleep(0.2) # Give listener time to process
+
+    # 10. Get the message published by the calculator
+    update_message = None
+    try:
+        # Wait for the calculator to publish the result
+        raw_message = await asyncio.wait_for(asyncio.to_thread(pubsub.get_message, timeout=5.0), timeout=5.5)
+        if raw_message and raw_message['channel'].decode() == 'portfolio_updates':
+             update_message = json.loads(raw_message['data'])
+    except asyncio.TimeoutError:
+        pytest.fail("Timeout waiting for portfolio update message from calculator.")
+    finally:
+        listen_task.cancel() # Stop the listener task
+        try:
+            await listen_task
+        except asyncio.CancelledError:
+            pass
+        pubsub.unsubscribe('portfolio_updates')
+        pubsub.close()
+
+
+    # 11. Verify the updated portfolio data
+    assert update_message is not None
+    assert update_message["account_id"] == test_account_id
+    # Updated value: 10 * 151 (AAPL) + 5 * 300 (MSFT) + 2000 (Cash) = 1510 + 1500 + 2000 = 5010
+    assert update_message["raw_value"] == pytest.approx(5010.00)
+    assert update_message["total_value"] == "$5010.00"
+    # Updated return: 5010 (current) - 3900 (base) = 1110
+    assert update_message["raw_return"] == pytest.approx(1110.00)
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(10)  # Add timeout to prevent hanging

@@ -28,6 +28,9 @@ ENV PYTHONUNBUFFERED=1
 ENV APP_HOME=/app
 ENV WORKERS=4
 ENV BIND_PORT=8000
+# WebSocket configuration
+ENV WEBSOCKET_SERVICE_URL="websocket-service.production.clera-api.internal:8001"
+ENV WEBSOCKET_TIMEOUT="300"
 
 WORKDIR $APP_HOME
 

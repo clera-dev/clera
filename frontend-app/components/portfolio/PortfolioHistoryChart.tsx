@@ -213,16 +213,6 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* If we have data, show the tooltip value */}
-      {currentValue && (
-        <div className="h-12 flex justify-end items-center">
-          <div className="text-right">
-            <p className="text-muted-foreground text-sm">Current Value</p>
-            <p className="text-2xl font-bold">{formatCurrency(currentValue)}</p>
-          </div>
-        </div>
-      )}
-      
       <div style={{ width: '100%', height: 350 }} className="bg-background rounded-lg">
         <ResponsiveContainer>
           <AreaChart 
