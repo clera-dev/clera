@@ -11,11 +11,16 @@ type: Environment
 #   vpc:
 #     id:
 
-# Configure the load balancers in your environment, once created.
-# http:
-#   public:
-#   private:
+# Configure the load balancers in your environment
+http:
+  public:
+    # Configure ALB settings optimized for WebSockets
+    ingress:
+      timeout: 3600  # Set timeout to 1 hour for WebSocket connections
+  private:
+    ingress:
+      timeout: 3600  # Match the public timeout setting
 
-# Configure observability for your environment resources.
+# Configure observability for your environment resources
 observability:
-  container_insights: false
+  container_insights: true  # Enable container insights for better monitoring

@@ -153,3 +153,7 @@ todo.md
 
 # langgraph
 .langgraph_api/
+
+* 2.*
+
+/backend/coverage_report

@@ -9,15 +9,23 @@ import sys
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from enum import Enum
+from enum import Enum, auto
 import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import uuid
 import requests
-load_dotenv()
+from decimal import Decimal
+from uuid import UUID
+import contextlib
+from decouple import config
+import aiohttp
+import traceback
+import httpx
+from fastapi import WebSocket
+from starlette.websockets import WebSocketState
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -26,15 +34,15 @@ from langgraph.errors import GraphInterrupt
 from langgraph.graph.message import add_messages
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, FunctionMessage
 
+load_dotenv()
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger("clera-api-server")
+logger.setLevel(logging.DEBUG)
+logging_handler = logging.StreamHandler()
+logging_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(logging_handler)
 
-# Set up a variable to track if we're in a ready state
-startup_complete = False
+# Track startup errors
 startup_errors = []
 
 # Add parent directory to path to find graph.py
@@ -53,17 +61,69 @@ except ImportError as e:
     logger.error("Please make sure the clera_agents module is in your Python path.")
     sys.exit(1)
 
-# Create FastAPI app
+# Define lifespan context manager
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup code
+    logger.info("Starting API server for local development...")
+    
+    # Log Python path
+    logger.info(f"Python path: {os.sys.path}")
+    
+    # Set API key from environment
+    app.state.API_KEY = config("API_KEY", default=None)
+    
+    # Initialize asset cache
+    app.state.asset_cache = None
+    app.state.assets_last_refreshed = None
+    
+    # Set Alpaca API credentials
+    app.state.ALPACA_API_KEY = config("ALPACA_API_KEY", default=None)
+    app.state.ALPACA_API_SECRET = config("ALPACA_API_SECRET", default=None)
+    app.state.ALPACA_API_ENV = config("ALPACA_API_ENV", default="paper")
+    
+    # Set OpenAI API key
+    app.state.OPENAI_API_KEY = config("OPENAI_API_KEY", default=None)
+    
+    # Set Supabase details
+    app.state.SUPABASE_URL = config("SUPABASE_URL", default=None)
+    app.state.SUPABASE_KEY = config("SUPABASE_KEY", default=None)
+    app.state.SUPABASE_JWT_SECRET = config("SUPABASE_JWT_SECRET", default=None)
+    
+    # Set Plaid credentials
+    app.state.PLAID_CLIENT_ID = config("PLAID_CLIENT_ID", default=None)
+    app.state.PLAID_SECRET = config("PLAID_SECRET", default=None)
+    app.state.PLAID_ENV = config("PLAID_ENV", default="sandbox")
+    
+    # Initialize conversation state tracking
+    app.state.conversation_states = {}
+    
+    # Log completion of startup
+    logger.info(f"API server startup process complete with {len(startup_errors)} errors/warnings.")
+    
+    yield  # This is where the application runs
+    
+    # Shutdown logic
+    logger.info("Shutting down API server...")
+
+# Create FastAPI app with lifespan
 app = FastAPI(
     title="Clera AI API",
-    description="API for interacting with Clera AI",
+    description="API for Clera AI platform, providing trading, portfolio management, and AI-powered financial insights.",
     version="1.0.0",
+    lifespan=lifespan
 )
 
-# Add CORS middleware
+# Add CORS middleware with restricted origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=[
+        "https://app.askclera.com",  # Production domain
+        "http://localhost:3000",     # Frontend development
+        "http://127.0.0.1:3000",     # Frontend development alternative
+        "http://localhost:8000",     # API development
+        "http://127.0.0.1:8000"      # API development alternative
+    ],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -102,26 +162,27 @@ conversation_states = {}
 try:
     from clera_agents.trade_execution_agent import _submit_market_order, OrderSide
     from clera_agents.tools.company_analysis import company_profile
-    logger.info("Successfully imported trade execution and company analysis modules")
+    # Import PortfolioAnalyticsEngine and related types
+    from clera_agents.tools.portfolio_analysis import PortfolioAnalyticsEngine, PortfolioPosition, AssetClass, SecurityType
+    logger.info("Successfully imported trade execution, company analysis, and portfolio analysis modules")
 except ImportError as e:
-    error_msg = f"Failed to import trade modules: {e}"
+    error_msg = f"Failed to import agent modules: {e}"
     logger.error(error_msg)
     startup_errors.append(error_msg)
-    logger.warning("Trade functionality will not be available.")
     _submit_market_order = None
     OrderSide = None
     company_profile = None
+    # Set portfolio analysis tools to None if import fails
+    PortfolioAnalyticsEngine = None
+    PortfolioPosition = None
+    AssetClass = None
+    SecurityType = None
 
 # Import Alpaca broker client - fail gracefully
 try:
-    from alpaca.broker import BrokerClient
-    from alpaca.broker.models import (
-        Contact,
-        Identity,
-        Disclosures,
-        Agreement,
-        Account
-    )
+    from alpaca.broker.client import BrokerClient
+    from alpaca.broker.models import Account, Contact, Identity, Disclosures, Agreement
+    # Import CreateAccountRequest from requests
     from alpaca.broker.requests import CreateAccountRequest
     from alpaca.broker.enums import TaxIdType, FundingSource, AgreementType
     logger.info("Successfully imported Alpaca broker modules")
@@ -130,6 +191,16 @@ except ImportError as e:
     logger.error(error_msg)
     startup_errors.append(error_msg)
     BrokerClient = None
+    # Set all imported classes to None if import fails
+    Account = None
+    Contact = None
+    Identity = None
+    Disclosures = None
+    Agreement = None
+    CreateAccountRequest = None
+    TaxIdType = None
+    FundingSource = None
+    AgreementType = None
 
 # Import Alpaca MarketDataClient - fail gracefully
 try:
@@ -147,8 +218,12 @@ except ImportError as e:
 # Import Alpaca TradingClient for assets - fail gracefully
 try:
     from alpaca.trading.client import TradingClient
-    from alpaca.trading.requests import GetAssetsRequest
-    from alpaca.trading.enums import AssetClass, AssetStatus
+    from alpaca.trading.requests import GetAssetsRequest, GetOrdersRequest, GetPortfolioHistoryRequest
+    from alpaca.trading.enums import AssetClass as AlpacaTradingAssetClass, AssetStatus, OrderStatus
+    # Add import for Sort which is used in GetOrdersRequest
+    from alpaca.common.enums import Sort
+    # Import Position, Order, Asset and PortfolioHistory from trading models
+    from alpaca.trading.models import Position, Order, Asset, PortfolioHistory
     logger.info("Successfully imported Alpaca trading modules")
 except ImportError as e:
     error_msg = f"Failed to import Alpaca trading modules: {e}"
@@ -156,8 +231,17 @@ except ImportError as e:
     startup_errors.append(error_msg)
     TradingClient = None
     GetAssetsRequest = None
-    AssetClass = None
+    GetOrdersRequest = None
+    GetPortfolioHistoryRequest = None
+    # Set all imported classes to None if import fails
+    AlpacaTradingAssetClass = None
     AssetStatus = None
+    OrderStatus = None
+    Position = None
+    Order = None
+    Asset = None
+    PortfolioHistory = None
+    Sort = None
 
 # Constants for Asset Caching
 ASSET_CACHE_FILE = os.path.join(os.path.dirname(__file__), "data", "tradable_assets.json")
@@ -311,43 +395,24 @@ except ImportError as e:
     startup_errors.append(error_msg)
     logger.warning("Some functionality relying on utils may be unavailable.")
 
-# Startup event handler
-@app.on_event("startup")
-async def startup_event():
-    global startup_complete
-    logger.info("Executing API server startup checks...")
-    # Perform any necessary startup tasks here
-    
-    # Log any missing required environment variables explicitly listed in .env
-    # (You might want to generate this list dynamically or maintain it)
-    required_vars = [
-        "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
-        "GROQ_API_KEY", "OPENAI_API_KEY", "PINECONE_API_KEY", "ANTHROPIC_API_KEY", "TAVILY_API_KEY",
-        "PPLX_API_KEY", "RETELL_API_KEY", "LANGSMITH_API_KEY", "LANGGRAPH_API_KEY", "BROKER_API_KEY",
-        "BROKER_SECRET_KEY", "APCA_API_KEY_ID", "APCA_API_SECRET_KEY", "FINANCIAL_MODELING_PREP_API_KEY",
-        "CARTESIA_API_KEY", "DEEPGRAM_API_KEY", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "LIVEKIT_URL",
-        "BACKEND_API_KEY", "PLAID_CLIENT_ID", "PLAID_SECRET"
-    ]
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
-    if missing_vars:
-        logger.warning(f"Missing required environment variables/secrets: {', '.join(missing_vars)}")
-        for var in missing_vars:
-            startup_errors.append(f"Missing required environment variable/secret: {var}")
-    
-    # Mark startup as complete
-    startup_complete = True
-    logger.info(f"API server startup process complete with {len(startup_errors)} errors/warnings.")
-
-
 # --- API key authentication (moved here for clarity) ---
 def verify_api_key(x_api_key: str = Header(None)):
     expected_key = os.getenv("BACKEND_API_KEY")
     if not expected_key:
         logger.error("BACKEND_API_KEY environment variable is not set on the server.")
         raise HTTPException(status_code=500, detail="Server configuration error: API key not set.")
+    
+    # Handle None values safely
+    if x_api_key is None:
+        logger.warning("API key is missing")
+        raise HTTPException(status_code=401, detail="API key is required")
+        
     if x_api_key != expected_key:
-        logger.warning(f"Invalid API key received: {x_api_key[:5]}...")
+        # Safe slicing for logging
+        key_preview = x_api_key[:5] if len(x_api_key) > 5 else x_api_key
+        logger.warning(f"Invalid API key received: {key_preview}...")
         raise HTTPException(status_code=401, detail="Invalid API key")
+    
     return x_api_key
 
 # --- Other Models (moved here for clarity) ---
@@ -1360,10 +1425,12 @@ async def _fetch_and_cache_assets():
     try:
         logger.info("Fetching fresh tradable assets from Alpaca...")
         search_params = GetAssetsRequest(
-            asset_class=AssetClass.US_EQUITY,
+            asset_class=AlpacaTradingAssetClass.US_EQUITY,
             status=AssetStatus.ACTIVE
         )
-        assets = trading_client.get_all_assets(search_params)
+        # Use broker client to get all assets for consistency
+        broker_client_instance = get_broker_client()
+        assets = broker_client_instance.get_all_assets(search_params)
         tradable_assets = [
             {"symbol": asset.symbol, "name": asset.name}
             for asset in assets
@@ -1446,6 +1513,818 @@ async def refresh_tradable_assets_cache(api_key: str = Depends(verify_api_key)):
         logger.error(f"Error during forced asset cache refresh: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to refresh asset cache: {str(e)}")
 # --- End Cache Refresh Endpoint ---
+
+# --- Pydantic Models for Portfolio Endpoints ---
+
+class PortfolioHistoryResponse(BaseModel):
+    timestamp: List[int]
+    equity: List[Optional[float]]
+    profit_loss: List[Optional[float]]
+    profit_loss_pct: List[Optional[float]]
+    base_value: Optional[float]
+    timeframe: str
+    base_value_asof: Optional[str] = None # Added based on Alpaca docs
+
+class PositionResponse(BaseModel):
+    # Mirroring Alpaca's Position model fields we need
+    asset_id: uuid.UUID
+    symbol: str
+    exchange: str
+    asset_class: str # Consider mapping to our AssetClass enum if needed frontend
+    avg_entry_price: Decimal
+    qty: Decimal
+    side: str
+    market_value: Decimal
+    cost_basis: Decimal
+    unrealized_pl: Decimal
+    unrealized_plpc: Decimal
+    unrealized_intraday_pl: Decimal
+    unrealized_intraday_plpc: Decimal
+    current_price: Decimal
+    lastday_price: Decimal
+    change_today: Decimal
+    # Added fields for analytics mapping
+    asset_marginable: Optional[bool] = None
+    asset_shortable: Optional[bool] = None
+    asset_easy_to_borrow: Optional[bool] = None
+
+
+class PortfolioAnalyticsResponse(BaseModel):
+    risk_score: Decimal
+    diversification_score: Decimal
+
+class AssetDetailsResponse(BaseModel):
+    # Mirroring Alpaca's Asset model fields
+    id: uuid.UUID
+    asset_class: str # Mapped from AlpacaAssetClass enum
+    exchange: str
+    symbol: str
+    name: Optional[str] = None
+    status: str
+    tradable: bool
+    marginable: bool
+    shortable: bool
+    easy_to_borrow: bool
+    fractionable: bool
+    maintenance_margin_requirement: Optional[float] = None
+    # Potentially add industry/sector if available
+    # industry: Optional[str] = None
+    # sector: Optional[str] = None
+
+
+class OrderResponse(BaseModel):
+    # Mirroring Alpaca's Order model fields
+    id: uuid.UUID
+    client_order_id: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    submitted_at: Optional[datetime] = None
+    filled_at: Optional[datetime] = None
+    expired_at: Optional[datetime] = None
+    canceled_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+    replaced_at: Optional[datetime] = None
+    replaced_by: Optional[uuid.UUID] = None
+    replaces: Optional[uuid.UUID] = None
+    asset_id: uuid.UUID
+    symbol: str
+    asset_class: str # Consider mapping
+    notional: Optional[Decimal] = None
+    qty: Optional[Decimal] = None
+    filled_qty: Optional[Decimal] = None
+    filled_avg_price: Optional[Decimal] = None
+    order_class: Optional[str] = None # Consider mapping
+    order_type: str # Consider mapping
+    type: str # Consider mapping
+    side: str # Consider mapping
+    time_in_force: str # Consider mapping
+    limit_price: Optional[Decimal] = None
+    stop_price: Optional[Decimal] = None
+    status: str
+    extended_hours: bool
+    legs: Optional[List[Any]] = None # Keep Any for simplicity unless legs are used
+    trail_percent: Optional[Decimal] = None
+    trail_price: Optional[Decimal] = None
+    hwm: Optional[Decimal] = None
+    commission: Optional[Decimal] = None
+
+
+# --- Helper Functions ---
+
+def map_position_to_response(position): # -> PositionResponse:
+    """Maps an Alpaca Position object to our PositionResponse model."""
+    # Access asset_class via position.asset_class which should be AlpacaTradingAssetClass
+    asset_class_value = str(position.asset_class.value) if position.asset_class else 'unknown'
+    
+    # Return type originally PositionResponse
+    return PositionResponse(
+        asset_id=position.asset_id,
+        symbol=position.symbol,
+        exchange=str(position.exchange.value) if position.exchange else 'unknown', # Convert enum
+        asset_class=asset_class_value,
+        avg_entry_price=Decimal(position.avg_entry_price),
+        qty=Decimal(position.qty),
+        side=str(position.side.value),
+        market_value=Decimal(position.market_value),
+        cost_basis=Decimal(position.cost_basis),
+        unrealized_pl=Decimal(position.unrealized_pl),
+        unrealized_plpc=Decimal(position.unrealized_plpc),
+        unrealized_intraday_pl=Decimal(position.unrealized_intraday_pl),
+        unrealized_intraday_plpc=Decimal(position.unrealized_intraday_plpc),
+        current_price=Decimal(position.current_price),
+        lastday_price=Decimal(position.lastday_price),
+        change_today=Decimal(position.change_today),
+        asset_marginable=getattr(position, 'marginable', None), # Get optional asset attributes
+        asset_shortable=getattr(position, 'shortable', None),
+        asset_easy_to_borrow=getattr(position, 'easy_to_borrow', None)
+    )
+
+def map_alpaca_position_to_portfolio_position(alpaca_pos, asset_details_map: Dict[UUID, Any]) : # -> Optional[PortfolioPosition]:
+    """Maps an Alpaca Position and fetched Asset details to our PortfolioPosition for analytics."""
+    # Parameter 'alpaca_pos' originally type Position
+    # Return type originally Optional[PortfolioPosition]
+    
+    # Check if necessary types were imported successfully
+    if not PortfolioPosition or not AssetClass or not SecurityType:
+        logger.error("Portfolio analysis types (PortfolioPosition, AssetClass, SecurityType) not available due to import error.")
+        return None
+        
+    if not alpaca_pos or not alpaca_pos.asset_class:
+        logger.warning(f"Skipping position mapping due to missing data: {alpaca_pos.symbol if alpaca_pos else 'N/A'}")
+        return None
+
+    # our_asset_class: Optional[AssetClass] = None # Original Type Hint
+    # security_type: Optional[SecurityType] = None # Original Type Hint
+    our_asset_class = None
+    security_type = None
+    asset_details = asset_details_map.get(alpaca_pos.asset_id)
+
+    # --- Determine AssetClass and SecurityType based on Alpaca data --- 
+    alpaca_asset_class = alpaca_pos.asset_class # This is AlpacaTradingAssetClass
+
+    if alpaca_asset_class == AlpacaTradingAssetClass.US_EQUITY:
+        our_asset_class = AssetClass.EQUITY
+        # Use fetched asset details for security type
+        if asset_details:
+            asset_name_lower = asset_details.name.lower() if asset_details.name else ""
+            asset_symbol_upper = asset_details.symbol.upper() if asset_details.symbol else ""
+            # Heuristics based on common naming conventions
+            if "etf" in asset_name_lower or "fund" in asset_name_lower or "trust" in asset_name_lower or "shares" in asset_name_lower:
+                security_type = SecurityType.ETF
+            elif "reit" in asset_name_lower:
+                security_type = SecurityType.REIT
+            # Potentially check asset_details.asset_class again if it differs from position's?
+            # elif getattr(asset_details, 'asset_class', None) == SomeOtherAlpacaEnum.BOND:
+            #     security_type = SecurityType.BOND # Example if asset details had more info
+            else:
+                 security_type = SecurityType.INDIVIDUAL_STOCK
+        else:
+            # Fallback if asset details couldn't be fetched
+            logger.warning(f"Missing asset details for equity {alpaca_pos.symbol}, defaulting SecurityType to INDIVIDUAL_STOCK.")
+            security_type = SecurityType.INDIVIDUAL_STOCK
+
+    elif alpaca_asset_class == AlpacaTradingAssetClass.CRYPTO:
+        our_asset_class = AssetClass.EQUITY # Or AssetClass.ALTERNATIVES based on preference
+        security_type = SecurityType.CRYPTOCURRENCY
+
+    elif alpaca_asset_class == AlpacaTradingAssetClass.US_OPTION:
+        our_asset_class = AssetClass.ALTERNATIVES
+        security_type = SecurityType.OPTIONS
+    
+    # Add mappings for other Alpaca Asset Classes if they become relevant
+    # elif alpaca_asset_class == AlpacaTradingAssetClass.XYZ:
+    #     our_asset_class = AssetClass.SOME_CLASS
+    #     security_type = SecurityType.SOME_TYPE
+
+    else:
+        logger.warning(f"Unmapped Alpaca asset class '{alpaca_asset_class.name}' for {alpaca_pos.symbol}. Cannot determine internal types.")
+        return None # Cannot map if Alpaca asset class is unknown/unhandled
+
+    # Ensure both internal types were determined
+    if our_asset_class is None or security_type is None:
+         logger.warning(f"Could not determine internal AssetClass or SecurityType for {alpaca_pos.symbol} (Alpaca Class: {alpaca_asset_class.name}). Skipping.")
+         return None
+
+    # --- Create internal PortfolioPosition --- 
+    try:
+        return PortfolioPosition(
+            symbol=alpaca_pos.symbol,
+            asset_class=our_asset_class,
+            security_type=security_type,
+            market_value=Decimal(alpaca_pos.market_value),
+            cost_basis=Decimal(alpaca_pos.cost_basis),
+            unrealized_pl=Decimal(alpaca_pos.unrealized_pl),
+            quantity=Decimal(alpaca_pos.qty),
+            current_price=Decimal(alpaca_pos.current_price) # Added missing argument
+        )
+    except Exception as e:
+        logger.error(f"Error creating PortfolioPosition for {alpaca_pos.symbol}: {e}", exc_info=True)
+        return None
+
+def map_order_to_response(order) : # -> OrderResponse:
+    """Maps an Alpaca Order object to our OrderResponse model."""
+    # Parameter 'order' originally type Order
+    # Return type originally OrderResponse
+    # Safely convert Decimals to strings or floats if needed by Pydantic/JSON
+    return OrderResponse(
+        id=order.id,
+        client_order_id=order.client_order_id,
+        created_at=order.created_at,
+        updated_at=order.updated_at,
+        submitted_at=order.submitted_at,
+        filled_at=order.filled_at,
+        expired_at=order.expired_at,
+        canceled_at=order.canceled_at,
+        failed_at=order.failed_at,
+        replaced_at=order.replaced_at,
+        replaced_by=order.replaced_by,
+        replaces=order.replaces,
+        asset_id=order.asset_id,
+        symbol=order.symbol,
+        asset_class=str(order.asset_class.value) if order.asset_class else None,
+        notional=Decimal(order.notional) if order.notional is not None else None,
+        qty=Decimal(order.qty) if order.qty is not None else None,
+        filled_qty=Decimal(order.filled_qty) if order.filled_qty is not None else None,
+        filled_avg_price=Decimal(order.filled_avg_price) if order.filled_avg_price is not None else None,
+        order_class=str(order.order_class.value) if order.order_class else None,
+        order_type=str(order.order_type.value) if order.order_type else None,
+        type=str(order.type.value) if order.type else None, # Duplicate of order_type? Check Alpaca model
+        side=str(order.side.value) if order.side else None,
+        time_in_force=str(order.time_in_force.value) if order.time_in_force else None,
+        limit_price=Decimal(order.limit_price) if order.limit_price is not None else None,
+        stop_price=Decimal(order.stop_price) if order.stop_price is not None else None,
+        status=str(order.status.value) if order.status else None,
+        extended_hours=order.extended_hours,
+        legs=order.legs, # Keep as is for now
+        trail_percent=Decimal(order.trail_percent) if order.trail_percent is not None else None,
+        trail_price=Decimal(order.trail_price) if order.trail_price is not None else None,
+        hwm=Decimal(order.hwm) if order.hwm is not None else None,
+        commission=Decimal(order.commission) if order.commission is not None else None,
+    )
+
+
+# --- API Endpoints ---
+
+# Add the function to get TradingClient before it's used
+def get_trading_client():
+    """Get an instance of the TradingClient."""
+    if not TradingClient:
+        logger.error("TradingClient not available")
+        raise HTTPException(status_code=503, detail="Trading service unavailable due to import errors")
+    
+    # Get API credentials from environment - Use APCA names consistent with Market Data Client
+    api_key = os.getenv("APCA_API_KEY_ID") 
+    api_secret = os.getenv("APCA_API_SECRET_KEY")
+    
+    if not api_key or not api_secret:
+        logger.error("Missing API credentials for TradingClient (checked APCA_API_KEY_ID/APCA_API_SECRET_KEY)")
+        raise HTTPException(status_code=503, detail="Trading service unavailable due to missing credentials")
+    
+    # Check if we're using paper or live
+    paper = os.getenv("ALPACA_API_ENV", "paper").lower() == "paper"
+    
+    try:
+        return TradingClient(api_key, api_secret, paper=paper)
+    except Exception as e:
+        logger.error(f"Failed to initialize TradingClient: {e}")
+        raise HTTPException(status_code=503, detail="Trading service initialization failed")
+
+@app.get("/api/portfolio/{account_id}/history", response_model=PortfolioHistoryResponse)
+async def get_portfolio_history(
+    account_id: str,
+    period: Optional[str] = '1M',
+    timeframe: Optional[str] = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    intraday_reporting: Optional[str] = 'market_hours',
+    pnl_reset: Optional[str] = 'no_reset',
+    extended_hours: Optional[bool] = None,
+    broker_client = Depends(get_broker_client), # Use BrokerClient instead of TradingClient
+    api_key: str = Depends(verify_api_key)
+):
+    if not broker_client:
+        raise HTTPException(status_code=503, detail="Broker service unavailable")
+    if not GetPortfolioHistoryRequest: # Check if the class was imported successfully
+        raise HTTPException(status_code=503, detail="Portfolio history request type unavailable due to import error.")
+
+    # Convert period format to what Alpaca accepts
+    # Alpaca only accepts D, W, M, A (not Y) - A = Year / Annual
+    alpaca_period = period
+    if period == 'MAX':
+        # Use '1A' (annual) for maximum timeframe allowed by Alpaca
+        alpaca_period = '1A'
+    elif period and 'Y' in period:
+        # Replace 'Y' with 'A' for year (e.g., '1Y' becomes '1A')
+        alpaca_period = period.replace('Y', 'A')
+    
+    logger.info(f"Converting period '{period}' to alpaca_period '{alpaca_period}'")
+
+    # Create the request object using the correct class from trading.requests
+    history_filter = GetPortfolioHistoryRequest(
+        period=alpaca_period,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        intraday_reporting=intraday_reporting,
+        pnl_reset=pnl_reset,
+        extended_hours=extended_hours
+    )
+    
+    try:
+        # Call the Alpaca Broker API method with the history_filter object
+        history_data = broker_client.get_portfolio_history_for_account(
+            account_id=account_id,
+            history_filter=history_filter # Pass the request object here
+        )
+
+        # Convert the Alpaca response object to our Pydantic response model
+        response = PortfolioHistoryResponse(
+            timestamp=history_data.timestamp,
+            equity=[float(e) if e is not None else None for e in history_data.equity],
+            profit_loss=[float(pl) if pl is not None else None for pl in history_data.profit_loss],
+            profit_loss_pct=[float(plp) if plp is not None else None for plp in history_data.profit_loss_pct],
+            base_value=float(history_data.base_value) if history_data.base_value is not None else None,
+            timeframe=history_data.timeframe
+        )
+        
+        # Handle the optional field
+        if hasattr(history_data, 'base_value_asof') and history_data.base_value_asof:
+            response.base_value_asof = str(history_data.base_value_asof) # Ensure it's a string if needed
+            
+        return response
+    except Exception as e:
+        error_msg = f"Error retrieving portfolio history for account {account_id}: {str(e)}"
+        logger.error(error_msg)
+        
+        # Log traceback for debugging
+        logger.error(traceback.format_exc())
+        
+        raise HTTPException(status_code=500, detail=error_msg)
+
+@app.get("/api/portfolio/{account_id}/positions", response_model=List[PositionResponse])
+async def get_account_positions(
+    account_id: str,
+    client = Depends(get_broker_client), # Original: client: BrokerClient
+    api_key: str = Depends(verify_api_key) # Add authentication
+):
+    """Endpoint to fetch all open positions for a given account."""
+    try:
+        account_uuid = uuid.UUID(account_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid account_id format. Must be a UUID.")
+
+    logger.info(f"Fetching positions for account {account_id}")
+    try:
+        # Use correct type hint from alpaca.broker.models
+        positions = client.get_all_positions_for_account(account_id=account_uuid)
+        # Map each position to the response model
+        response_positions = [map_position_to_response(pos) for pos in positions]
+        return response_positions
+    except requests.exceptions.HTTPError as e:
+         logger.error(f"Alpaca API HTTP error fetching positions for {account_id}: {e.response.status_code} - {e.response.text}")
+         raise HTTPException(status_code=e.response.status_code, detail=f"Alpaca error: {e.response.text}")
+    except Exception as e:
+        logger.error(f"Error fetching positions for {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error fetching positions.")
+
+@app.get("/api/portfolio/{account_id}/analytics", response_model=PortfolioAnalyticsResponse)
+async def get_portfolio_analytics(
+    account_id: str,
+    client = Depends(get_broker_client), # Original: client: BrokerClient
+    api_key: str = Depends(verify_api_key) # Add authentication
+):
+    """Endpoint to calculate risk and diversification scores for an account."""
+    # Check if necessary types were imported successfully
+    if not PortfolioAnalyticsEngine or not PortfolioPosition:
+         logger.error("Portfolio analytics module (PortfolioAnalyticsEngine, PortfolioPosition) not available due to import error.")
+         raise HTTPException(status_code=501, detail="Portfolio analytics module not available.")
+
+    try:
+        account_uuid = uuid.UUID(account_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid account_id format. Must be a UUID.")
+
+    logger.info(f"Calculating analytics for account {account_id}")
+    try:
+        # 1. Fetch positions
+        alpaca_positions = client.get_all_positions_for_account(account_id=account_uuid)
+
+        if not alpaca_positions:
+            logger.info(f"No positions found for account {account_id}. Returning default scores.")
+            # Return default scores if no positions
+            return PortfolioAnalyticsResponse(risk_score=Decimal('0'), diversification_score=Decimal('0'))
+
+        # 2. Fetch Asset details for relevant positions (e.g., equities) to aid mapping
+        asset_details_map: Dict[UUID, Any] = {}
+        equity_asset_ids_to_fetch = {
+            pos.asset_id for pos in alpaca_positions 
+            if pos.asset_class == AlpacaTradingAssetClass.US_EQUITY and pos.asset_id is not None
+        }
+        
+        if equity_asset_ids_to_fetch:
+            logger.info(f"Fetching asset details for {len(equity_asset_ids_to_fetch)} unique equity assets for account {account_id}...")
+            # Potential performance impact for very large unique holdings
+            if len(equity_asset_ids_to_fetch) > 100:
+                 logger.warning(f"Fetching details for a large number of assets ({len(equity_asset_ids_to_fetch)}), this might take some time.")
+            for asset_id in equity_asset_ids_to_fetch:
+                try:
+                    # Assuming get_asset is available on the BrokerClient
+                    asset_details = client.get_asset(asset_id)
+                    if asset_details:
+                        asset_details_map[asset_id] = asset_details
+                except Exception as asset_err:
+                    # Log error but continue, allow mapping to proceed with defaults
+                    logger.warning(f"Failed to fetch asset details for {asset_id} for account {account_id}: {asset_err}")
+        
+        # 3. Map Alpaca positions to our internal PortfolioPosition objects
+        # portfolio_positions: List[PortfolioPosition] = [] # Original Type Hint
+        portfolio_positions = []
+        for pos in alpaca_positions:
+            mapped_pos = map_alpaca_position_to_portfolio_position(pos, asset_details_map)
+            if mapped_pos:
+                portfolio_positions.append(mapped_pos)
+
+        if not portfolio_positions:
+            logger.warning(f"Could not map any Alpaca positions to PortfolioPosition for account {account_id}")
+            # Consider if returning 0,0 is appropriate or if an error should be raised
+            return PortfolioAnalyticsResponse(risk_score=Decimal('0'), diversification_score=Decimal('0'))
+
+        # 4. Calculate scores using the engine
+        # Ensure engine is available before calling
+        if not PortfolioAnalyticsEngine:
+             logger.error("PortfolioAnalyticsEngine not available, cannot calculate scores.")
+             # Return default or raise error, returning default for now
+             return PortfolioAnalyticsResponse(risk_score=Decimal('0'), diversification_score=Decimal('0'))
+             
+        risk_score = PortfolioAnalyticsEngine.calculate_risk_score(portfolio_positions)
+        diversification_score = PortfolioAnalyticsEngine.calculate_diversification_score(portfolio_positions)
+
+        return PortfolioAnalyticsResponse(
+            risk_score=risk_score,
+            diversification_score=diversification_score
+        )
+    except requests.exceptions.HTTPError as e:
+         logger.error(f"Alpaca API HTTP error during analytics for {account_id}: {e.response.status_code} - {e.response.text}")
+         raise HTTPException(status_code=e.response.status_code, detail=f"Alpaca error: {e.response.text}")
+    except Exception as e:
+        logger.error(f"Error calculating portfolio analytics for {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error calculating analytics.")
+
+@app.get("/api/assets/{symbol_or_asset_id}", response_model=AssetDetailsResponse)
+async def get_asset_details(
+    symbol_or_asset_id: str,
+    client = Depends(get_broker_client), # Original: client: BrokerClient
+    api_key: str = Depends(verify_api_key) # Add API key validation
+):
+    """Endpoint to fetch details for a specific asset."""
+    logger.info(f"Fetching asset details for {symbol_or_asset_id}")
+    try:
+        asset = client.get_asset(symbol_or_asset_id)
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found.")
+
+        # Map Alpaca Asset model to our response model
+        return AssetDetailsResponse(
+            id=asset.id,
+            asset_class=str(asset.asset_class.value), # Convert enum
+            exchange=asset.exchange,
+            symbol=asset.symbol,
+            name=asset.name,
+            status=str(asset.status.value), # Convert enum
+            tradable=asset.tradable,
+            marginable=asset.marginable,
+            shortable=asset.shortable,
+            easy_to_borrow=asset.easy_to_borrow,
+            fractionable=asset.fractionable,
+            maintenance_margin_requirement=float(asset.maintenance_margin_requirement) if asset.maintenance_margin_requirement else None,
+            # industry=getattr(asset, 'industry', None), # Add if available in model
+            # sector=getattr(asset, 'sector', None),     # Add if available in model
+        )
+    except requests.exceptions.HTTPError as e:
+         logger.error(f"Alpaca API HTTP error fetching asset {symbol_or_asset_id}: {e.response.status_code} - {e.response.text}")
+         if e.response.status_code == 404:
+             raise HTTPException(status_code=404, detail=f"Asset '{symbol_or_asset_id}' not found.")
+         raise HTTPException(status_code=e.response.status_code, detail=f"Alpaca error: {e.response.text}")
+    except Exception as e:
+        logger.error(f"Error fetching asset details for {symbol_or_asset_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error fetching asset details.")
+
+@app.get("/api/portfolio/{account_id}/orders", response_model=List[OrderResponse])
+async def get_account_orders(
+    account_id: str,
+    status: Optional[str] = 'all', # closed, open, all
+    limit: Optional[int] = 50,
+    after: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    direction: Optional[str] = 'desc', # asc
+    nested: Optional[bool] = False, # If true, include nested legs/conditional orders
+    symbols: Optional[List[str]] = None,
+    broker_client = Depends(get_broker_client), # Use broker client for account data
+    api_key: str = Depends(verify_api_key) # Add authentication
+):
+    """Endpoint to fetch orders for a given account, with filtering."""
+    try:
+        account_uuid = uuid.UUID(account_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid account_id format. Must be a UUID.")
+
+    # Map frontend status string to Alpaca enum status
+    status_value = None
+    if status == 'closed':
+        status_value = 'closed'
+    elif status == 'open':
+        status_value = 'open'
+    # 'all' means don't specify a status in the request
+
+    # Construct the request filter with the correct parameter names
+    try:
+        order_filter = GetOrdersRequest(
+            status=status_value,
+            limit=limit,
+            after=after,
+            until=until,
+            direction=direction,
+            nested=nested,
+            symbols=symbols
+        )
+
+        logger.info(f"Fetching orders for account {account_id} with filter: {order_filter}")
+        # Use the broker client method for fetching account orders
+        orders = broker_client.get_orders_for_account(
+            account_id=account_id,
+            filter=order_filter
+        )
+        # Map orders to response model
+        response_orders = [map_order_to_response(order) for order in orders]
+        return response_orders
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"Alpaca API HTTP error fetching orders for {account_id}: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Alpaca error: {e.response.text}")
+    except Exception as e:
+        logger.error(f"Error fetching orders for {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error fetching orders.")
+
+@app.get("/api/portfolio/value")
+async def get_portfolio_value(accountId: str = Query(..., description="Alpaca account ID")):
+    """
+    Get current portfolio value and today's return for an account.
+    
+    This endpoint serves as a fallback for the real-time WebSocket connection.
+    It calculates the portfolio value and today's return similar to the 
+    portfolio calculator service.
+    """
+    try:
+        # Get portfolio value from Redis if available
+        redis_client = await get_redis_client()
+        if redis_client:
+            last_portfolio_key = f"last_portfolio:{accountId}"
+            last_portfolio_data = await redis_client.get(last_portfolio_key)
+            
+            if last_portfolio_data:
+                # Return the cached portfolio data
+                return json.loads(last_portfolio_data)
+        
+        # If not in Redis, calculate using broker client
+        broker_client = get_broker_client()
+        
+        # Get positions
+        positions = broker_client.get_all_positions_for_account(accountId)
+        
+        # Get account information for cash balance
+        account = broker_client.get_trade_account_by_id(accountId)
+        cash_balance = float(account.cash)
+        
+        # Calculate total portfolio value
+        portfolio_value = cash_balance
+        for position in positions:
+            # Get position value
+            quantity = float(position.qty)
+            price = float(position.current_price)
+            position_value = quantity * price
+            portfolio_value += position_value
+        
+        # Get base value for "Today's Return" calculation
+        base_value = 0.0
+        try:
+            account_info = broker_client.get_account_by_id(accountId)
+            base_value = float(account_info.last_equity)
+            
+            # Ensure we have a valid base value
+            if base_value <= 0:
+                base_value = portfolio_value  # Fallback
+        except Exception as e:
+            logger.warning(f"Error getting base value for account {accountId}: {e}")
+            base_value = portfolio_value  # Fallback
+        
+        # Calculate today's return
+        today_return = portfolio_value - base_value
+        today_return_percent = (today_return / base_value * 100) if base_value > 0 else 0
+        
+        # Format for display
+        today_return_formatted = f"+${today_return:.2f}" if today_return >= 0 else f"-${abs(today_return):.2f}"
+        today_return_percent_formatted = f"({today_return_percent:.2f}%)"
+        
+        # Prepare response
+        response = {
+            "account_id": accountId,
+            "total_value": f"${portfolio_value:.2f}",
+            "today_return": f"{today_return_formatted} {today_return_percent_formatted}",
+            "raw_value": portfolio_value,
+            "raw_return": today_return,
+            "raw_return_percent": today_return_percent,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Cache it in Redis if client available
+        if redis_client:
+            await redis_client.set(last_portfolio_key, json.dumps(response))
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting portfolio value: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error calculating portfolio value: {str(e)}"
+        )
+
+# Helper function to get a Redis client
+async def get_redis_client():
+    """Get a Redis client for caching."""
+    try:
+        import redis.asyncio as aioredis
+        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_db = int(os.getenv("REDIS_DB", "0"))
+        
+        client = aioredis.Redis(
+            host=redis_host,
+            port=redis_port,
+            db=redis_db,
+            decode_responses=True
+        )
+        
+        # Test connection
+        await client.ping()
+        return client
+    except ImportError:
+        logger.warning("Redis async client not available, caching disabled")
+        return None
+    except Exception as e:
+        logger.error(f"Error connecting to Redis: {e}")
+        return None
+
+# Add this WebSocket endpoint to proxy WebSocket connections to the WebSocket server
+@app.websocket("/ws/portfolio/{account_id}")
+async def websocket_proxy(websocket: WebSocket, account_id: str):
+    """
+    Proxy WebSocket connections to the dedicated WebSocket server.
+    
+    This allows frontend clients to connect to the API server on port 8000
+    while the actual WebSocket handling happens on the dedicated server on port 8001.
+    """
+    # Get WebSocket server URL from environment variable
+    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
+    
+    # Split host and port if a combined URL is provided
+    if ":" in websocket_service_url:
+        websocket_host, websocket_port = websocket_service_url.split(":", 1)
+    else:
+        # Fallback to default values if not in expected format
+        websocket_host = websocket_service_url
+        websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
+    
+    logger.info(f"WebSocket connection request for account {account_id}, connecting to {websocket_host}:{websocket_port}")
+    
+    # Track if we've already closed the client connection
+    client_closed = False
+    
+    # Accept the connection from the client
+    try:
+        await websocket.accept()
+    except RuntimeError as e:
+        logger.error(f"Error accepting WebSocket connection: {e}")
+        return
+    
+    # Don't try to check server availability - this can cause health check issues
+    # Instead, assume the WebSocket server is available and handle connection errors gracefully
+    import websockets
+    
+    try:
+        target_ws_uri = f"ws://{websocket_host}:{websocket_port}/ws/portfolio/{account_id}"
+        logger.info(f"Connecting to WebSocket server at {target_ws_uri}")
+        
+        # Set up the connection parameters with a reasonable timeout
+        connect_timeout = float(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5"))
+        
+        # Handle connection errors gracefully
+        try:
+            # Use a shorter connection timeout to avoid blocking health checks
+            async with websockets.connect(
+                target_ws_uri, 
+                ping_interval=30,
+                ping_timeout=10,
+                close_timeout=5,
+                open_timeout=connect_timeout  # Short timeout for initial connection
+            ) as ws_server:
+                # Set up message forwarding in both directions
+                done = asyncio.Future()
+                
+                # Forward client -> server messages
+                async def forward_client_to_server():
+                    try:
+                        while True:
+                            data = await websocket.receive_text()
+                            await ws_server.send(data)
+                    except Exception as e:
+                        logger.error(f"Error forwarding client to server: {e}")
+                        done.set_result(None)
+                
+                # Forward server -> client messages
+                async def forward_server_to_client():
+                    try:
+                        while True:
+                            data = await ws_server.recv()
+                            await websocket.send_text(data)
+                    except Exception as e:
+                        logger.error(f"Error forwarding server to client: {e}")
+                        done.set_result(None)
+                
+                # Create and run the forwarding tasks
+                client_to_server = asyncio.create_task(forward_client_to_server())
+                server_to_client = asyncio.create_task(forward_server_to_client())
+                
+                # Wait for either task to complete (connection closed on either end)
+                await done
+                
+                # Clean up tasks
+                for task in [client_to_server, server_to_client]:
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+        except websockets.exceptions.WebSocketException as e:
+            logger.error(f"WebSocket connection error: {e}")
+            if not client_closed:
+                await websocket.send_text(json.dumps({
+                    "error": "Could not connect to WebSocket service",
+                    "detail": str(e)
+                }))
+    except Exception as e:
+        logger.error(f"Error in WebSocket proxy: {e}")
+    finally:
+        # Only try to close if not already closed
+        if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
+            try:
+                await websocket.close()
+                client_closed = True
+            except Exception as e:
+                logger.error(f"Error closing WebSocket connection: {e}")
+
+# Add this health endpoint for websocket proxy health checks
+@app.get("/ws/health")
+async def websocket_health_check():
+    """Health check endpoint specifically for WebSocket proxy functionality."""
+    # Get WebSocket service URL from environment variable
+    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
+    
+    # Split host and port if needed
+    if ":" in websocket_service_url:
+        websocket_host, websocket_port = websocket_service_url.split(":", 1)
+    else:
+        websocket_host = websocket_service_url
+        websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
+    
+    # Return healthy status without checking actual connectivity
+    # This prevents health check failures during startup when WebSocket service might not be available
+    return {
+        "status": "healthy",
+        "service": "api-server-websocket-proxy",
+        "websocket_host": websocket_host,
+        "websocket_port": websocket_port,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/portfolio/activities")
+async def get_portfolio_activities(
+    accountId: str = Query(..., description="Alpaca account ID"),
+    limit: Optional[int] = 100
+):
+    """
+    Get transaction and account activities for a portfolio.
+    
+    This endpoint is not yet implemented, but is handled to properly return
+    a 404 status code with a clear message so the frontend can gracefully degrade.
+    """
+    logger.info(f"Activities endpoint requested for account {accountId}, but not implemented yet")
+    
+    # Return a 404 to indicate that the feature is not available
+    raise HTTPException(
+        status_code=404,
+        detail="Portfolio activities endpoint not yet implemented"
+    )
 
 if __name__ == "__main__":
     import uvicorn

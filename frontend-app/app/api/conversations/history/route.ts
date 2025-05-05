@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const requestData = await request.json();
     
     // Get backend URL from environment variable
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
     
     // Set user_id from authenticated user
     requestData.user_id = user.id;

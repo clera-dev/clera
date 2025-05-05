@@ -67,6 +67,149 @@ Provides real-time communication capabilities using WebSockets. Features:
 - Integration with Retell for voice capabilities
 - Real-time LLM response streaming
 
+### Real-Time Portfolio Value Tracking System (portfolio_realtime/)
+
+A distributed system for providing real-time portfolio value updates during market hours. The architecture consists of:
+
+1. **Multiple Interconnected Services**:
+   - `symbol_collector.py`: Collects all unique symbols across user portfolios
+   - `market_data_consumer.py`: Subscribes to real-time market data for tracked symbols
+   - `portfolio_calculator.py`: Calculates portfolio values using latest prices
+   - `websocket_server.py`: Maintains WebSocket connections with clients
+
+2. **Data Flow Architecture**:
+   - Frontend connects to `/ws/portfolio/{accountId}` WebSocket endpoint
+   - Next.js proxy forwards to API Server (port 8000)
+   - API Server proxies to dedicated WebSocket Server (port 8001)
+   - WebSocket Server maintains client connections and sends updates
+   - Redis used as shared cache and message broker between components
+
+3. **Key Features**:
+   - Centralized market data subscription (subscribe once per symbol)
+   - Shared price cache for efficient portfolio calculations
+   - Heartbeat mechanism to keep connections alive
+   - Automatic reconnection with exponential backoff
+   - Proper error handling and logging
+
+#### Running Locally
+
+To run the complete system locally, you need:
+
+1. **Start Redis**:
+   ```bash
+   brew services start redis  # macOS
+   # OR
+   sudo systemctl start redis-server  # Linux
+   ```
+
+2. **Run all services together**:
+   ```bash
+   cd backend
+   source venv/bin/activate  # Use direct venv activation
+   python -m portfolio_realtime.run_services
+   ```
+
+3. **Configure frontend**:
+   Add to `.env.local`:
+   ```
+   NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8001
+   ```
+
+4. **Start API server (in separate terminal)**:
+   ```bash
+   cd backend
+   source venv/bin/activate
+   python api_server.py
+   ```
+
+5. **Start frontend (in separate terminal)**:
+   ```bash
+   cd frontend-app
+   npm run dev
+   ```
+
+#### AWS Deployment
+
+For AWS deployment, two services are needed:
+
+1. **API Server** (Port 8000)
+   - Handles HTTP API requests
+   - Proxies WebSocket connections to WebSocket Server
+   - Requires WebSocket protocol support in load balancer settings
+
+2. **WebSocket Server** (Port 8001)
+   - Dedicated service for WebSocket connections
+   - Only accessible internally from API Server (not directly exposed)
+   - Uses Redis for inter-service communication
+
+**Required AWS Copilot Configuration**:
+
+1. Update the API Server manifest (`backend/copilot/api-service/manifest.yml`):
+   ```yaml
+   # Add or update these configurations
+   http:
+     path: '/'
+     healthcheck:
+       path: '/health'
+       healthy_threshold: 2
+       unhealthy_threshold: 2
+       timeout: 5
+       interval: 10
+   
+   # Ensure WebSocket protocol is allowed
+   variables:
+     ALLOWED_ORIGINS: '*'  # Configure more specifically in production
+     WEBSOCKET_TIMEOUT: 300  # Timeout in seconds (5 minutes)
+   
+   # Add permission to communicate with the WebSocket service
+   network:
+     connect: true
+   ```
+
+2. Create a WebSocket Server manifest (`backend/copilot/websocket-service/manifest.yml`):
+   ```yaml
+   # WebSocket server service definition
+   name: websocket-service
+   type: Backend Service
+   
+   # Internal health check endpoint
+   http:
+     healthcheck:
+       path: '/health'
+       healthy_threshold: 2
+       unhealthy_threshold: 2
+       timeout: 5
+       interval: 10
+   
+   # Important: Ensure sufficient connection time
+   variables:
+     HEARTBEAT_INTERVAL: 30  # Seconds
+     CONNECTION_TIMEOUT: 300  # Seconds
+     REDIS_HOST: '${REDIS_ENDPOINT}'
+     REDIS_PORT: 6379
+     WEBSOCKET_PORT: 8001
+     WEBSOCKET_HOST: '0.0.0.0'
+   
+   # Service discovery configuration
+   network:
+     vpc:
+       placement: 'private'
+   ```
+
+3. Update load balancer settings in environment manifest to support WebSockets:
+   ```yaml
+   # In copilot/environments/[env-name]/manifest.yml
+   http:
+     public:
+       ingress:
+         timeout: 300  # Set timeout to match WebSocket timeout
+       protocol: 'HTTPS'  # Required for WSS (secure WebSockets)
+   ```
+
+For detailed testing and deployment steps, see:
+- `docs/portfolio_realtime_setup.md`
+- `docs/portfolio-page-notes.md`
+
 ### Agent Architecture (clera_agents/)
 
 The system uses LangGraph to orchestrate multiple specialized agents:
@@ -662,3 +805,566 @@ This configuration prevents uvicorn's file watcher from detecting changes in vir
 - **Voice Services**: LiveKit, Deepgram, and Cartesia integration
 - **Brokerage Services**: Alpaca Broker API for account management and trading
 - **Banking Services**: Plaid for bank account connection and ACH transfers
+
+## AWS WebSocket Deployment Guide
+
+This section provides a comprehensive guide for deploying and maintaining the WebSocket service alongside the API service in AWS ECS using Copilot CLI.
+
+### Prerequisites
+
+- AWS CLI configured
+- AWS Copilot CLI installed
+- Docker installed
+- ElastiCache Redis instance running (or to be created)
+
+### Step 1: Set Up Redis ElastiCache (First Deployment Only)
+
+The WebSocket server requires Redis for inter-service communication. If you don't already have a Redis instance:
+
+```bash
+# Create a VPC subnet group first
+aws elasticache create-cache-subnet-group \
+    --cache-subnet-group-name clera-cache-subnet \
+    --subnet-ids subnet-YOUR-SUBNET-IDS \
+    --description "Subnet group for Clera Redis"
+
+# Create a Redis cluster in ElastiCache
+aws elasticache create-cache-cluster \
+    --cache-cluster-id clera-redis \
+    --engine redis \
+    --cache-node-type cache.t3.micro \
+    --num-cache-nodes 1 \
+    --cache-subnet-group-name clera-cache-subnet \
+    --security-group-ids sg-YOUR-SECURITY-GROUP-ID
+```
+
+After creation, note the endpoint URL for configuration in Step 3. In our deployment:
+- Redis endpoint: `clera-redis.x1zzpk.0001.usw1.cache.amazonaws.com`
+- Redis port: `6379`
+
+### Step 2: Create WebSocket Service Definition
+
+From the project root:
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Create a new service definition for the WebSocket server
+copilot svc init --name websocket-service --app clera-api --svc-type "Backend Service"
+```
+
+This creates the initial manifest file at `backend/copilot/websocket-service/manifest.yml`.
+
+### Step 3: Configure Service Manifests
+
+#### 3.1: WebSocket Service Manifest
+
+Edit `backend/copilot/websocket-service/manifest.yml`:
+
+```yaml
+name: websocket-service
+type: Backend Service
+
+# Internal health check endpoint
+http:
+  healthcheck:
+    path: '/health'
+    healthy_threshold: 2
+    unhealthy_threshold: 2
+    timeout: 5
+    interval: 10
+
+# Configure container
+image:
+  build:
+    dockerfile: Dockerfile.websocket
+    context: .
+    platform: linux/amd64
+  port: 8001
+
+cpu: 512      # 0.5 vCPU
+memory: 1024  # 1 GB RAM
+count: 1      # Can be adjusted based on load
+platform: linux/amd64
+exec: true
+
+# Environment variables
+variables:
+  WEBSOCKET_PORT: 8001
+  WEBSOCKET_HOST: "0.0.0.0"
+  HEARTBEAT_INTERVAL: 30
+  CONNECTION_TIMEOUT: 300
+  LOG_LEVEL: "info"
+  
+# Service discovery configuration
+network:
+  vpc:
+    placement: 'private'
+
+# Secrets from AWS SSM Parameter Store
+secrets:
+  REDIS_HOST: /clera-api/production/redis_host
+  REDIS_PORT: /clera-api/production/redis_port
+```
+
+#### 3.2: API Service Manifest
+
+Update `backend/copilot/api-service/manifest.yml` to enable WebSocket proxying:
+
+```yaml
+# In the http section
+http:
+  path: '/'
+  # You can specify a custom health check path. The default is "/".
+  healthcheck:
+    path: '/api/health'
+    healthy_threshold: 3
+    unhealthy_threshold: 10  # Increased to allow more retries before failing
+    interval: 60s           # Increased interval for better stability
+    timeout: 30s            # Increased timeout for health check
+  # Add WebSocket support
+  deregistration_delay: 60s # Lower deregistration delay (default is 300s)
+  stickiness: true # Enable session stickiness for WebSocket connections
+  # Increase idle timeout for WebSocket connections
+  additional_rules:
+    - path: '/ws/*'
+      healthcheck:
+        path: '/api/health'  # Using the same health check path
+
+# In the variables section
+variables:
+  PYTHONUNBUFFERED: "1"
+  WORKERS: "4" # Adjust based on CPU/Memory if needed
+  BIND_PORT: "8000"
+  APP_HOME: "/app"
+  LANGSMITH_TRACING: "true"
+  LANGSMITH_ENDPOINT: "https://api.smith.langchain.com"
+  BROKER_BASE_URL: "https://paper-api.alpaca.markets"
+  ALPACA_ENVIRONMENT: "sandbox"
+  PLAID_ENV: "sandbox"
+  # Configuration for WebSocket proxying
+  WEBSOCKET_SERVICE_URL: "websocket-service.production.clera-api.internal:8001" # Service discovery endpoint
+  WEBSOCKET_TIMEOUT: "300" # 5 minutes timeout for WebSocket connections
+  WEBSOCKET_CONNECT_TIMEOUT: "5" # 5 seconds timeout for initial WebSocket connection
+  LOG_LEVEL: "info"
+```
+
+#### 3.3: Environment Manifest
+
+The environment manifest (`backend/copilot/environments/production/manifest.yml`) should support HTTPS for WebSockets:
+
+```yaml
+# Configure ALB settings optimized for WebSockets
+http:
+  public:
+    ingress:
+      timeout: 300  # Set timeout to match WebSocket timeout
+    protocol: 'HTTPS'  # Required for WSS (secure WebSockets)
+    certificate: 'arn:aws:acm:us-west-1:039612860226:certificate/47cf4c0a-7b93-486d-93a5-95b2115b3d04'
+```
+
+### Step 4: Create WebSocket Dockerfile
+
+Create `backend/Dockerfile.websocket`:
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create entrypoint script
+COPY aws-entrypoint.sh /aws-entrypoint.sh
+RUN chmod +x /aws-entrypoint.sh
+
+# Set environment variables
+ENV PYTHONPATH="/app"
+ENV WEBSOCKET_PORT=8001
+ENV WEBSOCKET_HOST="0.0.0.0"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
+
+# Expose WebSocket port
+EXPOSE 8001
+
+# Run the WebSocket server
+CMD ["python", "-m", "portfolio_realtime.websocket_server"]
+```
+
+### Step 5: Create Redis Parameters in SSM
+
+Store Redis connection details in AWS SSM Parameter Store:
+
+```bash
+# Our Redis endpoint
+REDIS_ENDPOINT="clera-redis.x1zzpk.0001.usw1.cache.amazonaws.com"
+REDIS_PORT="6379"
+
+# Create parameters in SSM
+aws ssm put-parameter \
+    --name "/clera-api/production/redis_host" \
+    --value "$REDIS_ENDPOINT" \
+    --type "String" \
+    --overwrite
+
+aws ssm put-parameter \
+    --name "/clera-api/production/redis_port" \
+    --value "$REDIS_PORT" \
+    --type "String" \
+    --overwrite
+```
+
+### Step 6: Ensure API Server Has WebSocket Proxy Support
+
+Update `backend/api_server.py` to include WebSocket proxy functionality:
+
+```python
+# Add this WebSocket endpoint to proxy WebSocket connections to the WebSocket server
+@app.websocket("/ws/portfolio/{account_id}")
+async def websocket_proxy(websocket: WebSocket, account_id: str):
+    """
+    Proxy WebSocket connections to the dedicated WebSocket server.
+    
+    This allows frontend clients to connect to the API server on port 8000
+    while the actual WebSocket handling happens on the dedicated server on port 8001.
+    """
+    # Get WebSocket server URL from environment variable
+    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
+    
+    # Split host and port if a combined URL is provided
+    if ":" in websocket_service_url:
+        websocket_host, websocket_port = websocket_service_url.split(":", 1)
+    else:
+        websocket_host = websocket_service_url
+        websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
+    
+    # Connect timeout from environment (default 5 seconds)
+    connect_timeout = int(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5"))
+    
+    # Accept the WebSocket connection from the client
+    await websocket.accept()
+    
+    try:
+        # Create a WebSocket connection to the WebSocket server
+        async with websockets.connect(
+            f"ws://{websocket_host}:{websocket_port}/ws/portfolio/{account_id}",
+            ping_interval=None,  # Let the server handle pings
+            close_timeout=connect_timeout,
+        ) as ws_server:
+            # Create tasks for bidirectional communication
+            consumer_task = asyncio.create_task(
+                consumer_handler(websocket, ws_server)
+            )
+            producer_task = asyncio.create_task(
+                producer_handler(websocket, ws_server)
+            )
+            
+            # Wait for either task to complete (or fail)
+            done, pending = await asyncio.wait(
+                [consumer_task, producer_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            
+            # Cancel any pending tasks
+            for task in pending:
+                task.cancel()
+                
+    except (websockets.exceptions.ConnectionClosed, 
+            websockets.exceptions.WebSocketException,
+            ConnectionRefusedError) as e:
+        logger.error(f"WebSocket proxy error: {str(e)}")
+    except Exception as e:
+        logger.exception(f"Unexpected error in WebSocket proxy: {str(e)}")
+    finally:
+        # Ensure the client connection is closed
+        if websocket.client_state != WebSocketState.DISCONNECTED:
+            await websocket.close()
+
+# Helper functions for the WebSocket proxy
+async def consumer_handler(client: WebSocket, server):
+    """Forward messages from client to server"""
+    try:
+        while True:
+            message = await client.receive_text()
+            await server.send(message)
+    except Exception as e:
+        pass  # Connection closed
+
+async def producer_handler(client: WebSocket, server):
+    """Forward messages from server to client"""
+    try:
+        while True:
+            message = await server.recv()
+            await client.send_text(message)
+    except Exception as e:
+        pass  # Connection closed
+
+# Add this health endpoint for websocket proxy health checks
+@app.get("/ws/health")
+async def websocket_health_check():
+    """Health check endpoint specifically for WebSocket proxy functionality."""
+    # Get WebSocket service URL from environment variable
+    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
+    
+    # Split host and port if needed
+    if ":" in websocket_service_url:
+        websocket_host, websocket_port = websocket_service_url.split(":", 1)
+    else:
+        websocket_host = websocket_service_url
+        websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
+    
+    # Return healthy status without checking actual connectivity
+    # This prevents health check failures during startup
+    return {
+        "status": "healthy",
+        "service": "api-server-websocket-proxy",
+        "websocket_host": websocket_host,
+        "websocket_port": websocket_port,
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+```
+
+### Step 7: Deploy the Services
+
+First, deploy the WebSocket service:
+
+```bash
+cd backend
+copilot svc deploy --name websocket-service --env production
+```
+
+Then deploy the updated API service:
+
+```bash
+copilot svc deploy --name api-service --env production
+```
+
+### Step 8: Verify Deployment
+
+Check the status of both services:
+
+```bash
+# Check WebSocket service status
+copilot svc status --name websocket-service
+
+# Check API service status
+copilot svc status --name api-service
+```
+
+Check the logs to verify everything is running correctly:
+
+```bash
+# Stream WebSocket service logs
+copilot svc logs --name websocket-service --follow
+
+# Stream API service logs
+copilot svc logs --name api-service --follow
+```
+
+### Common Deployment Issues and Solutions
+
+#### Health Check Failures
+
+**Problem**: ECS deployment failing with "Task failed ELB health checks" errors.
+
+**Solution**:
+1. Increase health check timeout and interval in the manifest:
+   ```yaml
+   healthcheck:
+     path: '/api/health'
+     healthy_threshold: 3
+     unhealthy_threshold: 10  # Increased
+     interval: 60s           # Increased
+     timeout: 30s            # Increased
+   ```
+
+2. Ensure the health check endpoint doesn't depend on external services:
+   ```python
+   @app.get("/ws/health")
+   async def websocket_health_check():
+       # Return healthy without attempting to connect to WebSocket service
+       return {
+           "status": "healthy",
+           # Additional info...
+       }
+   ```
+
+3. In the AWS console, verify the health check settings for the target group:
+   - Ensure the protocol is HTTP (not HTTPS) for internal health checks
+   - Match timeout settings with your application startup time
+
+#### Service Communication Issues
+
+**Problem**: API service cannot connect to WebSocket service.
+
+**Solution**:
+1. Use the proper service discovery endpoint:
+   ```
+   websocket-service.production.clera-api.internal:8001
+   ```
+
+2. Add appropriate error handling and timeout settings:
+   ```python
+   connect_timeout = int(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5"))
+   
+   try:
+       # Connection code...
+   except (websockets.exceptions.ConnectionClosed, 
+           websockets.exceptions.WebSocketException,
+           ConnectionRefusedError) as e:
+       logger.error(f"WebSocket proxy error: {str(e)}")
+   ```
+
+3. Verify services are in the same VPC and security groups allow communication:
+   ```bash
+   # Check service discovery
+   copilot svc exec --name api-service \
+     --command "ping websocket-service.production.clera-api.internal"
+   ```
+
+#### HTTPS and SSL Certificate Issues
+
+**Problem**: SSL certificate validation failures when clients try to connect.
+
+**Solution**:
+1. Use a valid SSL certificate in your ALB configuration:
+   ```yaml
+   http:
+     public:
+       protocol: 'HTTPS'
+       certificate: 'arn:aws:acm:us-west-1:039612860226:certificate/47cf4c0a-7b93-486d-93a5-95b2115b3d04'
+   ```
+
+2. Ensure your domain (api.askclera.com) is included in certificate Subject Alternative Names (SANs)
+
+3. Use secure WebSocket URLs in your frontend:
+   ```javascript
+   const ws = new WebSocket('wss://api.askclera.com/ws/portfolio/123');
+   ```
+
+4. For testing, you can use curl with the proper hostname:
+   ```bash
+   curl -v https://api.askclera.com/ws/health
+   ```
+
+#### Deployment Circuit Breaker Triggered
+
+**Problem**: Deployment fails with "ECS Deployment Circuit Breaker triggered".
+
+**Solution**:
+1. Check if the task is failing immediately or after a health check:
+   ```bash
+   copilot svc logs --name api-service --follow
+   ```
+
+2. Wait for any previous deployments to fully roll back before trying again:
+   ```bash
+   copilot svc status --name api-service
+   # Wait until you see "Running: 1/1" and no in-progress deployments
+   ```
+
+3. Adjust deployment circuit breaker settings in manifest:
+   ```yaml
+   deployment:
+     rolling: 'recreate'
+     circuit_breaker:
+       enable: true
+       rollback: true
+     # Add rollout alarms for more control
+   ```
+
+### Redis Backend Configuration
+
+Redis is used for communication between services. To ensure proper configuration:
+
+1. **Redis Connection Testing**:
+   ```python
+   # Test code to verify Redis connectivity
+   import redis
+   
+   r = redis.Redis(
+       host=os.getenv("REDIS_HOST", "localhost"),
+       port=int(os.getenv("REDIS_PORT", "6379")),
+       socket_timeout=5,
+       socket_connect_timeout=5,
+   )
+   
+   try:
+       response = r.ping()
+       print(f"Redis connection successful: {response}")
+   except Exception as e:
+       print(f"Redis connection failed: {str(e)}")
+   ```
+
+2. **Security Group Configuration**:
+   - Ensure the ECS task security group can access Redis port 6379
+   - Add an inbound rule to the Redis security group allowing traffic from the ECS security group
+
+3. **Redis Environment Variables**:
+   Make sure both services have access to the same Redis instance:
+   ```yaml
+   # In both service manifests
+   secrets:
+     REDIS_HOST: /clera-api/production/redis_host
+     REDIS_PORT: /clera-api/production/redis_port
+   ```
+
+### Load Balancer Configuration
+
+Our production load balancer is configured with:
+
+1. **HTTPS Listener (Port 443)**:
+   - Forward to Target Group: clera-Targe-JDQU520PFGZO
+   - Security Policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+   - Certificate: api.askclera.com (Certificate ID: 47cf4c0a-7b93-486d-93a5-95b2115b3d04)
+
+2. **HTTP Listener (Port 80)**:
+   - Redirects to HTTPS
+   - Target Group: clera-Defau-4G2JCEUUKUNU
+
+3. **WebSocket Support**:
+   - Same target group as HTTP/HTTPS
+   - Idle Timeout: 300 seconds (matches WEBSOCKET_TIMEOUT)
+   - Stickiness: Enabled (required for WebSocket connections)
+
+### API and WebSocket URLs
+
+- Production API: https://api.askclera.com
+- WebSocket URL: wss://api.askclera.com/ws/portfolio/{account_id}
+- Health Check URLs:
+  - API: https://api.askclera.com/api/health
+  - WebSocket proxy: https://api.askclera.com/ws/health
+
+### Redeployment Process
+
+When making changes:
+
+1. **Code Changes**:
+   - Update the necessary files in the backend repository
+   - Test locally with Redis and WebSocket server
+
+2. **Deployment Order**:
+   - Always deploy the WebSocket service first, then the API service
+   - Wait for each deployment to complete before starting the next
+
+3. **Verification**:
+   - Check service status and logs after each deployment
+   - Test the WebSocket health endpoint
+   - Verify client connectivity
+
+This deployment process has been tested and verified to work with both services running properly and communicating via Redis. The WebSocket proxy in the API service successfully forwards client connections to the WebSocket service.

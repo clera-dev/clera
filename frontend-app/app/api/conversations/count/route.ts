@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Get backend URL from environment variable
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
     
     // Get the message count from the backend
     const response = await fetch(`${backendUrl}/count-session-messages`, {
