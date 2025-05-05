@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const requestData = await request.json();
     
     // Get backend URL from environment variable
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
     
     // Forward the request to the backend
     const backendResponse = await fetch(`${backendUrl}/api/resume-chat`, {

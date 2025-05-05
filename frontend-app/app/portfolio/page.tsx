@@ -295,9 +295,11 @@ export default function PortfolioPage() {
             }));
             if (isMounted) setPositions(enrichedPositions);
 
-            const initialHistoryUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
-            const initialHistory = await fetchData(initialHistoryUrl);
-            if (isMounted) setPortfolioHistory(initialHistory);
+            // Don't set a default history here as it will be loaded by the useEffect 
+            // that depends on selectedTimeRange
+            // const initialHistoryUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
+            // const initialHistory = await fetchData(initialHistoryUrl);
+            // if (isMounted) setPortfolioHistory(initialHistory);
 
             // Only try to load activities if we haven't determined its availability yet or if it's available
             if (activitiesEndpointAvailable.current !== false) {
@@ -363,9 +365,6 @@ export default function PortfolioPage() {
      if (!accountId || !selectedTimeRange) return;
      if (isLoading && !portfolioHistory && positions.length === 0 && !analytics) return;
 
-     const currentPeriod = portfolioHistory?.timeframe;
-     if (portfolioHistory && currentPeriod === selectedTimeRange) return;
-
      let isMounted = true;
      const loadHistory = async () => {
         if (!isMounted) return;
@@ -386,8 +385,7 @@ export default function PortfolioPage() {
      }
 
      return () => { isMounted = false; };
-
-  }, [accountId, selectedTimeRange, portfolioHistory?.timeframe]);
+  }, [accountId, selectedTimeRange, allTimeHistory]);
 
   const allTimePerformance = useMemo(() => {
     if (!allTimeHistory || !allTimeHistory.equity || allTimeHistory.equity.length === 0) {
@@ -505,6 +503,11 @@ export default function PortfolioPage() {
                   }));
                   
                   setPositions(enrichedPositions);
+                  
+                  // Also refresh the history with the current selected time range
+                  const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
+                  const historyData = await fetchData(historyUrl);
+                  setPortfolioHistory(historyData);
                   
                 } catch (err: any) {
                   setError(`Failed to refresh portfolio data: ${err.message}`);

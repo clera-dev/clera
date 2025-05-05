@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // Corrected Backend API Key access
 const BACKEND_API_KEY = process.env.BACKEND_API_KEY;
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.BACKEND_API_URL;
 
 // This catches requests like /api/assets/AAPL or /api/assets/some-uuid
 export async function GET(
@@ -23,7 +23,12 @@ export async function GET(
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
   }
 
-  const backendUrl = `${API_BASE_URL}/api/assets/${encodeURIComponent(assetIdOrSymbol)}`;
+  if (!BACKEND_URL) {
+    console.error('Error: BACKEND_API_URL or NEXT_PUBLIC_BACKEND_URL environment variable is not set.');
+    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+  }
+
+  const backendUrl = `${BACKEND_URL}/api/assets/${encodeURIComponent(assetIdOrSymbol)}`;
 
   try {
     const response = await fetch(backendUrl, {

@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     console.log("Connect Bank API: Connecting bank account for:", accountId);
     
     // Call the backend API to create the ACH relationship
-    const apiUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+    const apiUrl = process.env.BACKEND_API_URL;
     
     try {
       // First check if a relationship already exists

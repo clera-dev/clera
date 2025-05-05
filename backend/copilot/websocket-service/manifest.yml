@@ -31,6 +31,9 @@ variables:
   WEBSOCKET_HOST: "0.0.0.0"
   HEARTBEAT_INTERVAL: 30
   CONNECTION_TIMEOUT: 300
+  DATA_REFRESH_INTERVAL: 300  # Refresh portfolio values every 5 minutes
+  FULL_REFRESH_INTERVAL: 900  # Perform full refresh (symbols collection) every 15 minutes
+  LOG_LEVEL: "info"
   
 # Service discovery configuration
 network:

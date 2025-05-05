@@ -12,6 +12,9 @@ import logging
 from datetime import datetime
 import redis
 from alpaca.broker import BrokerClient
+from alpaca.broker.models.accounts import Disclosures
+from pydantic import Field
+from typing import Optional
 from dotenv import load_dotenv
 
 # Configure logging
@@ -23,6 +26,18 @@ logger = logging.getLogger("portfolio_calculator")
 
 # Load environment variables
 load_dotenv()
+
+# Fix Alpaca SDK validation error for None values in boolean fields
+# Patch the Disclosures model to accept None values for boolean fields
+class PatchedDisclosures(Disclosures):
+    is_control_person: Optional[bool] = Field(default=False)
+    is_affiliated_exchange_or_finra: Optional[bool] = Field(default=False)
+    is_politically_exposed: Optional[bool] = Field(default=False)
+    immediate_family_exposed: Optional[bool] = Field(default=False)
+
+# Apply the monkey patch
+import alpaca.broker.models.accounts
+alpaca.broker.models.accounts.Disclosures = PatchedDisclosures
 
 class PortfolioCalculator:
     def __init__(self, redis_host='localhost', redis_port=6379, redis_db=0,
@@ -63,29 +78,66 @@ class PortfolioCalculator:
             return self.account_base_values[account_id]
         
         try:
-            # Get account information
-            account = self.broker_client.get_account_by_id(account_id)
-            base_value = float(account.last_equity)
+            # Get the TradeAccount object
+            trade_account = self.broker_client.get_trade_account_by_id(account_id)
             
-            # Ensure we have a valid base value
-            if base_value <= 0:
-                # If last_equity is invalid, try to get the portfolio value from yesterday
-                logger.warning(f"Invalid base value {base_value} for account {account_id}, trying alternative")
-                
-                # Use current portfolio value as fallback
-                account = self.broker_client.get_trade_account_by_id(account_id)
-                base_value = float(account.portfolio_value)
-                
-                if base_value <= 0:
-                    logger.warning(f"Using account equity as base value for account {account_id}")
-                    base_value = float(account.equity)
+            # Use yesterday's portfolio value if available
+            # Following priority: 
+            # 1. last_equity (yesterday's closing equity)
+            # 2. last_buying_power (as a fallback, if available)
+            # 3. equity (current equity)
+            # 4. portfolio_value (current portfolio value)
+            # 5. cash (available cash)
             
-            # Cache the value
-            self.account_base_values[account_id] = base_value
-            logger.info(f"Base value for account {account_id}: ${base_value:.2f}")
-            return base_value
+            # Try last_equity first
+            if hasattr(trade_account, 'last_equity') and trade_account.last_equity:
+                try:
+                    base_value = float(trade_account.last_equity)
+                    if base_value > 0:
+                        self.account_base_values[account_id] = base_value
+                        logger.info(f"Base value for account {account_id}: ${base_value:.2f} (from last_equity)")
+                        return base_value
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid last_equity value: {trade_account.last_equity}")
+            
+            # Try equity next
+            if hasattr(trade_account, 'equity') and trade_account.equity:
+                try:
+                    base_value = float(trade_account.equity)
+                    if base_value > 0:
+                        self.account_base_values[account_id] = base_value
+                        logger.info(f"Base value for account {account_id}: ${base_value:.2f} (from equity)")
+                        return base_value
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid equity value: {trade_account.equity}")
+            
+            # Try portfolio_value next
+            if hasattr(trade_account, 'portfolio_value') and trade_account.portfolio_value:
+                try:
+                    base_value = float(trade_account.portfolio_value)
+                    if base_value > 0:
+                        self.account_base_values[account_id] = base_value
+                        logger.info(f"Base value for account {account_id}: ${base_value:.2f} (from portfolio_value)")
+                        return base_value
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid portfolio_value: {trade_account.portfolio_value}")
+            
+            # Try cash last
+            if hasattr(trade_account, 'cash') and trade_account.cash:
+                try:
+                    base_value = float(trade_account.cash)
+                    self.account_base_values[account_id] = base_value
+                    logger.info(f"Base value for account {account_id}: ${base_value:.2f} (from cash)")
+                    return base_value
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid cash value: {trade_account.cash}")
+            
+            # If all else fails, return 0
+            logger.warning(f"No valid base value found for account {account_id}, using 0")
+            return 0.0
+        
         except Exception as e:
-            logger.error(f"Error fetching base value for account {account_id}: {e}", exc_info=True)
+            logger.error(f"Error fetching base value for account {account_id}: {e}")
             return 0.0
     
     def calculate_portfolio_value(self, account_id):

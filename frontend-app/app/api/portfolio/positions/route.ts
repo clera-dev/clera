@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   }
 
   // --- Fetch from actual backend ---
-  const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+  const backendUrl = process.env.BACKEND_API_URL;
   const backendApiKey = process.env.BACKEND_API_KEY;
 
   if (!backendUrl) {

@@ -9,7 +9,7 @@ export async function GET(
   
   // Connect to the API server on port 8000, not WebSocket server on port 8001
   // The API server has a WebSocket proxy that will forward to the WebSocket server
-  const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+  const backendUrl = process.env.BACKEND_API_URL;
   
   // Create the URL to the API server's WebSocket endpoint
   const url = `${backendUrl}/ws/portfolio/${accountId}`;

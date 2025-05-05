@@ -118,5 +118,5 @@ REDIS_DB=0                    # Redis database number
 BIND_PORT=8000                # API server port
 
 # For frontend (.env.local)
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000  # URL for backend API
+NEXT_PUBLIC_BACKEND_API_URL=http://localhost:8000  # URL for backend API
 ``` 

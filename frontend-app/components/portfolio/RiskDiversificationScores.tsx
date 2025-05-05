@@ -17,7 +17,6 @@ interface RiskDiversificationScoresProps {
   // Option 1: Pass fetch function
   // fetchData: (endpoint: string, options?: RequestInit) => Promise<any>;
   // Option 2: Pass API base URL (Simpler for component)
-  apiBaseUrl?: string; // Keep this for now, might remove later if not needed
 }
 
 // --- Constants --- 
@@ -67,8 +66,7 @@ const getDiversificationTextColor = (score: number): string => {
 const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
     accountId,
     // apiKey, // Remove apiKey from destructuring
-    initialData,
-    apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000' // Base URL might not be needed now
+    initialData
 }) => {
 
     const [analyticsData, setAnalyticsData] = useState<PortfolioAnalyticsData | null>(initialData);

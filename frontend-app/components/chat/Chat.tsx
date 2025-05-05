@@ -122,7 +122,7 @@ export default function Chat({
   const [pendingFirstMessage, setPendingFirstMessage] = useState<string | null>(null);
   
   // TODO: Get these from environment variables
-  const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL;
   const apiKey = process.env.NEXT_PUBLIC_LANGGRAPH_API_KEY; // Optional, depends on backend auth
   const assistantId = process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID || 'agent'; // The graph ID/name to run
   

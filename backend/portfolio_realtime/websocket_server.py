@@ -17,6 +17,10 @@ from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 import time
 
+# Import services for periodic data refresh
+from portfolio_realtime.symbol_collector import SymbolCollector
+from portfolio_realtime.portfolio_calculator import PortfolioCalculator
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -27,24 +31,113 @@ logger = logging.getLogger("websocket_server")
 # Load environment variables
 load_dotenv()
 
+# Define periodic data refresh task
+async def periodic_data_refresh(refresh_interval=300):  # Changed default from 60 to 300 seconds (5 minutes)
+    """Periodically refresh account data in Redis"""
+    logger.info(f"Starting periodic data refresh (every {refresh_interval} seconds)")
+    
+    # Create instances of required classes
+    symbol_collector = SymbolCollector(
+        redis_host=redis_host,
+        redis_port=redis_port,
+        redis_db=redis_db,
+        sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
+    )
+    
+    portfolio_calculator = PortfolioCalculator(
+        redis_host=redis_host,
+        redis_port=redis_port,
+        redis_db=redis_db,
+        min_update_interval=1,  # Allow immediate updates
+        sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
+    )
+    
+    # Track last full refresh time to avoid redundant API calls
+    last_full_refresh = 0
+    
+    while True:
+        try:
+            current_time = time.time()
+            
+            # Determine if we need a full refresh (including symbols collection)
+            # Only do full refresh every 15 minutes to avoid excessive API calls
+            full_refresh_interval = int(os.getenv("FULL_REFRESH_INTERVAL", "900"))  # 15 minutes default
+            need_full_refresh = (current_time - last_full_refresh) > full_refresh_interval
+            
+            # Log before refresh
+            refresh_start = current_time
+            if need_full_refresh:
+                logger.info("Starting full data refresh cycle (including symbols collection)")
+            else:
+                logger.info("Starting portfolio value refresh cycle (without symbols collection)")
+            
+            # 1. Collect symbols and positions only during full refresh
+            if need_full_refresh:
+                await symbol_collector.collect_symbols()
+                last_full_refresh = current_time
+                
+                # Add small delay to avoid rate limiting
+                await asyncio.sleep(1)
+            
+            # 2. Get account IDs from Redis
+            account_keys = redis_client.keys('account_positions:*')
+            accounts_refreshed = 0
+            
+            # 3. Calculate portfolio values for each account
+            for key in account_keys:
+                try:
+                    account_id = key.decode('utf-8').split(':')[1]
+                    portfolio_data = portfolio_calculator.calculate_portfolio_value(account_id)
+                    
+                    if portfolio_data:
+                        # Publish to Redis for WebSocket clients
+                        redis_client.publish('portfolio_updates', json.dumps(portfolio_data))
+                        accounts_refreshed += 1
+                        
+                        # Small delay between accounts to avoid rate limiting
+                        if accounts_refreshed < len(account_keys):
+                            await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.error(f"Error refreshing account {account_id}: {e}")
+            
+            # Log after refresh
+            refresh_duration = time.time() - refresh_start
+            if need_full_refresh:
+                logger.info(f"Full data refresh complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
+            else:
+                logger.info(f"Portfolio value refresh complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
+            
+        except Exception as e:
+            logger.error(f"Error in periodic data refresh: {e}", exc_info=True)
+        
+        # Wait before next refresh cycle
+        await asyncio.sleep(refresh_interval)
+
 # Define lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
-    # Startup: Start the Redis subscriber
+    # Startup: Start the Redis subscriber and periodic refresh
     logger.info("Starting WebSocket server...")
     
     # Create a separate task for Redis subscription
     main_loop = asyncio.get_running_loop()
     redis_subscriber_task = asyncio.create_task(start_redis_subscriber(main_loop))
     
+    # Start periodic data refresh task with a more conservative default interval
+    refresh_interval = int(os.getenv("DATA_REFRESH_INTERVAL", "300"))  # Changed default from 60 to 300 seconds
+    refresh_task = asyncio.create_task(periodic_data_refresh(refresh_interval))
+    logger.info(f"Started periodic data refresh task (interval: {refresh_interval}s)")
+    
     yield  # App runs here
     
     # Shutdown: Clean up resources
     logger.info("Shutting down WebSocket server...")
     redis_subscriber_task.cancel()
+    refresh_task.cancel()
     try:
         await redis_subscriber_task
+        await refresh_task
     except asyncio.CancelledError:
         pass
 
@@ -246,8 +339,10 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "port": server_port,
         "host": os.getenv("WEBSOCKET_HOST", "0.0.0.0"),
-        "version": "1.0.2",  # Increment version to track changes
-        "service": "websocket-server"
+        "version": "1.1.1",  # Increment version to track changes
+        "service": "websocket-server",
+        "data_refresh_interval": os.getenv("DATA_REFRESH_INTERVAL", "300"),
+        "full_refresh_interval": os.getenv("FULL_REFRESH_INTERVAL", "900")
     }
 
 async def send_initial_portfolio_data(websocket: WebSocket, account_id: str):

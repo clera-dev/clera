@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // This route runs on the server, so it can safely access environment variables.
 const BACKEND_API_KEY = process.env.BACKEND_API_KEY;
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+const BACKEND_API_URL = process.env.BACKEND_API_URL;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
   }
 
-  const backendUrl = `${BACKEND_URL}/api/portfolio/${accountId}/analytics`;
+  const backendUrl = `${BACKEND_API_URL}/api/portfolio/${accountId}/analytics`;
 
   try {
     // Prepare headers

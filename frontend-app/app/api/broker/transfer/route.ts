@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Call the backend API to initiate the transfer
-    const apiUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+    const apiUrl = process.env.BACKEND_API_URL;
     console.log("Transfer API: Calling backend", `${apiUrl}/initiate-ach-transfer`);
     
     const response = await fetch(`${apiUrl}/initiate-ach-transfer`, {

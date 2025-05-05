@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     }
 
     // Fetch portfolio data from backend API
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
     const url = `${backendUrl}/api/portfolio/value?accountId=${accountId}`;
     
     const response = await fetch(url, {

@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     
     try {
       // Call backend API to get account info
-      const apiUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+      const apiUrl = process.env.BACKEND_API_URL;
       const response = await fetchWithRetry(`${apiUrl}/get-account-info/${accountId}`, {
         method: 'GET',
         headers: {
