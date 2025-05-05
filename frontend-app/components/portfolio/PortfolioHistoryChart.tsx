@@ -155,10 +155,10 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
 
   // Get Y-axis domain with proper padding for better visibility
   const yAxisDomain = useMemo(() => {
-    if (!chartData || chartData.length === 0) return [0, 100] as const;
+    if (!chartData || chartData.length === 0) return [0, 100];
     
     const values = chartData.map(d => d.equity || 0).filter(v => v > 0);
-    if (values.length === 0) return [0, 100] as const;
+    if (values.length === 0) return [0, 100];
     
     const min = Math.min(...values);
     const max = Math.max(...values);

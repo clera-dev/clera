@@ -92,6 +92,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     isClient && 
     !isLoading && 
     isAuthenticated && 
+    pathname !== null && 
     !nonSidebarPaths.includes(pathname) && 
     !isOnboardingPage;
 

@@ -8,14 +8,15 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8
 // This catches requests like /api/assets/AAPL or /api/assets/some-uuid
 export async function GET(
   request: NextRequest,
-  { params }: { params: { assetId: string } } // Correct way to get params in Route Handlers
+  { params }: { params: Promise<{ assetId: string }> }
 ) {
   // Ensure we have the params
-  if (!params || !params.assetId) {
+  const { assetId } = await params;
+  if (!assetId) {
     return NextResponse.json({ detail: 'Asset ID or Symbol is required' }, { status: 400 });
   }
 
-  const assetIdOrSymbol = params.assetId;
+  const assetIdOrSymbol = assetId;
 
   if (!BACKEND_API_KEY) {
     console.error('Error: BACKEND_API_KEY environment variable is not set on the Next.js server.');

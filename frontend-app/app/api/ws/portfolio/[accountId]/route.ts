@@ -3,9 +3,9 @@ import { NextRequest } from 'next/server';
 // This is a Route Handler for WebSocket connections
 export async function GET(
   request: NextRequest,
-  { params }: { params: { accountId: string } }
+  { params }: { params: Promise<{ accountId: string }> }
 ) {
-  const accountId = params.accountId;
+  const { accountId } = await params;
   
   // Connect to the API server on port 8000, not WebSocket server on port 8001
   // The API server has a WebSocket proxy that will forward to the WebSocket server
