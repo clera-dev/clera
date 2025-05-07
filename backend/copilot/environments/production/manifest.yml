@@ -17,6 +17,14 @@ http:
     # Configure ALB settings optimized for WebSockets
     ingress:
       timeout: 3600  # Set timeout to 1 hour for WebSocket connections
+    # Enable sticky sessions for WebSockets (CRITICAL)
+    stickiness: true
+    # Ensure the ALB is configured to handle WebSocket protocol
+    additional_settings:
+      # Connection draining
+      deregistration_delay.timeout_seconds: 300
+      # Idle timeout should match the ingress timeout
+      idle_timeout.timeout_seconds: 3600
   private:
     ingress:
       timeout: 3600  # Match the public timeout setting

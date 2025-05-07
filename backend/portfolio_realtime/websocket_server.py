@@ -196,7 +196,15 @@ app.add_middleware(
         "http://localhost:8000",     # API server
         "http://127.0.0.1:8000",     # API server alternative
         "https://app.askclera.com",  # Production domain
-        "*",                         # Allow all origins during development (remove in production)
+        "https://www.askclera.com",  # Production domain alternate
+        "https://askclera.com",      # Production root domain
+        # Allow HTTPS WebSocket origins
+        "wss://app.askclera.com",
+        "wss://api.askclera.com",
+        # Allow HTTP WebSocket origins for local dev
+        "ws://localhost:3000",
+        "ws://localhost:8000",
+        "ws://localhost:8001",
     ],
     allow_credentials=True,
     allow_methods=["*"],

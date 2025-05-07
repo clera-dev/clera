@@ -25,6 +25,10 @@ count: 1      # Can be adjusted based on load
 platform: linux/amd64
 exec: true
 
+# Enhanced network configuration for WebSockets
+network:
+  connect: true  # Ensure service can connect to Redis and other services
+
 # Environment variables
 variables:
   WEBSOCKET_PORT: 8001
@@ -33,8 +37,16 @@ variables:
   CONNECTION_TIMEOUT: 300
   DATA_REFRESH_INTERVAL: 300  # Refresh portfolio values every 5 minutes
   FULL_REFRESH_INTERVAL: 900  # Perform full refresh (symbols collection) every 15 minutes
-  LOG_LEVEL: "info"
-  
+  WEBSOCKET_PING_INTERVAL: 30 # How often to ping the client in seconds
+  WEBSOCKET_PING_TIMEOUT: 10  # How long to wait for ping response
+  WEBSOCKET_CONNECT_TIMEOUT: 5 # Connection timeout in seconds
+  WEBSOCKET_CLOSE_TIMEOUT: 5  # How long to wait for close handshake
+  LOG_LEVEL: "INFO"           # Set to DEBUG for more verbose logging
+  # Make sure Redis connection is properly configured
+  REDIS_HOST: ${REDIS_HOST}
+  REDIS_PORT: ${REDIS_PORT}
+  REDIS_DB: 0
+
 # Service discovery configuration
 network:
   vpc:

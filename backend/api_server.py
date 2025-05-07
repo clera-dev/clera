@@ -2183,20 +2183,19 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
     This allows frontend clients to connect to the API server on port 8000
     while the actual WebSocket handling happens on the dedicated server on port 8001.
     """
-    # Get WebSocket server URL from environment variable
+    # Get WebSocket server URL from environment variable with better defaults
     websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
     
-    # Split host and port if a combined URL is provided
+    # Handle both host:port format and just host format
     if ":" in websocket_service_url:
         websocket_host, websocket_port = websocket_service_url.split(":", 1)
     else:
-        # Fallback to default values if not in expected format
         websocket_host = websocket_service_url
         websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
     
     logger.info(f"WebSocket connection request for account {account_id}, connecting to {websocket_host}:{websocket_port}")
     
-    # Track if we've already closed the client connection
+    # Track connection state
     client_closed = False
     
     # Accept the connection from the client
@@ -2206,82 +2205,113 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
         logger.error(f"Error accepting WebSocket connection: {e}")
         return
     
-    # Don't try to check server availability - this can cause health check issues
-    # Instead, assume the WebSocket server is available and handle connection errors gracefully
+    # Import websockets here to avoid startup issues if not available
     import websockets
+    from websockets.exceptions import ConnectionClosed
+    
+    # Configure websocket connection parameters
+    connect_timeout = float(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5"))
+    ping_interval = float(os.getenv("WEBSOCKET_PING_INTERVAL", "30"))  # 30 seconds between pings
+    ping_timeout = float(os.getenv("WEBSOCKET_PING_TIMEOUT", "10"))    # 10 seconds to respond to a ping
+    close_timeout = float(os.getenv("WEBSOCKET_CLOSE_TIMEOUT", "5"))   # 5 seconds to perform the close handshake
+    max_size = int(os.getenv("WEBSOCKET_MAX_SIZE", "1048576"))         # 1MB maximum message size
     
     try:
         target_ws_uri = f"ws://{websocket_host}:{websocket_port}/ws/portfolio/{account_id}"
         logger.info(f"Connecting to WebSocket server at {target_ws_uri}")
         
-        # Set up the connection parameters with a reasonable timeout
-        connect_timeout = float(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5"))
-        
-        # Handle connection errors gracefully
-        try:
-            # Use a shorter connection timeout to avoid blocking health checks
-            async with websockets.connect(
-                target_ws_uri, 
-                ping_interval=30,
-                ping_timeout=10,
-                close_timeout=5,
-                open_timeout=connect_timeout  # Short timeout for initial connection
-            ) as ws_server:
-                # Set up message forwarding in both directions
-                done = asyncio.Future()
-                
-                # Forward client -> server messages
-                async def forward_client_to_server():
-                    try:
-                        while True:
-                            data = await websocket.receive_text()
-                            await ws_server.send(data)
-                    except Exception as e:
-                        logger.error(f"Error forwarding client to server: {e}")
-                        done.set_result(None)
-                
-                # Forward server -> client messages
-                async def forward_server_to_client():
-                    try:
-                        while True:
-                            data = await ws_server.recv()
-                            await websocket.send_text(data)
-                    except Exception as e:
-                        logger.error(f"Error forwarding server to client: {e}")
-                        done.set_result(None)
-                
-                # Create and run the forwarding tasks
-                client_to_server = asyncio.create_task(forward_client_to_server())
-                server_to_client = asyncio.create_task(forward_server_to_client())
-                
-                # Wait for either task to complete (connection closed on either end)
-                await done
-                
-                # Clean up tasks
-                for task in [client_to_server, server_to_client]:
-                    if not task.done():
-                        task.cancel()
+        # Create reliable connection to internal WebSocket service
+        async with websockets.connect(
+            target_ws_uri,
+            ping_interval=ping_interval,
+            ping_timeout=ping_timeout,
+            close_timeout=close_timeout,
+            max_size=max_size,
+            open_timeout=connect_timeout,
+            # Disable compression as ALB doesn't support websocket compression
+            compression=None  
+        ) as ws_server:
+            # Set up bidirectional message forwarding
+            client_task = None
+            server_task = None
+            
+            # Forward client -> server messages
+            async def forward_client_to_server():
+                nonlocal client_closed
+                try:
+                    while True:
                         try:
-                            await task
-                        except asyncio.CancelledError:
-                            pass
-        except websockets.exceptions.WebSocketException as e:
-            logger.error(f"WebSocket connection error: {e}")
-            if not client_closed:
-                await websocket.send_text(json.dumps({
-                    "error": "Could not connect to WebSocket service",
+                            # Receive message from client
+                            message = await websocket.receive_text()
+                            await ws_server.send(message)
+                        except Exception as e:
+                            if isinstance(e, ConnectionClosed):
+                                logger.info(f"Client connection closed for account {account_id}")
+                            else:
+                                logger.error(f"Error receiving from client: {e}")
+                            client_closed = True
+                            break
+                except Exception as e:
+                    logger.error(f"Error in client->server forwarding: {e}")
+                    client_closed = True
+            
+            # Forward server -> client messages
+            async def forward_server_to_client():
+                nonlocal client_closed
+                try:
+                    while True:
+                        try:
+                            # Receive message from WebSocket server
+                            message = await ws_server.recv()
+                            if not client_closed:
+                                await websocket.send_text(message)
+                        except Exception as e:
+                            if isinstance(e, ConnectionClosed):
+                                logger.info(f"Server connection closed for account {account_id}")
+                            else:
+                                logger.error(f"Error receiving from server: {e}")
+                            break
+                except Exception as e:
+                    logger.error(f"Error in server->client forwarding: {e}")
+            
+            # Start forwarding tasks
+            client_task = asyncio.create_task(forward_client_to_server())
+            server_task = asyncio.create_task(forward_server_to_client())
+            
+            # Wait for either task to complete
+            done, pending = await asyncio.wait(
+                [client_task, server_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            # Cancel remaining tasks
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                
+    except websockets.exceptions.WebSocketException as e:
+        logger.error(f"WebSocket connection error: {e}")
+        # Only try to send an error if the client connection is still open
+        if not client_closed:
+            try:
+                await websocket.send_json({
+                    "error": "WebSocket service connection failed",
                     "detail": str(e)
-                }))
+                })
+            except Exception:
+                pass
     except Exception as e:
-        logger.error(f"Error in WebSocket proxy: {e}")
+        logger.error(f"Unexpected error in WebSocket proxy: {e}", exc_info=True)
     finally:
-        # Only try to close if not already closed
-        if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
+        # Clean up client connection if not already closed
+        if not client_closed:
             try:
                 await websocket.close()
-                client_closed = True
             except Exception as e:
-                logger.error(f"Error closing WebSocket connection: {e}")
+                logger.error(f"Error closing client WebSocket: {e}")
 
 # Add this health endpoint for websocket proxy health checks
 @app.get("/ws/health")
