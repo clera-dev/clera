@@ -26,6 +26,7 @@ export const signUpAction = async (formData: FormData) => {
   console.log("Attempting to sign up user with email:", email);
   console.log("Email redirect URL:", `${origin}/auth/callback`);
   
+  // First attempt to sign up
   const { error, data } = await supabase.auth.signUp({
     email,
     password,
@@ -39,11 +40,20 @@ export const signUpAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-up", error.message);
   } else {
     console.log("Sign-up successful, user data:", data);
-    return encodedRedirect(
-      "success",
-      "/sign-up",
-      "Thanks for signing up! You can now use your credentials to sign in.",
-    );
+    
+    // Since email verification is not enforced, automatically sign in after signup
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (signInError) {
+      console.error("Auto sign-in after signup failed:", signInError);
+      return encodedRedirect("error", "/sign-in", "Signup was successful, but automatic login failed. Please sign in manually.");
+    }
+    
+    // Redirect to protected route to start onboarding
+    return redirect("/protected");
   }
 };
 

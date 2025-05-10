@@ -12,7 +12,6 @@ from typing import List, Dict, Any, Optional
 from enum import Enum, auto
 import asyncio
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
 import uuid
 import requests
 from decimal import Decimal
@@ -24,8 +23,11 @@ import traceback
 import httpx
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
+import websockets # Added import
+from websockets.exceptions import ConnectionClosed # Added import
+from urllib.parse import urlparse # ADDED FOR ROBUST URL PARSING
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -34,13 +36,70 @@ from langgraph.errors import GraphInterrupt
 from langgraph.graph.message import add_messages
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, FunctionMessage
 
-load_dotenv()
-# Configure logging
+# Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO) # Changed to INFO for less verbose startup in prod
 logging_handler = logging.StreamHandler()
 logging_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(logging_handler)
+
+# === VERY EARLY ENVIRONMENT CHECK ===
+INITIAL_ENV_VAL = os.getenv("ENVIRONMENT")
+logger.info(f"EARLY CHECK: os.getenv('ENVIRONMENT') at module load time: '{INITIAL_ENV_VAL}'")
+# === END EARLY ENVIRONMENT CHECK ===
+
+# --- WebSocket Service URL Resolution --------------------------------------
+# Detect production via Copilot's environment flag instead of relying on a
+# custom ENVIRONMENT value that can be overwritten by .env defaults.
+_IS_PRODUCTION = os.getenv("COPILOT_ENVIRONMENT_NAME", "").lower() == "production" \
+                 or os.getenv("ENVIRONMENT", "").lower() == "production"
+
+# Baseline URL: inside ECS → use Copilot service-discovery hostname;
+# local dev → use localhost.
+_DEFAULT_WEBSOCKET_SERVICE_URL = (
+    "http://websocket-service.production.clera-api.internal:8001"
+    if _IS_PRODUCTION
+    else "http://localhost:8001"
+)
+
+# Resolve once at import time so later code can't silently fall back.
+WEBSOCKET_SERVICE_URL = os.getenv(
+    "WEBSOCKET_SERVICE_URL",
+    _DEFAULT_WEBSOCKET_SERVICE_URL,
+)
+
+logger.info(
+    "WEBSOCKET_SERVICE_URL resolved at import: '%s' (is_production=%s)",
+    WEBSOCKET_SERVICE_URL,
+    _IS_PRODUCTION,
+)
+# ---------------------------------------------------------------------------
+
+# --- Redis Host/Port Resolution (similar to WebSocket URL) ---
+# _IS_PRODUCTION is already defined above for WEBSOCKET_SERVICE_URL resolution
+
+_DEFAULT_REDIS_HOST_PROD = "clera-redis.x1zzpk.0001.usw1.cache.amazonaws.com"
+_DEFAULT_REDIS_PORT_PROD = 6379
+_DEFAULT_REDIS_HOST_DEV = "127.0.0.1" # Explicitly 127.0.0.1 for clarity
+_DEFAULT_REDIS_PORT_DEV = 6379
+
+_FALLBACK_REDIS_HOST = _DEFAULT_REDIS_HOST_PROD if _IS_PRODUCTION else _DEFAULT_REDIS_HOST_DEV
+_FALLBACK_REDIS_PORT = _DEFAULT_REDIS_PORT_PROD if _IS_PRODUCTION else _DEFAULT_REDIS_PORT_DEV
+
+# Resolve once at import time. Prioritize environment variables set by Copilot.
+# If they are not set, fall back to production/dev defaults based on _IS_PRODUCTION.
+CANONICAL_REDIS_HOST = os.getenv("REDIS_HOST", _FALLBACK_REDIS_HOST)
+CANONICAL_REDIS_PORT = int(os.getenv("REDIS_PORT", str(_FALLBACK_REDIS_PORT))) # Ensure fallback is string for os.getenv conversion
+
+logger.info(
+    "Redis connection parameters resolved at import: HOST='%s', PORT=%s (is_production=%s, fallback_host_used=%s, fallback_port_used=%s)",
+    CANONICAL_REDIS_HOST,
+    CANONICAL_REDIS_PORT,
+    _IS_PRODUCTION,
+    CANONICAL_REDIS_HOST == _FALLBACK_REDIS_HOST,
+    str(CANONICAL_REDIS_PORT) == str(_FALLBACK_REDIS_PORT)
+)
+# ---------------------------------------------------------------------------
 
 # Track startup errors
 startup_errors = []
@@ -65,17 +124,25 @@ except ImportError as e:
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup code
-    logger.info("Starting API server for local development...")
+    logger.info("LIFESPAN: Starting API server...")
+    env_val_start = os.getenv("ENVIRONMENT")
+    copilot_env_val_start = os.getenv("COPILOT_ENVIRONMENT_NAME")
+    logger.info(f"LIFESPAN_ENV_CHECK (start): Actual ENVIRONMENT='{env_val_start}', Actual COPILOT_ENVIRONMENT_NAME='{copilot_env_val_start}'")
     
     # Log Python path
     logger.info(f"Python path: {os.sys.path}")
     
     # Set API key from environment
     app.state.API_KEY = config("API_KEY", default=None)
+    env_val_after_api_key = os.getenv("ENVIRONMENT")
+    logger.info(f"LIFESPAN_ENV_CHECK (after API_KEY config): Actual ENVIRONMENT='{env_val_after_api_key}', decouple_config_API_KEY_is_None={app.state.API_KEY is None}")
     
     # Initialize asset cache
     app.state.asset_cache = None
     app.state.assets_last_refreshed = None
+    
+    # Make the canonical WS URL available to request handlers
+    app.state.WEBSOCKET_SERVICE_URL = WEBSOCKET_SERVICE_URL
     
     # Set Alpaca API credentials
     app.state.ALPACA_API_KEY = config("ALPACA_API_KEY", default=None)
@@ -94,6 +161,8 @@ async def lifespan(app: FastAPI):
     app.state.PLAID_CLIENT_ID = config("PLAID_CLIENT_ID", default=None)
     app.state.PLAID_SECRET = config("PLAID_SECRET", default=None)
     app.state.PLAID_ENV = config("PLAID_ENV", default="sandbox")
+    env_val_end_config = os.getenv("ENVIRONMENT")
+    logger.info(f"LIFESPAN_ENV_CHECK (end of config calls): Actual ENVIRONMENT='{env_val_end_config}', PLAID_ENV_via_config='{app.state.PLAID_ENV}'")
     
     # Initialize conversation state tracking
     app.state.conversation_states = {}
@@ -693,8 +762,10 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         response = None
         
         # Log the full result in development mode for debugging
-        if os.environ.get("ENVIRONMENT") == "development":
-            logger.info(f"Full graph result: {json.dumps(result, default=str)}")
+        # Use COPILOT_ENVIRONMENT_NAME to determine if not in production
+        copilot_env_name_for_chat_debug = os.getenv("COPILOT_ENVIRONMENT_NAME", "unknown")
+        if copilot_env_name_for_chat_debug.lower() != "production":
+            logger.info(f"Full graph result (debug log in non-production env '{copilot_env_name_for_chat_debug}'): {json.dumps(result, default=str)}")
         
         if isinstance(result, dict):
             # Method 1: Try to find direct response field
@@ -789,7 +860,8 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         background_tasks.add_task(cleanup_old_sessions)
         
         # Return the response with more debugging info in development
-        if os.environ.get("ENVIRONMENT") == "development":
+        copilot_env_name_for_chat_return = os.getenv("COPILOT_ENVIRONMENT_NAME", "unknown")
+        if copilot_env_name_for_chat_return.lower() != "production":
             return JSONResponse({
                 "session_id": session_id,
                 "response": response,
@@ -2153,13 +2225,16 @@ async def get_redis_client():
     """Get a Redis client for caching."""
     try:
         import redis.asyncio as aioredis
-        redis_host = os.getenv("REDIS_HOST", "localhost")
-        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        
+        # Use canonical Redis host and port resolved at module import.
+        # REDIS_DB can still be fetched from env here or defaulted.
         redis_db = int(os.getenv("REDIS_DB", "0"))
         
+        logger.info(f"Attempting to connect to Redis (async) at canonical host: '{CANONICAL_REDIS_HOST}', port: {CANONICAL_REDIS_PORT}, db: {redis_db}")
+        
         client = aioredis.Redis(
-            host=redis_host,
-            port=redis_port,
+            host=CANONICAL_REDIS_HOST,
+            port=CANONICAL_REDIS_PORT,
             db=redis_db,
             decode_responses=True
         )
@@ -2177,148 +2252,152 @@ async def get_redis_client():
 # Add this WebSocket endpoint to proxy WebSocket connections to the WebSocket server
 @app.websocket("/ws/portfolio/{account_id}")
 async def websocket_proxy(websocket: WebSocket, account_id: str):
-    """
-    Proxy WebSocket connections to the dedicated WebSocket server.
+    await websocket.accept() # Accept the incoming WebSocket connection first
     
-    This allows frontend clients to connect to the API server on port 8000
-    while the actual WebSocket handling happens on the dedicated server on port 8001.
-    """
-    # Get WebSocket server URL from environment variable with better defaults
-    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
-    
-    # Handle both host:port format and just host format
-    if ":" in websocket_service_url:
-        websocket_host, websocket_port = websocket_service_url.split(":", 1)
-    else:
-        websocket_host = websocket_service_url
-        websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
-    
-    logger.info(f"WebSocket connection request for account {account_id}, connecting to {websocket_host}:{websocket_port}")
-    
-    # Track connection state
-    client_closed = False
-    
-    # Accept the connection from the client
-    try:
-        await websocket.accept()
-    except RuntimeError as e:
-        logger.error(f"Error accepting WebSocket connection: {e}")
-        return
-    
-    # Import websockets here to avoid startup issues if not available
-    import websockets
-    from websockets.exceptions import ConnectionClosed
-    
-    # Configure websocket connection parameters
-    connect_timeout = float(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5"))
-    ping_interval = float(os.getenv("WEBSOCKET_PING_INTERVAL", "30"))  # 30 seconds between pings
-    ping_timeout = float(os.getenv("WEBSOCKET_PING_TIMEOUT", "10"))    # 10 seconds to respond to a ping
-    close_timeout = float(os.getenv("WEBSOCKET_CLOSE_TIMEOUT", "5"))   # 5 seconds to perform the close handshake
-    max_size = int(os.getenv("WEBSOCKET_MAX_SIZE", "1048576"))         # 1MB maximum message size
-    
-    try:
-        target_ws_uri = f"ws://{websocket_host}:{websocket_port}/ws/portfolio/{account_id}"
-        logger.info(f"Connecting to WebSocket server at {target_ws_uri}")
+    # Use canonical WebSocket URL from app state
+    target_websocket_url = websocket.app.state.WEBSOCKET_SERVICE_URL
+    actual_custom_environment = os.getenv("ENVIRONMENT", "NOT_SET_CUSTOM") 
+    copilot_env_name = os.getenv("COPILOT_ENVIRONMENT_NAME", "NOT_SET_COPILOT") 
+
+    logger.info(f"[websocket_proxy] For account {account_id}: Starting proxy logic. "
+                f"Using canonical WEBSOCKET_SERVICE_URL='{target_websocket_url}'. "
+                f"Environment context: Custom ENVIRONMENT='{actual_custom_environment}', "
+                f"COPILOT_ENVIRONMENT_NAME='{copilot_env_name}'.")
+
+    # Use urlparse for robust URL extraction
+    parsed_url = urlparse(target_websocket_url)
+    websocket_host = parsed_url.hostname
+    websocket_port = parsed_url.port
+
+    if not websocket_host or not websocket_port:
+        # Log the error and attempt to re-parse if needed
+        logger.error(f"[websocket_proxy] Could not determine host or port from target_websocket_url: '{target_websocket_url}'")
         
+        if not parsed_url.scheme and ":" in target_websocket_url:
+            parts = target_websocket_url.split(":",1)
+            websocket_host = parts[0]
+            try:
+                websocket_port = int(parts[1])
+                logger.info(f"[websocket_proxy] Re-parsed simple host:port string to host='{websocket_host}', port={websocket_port}")
+            except ValueError:
+                logger.error(f"[websocket_proxy] Failed to parse port from '{parts[1]}'")
+                await websocket.close(code=1008, reason="Invalid WebSocket service URL format (port parsing failed)")
+                return
+        else:
+            logger.error(f"[websocket_proxy] Unrecoverable URL parsing failure - cannot proxy WebSocket connection")
+            await websocket.close(code=1008, reason="Invalid WebSocket service URL configuration")
+            return
+    
+    logger.info(f"[websocket_proxy] Attempting to proxy to host: '{websocket_host}', port: {websocket_port}")
+    
+    target_uri = f"ws://{websocket_host}:{websocket_port}/ws/portfolio/{account_id}"
+    logger.info(f"[websocket_proxy] Constructed target URI for connection: '{target_uri}'")
+
+    client_ws = None
+    client_closed = False
+    server_closed = False
+    
+    try:
         # Create reliable connection to internal WebSocket service
-        async with websockets.connect(
-            target_ws_uri,
-            ping_interval=ping_interval,
-            ping_timeout=ping_timeout,
-            close_timeout=close_timeout,
-            max_size=max_size,
-            open_timeout=connect_timeout,
-            # Disable compression as ALB doesn't support websocket compression
-            compression=None  
-        ) as ws_server:
-            # Set up bidirectional message forwarding
-            client_task = None
-            server_task = None
-            
-            # Forward client -> server messages
-            async def forward_client_to_server():
-                nonlocal client_closed
-                try:
-                    while True:
-                        try:
-                            # Receive message from client
-                            message = await websocket.receive_text()
-                            await ws_server.send(message)
-                        except Exception as e:
-                            if isinstance(e, ConnectionClosed):
-                                logger.info(f"Client connection closed for account {account_id}")
-                            else:
-                                logger.error(f"Error receiving from client: {e}")
-                            client_closed = True
-                            break
-                except Exception as e:
-                    logger.error(f"Error in client->server forwarding: {e}")
-                    client_closed = True
-            
-            # Forward server -> client messages
-            async def forward_server_to_client():
-                nonlocal client_closed
-                try:
-                    while True:
-                        try:
-                            # Receive message from WebSocket server
-                            message = await ws_server.recv()
-                            if not client_closed:
-                                await websocket.send_text(message)
-                        except Exception as e:
-                            if isinstance(e, ConnectionClosed):
-                                logger.info(f"Server connection closed for account {account_id}")
-                            else:
-                                logger.error(f"Error receiving from server: {e}")
-                            break
-                except Exception as e:
-                    logger.error(f"Error in server->client forwarding: {e}")
-            
-            # Start forwarding tasks
-            client_task = asyncio.create_task(forward_client_to_server())
-            server_task = asyncio.create_task(forward_server_to_client())
-            
-            # Wait for either task to complete
-            done, pending = await asyncio.wait(
-                [client_task, server_task],
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            
-            # Cancel remaining tasks
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-                
+        client_ws = await websockets.connect(
+            target_uri, # Use the correctly constructed target_uri
+            ping_interval=float(os.getenv("WEBSOCKET_PING_INTERVAL", "30")),
+            ping_timeout=float(os.getenv("WEBSOCKET_PING_TIMEOUT", "10")),
+            close_timeout=float(os.getenv("WEBSOCKET_CLOSE_TIMEOUT", "5")),
+            max_size=int(os.getenv("WEBSOCKET_MAX_SIZE", "1048576")),
+            open_timeout=float(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5")),
+            compression=None
+        )
+        
+        # Set up bidirectional message forwarding
+        client_task = None
+        server_task = None
+        
+        # Forward client -> server messages
+        async def forward_client_to_server():
+            nonlocal client_closed
+            try:
+                while True:
+                    try:
+                        # Receive message from client
+                        message = await websocket.receive_text()
+                        await client_ws.send(message)
+                    except Exception as e:
+                        if isinstance(e, ConnectionClosed):
+                            logger.info(f"Client connection closed for account {account_id}")
+                        else:
+                            logger.error(f"Error receiving from client: {e}")
+                        client_closed = True
+                        break
+            except Exception as e:
+                logger.error(f"Error in client->server forwarding: {e}")
+                client_closed = True
+        
+        # Forward server -> client messages
+        async def forward_server_to_client():
+            nonlocal client_closed
+            try:
+                while True:
+                    try:
+                        # Receive message from WebSocket server
+                        message = await client_ws.recv()
+                        if not client_closed:
+                            await websocket.send_text(message)
+                    except Exception as e:
+                        if isinstance(e, ConnectionClosed):
+                            logger.info(f"Server connection closed for account {account_id}")
+                        else:
+                            logger.error(f"Error receiving from server: {e}")
+                        break
+            except Exception as e:
+                logger.error(f"Error in server->client forwarding: {e}")
+        
+        # Start forwarding tasks
+        client_task = asyncio.create_task(forward_client_to_server())
+        server_task = asyncio.create_task(forward_server_to_client())
+        
+        # Wait for either task to complete
+        done, pending = await asyncio.wait(
+            [client_task, server_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # Cancel remaining tasks
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        
     except websockets.exceptions.WebSocketException as e:
-        logger.error(f"WebSocket connection error: {e}")
-        # Only try to send an error if the client connection is still open
+        logger.error(f"[websocket_proxy] Connection failed to target URI '{target_uri}': {e}")
         if not client_closed:
             try:
-                await websocket.send_json({
-                    "error": "WebSocket service connection failed",
-                    "detail": str(e)
-                })
-            except Exception:
-                pass
+                await websocket.close(code=1011, reason="Upstream connection error") # Internal server error
+            except Exception: pass # Ignore errors during close
     except Exception as e:
-        logger.error(f"Unexpected error in WebSocket proxy: {e}", exc_info=True)
+        logger.error(f"[websocket_proxy] Unexpected error during proxy for '{target_uri}': {e}", exc_info=True)
+        if not client_closed:
+            try:
+                await websocket.close(code=1011, reason="Internal proxy error")
+            except Exception: pass # Ignore errors during close
     finally:
         # Clean up client connection if not already closed
-        if not client_closed:
+        if client_ws and client_ws.open:
+             await client_ws.close()
+        if websocket.client_state != WebSocketState.DISCONNECTED and not client_closed:
             try:
                 await websocket.close()
             except Exception as e:
-                logger.error(f"Error closing client WebSocket: {e}")
+                logger.error(f"[websocket_proxy] Error closing client WebSocket connection: {e}")
 
 # Add this health endpoint for websocket proxy health checks
 @app.get("/ws/health")
 async def websocket_health_check():
     """Health check endpoint specifically for WebSocket proxy functionality."""
     # Get WebSocket service URL from environment variable
-    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "localhost:8001")
+    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "http://websocket-service.production.clera-api.internal:8001")
     
     # Split host and port if needed
     if ":" in websocket_service_url:
@@ -2355,6 +2434,186 @@ async def get_portfolio_activities(
         status_code=404,
         detail="Portfolio activities endpoint not yet implemented"
     )
+
+
+# Add an HTTP GET endpoint to handle WebSocket upgrade requests through ALB
+@app.get("/ws/portfolio/{account_id}")
+async def websocket_http_handler(request: Request, account_id: str):
+    """
+    Handle HTTP GET requests for WebSocket endpoints coming through ALB.
+    """
+    # Determine environment using Copilot's standard variable
+    copilot_env_name = os.getenv("COPILOT_ENVIRONMENT_NAME", "unknown")
+    custom_env_val = os.getenv("ENVIRONMENT", "unknown_custom") # For logging comparison
+    
+    # Use the canonical WebSocket service URL from app state
+    websocket_service_url_val = request.app.state.WEBSOCKET_SERVICE_URL
+    
+    is_production_by_copilot_env = copilot_env_name.lower() == "production"
+
+    logger.info(f"HTTP GET for WebSocket /ws/portfolio/{account_id}: "
+                f"COPILOT_ENVIRONMENT_NAME='{copilot_env_name}' (is_production_by_copilot_env={is_production_by_copilot_env}). "
+                f"Custom ENVIRONMENT='{custom_env_val}'. "
+                f"WEBSOCKET_SERVICE_URL in HTTP handler='{websocket_service_url_val}'. Returning 101.")
+
+    # For ALB, returning 101 is generally expected to trigger the upgrade attempt.
+    # The actual WebSocket connection will fail later if the proxy targets incorrectly.
+    
+    headers = {
+        "Connection": "Upgrade",
+        "Upgrade": "websocket",
+    }
+    
+    return Response(
+        status_code=status.HTTP_101_SWITCHING_PROTOCOLS,
+        headers=headers
+    )
+
+# Placeholder for get_redis_client - replace with actual implementation
+# This is a common pattern. If it's different, the code will need adjustment.
+# For instance, it might be `request.app.state.redis`
+import redis # Ensure redis is imported
+
+def get_sync_redis_client(): # Renamed from get_redis_client
+    # This is a simplified way; ideally, use a connection pool managed by the app lifecycle.
+    # Or, if it's already on `request.app.state.redis`, use that.
+    # Check existing code for how Redis is accessed.
+    # Use canonical Redis host and port resolved at module import.
+    # REDIS_DB can still be fetched from env here or defaulted.
+    db = int(os.getenv("REDIS_DB", "0"))
+    
+    logger.info(f"Creating Redis client (sync) with canonical host='{CANONICAL_REDIS_HOST}', port={CANONICAL_REDIS_PORT}, db: {db}")
+    return redis.Redis(host=CANONICAL_REDIS_HOST, port=CANONICAL_REDIS_PORT, db=db, decode_responses=True)
+
+# Create a new router for portfolio related endpoints if it doesn't exist
+# or add to an existing one.
+# router = APIRouter()
+
+# @router.get("/api/portfolio/sector-allocation", tags=["portfolio"])
+# Using app.get for now, assuming `app` is the FastAPI instance.
+# If you have a router setup, this should be router.get(...)
+
+# This endpoint should be added to your existing FastAPI application instance (`app`)
+# or an appropriate APIRouter. The following is a template for the endpoint function.
+# You'll need to integrate it into your existing `api_server.py` structure.
+
+@app.get("/api/portfolio/sector-allocation") # Or router.get if using APIRouter
+async def get_sector_allocation(request: Request, account_id: str = Query(..., description="The account ID")):
+    """
+    Get sector allocation for a specific account.
+    Combines the account position data with sector information from Redis.
+    """
+    try:
+        # Attempt to get Redis from app state first (common FastAPI pattern)
+        if hasattr(request.app.state, 'redis') and request.app.state.redis:
+            redis_client = request.app.state.redis
+        else:
+            # Fallback to direct connection (ensure this is configured for your environment)
+            # In a Docker environment, REDIS_HOST should be the service name (e.g., 'redis')
+            logger.info("Redis client not found in app state, attempting direct connection.")
+            redis_client = get_sync_redis_client() # Updated to use renamed sync version
+
+        # 1. Get positions for the account
+        positions_key = f'account_positions:{account_id}'
+        positions_data_json = redis_client.get(positions_key)
+        
+        if not positions_data_json:
+            # Return 404 if no positions found for the account, to distinguish from server errors
+            raise HTTPException(status_code=404, detail=f"No positions found for account ID: {account_id}")
+            
+        try:
+            positions = json.loads(positions_data_json)
+        except json.JSONDecodeError:
+            logger.error(f"Failed to decode JSON for positions for account {account_id} from key {positions_key}")
+            raise HTTPException(status_code=500, detail="Error reading position data.")
+
+        if not positions: # Empty list of positions
+            return {
+            'sectors': [],
+            'total_portfolio_value': 0,
+            'last_data_update_timestamp': redis_client.get('sector_data_last_updated') or datetime.utcnow().isoformat()
+        }
+
+        # 2. Get global sector data
+        sector_data_json = redis_client.get('sector_data')
+        if not sector_data_json:
+            # Sector data might not be available yet (e.g., first run of collector)
+            # In this case, we can return all allocations as 'Unknown' or an appropriate message.
+            logger.warning("'sector_data' key not found in Redis. Positions will be categorized as 'Unknown' sector.")
+            sector_lookup = {}
+        else:
+            try:
+                sector_lookup = json.loads(sector_data_json)
+            except json.JSONDecodeError:
+                logger.error("Failed to decode JSON for 'sector_data' from Redis.")
+                # Proceed with empty sector_lookup, categorizing all as Unknown
+                sector_lookup = {}
+
+        # 3. Calculate sector allocation
+        sector_values = {}
+        total_portfolio_value = 0
+
+        for position in positions:
+            try:
+                symbol = position.get('symbol')
+                # Ensure market_value is treated as a float
+                market_value_str = position.get('market_value', '0')
+                market_value = float(market_value_str) if market_value_str is not None else 0.0
+            except ValueError:
+                logger.warning(f"Could not parse market_value '{market_value_str}' for symbol {symbol} in account {account_id}. Skipping position.")
+                continue # Skip this position if market_value is invalid
+            except AttributeError: # If position is not a dict
+                logger.warning(f"Position item is not a dictionary: {position} for account {account_id}. Skipping item.")
+                continue
+
+            total_portfolio_value += market_value
+            
+            asset_sector = "Unknown"
+            if symbol and symbol in sector_lookup:
+                asset_sector = sector_lookup[symbol].get('sector', 'Unknown')
+            
+            sector_values[asset_sector] = sector_values.get(asset_sector, 0) + market_value
+            
+        # 4. Format response
+        sector_allocation_response = []
+        if total_portfolio_value > 0:
+            for sector, value in sector_values.items():
+                percentage = (value / total_portfolio_value) * 100
+                sector_allocation_response.append({
+                    'sector': sector,
+                    'value': round(value, 2),
+                    'percentage': round(percentage, 2)
+                })
+        
+        # Sort by value (descending) for consistent presentation
+        sector_allocation_response.sort(key=lambda x: x['value'], reverse=True)
+        
+        return {
+            'sectors': sector_allocation_response,
+            'total_portfolio_value': round(total_portfolio_value, 2),
+            'last_data_update_timestamp': redis_client.get('sector_data_last_updated') # Timestamp from collector
+        }
+        
+    except HTTPException: # Re-raise HTTPExceptions to preserve status code and detail
+        raise
+    except redis.exceptions.ConnectionError as e:
+        logger.error(f"Redis connection error in get_sector_allocation: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail="Could not connect to data store.")
+    except Exception as e:
+        logger.error(f"Unexpected error in get_sector_allocation for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+# Ensure to add this router to the main FastAPI app if `router` is used:
+# app.include_router(router)
+
+# Add logging import if not present
+import logging
+import os # ensure os is imported for get_redis_client
+from datetime import datetime # ensure datetime is imported for fallback timestamp
+logger = logging.getLogger(__name__) # Or use existing logger from the file
+
+# If `app` is not defined here, this code should be placed where `app` (FastAPI instance) is accessible.
+# For example, inside a function that creates the app, or in a file that defines routes for a specific module.
 
 if __name__ == "__main__":
     import uvicorn

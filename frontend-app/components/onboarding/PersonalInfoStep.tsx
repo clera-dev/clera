@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { OnboardingData, FundingSource } from "./OnboardingTypes";
+import { InfoIcon } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface PersonalInfoStepProps {
   data: OnboardingData;
@@ -13,6 +20,16 @@ interface PersonalInfoStepProps {
   onContinue: () => void;
   onBack: () => void;
 }
+
+// Descriptions for each funding source
+const fundingSourceDescriptions: Record<FundingSource, string> = {
+  [FundingSource.EMPLOYMENT_INCOME]: "Money earned from your job, salary, wages, or employment compensation",
+  [FundingSource.INVESTMENTS]: "Money from stocks, bonds, mutual funds, or other financial investment returns",
+  [FundingSource.INHERITANCE]: "Money or assets received from someone who has passed away",
+  [FundingSource.BUSINESS_INCOME]: "Money earned from a business you own or operate, including self-employment income",
+  [FundingSource.SAVINGS]: "Money accumulated from past income that has been set aside",
+  [FundingSource.FAMILY]: "Money received as a gift or support from family members",
+};
 
 export default function PersonalInfoStep({ 
   data, 
@@ -158,27 +175,41 @@ export default function PersonalInfoStep({
         </div>
 
         <div>
-          <Label className="mb-2 block">Funding Sources (select all that apply)</Label>
+          <div className="flex items-center mb-2">
+            <Label>Funding Sources (select all that apply)</Label>
+          </div>
           <div className="space-y-2">
-            {Object.values(FundingSource).map((source) => (
-              <div key={source} className="flex items-center space-x-2">
-                <Checkbox 
-                  id={`source-${source}`}
-                  checked={data.fundingSource.includes(source)}
-                  onCheckedChange={(checked) => 
-                    handleFundingSourceChange(source, checked as boolean)
-                  }
-                />
-                <Label 
-                  htmlFor={`source-${source}`}
-                  className="font-normal cursor-pointer"
-                >
-                  {source.split('_').map(word => 
-                    word.charAt(0).toUpperCase() + word.slice(1)
-                  ).join(' ')}
-                </Label>
-              </div>
-            ))}
+            <TooltipProvider>
+              {Object.values(FundingSource).map((source) => (
+                <div key={source} className="flex items-center space-x-2">
+                  <Checkbox 
+                    id={`source-${source}`}
+                    checked={data.fundingSource.includes(source)}
+                    onCheckedChange={(checked) => 
+                      handleFundingSourceChange(source, checked as boolean)
+                    }
+                  />
+                  <Label 
+                    htmlFor={`source-${source}`}
+                    className="font-normal cursor-pointer"
+                  >
+                    {source.split('_').map(word => 
+                      word.charAt(0).toUpperCase() + word.slice(1)
+                    ).join(' ')}
+                  </Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <InfoIcon 
+                        className="h-4 w-4 opacity-70" 
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-[250px]">
+                      {fundingSourceDescriptions[source]}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              ))}
+            </TooltipProvider>
           </div>
           {errors.fundingSource && (
             <p className="text-red-500 text-sm mt-1">{errors.fundingSource}</p>

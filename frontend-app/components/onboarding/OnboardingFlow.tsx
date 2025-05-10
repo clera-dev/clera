@@ -199,7 +199,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           <ContactInfoStep 
             data={onboardingData} 
             onUpdate={updateData} 
-            onContinue={nextStep} 
+            onContinue={handleStepCompletion} 
           />
         );
       case "personal":
@@ -207,7 +207,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           <PersonalInfoStep 
             data={onboardingData} 
             onUpdate={updateData} 
-            onContinue={nextStep}
+            onContinue={handleStepCompletion} 
             onBack={prevStep}
           />
         );
@@ -216,7 +216,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           <DisclosuresStep 
             data={onboardingData} 
             onUpdate={updateData} 
-            onContinue={nextStep}
+            onContinue={handleStepCompletion} 
             onBack={prevStep}
           />
         );
@@ -225,19 +225,19 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           <AgreementsStep 
             data={onboardingData} 
             onUpdate={updateData} 
-            onContinue={submitOnboardingData}
+            onContinue={handleStepCompletion} 
             onBack={prevStep}
+            isSubmitting={submitting}
           />
         );
       case "success":
         return (
           <SubmissionSuccessStep 
-            data={onboardingData}
             accountCreated={accountCreated}
-            errorMessage={submissionError || undefined}
             accountExists={accountExists}
-            onBack={() => setCurrentStep("agreements")}
+            error={submissionError} 
             onReset={resetOnboarding}
+            onComplete={navigateAfterOnboarding}
           />
         );
       default:
@@ -245,29 +245,41 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
     }
   };
 
+  // Calculate progress percentage
+  const calculateProgress = () => {
+    const currentStepIndex = stepToIndex[currentStep];
+    
+    // Custom calculation for the success step to show 100%
+    if (currentStep === "success") {
+      return 100;
+    }
+    
+    // For other steps, calculate percentage based on step index
+    return Math.round((currentStepIndex / (totalSteps - 1)) * 100);
+  };
+
   return (
-    <div className="w-full">
-      {stepToIndex[currentStep] > 0 && stepToIndex[currentStep] < totalSteps && (
-        <ProgressBar 
-          currentStep={stepToIndex[currentStep]} 
-          totalSteps={totalSteps - 1} 
-        />
-      )}
-      
-      {submissionError && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          <p>{submissionError}</p>
+    <div className="w-full max-w-2xl mx-auto pt-5">
+      {/* Progress bar - don't show for welcome or success pages */}
+      {currentStep !== "welcome" && currentStep !== "success" && (
+        <div className="mb-6">
+          <ProgressBar 
+            currentStep={stepToIndex[currentStep]} 
+            totalSteps={totalSteps}
+            stepNames={[
+              "Welcome",
+              "Contact Info",
+              "Personal Info",
+              "Disclosures",
+              "Agreements"
+            ]}
+            percentComplete={calculateProgress()}
+          />
         </div>
       )}
       
-      {submitting ? (
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          <p className="mt-4 text-muted-foreground">Submitting your application...</p>
-        </div>
-      ) : (
-        renderCurrentStep()
-      )}
+      {/* Render the current step */}
+      {renderCurrentStep()}
     </div>
   );
 } 

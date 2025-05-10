@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { ArrowUpRight, ArrowDownRight, DollarSign, BarChart2, Percent, RefreshCw, AlertCircle } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, DollarSign, BarChart2, Percent, RefreshCw, AlertCircle, LockIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import Link from 'next/link';
 
 import PortfolioHistoryChart from '@/components/portfolio/PortfolioHistoryChart';
 import RiskDiversificationScores from '@/components/portfolio/RiskDiversificationScores';
@@ -147,6 +148,7 @@ export default function PortfolioPage() {
   const [selectedTimeRange, setSelectedTimeRange] = useState<string>('1Y');
   const [assetDetailsMap, setAssetDetailsMap] = useState<Record<string, AssetDetails>>({});
   const activitiesEndpointAvailable = React.useRef<boolean | null>(null);
+  const [hasTradeHistory, setHasTradeHistory] = useState(false);
 
   const fetchData = async (url: string, options: RequestInit = {}): Promise<any> => {
     try {
@@ -269,37 +271,68 @@ export default function PortfolioPage() {
             const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}`;
             const allTimeUrl = `/api/portfolio/history?accountId=${accountId}&period=MAX`;
             
-            const [positionsData, ordersData, analyticsData, allTimeData] = await Promise.all([
-                fetchData(positionsUrl),
-                fetchData(ordersUrl),
-                fetchData(analyticsUrl),
-                fetchData(allTimeUrl),
+            // Use Promise.allSettled instead of Promise.all to handle partial failures
+            const [positionsResult, ordersResult, analyticsResult, allTimeResult] = await Promise.allSettled([
+                fetchData(positionsUrl).catch(err => { 
+                  console.error("Positions fetch failed:", err); 
+                  return []; 
+                }),
+                fetchData(ordersUrl).catch(err => { 
+                  console.error("Orders fetch failed:", err); 
+                  return []; 
+                }),
+                fetchData(analyticsUrl).catch(err => { 
+                  console.error("Analytics fetch failed:", err); 
+                  return null; 
+                }),
+                fetchData(allTimeUrl).catch(err => { 
+                  console.error("History fetch failed:", err); 
+                  return null; 
+                }),
             ]);
 
             if (!isMounted) return;
 
-            setAnalytics(analyticsData);
-            setOrders(ordersData);
-            setAllTimeHistory(allTimeData);
+            // Check if we have trade history - this determines if we're in "new account" mode
+            const positionsData = positionsResult.status === 'fulfilled' ? positionsResult.value : [];
+            const ordersData = ordersResult.status === 'fulfilled' ? ordersResult.value : [];
+            
+            // If we have positions or completed orders, then user has trade history
+            setHasTradeHistory(
+              (Array.isArray(positionsData) && positionsData.length > 0) || 
+              (Array.isArray(ordersData) && ordersData.some(order => order.status === 'filled'))
+            );
 
-            const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);
-            const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
-                const details = await fetchAssetDetails(pos.symbol);
-                const marketValue = safeParseFloat(pos.market_value);
-                const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
-                return {
-                    ...pos,
-                    name: details?.name || pos.symbol,
-                    weight: weight,
-                };
-            }));
-            if (isMounted) setPositions(enrichedPositions);
+            if (positionsResult.status === 'fulfilled') {
+              const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);
+              if (Array.isArray(positionsData) && positionsData.length > 0) {
+                const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
+                    const details = await fetchAssetDetails(pos.symbol);
+                    const marketValue = safeParseFloat(pos.market_value);
+                    const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
+                    return {
+                        ...pos,
+                        name: details?.name || pos.symbol,
+                        weight: weight,
+                    };
+                }));
+                if (isMounted) setPositions(enrichedPositions);
+              } else {
+                setPositions([]);
+              }
+            }
 
-            // Don't set a default history here as it will be loaded by the useEffect 
-            // that depends on selectedTimeRange
-            // const initialHistoryUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
-            // const initialHistory = await fetchData(initialHistoryUrl);
-            // if (isMounted) setPortfolioHistory(initialHistory);
+            if (analyticsResult.status === 'fulfilled' && analyticsResult.value) {
+              setAnalytics(analyticsResult.value);
+            }
+            
+            if (ordersResult.status === 'fulfilled') {
+              setOrders(ordersResult.value || []);
+            }
+            
+            if (allTimeResult.status === 'fulfilled' && allTimeResult.value) {
+              setAllTimeHistory(allTimeResult.value);
+            }
 
             // Only try to load activities if we haven't determined its availability yet or if it's available
             if (activitiesEndpointAvailable.current !== false) {
@@ -338,7 +371,11 @@ export default function PortfolioPage() {
             }
 
         } catch (err: any) {
-            if (isMounted) setError(`Failed to load initial portfolio data: ${err.message}`);
+            if (isMounted) {
+              console.error("Error loading portfolio data:", err);
+              // We don't set error anymore, since we're handling partial failures gracefully
+              // setError(`Failed to load initial portfolio data: ${err.message}`);
+            }
         } finally {
              if (isMounted) setIsLoading(false);
         }
@@ -374,7 +411,10 @@ export default function PortfolioPage() {
             const historyData = await fetchData(historyUrl);
             if (isMounted) setPortfolioHistory(historyData);
         } catch (err: any) {
-            if (isMounted) setError(`Failed to load history for ${selectedTimeRange}: ${err.message}`);
+            if (isMounted) {
+              console.warn(`Failed to load history for ${selectedTimeRange}:`, err);
+              // setError(`Failed to load history for ${selectedTimeRange}: ${err.message}`);
+            }
         }
      };
 
@@ -425,7 +465,7 @@ export default function PortfolioPage() {
     );
   }
 
-  if (error && !isLoading) {
+  if (error && !isLoading && !accountId) {
     return (
      <div className="p-6 max-w-7xl mx-auto">
        <Alert variant="destructive">
@@ -437,94 +477,103 @@ export default function PortfolioPage() {
    );
   }
 
+  // Define the overlay style for locked sections
+  const lockedSectionStyle = !hasTradeHistory ? {
+    position: 'relative',
+    filter: 'blur(2px)',
+    opacity: 0.6,
+    pointerEvents: 'none'
+  } as React.CSSProperties : undefined;
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 dark bg-background text-foreground">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Your Portfolio</h1>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={() => {
-            if (accountId) {
-              setIsLoading(true);
-              const loadInitialStaticData = async () => {
-                try {
-                  const positionsUrl = `/api/portfolio/positions?accountId=${accountId}`;
-                  const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
-                  const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}`;
-                  
-                  const [positionsData, ordersData, analyticsData] = await Promise.all([
-                    fetchData(positionsUrl),
-                    fetchData(ordersUrl),
-                    fetchData(analyticsUrl),
-                  ]);
-                  
-                  setAnalytics(analyticsData);
-                  setOrders(ordersData);
-                  
-                  // Only try to load activities if previously determined to be available
-                  if (activitiesEndpointAvailable.current === true) {
-                    try {
-                      const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100`;
-                      const activitiesData = await fetchData(activitiesUrl);
-                      
-                      // If we have activities data, combine it with orders for a complete transaction history
-                      if (activitiesData && Array.isArray(activitiesData) && activitiesData.length > 0) {
-                        // Merge activities with orders for a complete transaction history
-                        const combinedTransactions = [...ordersData, ...activitiesData];
-                        // Sort by date (newest first)
-                        combinedTransactions.sort((a, b) => {
-                          const dateA = new Date(a.created_at || a.date || 0);
-                          const dateB = new Date(b.created_at || b.date || 0);
-                          return dateB.getTime() - dateA.getTime();
-                        });
-                        setOrders(combinedTransactions);
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => {
+              if (accountId) {
+                setIsLoading(true);
+                const loadInitialStaticData = async () => {
+                  try {
+                    const positionsUrl = `/api/portfolio/positions?accountId=${accountId}`;
+                    const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
+                    const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}`;
+                    
+                    const [positionsData, ordersData, analyticsData] = await Promise.all([
+                      fetchData(positionsUrl),
+                      fetchData(ordersUrl),
+                      fetchData(analyticsUrl),
+                    ]);
+                    
+                    setAnalytics(analyticsData);
+                    setOrders(ordersData);
+                    
+                    // Only try to load activities if previously determined to be available
+                    if (activitiesEndpointAvailable.current === true) {
+                      try {
+                        const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100`;
+                        const activitiesData = await fetchData(activitiesUrl);
+                        
+                        // If we have activities data, combine it with orders for a complete transaction history
+                        if (activitiesData && Array.isArray(activitiesData) && activitiesData.length > 0) {
+                          // Merge activities with orders for a complete transaction history
+                          const combinedTransactions = [...ordersData, ...activitiesData];
+                          // Sort by date (newest first)
+                          combinedTransactions.sort((a, b) => {
+                            const dateA = new Date(a.created_at || a.date || 0);
+                            const dateB = new Date(b.created_at || b.date || 0);
+                            return dateB.getTime() - dateA.getTime();
+                          });
+                          setOrders(combinedTransactions);
+                        }
+                      } catch (error) {
+                        console.warn("Could not fetch activities, using orders only:", error);
+                        // Update our knowledge about the endpoint
+                        activitiesEndpointAvailable.current = false;
                       }
-                    } catch (error) {
-                      console.warn("Could not fetch activities, using orders only:", error);
-                      // Update our knowledge about the endpoint
-                      activitiesEndpointAvailable.current = false;
                     }
+                    
+                    const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);
+                    
+                    const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
+                      const details = await fetchAssetDetails(pos.symbol);
+                      const marketValue = safeParseFloat(pos.market_value);
+                      
+                      const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
+                      
+                      return {
+                        ...pos,
+                        name: details?.name || pos.symbol,
+                        weight: weight,
+                      };
+                    }));
+                    
+                    setPositions(enrichedPositions);
+                    
+                    // Also refresh the history with the current selected time range
+                    const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
+                    const historyData = await fetchData(historyUrl);
+                    setPortfolioHistory(historyData);
+                    
+                  } catch (err: any) {
+                    console.error("Error refreshing portfolio data:", err);
+                  } finally {
+                    setIsLoading(false);
                   }
-                  
-                  const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);
-                  
-                  const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
-                    const details = await fetchAssetDetails(pos.symbol);
-                    const marketValue = safeParseFloat(pos.market_value);
-                    
-                    const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
-                    
-                    return {
-                      ...pos,
-                      name: details?.name || pos.symbol,
-                      weight: weight,
-                    };
-                  }));
-                  
-                  setPositions(enrichedPositions);
-                  
-                  // Also refresh the history with the current selected time range
-                  const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
-                  const historyData = await fetchData(historyUrl);
-                  setPortfolioHistory(historyData);
-                  
-                } catch (err: any) {
-                  setError(`Failed to refresh portfolio data: ${err.message}`);
-                } finally {
-                  setIsLoading(false);
-                }
-              };
-              
-              loadInitialStaticData();
-            }
-          }}
-          className="mr-2"
-        >
-          <RefreshCw className="h-4 w-4 mr-1" />
-          Refresh
-        </Button>
-        <AddFundsButton accountId={accountId} />
+                };
+                
+                loadInitialStaticData();
+              }
+            }}
+          >
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Refresh
+          </Button>
+          <AddFundsButton accountId={accountId} />
+        </div>
       </div>
       
       {/* Real-time Portfolio Value with integrated chart */}
@@ -549,10 +598,26 @@ export default function PortfolioPage() {
                 />
               </div>
             ) : (
-              <p className="text-muted-foreground text-center p-4 mt-6">Could not load portfolio history. {error}</p>
+              <p className="text-muted-foreground text-center p-4 mt-6">Could not load portfolio history.</p>
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Notification for new users */}
+      {!hasTradeHistory && accountId && (
+        <Alert variant="default" className="bg-primary/10 border-primary text-foreground">
+          <AlertTitle className="flex items-center gap-2 text-lg">
+            <LockIcon size={18} className="text-primary" /> 
+            Your portfolio analysis is waiting for your first trade
+          </AlertTitle>
+          <AlertDescription className="mt-2">
+            <p className="mb-3">Your portfolio page will populate after your first trade. If you've executed a trade already, please wait for the trade to settle.</p>
+            <Link href="/invest">
+              <Button className="mt-2">Make your first trade</Button>
+            </Link>
+          </AlertDescription>
+        </Alert>
       )}
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -587,69 +652,74 @@ export default function PortfolioPage() {
              ) : isLoading && positions.length === 0 ? (
                  <Skeleton className="h-72 w-full" />
              ) : positions.length > 0 ? (
-                 <AssetAllocationPie positions={positions} />
+                 <AssetAllocationPie positions={positions} accountId={accountId} />
              ) : (
                 <p className="text-muted-foreground p-6 text-center">Could not load position data. {error}</p>
              )}
            </CardContent>
         </Card>
+
       </div>
 
-      <Card className="bg-card shadow-lg">
-         <CardHeader>
-             <CardTitle className="text-xl">Investment Growth Projection</CardTitle>
-         </CardHeader>
-         <CardContent>
-            {isLoading && positions.length === 0 ? (
-                 <Skeleton className="h-40 w-full" />
-            ) : (
-                 <WhatIfCalculator currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)} />
-            )}
-         </CardContent>
-      </Card>
-
-      <Tabs defaultValue="holdings" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
-          <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
-          <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="holdings">
-          <Card className="bg-card shadow-lg mt-4">
-            <CardContent className="p-0">
-              {isLoading && positions.length === 0 && !error ? (
-                <Skeleton className="h-64 w-full rounded-t-none" />
-              ) : positions.length > 0 ? (
-                <HoldingsTable positions={positions} />
+      <div style={lockedSectionStyle}>
+        <Card className="bg-card shadow-lg">
+           <CardHeader>
+               <CardTitle className="text-xl">Investment Growth Projection</CardTitle>
+           </CardHeader>
+           <CardContent>
+              {isLoading && positions.length === 0 ? (
+                   <Skeleton className="h-40 w-full" />
               ) : (
-                 <p className="text-muted-foreground p-6 text-center">
-                    {error ? `Error loading holdings: ${error}` : "You currently have no holdings."}
-                 </p>
+                   <WhatIfCalculator currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)} />
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+           </CardContent>
+        </Card>
+      </div>
 
-        <TabsContent value="transactions">
-           <Card className="bg-card shadow-lg mt-4">
-             <CardContent className="p-0">
-               {(isLoading && orders.length === 0 && !error) ? (
-                 <Skeleton className="h-64 w-full rounded-t-none" />
-               ) : orders.length > 0 ? (
-                 <TransactionsTable
-                    initialOrders={orders}
-                    accountId={accountId}
-                    fetchData={fetchData}
-                 />
+      <div style={lockedSectionStyle}>
+        <Tabs defaultValue="holdings" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
+            <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
+            <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="holdings">
+            <Card className="bg-card shadow-lg mt-4">
+              <CardContent className="p-0">
+                {isLoading && positions.length === 0 && !error ? (
+                  <Skeleton className="h-64 w-full rounded-t-none" />
+                ) : positions.length > 0 ? (
+                  <HoldingsTable positions={positions} />
                 ) : (
-                 <p className="text-muted-foreground p-6 text-center">
-                    {error ? `Error loading transactions: ${error}` : "No transactions found."}
-                 </p>
+                   <p className="text-muted-foreground p-6 text-center">
+                      Waiting for your first trade to display holdings.
+                   </p>
                 )}
-             </CardContent>
-           </Card>
-        </TabsContent>
-      </Tabs>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="transactions">
+             <Card className="bg-card shadow-lg mt-4">
+               <CardContent className="p-0">
+                 {(isLoading && orders.length === 0 && !error) ? (
+                   <Skeleton className="h-64 w-full rounded-t-none" />
+                 ) : orders.length > 0 ? (
+                   <TransactionsTable
+                      initialOrders={orders}
+                      accountId={accountId}
+                      fetchData={fetchData}
+                   />
+                  ) : (
+                   <p className="text-muted-foreground p-6 text-center">
+                      Waiting for your first transaction.
+                   </p>
+                  )}
+               </CardContent>
+             </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 } 

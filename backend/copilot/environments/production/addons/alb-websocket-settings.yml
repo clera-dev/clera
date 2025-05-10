@@ -1,0 +1,148 @@
+Parameters:
+  App:
+    Type: String
+  Env:
+    Type: String
+
+Resources:
+  # Create a CloudFormation Custom Resource to update the ALB attributes
+  UpdateLoadBalancerSettings:
+    Type: Custom::UpdateLoadBalancerSettings
+    Properties:
+      ServiceToken: !GetAtt UpdateLoadBalancerFunction.Arn
+      LoadBalancerArn:
+        Fn::ImportValue:
+          !Sub '${App}-${Env}-PublicLoadBalancerArn'
+      IdleTimeout: 3600  # 1 hour idle timeout for WebSockets
+      DropInvalidHeaders: false  # Required for WebSockets
+
+  # Lambda function to update the load balancer attributes
+  UpdateLoadBalancerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt UpdateLoadBalancerFunctionRole.Arn
+      Runtime: nodejs16.x
+      Timeout: 300
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk');
+          const response = require('./cfn-response');
+          
+          exports.handler = (event, context) => {
+            console.log('Received event:', JSON.stringify(event, null, 2));
+            
+            if (event.RequestType === 'Delete') {
+              // Skip on delete and just send success
+              return response.send(event, context, response.SUCCESS);
+            }
+            
+            const elbv2 = new AWS.ELBv2();
+            const params = {
+              LoadBalancerArn: event.ResourceProperties.LoadBalancerArn,
+              Attributes: [
+                {
+                  Key: 'idle_timeout.timeout_seconds',
+                  Value: event.ResourceProperties.IdleTimeout.toString()
+                },
+                {
+                  Key: 'routing.http.drop_invalid_header_fields.enabled',
+                  Value: event.ResourceProperties.DropInvalidHeaders.toString()
+                }
+              ]
+            };
+            
+            console.log('Updating load balancer attributes with params:', JSON.stringify(params, null, 2));
+            
+            elbv2.modifyLoadBalancerAttributes(params).promise()
+              .then(() => {
+                console.log('Successfully updated load balancer attributes');
+                response.send(event, context, response.SUCCESS);
+              })
+              .catch(err => {
+                console.error('Error updating load balancer attributes:', err);
+                response.send(event, context, response.FAILED);
+              });
+          };
+
+  # IAM Role for the Lambda function
+  UpdateLoadBalancerFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: UpdateLoadBalancerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:ModifyLoadBalancerAttributes
+                  - elasticloadbalancing:DescribeLoadBalancers
+                Resource: '*'
+
+  # Lambda function response code dependency
+  UpdateLoadBalancerFunctionResponseCode:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - nodejs16.x
+      Content:
+        ZipFile: |
+          exports.SUCCESS = 'SUCCESS';
+          exports.FAILED = 'FAILED';
+          
+          exports.send = function(event, context, responseStatus, responseData, physicalResourceId, noEcho) {
+            responseData = responseData || {};
+            physicalResourceId = physicalResourceId || context.logStreamName;
+            
+            const responseBody = JSON.stringify({
+              Status: responseStatus,
+              Reason: 'See the details in CloudWatch Log Stream: ' + context.logStreamName,
+              PhysicalResourceId: physicalResourceId,
+              StackId: event.StackId,
+              RequestId: event.RequestId,
+              LogicalResourceId: event.LogicalResourceId,
+              NoEcho: noEcho || false,
+              Data: responseData
+            });
+            
+            console.log('Response body:\n', responseBody);
+            
+            const https = require('https');
+            const url = require('url');
+            
+            const parsedUrl = url.parse(event.ResponseURL);
+            const options = {
+              hostname: parsedUrl.hostname,
+              port: 443,
+              path: parsedUrl.path,
+              method: 'PUT',
+              headers: {
+                'content-type': '',
+                'content-length': responseBody.length
+              }
+            };
+            
+            const request = https.request(options, function(response) {
+              console.log('Status code: ' + response.statusCode);
+              console.log('Status message: ' + response.statusMessage);
+              context.done();
+            });
+            
+            request.on('error', function(error) {
+              console.log('send() error:\n', error);
+              context.done();
+            });
+            
+            request.write(responseBody);
+            request.end();
+          }; 

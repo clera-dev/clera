@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     PieChart,
     Pie,
@@ -11,7 +11,20 @@ import {
 } from 'recharts';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CardDescription } from "@/components/ui/card";
+import SectorAllocationPie from './SectorAllocationPie';
 import { Skeleton } from "@/components/ui/skeleton";
+
+// Define the structure for the fetched sector data
+interface SectorAllocationEntry {
+  sector: string;
+  value: number;
+  percentage: number;
+}
+interface SectorAllocationData {
+  sectors: SectorAllocationEntry[];
+  total_portfolio_value: number;
+  last_data_update_timestamp?: string;
+}
 
 // Assuming PositionData interface is defined in parent or a shared types file
 // We only need a subset for this component
@@ -23,8 +36,9 @@ interface PositionDataForPie {
     // industry?: string | null;
 }
 
-interface AssetAllocationPieProps {
+export interface AssetAllocationPieProps {
     positions: PositionDataForPie[];
+    accountId: string | null;
 }
 
 // Define color palettes (adjust as needed)
@@ -50,103 +64,106 @@ const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
         return (
-            <div className="rounded-lg border bg-background p-2 shadow-sm text-sm">
-                <p className="font-semibold">{data.name}</p>
-                <p className="text-muted-foreground">{`${data.value.toFixed(2)}%`}</p>
+            <div className="rounded-lg border bg-background p-2 shadow-sm text-sm dark:border-slate-700">
+                <p className="font-semibold text-foreground">{data.name}</p>
+                <p className="text-muted-foreground">{`${data.value.toFixed(2)}% (${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.rawValue)})`}</p>
             </div>
         );
     }
     return null;
 };
 
-const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions }) => {
-    const [viewType, setViewType] = useState<'assetClass' | 'industry'>('assetClass');
+const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId }) => {
+    const [viewType, setViewType] = useState<'assetClass' | 'sector'>('assetClass');
+    
+    // State for sector allocation data
+    const [sectorData, setSectorData] = useState<SectorAllocationData | null>(null);
+    const [isSectorLoading, setIsSectorLoading] = useState<boolean>(false);
+    const [sectorError, setSectorError] = useState<string | null>(null);
 
-    const allocationData = useMemo(() => {
+    // Fetch sector data when the sector tab is active and accountId is available
+    useEffect(() => {
+        if (viewType === 'sector' && accountId && !sectorData && !isSectorLoading) {
+            const fetchSectorData = async () => {
+                setIsSectorLoading(true);
+                setSectorError(null);
+                try {
+                    const response = await fetch(`/api/portfolio/sector-allocation?account_id=${accountId}`);
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ detail: "Failed to fetch sector allocation data." }));
+                        throw new Error(errorData.detail || `HTTP error ${response.status}`);
+                    }
+                    const data: SectorAllocationData = await response.json();
+                    setSectorData(data);
+                } catch (err: any) {
+                    console.error('Error fetching sector allocation data:', err);
+                    setSectorError(err.message || 'Could not load sector allocation data.');
+                } finally {
+                    setIsSectorLoading(false);
+                }
+            };
+            fetchSectorData();
+        }
+        // No explicit cleanup needed, fetch is triggered by state change
+    }, [viewType, accountId, sectorData, isSectorLoading]); // Re-run if viewType or accountId changes, or if data hasn't been loaded yet
+
+    const allocationDataByClass = useMemo(() => {
         const totalValue = positions.reduce((sum, pos) => sum + safeParseFloat(pos.market_value), 0);
         if (totalValue === 0) return [];
 
         const groupedData: Record<string, number> = {};
-
-        if (viewType === 'assetClass') {
-            positions.forEach(pos => {
-                const key = pos.asset_class || 'other';
-                const value = safeParseFloat(pos.market_value);
-                groupedData[key] = (groupedData[key] || 0) + value;
-            });
-        } else {
-             // --- INDUSTRY LOGIC PLACEHOLDER --- 
-             // TODO: Replace this when industry data is available on PositionDataForPie
-             // Example structure:
-             // positions.forEach(pos => {
-             //     const key = pos.industry || 'Unclassified';
-             //     const value = safeParseFloat(pos.market_value);
-             //     groupedData[key] = (groupedData[key] || 0) + value;
-             // });
-             // For now, just show asset class again as a fallback
              positions.forEach(pos => {
                 const key = pos.asset_class || 'other';
                 const value = safeParseFloat(pos.market_value);
                 groupedData[key] = (groupedData[key] || 0) + value;
             });
-             // --- END PLACEHOLDER --- 
-        }
 
         return Object.entries(groupedData).map(([name, value]) => ({
-            name: name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), // Format name (e.g., us_equity -> Us Equity)
-            value: (value / totalValue) * 100, // Calculate percentage
+            name: name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+            value: (value / totalValue) * 100,
             rawValue: value,
-        })).sort((a, b) => b.value - a.value); // Sort descending by value
+        })).sort((a, b) => b.rawValue - a.rawValue);
 
-    }, [positions, viewType]);
+    }, [positions]);
 
-    const hasIndustryData = false; // TODO: Set this based on actual data availability
-
-    if (positions.length === 0) {
-        return <CardDescription>No position data available for allocation chart.</CardDescription>;
-    }
-
-    const chartColors = viewType === 'assetClass' ? ASSET_CLASS_COLORS : {}; // TODO: Use INDUSTRY_COLORS when available
-    const colorKeys = Object.keys(chartColors);
-
-    return (
-        <div>
-            <Tabs defaultValue="assetClass" value={viewType} onValueChange={(value) => setViewType(value as any)} className="w-full mb-4">
-                <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
-                     <TabsTrigger value="assetClass" className="py-1 data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs">By Asset Class</TabsTrigger>
-                     {/* Disable Industry tab if no data */} 
-                     <TabsTrigger value="industry" disabled={!hasIndustryData} className="py-1 data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs">
-                         By Industry { !hasIndustryData && "(N/A)"}
-                     </TabsTrigger>
-                </TabsList>
-            </Tabs>
-
-            {allocationData.length === 0 && !hasIndustryData && viewType === 'industry' && (
-                 <CardDescription>Industry data is not yet available for your holdings.</CardDescription>
-            )}
-            {allocationData.length === 0 && viewType === 'assetClass' && (
-                 <CardDescription>Could not calculate asset class allocation.</CardDescription>
-            )}
-
-            {allocationData.length > 0 && (
-                 <div style={{ width: '100%', height: 250 }}>
+    // Conditional rendering based on viewType
+    const renderContent = () => {
+        if (viewType === 'assetClass') {
+             if (positions.length === 0) {
+                 return (
+                     <div className="h-[280px] flex items-center justify-center">
+                         <CardDescription className="text-center p-4">No position data available.</CardDescription>
+                     </div>
+                 );
+             }
+            if (allocationDataByClass.length === 0) {
+                return (
+                    <div className="h-[280px] flex items-center justify-center">
+                         <CardDescription className="text-center p-4">Could not calculate asset class allocation.</CardDescription>
+                     </div>
+                );
+            }
+            // Asset Class chart already wrapped in div with height: 280
+            return (
+                <div style={{ width: '100%', height: 280 }}> 
                     <ResponsiveContainer>
                         <PieChart>
                             <Pie
-                                data={allocationData}
+                                data={allocationDataByClass}
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
-                                // label={renderCustomizedLabel} // Optional: Add labels on slices
-                                outerRadius={80}
-                                innerRadius={40} // Make it a donut chart
+                                outerRadius={85}
+                                innerRadius={45}
                                 fill="#8884d8"
                                 dataKey="value"
-                                stroke="hsl(var(--background))" // Add stroke for separation
+                                stroke="hsl(var(--card))"
                                 strokeWidth={2}
+                                paddingAngle={1}
+                                isAnimationActive={true} // Ensure animation is enabled
                             >
-                                {allocationData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={chartColors[entry.name.toLowerCase().replace(/ /g, '_')] || ASSET_CLASS_COLORS['other']} />
+                                {allocationDataByClass.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={ASSET_CLASS_COLORS[entry.name.toLowerCase().replace(/ /g, '_')] || ASSET_CLASS_COLORS['other']} />
                                 ))}
                             </Pie>
                             <Tooltip content={<CustomTooltip />} />
@@ -154,7 +171,39 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions }) =>
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
-            )}
+            );
+        } else if (viewType === 'sector') {
+             // Wrap Skeleton and SectorAllocationPie in a div with fixed height
+            return (
+                <div className="h-[280px] w-full">
+                    {isSectorLoading ? (
+                        <Skeleton className="h-full w-full rounded-md" />
+                    ) : (
+                        <SectorAllocationPie 
+                          accountId={accountId} 
+                          initialData={sectorData} 
+                          error={sectorError} 
+                        />
+                    )}
+                </div>
+            );
+        }
+        return null;
+    };
+
+    return (
+        <div>
+            <Tabs defaultValue="assetClass" value={viewType} onValueChange={(value) => setViewType(value as 'assetClass' | 'sector')} className="w-full mb-4">
+                <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
+                     <TabsTrigger value="assetClass" className="py-1 data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs">By Asset Class</TabsTrigger>
+                     <TabsTrigger value="sector" className="py-1 data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs">
+                         By Sector
+                     </TabsTrigger>
+                </TabsList>
+            </Tabs>
+            
+            {/* Render the content based on the selected tab */}
+            {renderContent()}
         </div>
     );
 };

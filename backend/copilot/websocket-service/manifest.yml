@@ -25,9 +25,11 @@ count: 1      # Can be adjusted based on load
 platform: linux/amd64
 exec: true
 
-# Enhanced network configuration for WebSockets
+# Network configuration for WebSockets
 network:
   connect: true  # Ensure service can connect to Redis and other services
+  vpc:
+    placement: 'private'  # Place in private subnet
 
 # Environment variables
 variables:
@@ -42,12 +44,7 @@ variables:
   WEBSOCKET_CONNECT_TIMEOUT: 5 # Connection timeout in seconds
   WEBSOCKET_CLOSE_TIMEOUT: 5  # How long to wait for close handshake
   LOG_LEVEL: "INFO"           # Set to DEBUG for more verbose logging
-  # Make sure Redis connection is properly configured
-  REDIS_HOST: ${REDIS_HOST}
-  REDIS_PORT: ${REDIS_PORT}
-  REDIS_DB: 0
-
-# Service discovery configuration
-network:
-  vpc:
-    placement: 'private' 
+  # Use direct Redis connection settings instead of environment variables
+  REDIS_HOST: "clera-redis.x1zzpk.0001.usw1.cache.amazonaws.com"
+  REDIS_PORT: "6379"
+  REDIS_DB: 0 

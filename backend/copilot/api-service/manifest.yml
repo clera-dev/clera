@@ -21,11 +21,7 @@ http:
   # Add WebSocket support
   deregistration_delay: 60s # Lower deregistration delay (default is 300s)
   stickiness: true # Enable session stickiness for WebSocket connections
-  # Increase idle timeout for WebSocket connections
-  additional_rules:
-    - path: '/ws/*'
-      healthcheck:
-        path: '/api/health'
+  # Increase idle timeout for WebSocket connections - Handled by alb-websocket-settings.sh script
 
 # Configuration for your containers and service.
 image:
@@ -58,9 +54,12 @@ variables:                    # Pass genuinely static environment variables here
   ALPACA_ENVIRONMENT: "sandbox"                        # Static value for sandbox
   PLAID_ENV: "sandbox"                                 # Static value for sandbox
   # Configuration for WebSocket proxying
-  WEBSOCKET_SERVICE_URL: "websocket-service.production.clera-api.internal:8001" # Service discovery endpoint
+  WEBSOCKET_SERVICE_URL: "http://websocket-service.production.clera-api.internal:8001" # Copilot Service Discovery endpoint (using .internal based on CLI output)
   WEBSOCKET_TIMEOUT: "300" # 5 minutes timeout for WebSocket connections
   WEBSOCKET_CONNECT_TIMEOUT: "5" # 5 seconds timeout for initial WebSocket connection
+  # Direct Redis connection settings (avoid using Parameter Store for these critical values)
+  REDIS_HOST: "clera-redis.x1zzpk.0001.usw1.cache.amazonaws.com" 
+  REDIS_PORT: "6379"
   # BACKEND_PUBLIC_URL will be set via secrets from SSM if needed dynamically
 
 secrets:                      # Pass secrets AND dynamic config from AWS SSM Parameter Store.
@@ -89,8 +88,6 @@ secrets:                      # Pass secrets AND dynamic config from AWS SSM Par
   BACKEND_API_KEY: /clera-api/production/backend_api_key # Used for API key auth
   PLAID_CLIENT_ID: /clera-api/production/plaid_client_id
   PLAID_SECRET: /clera-api/production/plaid_secret
-  REDIS_HOST: /clera-api/production/redis_host # Redis host for WebSocket service
-  REDIS_PORT: /clera-api/production/redis_port # Redis port for WebSocket service
   # Dynamic Config fetched from SSM
   NEXT_PUBLIC_SUPABASE_URL: /clera-api/production/next_public_supabase_url
   SUPABASE_URL: /clera-api/production/supabase_url
@@ -104,6 +101,7 @@ environments:
   production:
     variables:
       LOG_LEVEL: "info"
+      ENVIRONMENT: "production" # Explicitly set ENVIRONMENT for production
       # Override static vars here if needed for production, e.g.:
       # ALPACA_ENVIRONMENT: "live"
       # PLAID_ENV: "development" 
@@ -113,13 +111,11 @@ environments:
       # BROKER_API_KEY: /clera-api/prod/broker_api_key # Note the different path
       # No overrides needed for secrets path in this case
     deployment:
-      rolling: 'recreate'   # Stops existing tasks before new ones are started for faster deployments.
-      # Increase deployment timeouts
-      minimum_healthy_percent: 0    # Allow all tasks to be stopped before starting new ones
-      maximum_percent: 200          # Allow double the number of tasks during deployment
+      rolling: 'default'   # Changed from 'rolling' to 'default' for zero-downtime deployments
+      minimum_healthy_percent: 100    # Changed from 0 to 100 to ensure at least one task is always running
+      maximum_percent: 200          # Keep this the same to allow double the number of tasks during deployment
       deployment_controller:
-        type: ECS # or CODE_DEPLOY
-      # Configure circuit breaker - enable rollback but with more lenient settings
+        type: ECS
       circuit_breaker:
         enable: true
         rollback: true

@@ -85,6 +85,7 @@ exec gunicorn \
   --log-level info \
   --access-logfile - \
   --error-logfile - \
+  --forwarded-allow-ips="*" \
   api_server:app # Application module MUST come last after all options
 
 

@@ -110,7 +110,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             setIsMobileSidebarOpen={setIsMobileSidebarOpen} 
           />
         )}
-        <main className="flex-1 w-full overflow-x-hidden">
+        <main className="flex-1 w-full overflow-x-hidden min-h-screen">
           {children}
         </main>
       </div>

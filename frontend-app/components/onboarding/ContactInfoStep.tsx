@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OnboardingData } from "./OnboardingTypes";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhoneNumber } from "react-phone-number-input";
 
 interface ContactInfoStepProps {
   data: OnboardingData;
@@ -22,6 +24,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
     else if (!/^\S+@\S+\.\S+$/.test(data.email)) newErrors.email = "Please enter a valid email";
     
     if (!data.phoneNumber) newErrors.phoneNumber = "Phone number is required";
+    else if (!isValidPhoneNumber(data.phoneNumber)) newErrors.phoneNumber = "Please enter a valid phone number";
     
     if (!data.streetAddress[0]) newErrors.streetAddress = "Street address is required";
     if (!data.city) newErrors.city = "City is required";
@@ -58,11 +61,11 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
 
         <div>
           <Label htmlFor="phone">Phone Number</Label>
-          <Input
+          <PhoneInput
             id="phone"
-            type="tel"
+            defaultCountry="US"
             value={data.phoneNumber}
-            onChange={(e) => onUpdate({ phoneNumber: e.target.value })}
+            onChange={(value) => onUpdate({ phoneNumber: value as string })}
             className={errors.phoneNumber ? "border-red-500" : ""}
           />
           {errors.phoneNumber && <p className="text-red-500 text-sm mt-1">{errors.phoneNumber}</p>}

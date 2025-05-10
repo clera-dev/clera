@@ -41,7 +41,7 @@ export default async function ProtectedPage() {
   // If not in onboarding, show the onboarding flow
   if (!hasCompletedOnboarding) {
     return (
-      <div className="flex-1 w-full flex flex-col p-4 sm:p-6 md:p-8">
+      <div className="flex-1 w-full flex flex-col p-2 sm:p-4">
         <OnboardingStatusSetter status={onboardingData?.status || 'incomplete'} />
         <OnboardingFlow 
           userId={user.id} 
@@ -53,14 +53,14 @@ export default async function ProtectedPage() {
 
   // If onboarding is complete, show regular protected content
   return (
-    <div className="flex-1 w-full flex flex-col gap-6 p-4 sm:p-6 md:p-8">
+    <div className="flex-1 w-full flex flex-col gap-4 p-2 sm:p-4">
       <OnboardingStatusSetter status={onboardingData?.status || 'incomplete'} />
       <div className="w-full">
-        <h1 className="text-3xl font-bold mb-6">
+        <h1 className="text-3xl font-bold mb-4">
           {profile?.first_name ? `Welcome to Clera` : 'Welcome to Clera'}
         </h1>
         
-        <div className="bg-accent text-sm p-3 px-5 rounded-md text-foreground flex gap-3 items-center mb-6">
+        <div className="bg-accent text-sm p-3 px-5 rounded-md text-foreground flex gap-3 items-center mb-4">
           <InfoIcon size={16} strokeWidth={2} />
           Congrats! Your account is now ready for trading. Head to the dashboard to get started.
         </div>
