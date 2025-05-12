@@ -20,11 +20,37 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
     const [connectionAttempts, setConnectionAttempts] = useState<number>(0);
     const [useFallback, setUseFallback] = useState<boolean>(false);
     
-    // Store timeouts and intervals in refs so they persist across renders
     const timeoutRef = useRef<TimerRefs>({});
     const intervalRef = useRef<TimerRefs>({});
+
+    // Refs to hold the latest values of state for intervals/timeouts
+    const socketRef = useRef<WebSocket | null>(socket);
+    const isConnectedRef = useRef<boolean>(isConnected);
+    const useFallbackRef = useRef<boolean>(useFallback);
+    const connectionAttemptsRef = useRef<number>(connectionAttempts);
+    const isLoadingRef = useRef<boolean>(isLoading);
+
+    // Keep refs synchronized with state
+    useEffect(() => {
+        socketRef.current = socket;
+    }, [socket]);
+
+    useEffect(() => {
+        isConnectedRef.current = isConnected;
+    }, [isConnected]);
+
+    useEffect(() => {
+        useFallbackRef.current = useFallback;
+    }, [useFallback]);
+
+    useEffect(() => {
+        connectionAttemptsRef.current = connectionAttempts;
+    }, [connectionAttempts]);
+
+    useEffect(() => {
+        isLoadingRef.current = isLoading;
+    }, [isLoading]);
     
-    // Cleanup function to clear all timeouts and intervals
     const clearAllTimers = () => {
         Object.values(timeoutRef.current).forEach(timeout => 
             clearTimeout(timeout as NodeJS.Timeout));
@@ -34,7 +60,6 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         intervalRef.current = {};
     };
 
-    // Function to fetch data via REST API fallback
     const fetchPortfolioData = async () => {
         try {
             const response = await fetch(`/api/portfolio/value?accountId=${accountId}`);
@@ -48,18 +73,22 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         } catch (error) {
             console.log('Error fetching portfolio data:', error);
         }
+        setIsLoading(false); // Ensure loading is set to false even on error
         return false;
     };
 
-    // Function to attempt WebSocket connection
     const connectWebSocket = () => {
-        // Only create a new connection if we don't have one already
-        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        if (socketRef.current && (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING)) {
+            console.log('WebSocket already connecting or connected (socketRef), skipping new connection attempt');
+            return;
+        }
+        
+        if (isConnectedRef.current && socketRef.current) {
+            console.log('WebSocket already marked as connected (isConnectedRef), skipping new connection attempt');
             return;
         }
         
         try {
-            // Check if accountId is valid before attempting to connect
             if (!accountId || accountId === 'undefined') {
                 console.log('Invalid account ID, cannot connect to WebSocket');
                 setIsConnected(false);
@@ -67,202 +96,196 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
                 return;
             }
             
-            // Use relative URL through Next.js proxy - this will be rewritten based on next.config.mjs
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host; // Include port if present
+            const host = window.location.host;
             const websocketUrl = `${protocol}//${host}/ws/portfolio/${accountId}`;
             
-            console.log(`Connecting to WebSocket at ${websocketUrl} (attempt ${connectionAttempts + 1})`);
+            const currentAttempts = connectionAttemptsRef.current;
+            console.log(`Connecting to WebSocket at ${websocketUrl} (attempt ${currentAttempts + 1})`);
             
             const ws = new WebSocket(websocketUrl);
-            
-            // Set a connection timeout
+            setSocket(ws); // This will update socketRef via its useEffect
+
             timeoutRef.current.connection = setTimeout(() => {
                 if (ws.readyState !== WebSocket.OPEN) {
-                    console.log('WebSocket connection timeout');
-                    ws.close();
+                    console.log('WebSocket connection timeout after 10 seconds');
+                    ws.close(); // This will trigger the 'close' event listener
                     
-                    // Check if we should switch to fallback mode after several failed attempts
-                    const newAttempts = connectionAttempts + 1;
-                    setConnectionAttempts(newAttempts);
-                    
-                    // If we've failed multiple times, use the fallback approach
-                    if (newAttempts >= 3) {
-                        console.log('Multiple WebSocket connection failures, switching to fallback mode');
-                        setUseFallback(true);
-                        
-                        // Try again less frequently
-                        timeoutRef.current.reconnect = setTimeout(connectWebSocket, 60000); // Try reconnecting every minute
-                    } else {
-                        // Calculate backoff time (2s, 4s, 8s, up to 30s max)
-                        const backoffTime = Math.min(Math.pow(2, newAttempts) * 1000, 30000);
-                        timeoutRef.current.reconnect = setTimeout(connectWebSocket, backoffTime);
-                    }
+                    // Fallback logic moved to 'close' listener to avoid duplication
                 }
-            }, 8000); // Increased timeout for production environment
+            }, 10000);
             
-            // Connection opened
             ws.addEventListener('open', () => {
                 clearTimeout(timeoutRef.current.connection);
                 console.log('WebSocket connection established successfully');
-                setIsConnected(true);
+                setIsConnected(true); // This will update isConnectedRef
                 setIsLoading(false);
-                setConnectionAttempts(0); // Reset connection attempts on success
-                setUseFallback(false); // No longer need fallback mode
+                setConnectionAttempts(0); // Reset attempts
+                setUseFallback(false); // Back to WebSocket mode
+                
+                if (timeoutRef.current.initialFallback) {
+                    clearTimeout(timeoutRef.current.initialFallback);
+                }
             });
             
-            // Listen for messages
             ws.addEventListener('message', (event) => {
                 try {
+                    if (!isConnectedRef.current) { // Use ref here
+                        setIsConnected(true);
+                    }
+                    
                     const data = JSON.parse(event.data);
                     
-                    // Handle heartbeat response if present
                     if (data.type === 'heartbeat_ack') {
                         console.log('Received heartbeat acknowledgment from server');
                         return;
                     }
                     
-                    // Handle error messages
                     if (data.error) {
                         console.error('Received error from WebSocket server:', data.error, data.detail);
                         return;
                     }
                     
-                    // Handle portfolio data updates
                     if (data.account_id === accountId) {
                         setTotalValue(data.total_value);
                         setTodayReturn(data.today_return);
                         setIsLoading(false);
+                        setConnectionAttempts(0); // Reset on successful data
                     }
                 } catch (error) {
                     console.log('Error parsing WebSocket message:', error);
                 }
             });
             
-            // Connection closed
             ws.addEventListener('close', (event) => {
                 clearTimeout(timeoutRef.current.connection);
-                // Add more detailed logging for connection closure
                 console.log(`WebSocket connection closed, code: ${event.code}, reason: ${event.reason || 'No reason provided'}`, {
                     readyState: ws.readyState,
                     wasClean: event.wasClean,
                     timestamp: new Date().toISOString()
                 });
                 
-                setIsConnected(false);
+                setIsConnected(false); // Update state and ref
                 
-                // Try to reconnect after a delay, with exponential backoff
-                const newAttempts = connectionAttempts + 1;
-                setConnectionAttempts(newAttempts);
-                
-                // If closed with code 1006 (abnormal closure) repeatedly, use fallback
-                if (event.code === 1006 && newAttempts >= 2) {
-                    console.log('Abnormal WebSocket closures detected, switching to fallback mode');
-                    setUseFallback(true);
+                if (!useFallbackRef.current) { // Only attempt reconnect if not already in fallback mode
+                    const newAttempts = connectionAttemptsRef.current + 1;
+                    setConnectionAttempts(newAttempts);
+                    
+                    if (event.code === 1006 && newAttempts >= 2) {
+                        console.log('Abnormal WebSocket closures detected, switching to fallback mode');
+                        setUseFallback(true);
+                        return; 
+                    }
+                    
+                    const backoffTime = Math.min(Math.pow(2, newAttempts) * 1000, 30000);
+                    console.log(`Scheduling reconnect in ${backoffTime}ms due to close event`);
+                    timeoutRef.current.reconnect = setTimeout(connectWebSocket, backoffTime);
                 }
-                
-                // Calculate backoff time (2s, 4s, 8s, up to 30s max)
-                const backoffTime = Math.min(Math.pow(2, newAttempts) * 1000, 30000);
-                timeoutRef.current.reconnect = setTimeout(connectWebSocket, backoffTime);
             });
             
-            // Handle errors
             ws.addEventListener('error', (event) => {
                 clearTimeout(timeoutRef.current.connection);
-                // Add more detailed error logging
                 console.error('WebSocket connection error occurred', {
-                    readyState: ws.readyState,
+                    readyState: ws.readyState, // ws might be stale here, use socketRef.current
                     url: websocketUrl,
                     timestamp: new Date().toISOString()
                 });
                 
-                setIsConnected(false);
-                // Don't try to reconnect here - the close event will fire after error
+                setIsConnected(false); // Update state and ref
+                // The 'close' event usually follows 'error', which will handle reconnection logic.
             });
             
-            setSocket(ws);
         } catch (error) {
-            console.log('Error creating WebSocket connection:', error);
-            // Ensure we try to reconnect even after a connection creation error
-            const newAttempts = connectionAttempts + 1;
+            console.log('Error creating WebSocket connection instance:', error);
+            setIsConnected(false);
+            const newAttempts = connectionAttemptsRef.current + 1;
             setConnectionAttempts(newAttempts);
             
-            // After multiple failures, switch to fallback mode
             if (newAttempts >= 3) {
                 setUseFallback(true);
+            } else {
+                const backoffTime = Math.min(Math.pow(2, newAttempts) * 1000, 30000);
+                timeoutRef.current.reconnect = setTimeout(connectWebSocket, backoffTime);
             }
-            
-            const backoffTime = Math.min(Math.pow(2, newAttempts) * 1000, 30000);
-            timeoutRef.current.reconnect = setTimeout(connectWebSocket, backoffTime);
         }
     };
 
-    // Set up WebSocket connection and fallback polling
     useEffect(() => {
-        // Clean up any existing connections
         clearAllTimers();
-        if (socket) {
-            socket.close(1000, 'Refreshing connection');
+        if (socketRef.current) { // Use ref
+            socketRef.current.close(1000, 'Component effect re-run or unmount');
         }
+        setSocket(null); // Clear the actual socket state
         
-        // Initial connection or fetch data
-        if (useFallback) {
+        setIsConnected(false);
+        setIsLoading(true);
+        setConnectionAttempts(0); // Reset attempts when accountId changes
+
+        if (useFallbackRef.current) { // Use ref
             fetchPortfolioData();
         } else {
             connectWebSocket();
         }
         
-        // Set up heartbeat interval
         intervalRef.current.heartbeat = setInterval(() => {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                // Send a JSON heartbeat message
-                socket.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
+            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) { // Use ref
+                socketRef.current.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
             }
-        }, 15000); // Send ping every 15 seconds
+        }, 15000);
         
-        // Set up reconnection check
+        let lastReconnectTime = Date.now();
         intervalRef.current.reconnect = setInterval(() => {
-            if (!useFallback && (!isConnected || (socket && socket.readyState !== WebSocket.OPEN))) {
-                console.log('Reconnection check: WebSocket not connected, attempting reconnect');
+            const currentTime = Date.now();
+            
+            const socketObj = socketRef.current; // Use ref
+            const connected = isConnectedRef.current; // Use ref
+            const fallbackActive = useFallbackRef.current; // Use ref
+
+            const socketPhysicallyNotConnected = !socketObj || 
+                (socketObj && (socketObj.readyState === WebSocket.CLOSED || socketObj.readyState === WebSocket.CLOSING));
+            
+            if (!fallbackActive && socketPhysicallyNotConnected && !connected &&
+                (currentTime - lastReconnectTime > 30000)) {
+                console.log('Reconnection check interval: WebSocket not connected (using refs), attempting reconnect');
+                lastReconnectTime = currentTime;
                 connectWebSocket();
             }
-        }, 45000); // Check connection every 45 seconds
+        }, 45000);
         
-        // Set up fallback data polling
         intervalRef.current.fallback = setInterval(() => {
-            if (useFallback) {
+            if (useFallbackRef.current) { // Use ref
                 console.log('Using fallback polling for portfolio data');
                 fetchPortfolioData();
                 
-                // Periodically try to reconnect WebSocket even in fallback mode
-                if (connectionAttempts < 10) { // Limit reconnection attempts
-                    connectWebSocket();
+                const currentTime = Date.now();
+                if (connectionAttemptsRef.current < 10 && (currentTime - lastReconnectTime > 60000)) { 
+                    lastReconnectTime = currentTime;
+                    console.log("Attempting to switch back to WebSocket from fallback mode.");
+                    setUseFallback(false); // This will trigger the main useEffect to re-evaluate
+                    // connectWebSocket(); // connectWebSocket will be called by the main useEffect
                 }
             }
-        }, 30000); // Poll for data every 30 seconds in fallback mode
+        }, 30000);
         
-        // Fallback to fetch data if WebSocket takes too long initially
-        if (!useFallback && isLoading) {
+        if (!useFallbackRef.current && isLoadingRef.current) { // Use refs
             timeoutRef.current.initialFallback = setTimeout(async () => {
-                if (isLoading) {
-                    console.log('Initial WebSocket connection taking too long, fetching data via API');
+                if (isLoadingRef.current) { // Use ref
+                    console.log('Initial WebSocket connection taking too long, fetching data via API (parallel fetch)');
                     await fetchPortfolioData();
-                }
-            }, 3000);
+                } 
+            }, 6000);
         }
         
-        // Cleanup
         return () => {
             clearAllTimers();
-            
-            if (socket) {
-                console.log('Component unmounting, closing WebSocket connection');
-                socket.close(1000, 'Component unmounted');
+            if (socketRef.current) { // Use ref
+                console.log('Component unmounting, closing WebSocket connection (socketRef)');
+                socketRef.current.close(1000, 'Component unmounted');
             }
+            setSocket(null); // Also clear the state
         };
-    }, [accountId, useFallback]); // Re-run effect if accountId or fallback mode changes
+    }, [accountId]); // Rerun main effect ONLY when accountId changes. Fallback changes handled internally or trigger this.
 
-    // Determine if today's return is positive or negative
     const isPositiveReturn = !todayReturn.startsWith('-');
     const returnColor = isPositiveReturn ? 'text-[#22c55e]' : 'text-[#ef4444]';
 
@@ -288,10 +311,10 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
             </div>
             {process.env.NODE_ENV === 'development' && (
                 <div className="text-xs text-gray-400 mt-2">
-                    {isLoading ? 'Loading data...' : 
-                     useFallback ? 'Using fallback API (WebSocket unavailable)' :
-                     isConnected ? 'Live updates connected' : 
-                     `Connecting to live updates... ${connectionAttempts > 0 ? `(Attempt ${connectionAttempts})` : ''}`}
+                    {isLoadingRef.current ? 'Loading data...' :  // Use ref for display if needed
+                     useFallbackRef.current ? 'Using fallback API (WebSocket unavailable)' : // Use ref
+                     isConnectedRef.current ? 'Live updates connected' : // Use ref
+                     `Connecting to live updates... ${connectionAttemptsRef.current > 0 ? `(Attempt ${connectionAttemptsRef.current})` : ''}`}
                 </div>
             )}
         </div>

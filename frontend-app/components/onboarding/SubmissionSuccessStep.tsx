@@ -8,24 +8,23 @@ import { Check as CheckIcon, XCircle as XCircleIcon, Link as LinkIcon } from "lu
 import { usePostOnboardingNavigation } from "@/utils/navigation";
 
 interface SubmissionSuccessStepProps {
-  data: OnboardingData;
   accountCreated: boolean;
-  errorMessage?: string;
   accountExists?: boolean;
-  onBack: () => void;
+  error?: string | null;
   onReset: () => void;
+  onComplete: () => void;
 }
 
 export default function SubmissionSuccessStep({ 
-  data, 
   accountCreated, 
-  errorMessage,
   accountExists,
-  onBack, 
-  onReset 
+  error: errorMessage,
+  onReset,
+  onComplete
 }: SubmissionSuccessStepProps) {
   const router = useRouter();
   const { navigateAfterOnboarding } = usePostOnboardingNavigation();
+  const data = { firstName: "", lastName: "", email: "" };
   const [isConnectingBank, setIsConnectingBank] = useState(false);
   const [bankConnected, setBankConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -135,7 +134,7 @@ export default function SubmissionSuccessStep({
         
         <div className="flex justify-center">
           <Button 
-            onClick={navigateAfterOnboarding}
+            onClick={onComplete}
             className="px-8"
           >
             Continue to Dashboard
@@ -163,12 +162,6 @@ export default function SubmissionSuccessStep({
       </div>
       
       <div className="flex flex-col md:flex-row justify-center gap-4">
-        <Button 
-          onClick={onBack}
-          variant="outline"
-        >
-          Back to Previous Step
-        </Button>
         <Button 
           onClick={onReset}
           variant="default"

@@ -23,9 +23,10 @@ import traceback
 import httpx
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
-import websockets # Added import
-from websockets.exceptions import ConnectionClosed # Added import
-from urllib.parse import urlparse # ADDED FOR ROBUST URL PARSING
+import websockets 
+from websockets.exceptions import ConnectionClosed 
+from urllib.parse import urlparse
+from fastapi import WebSocketDisconnect
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -2313,6 +2314,8 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
         client_task = None
         server_task = None
         
+        websocket_server_down = asyncio.Event()
+
         # Forward client -> server messages
         async def forward_client_to_server():
             nonlocal client_closed
@@ -2321,36 +2324,65 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
                     try:
                         # Receive message from client
                         message = await websocket.receive_text()
+                        logger.info(f"[websocket_proxy_C2S] Received from client for {account_id}: {message[:200]}") # Log received message
                         await client_ws.send(message)
-                    except Exception as e:
-                        if isinstance(e, ConnectionClosed):
-                            logger.info(f"Client connection closed for account {account_id}")
-                        else:
-                            logger.error(f"Error receiving from client: {e}")
+                        logger.info(f"[websocket_proxy_C2S] Sent to server for {account_id}: {message[:200]}") # Log sent message
+                    except WebSocketDisconnect:
+                        logger.info(f"[websocket_proxy_C2S] Client WebSocketDisconnect for account {account_id}")
                         client_closed = True
                         break
+                    except ConnectionClosed: # Catch websockets.exceptions.ConnectionClosed
+                        logger.info(f"[websocket_proxy_C2S] Client connection closed (websockets.exceptions.ConnectionClosed) for account {account_id}")
+                        client_closed = True
+                        break
+                    except Exception as e:
+                        logger.error(f"[websocket_proxy_C2S] Error receiving from client or sending to server for {account_id}: {e}", exc_info=True)
+                        client_closed = True
+                        # Optionally, you might want to close client_ws here if it's still open
+                        if client_ws and client_ws.open:
+                            await client_ws.close(code=1011, reason="Proxy C2S error")
+                        break
             except Exception as e:
-                logger.error(f"Error in client->server forwarding: {e}")
+                logger.error(f"[websocket_proxy_C2S] Outer error in client->server forwarding for {account_id}: {e}", exc_info=True)
                 client_closed = True
         
         # Forward server -> client messages
         async def forward_server_to_client():
-            nonlocal client_closed
+            nonlocal client_closed # Ensure this task knows about client_closed
+            nonlocal server_closed # This task primarily sets server_closed
             try:
                 while True:
                     try:
                         # Receive message from WebSocket server
                         message = await client_ws.recv()
-                        if not client_closed:
+                        logger.info(f"[websocket_proxy_S2C] Received from server for {account_id}: {message[:200]}") # Log received message
+                        if not client_closed: # Only send if client is still connected
                             await websocket.send_text(message)
-                    except Exception as e:
-                        if isinstance(e, ConnectionClosed):
-                            logger.info(f"Server connection closed for account {account_id}")
+                            logger.info(f"[websocket_proxy_S2C] Sent to client for {account_id}: {message[:200]}") # Log sent message
                         else:
-                            logger.error(f"Error receiving from server: {e}")
+                            logger.info(f"[websocket_proxy_S2C] Client already closed, discarding message from server for {account_id}.")
+                            break # Exit loop if client is closed
+                    except WebSocketDisconnect: # From client closing Starlette's side
+                        logger.info(f"[websocket_proxy_S2C] Client (Starlette) WebSocketDisconnect for account {account_id}")
+                        server_closed = True # Or client_closed if appropriate
+                        break
+                    except ConnectionClosed: # From client_ws (websockets lib) closing
+                        logger.info(f"[websocket_proxy_S2C] Server connection closed (websockets.exceptions.ConnectionClosed) for account {account_id}")
+                        server_closed = True
+                        # Optionally, close the client-facing websocket if it's not already being handled
+                        if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
+                            await websocket.close(code=1011, reason="Upstream server closed")
+                        break
+                    except Exception as e:
+                        logger.error(f"[websocket_proxy_S2C] Error receiving from server or sending to client for {account_id}: {e}", exc_info=True)
+                        server_closed = True
+                        if not client_closed and websocket.client_state != WebSocketState.DISCONNECTED:
+                            await websocket.close(code=1011, reason="Proxy S2C error")
                         break
             except Exception as e:
-                logger.error(f"Error in server->client forwarding: {e}")
+                logger.error(f"[websocket_proxy_S2C] Outer error in server->client forwarding for {account_id}: {e}", exc_info=True)
+                server_closed = True
+                websocket_server_down.set()
         
         # Start forwarding tasks
         client_task = asyncio.create_task(forward_client_to_server())
@@ -2370,6 +2402,16 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
             except asyncio.CancelledError:
                 pass
         
+        # Check if we need to close the client WebSocket connection to the backend websocket-service
+        # The 'websockets' library uses '.closed' (boolean) or '.state' (enum)
+        #  old check: if client_ws and client_ws.open:  # Check the 'open' property of the websockets library # if client_ws and client_ws.state == WebSocketState.OPEN:  # Use .state instead of .open
+        if client_ws and not client_ws.closed: # Corrected check
+            try:
+                logger.info(f"[websocket_proxy] Forwarding task completed for {account_id}, attempting to close client_ws.")
+                await client_ws.close()
+            except Exception as e:
+                logger.error(f"[websocket_proxy] Error closing client_ws after task completion for {account_id}: {e}")
+        
     except websockets.exceptions.WebSocketException as e:
         logger.error(f"[websocket_proxy] Connection failed to target URI '{target_uri}': {e}")
         if not client_closed:
@@ -2384,8 +2426,15 @@ async def websocket_proxy(websocket: WebSocket, account_id: str):
             except Exception: pass # Ignore errors during close
     finally:
         # Clean up client connection if not already closed
-        if client_ws and client_ws.open:
-             await client_ws.close()
+        if client_ws:
+            try:
+                # Use WebSocket-library specific attributes
+                # websockets library uses .closed property
+                if hasattr(client_ws, 'closed') and not client_ws.closed:
+                    await client_ws.close()
+            except Exception as e:
+                logger.error(f"[websocket_proxy] Error during final cleanup of client_ws: {e}")
+                
         if websocket.client_state != WebSocketState.DISCONNECTED and not client_closed:
             try:
                 await websocket.close()
@@ -2437,37 +2486,37 @@ async def get_portfolio_activities(
 
 
 # Add an HTTP GET endpoint to handle WebSocket upgrade requests through ALB
-@app.get("/ws/portfolio/{account_id}")
-async def websocket_http_handler(request: Request, account_id: str):
-    """
-    Handle HTTP GET requests for WebSocket endpoints coming through ALB.
-    """
-    # Determine environment using Copilot's standard variable
-    copilot_env_name = os.getenv("COPILOT_ENVIRONMENT_NAME", "unknown")
-    custom_env_val = os.getenv("ENVIRONMENT", "unknown_custom") # For logging comparison
+# @app.get("/ws/portfolio/{account_id}")
+# async def websocket_http_handler(request: Request, account_id: str):
+#     """
+#     Handle HTTP GET requests for WebSocket endpoints coming through ALB.
+#     """
+#     # Determine environment using Copilot's standard variable
+#     copilot_env_name = os.getenv("COPILOT_ENVIRONMENT_NAME", "unknown")
+#     custom_env_val = os.getenv("ENVIRONMENT", "unknown_custom") # For logging comparison
     
-    # Use the canonical WebSocket service URL from app state
-    websocket_service_url_val = request.app.state.WEBSOCKET_SERVICE_URL
+#     # Use the canonical WebSocket service URL from app state
+#     websocket_service_url_val = request.app.state.WEBSOCKET_SERVICE_URL
     
-    is_production_by_copilot_env = copilot_env_name.lower() == "production"
+#     is_production_by_copilot_env = copilot_env_name.lower() == "production"
 
-    logger.info(f"HTTP GET for WebSocket /ws/portfolio/{account_id}: "
-                f"COPILOT_ENVIRONMENT_NAME='{copilot_env_name}' (is_production_by_copilot_env={is_production_by_copilot_env}). "
-                f"Custom ENVIRONMENT='{custom_env_val}'. "
-                f"WEBSOCKET_SERVICE_URL in HTTP handler='{websocket_service_url_val}'. Returning 101.")
+#     logger.info(f"HTTP GET for WebSocket /ws/portfolio/{account_id}: "
+#                 f"COPILOT_ENVIRONMENT_NAME='{copilot_env_name}' (is_production_by_copilot_env={is_production_by_copilot_env}). "
+#                 f"Custom ENVIRONMENT='{custom_env_val}'. "
+#                 f"WEBSOCKET_SERVICE_URL in HTTP handler='{websocket_service_url_val}'. Returning 101.")
 
-    # For ALB, returning 101 is generally expected to trigger the upgrade attempt.
-    # The actual WebSocket connection will fail later if the proxy targets incorrectly.
+#     # For ALB, returning 101 is generally expected to trigger the upgrade attempt.
+#     # The actual WebSocket connection will fail later if the proxy targets incorrectly.
     
-    headers = {
-        "Connection": "Upgrade",
-        "Upgrade": "websocket",
-    }
+#     headers = {
+#         "Connection": "Upgrade",
+#         "Upgrade": "websocket",
+#     }
     
-    return Response(
-        status_code=status.HTTP_101_SWITCHING_PROTOCOLS,
-        headers=headers
-    )
+#     return Response(
+#         status_code=status.HTTP_101_SWITCHING_PROTOCOLS,
+#         headers=headers
+#     )
 
 # Placeholder for get_redis_client - replace with actual implementation
 # This is a common pattern. If it's different, the code will need adjustment.
