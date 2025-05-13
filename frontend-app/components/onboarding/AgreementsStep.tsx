@@ -192,13 +192,22 @@ export default function AgreementsStep({
         >
           Back
         </Button>
-        <Button 
-          type="submit" 
+
+        <Button
+          type="submit"
           className="flex-1"
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Submitting...' : 'Continue'}
+          {isSubmitting ? (
+            <>
+              <span className="mr-2">
+                <span className="animate-spin inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+              </span>
+              Submitting...
+            </>
+          ) : "Continue"}
         </Button>
+
       </div>
     </form>
   );

@@ -84,19 +84,11 @@ export default function ChatSidebar({
   const groupedSessions = groupChatsByDate(sessions);
 
   return (
-    <div className="flex flex-col h-full bg-background border-r w-72 z-30">
+    <div className="flex flex-col h-full bg-background border-r w-72 z-50">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <h2 className="text-lg font-semibold">Chat History</h2>
         <div className="flex space-x-2">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={onNewChat}
-            title="New Chat"
-          >
-            <PlusIcon size={18} />
-          </Button>
           <Button 
             variant="ghost" 
             size="icon" 

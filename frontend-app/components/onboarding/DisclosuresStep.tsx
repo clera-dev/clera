@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { OnboardingData } from "./OnboardingTypes";
 
@@ -54,56 +53,74 @@ export default function DisclosuresStep({
   ];
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-lg mx-auto">
-      <h2 className="text-2xl font-bold mb-6">Disclosures</h2>
-      
-      <div className="space-y-6">
-        <p className="text-sm text-muted-foreground mb-4">
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-8">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Disclosures</h2>
+        <p className="text-muted-foreground">
           Please answer the following questions accurately. These disclosures are required by regulatory authorities.
         </p>
-        
+      </div>
+      
+      <div className="space-y-8 bg-card/50 p-6 rounded-lg border border-border/30 shadow-sm">
         {disclosures.map((disclosure) => (
-          <div key={disclosure.id} className="space-y-2 border-b pb-4">
-            <div className="flex items-start space-x-3">
-              <Checkbox 
-                id={disclosure.id}
-                checked={data[disclosure.field as keyof OnboardingData] as boolean}
-                onCheckedChange={(checked) => 
-                  onUpdate({ [disclosure.field]: checked })
-                }
-              />
-              <div>
-                <Label 
-                  htmlFor={disclosure.id}
-                  className="font-medium cursor-pointer"
-                >
-                  {disclosure.label}
-                </Label>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {disclosure.description}
-                </p>
-              </div>
+          <div key={disclosure.id} className="space-y-4 border-b border-border/30 pb-6">
+            <div className="space-y-2">
+              <Label 
+                htmlFor={disclosure.id}
+                className="font-medium text-base"
+              >
+                {disclosure.label}
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {disclosure.description}
+              </p>
+            </div>
+            
+            <div className="flex gap-3" id={disclosure.id}>
+              <Button
+                type="button"
+                variant={data[disclosure.field as keyof OnboardingData] ? "default" : "outline"}
+                size="sm"
+                onClick={() => onUpdate({ [disclosure.field]: true })}
+                className={`px-6 py-1 ${data[disclosure.field as keyof OnboardingData] ? "bg-primary/90 hover:bg-primary" : ""}`}
+              >
+                Yes
+              </Button>
+              <Button
+                type="button"
+                variant={!data[disclosure.field as keyof OnboardingData] ? "default" : "outline"}
+                size="sm"
+                onClick={() => onUpdate({ [disclosure.field]: false })}
+                className={`px-6 py-1 ${!data[disclosure.field as keyof OnboardingData] ? "bg-primary/90 hover:bg-primary" : ""}`}
+              >
+                No
+              </Button>
             </div>
           </div>
         ))}
         
-        <div className="pt-4">
+        <div className="pt-2">
           <p className="text-sm text-muted-foreground">
             If you answered "Yes" to any of the above questions, additional information may be required before your account can be approved.
           </p>
         </div>
       </div>
 
-      <div className="flex gap-4">
+      <div className="flex gap-4 pt-4">
         <Button 
           type="button" 
           variant="outline" 
           onClick={onBack} 
-          className="flex-1"
+          className="px-6 py-2"
         >
           Back
         </Button>
-        <Button type="submit" className="flex-1">Continue</Button>
+        <Button 
+          type="submit" 
+          className="px-8 py-2 ml-auto bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg transition-all"
+        >
+          Continue
+        </Button>
       </div>
     </form>
   );

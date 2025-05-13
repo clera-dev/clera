@@ -12,7 +12,16 @@ import json
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 
-load_dotenv()
+# Make sure we load environment variables first
+load_dotenv(override=True)
+
+# Set OpenAI API key explicitly for Perplexity models
+import openai
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if openai_api_key:
+    openai.api_key = openai_api_key
+    os.environ["OPENAI_API_KEY"] = openai_api_key
+
 fin_modeling_prep_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
 
 ###############################################################################

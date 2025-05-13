@@ -233,9 +233,11 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
       case "success":
         return (
           <SubmissionSuccessStep 
+            data={onboardingData}
             accountCreated={accountCreated}
             accountExists={accountExists}
-            error={submissionError} 
+            errorMessage={submissionError || undefined} 
+            onBack={prevStep}
             onReset={resetOnboarding}
             onComplete={navigateAfterOnboarding}
           />
@@ -259,27 +261,31 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto pt-5">
-      {/* Progress bar - don't show for welcome or success pages */}
-      {currentStep !== "welcome" && currentStep !== "success" && (
-        <div className="mb-6">
-          <ProgressBar 
-            currentStep={stepToIndex[currentStep]} 
-            totalSteps={totalSteps}
-            stepNames={[
-              "Welcome",
-              "Contact Info",
-              "Personal Info",
-              "Disclosures",
-              "Agreements"
-            ]}
-            percentComplete={calculateProgress()}
-          />
+    <div className="flex flex-col w-full min-h-[calc(100vh-16rem)]">
+      <div className="w-full max-w-2xl mx-auto pt-5">
+        {/* Progress bar - don't show for welcome or success pages */}
+        {currentStep !== "welcome" && currentStep !== "success" && (
+          <div className="mb-6">
+            <ProgressBar 
+              currentStep={stepToIndex[currentStep]} 
+              totalSteps={totalSteps}
+              stepNames={[
+                "Welcome",
+                "Contact Info",
+                "Personal Info",
+                "Disclosures",
+                "Agreements"
+              ]}
+              percentComplete={calculateProgress()}
+            />
+          </div>
+        )}
+        
+        {/* Render the current step in a nicely styled container */}
+        <div className="bg-card border border-border/40 rounded-xl shadow-lg overflow-hidden">
+          {renderCurrentStep()}
         </div>
-      )}
-      
-      {/* Render the current step */}
-      {renderCurrentStep()}
+      </div>
     </div>
   );
 } 

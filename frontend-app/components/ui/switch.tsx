@@ -1,0 +1,1 @@
+// Placeholder file - Switch component can be added later if needed 

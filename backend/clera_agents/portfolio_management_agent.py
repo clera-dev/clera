@@ -12,6 +12,10 @@ import json
 from typing import List, Optional, Dict
 from decimal import Decimal
 
+# Load environment variables first, with override to ensure they're set
+load_dotenv(override=True)
+fin_modeling_prep_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
+
 from alpaca.broker import BrokerClient
 from langgraph.pregel import Pregel # Import if needed to understand config structure
 from langgraph.config import get_config # Import get_config
@@ -32,13 +36,10 @@ from utils.supabase import get_user_alpaca_account_id
 # Configure logging
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-fin_modeling_prep_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
-
 # initialize Alpaca broker client
 broker_client = BrokerClient(
-    os.getenv("BROKER_API_KEY"),
-    os.getenv("BROKER_SECRET_KEY"),
+    api_key=os.getenv("ALPACA_API_KEY"),
+    secret_key=os.getenv("ALPACA_API_SECRET"),
     sandbox=True
 )
 

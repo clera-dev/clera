@@ -10,13 +10,39 @@ import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal } from "lucide-react";
+import { Terminal, TrendingUp, Lightbulb, Atom, Crown, Landmark, Clock, PlusCircle, Search } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+
+// React DevTools might be causing the floating icon
+// This ensures any dev tools elements are properly handled
+const cleanupDevTools = () => {
+  if (typeof window !== 'undefined') {
+    // Remove any floating debug elements that might be in the DOM
+    const floatingElements = document.querySelectorAll('[id*="react-devtools"]');
+    floatingElements.forEach(el => el.remove());
+  }
+};
 
 interface BalanceData {
   buying_power: number;
   cash: number;
   portfolio_value: number;
   currency: string;
+}
+
+interface StockPick {
+  symbol: string;
+  name?: string;
+  ytdReturn: string;
+  buyRating: string;
+  color?: string;
+}
+
+interface InvestmentIdea {
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  color: string;
 }
 
 export default function InvestPage() {
@@ -27,6 +53,104 @@ export default function InvestPage() {
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [isLoadingAccountId, setIsLoadingAccountId] = useState(true);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Use effect to cleanup any dev tools or floating elements
+  useEffect(() => {
+    cleanupDevTools();
+
+    // Additional cleanup for other potential floating elements
+    const rootElement = document.documentElement;
+    const cleanupBodyChildren = () => {
+      // Find and remove any suspicious floating elements at the bottom right
+      const bodyChildren = document.body.children;
+      Array.from(bodyChildren).forEach(child => {
+        const rect = child.getBoundingClientRect();
+        const isAtBottomRight = 
+          rect.bottom > rootElement.clientHeight - 100 && 
+          rect.right > rootElement.clientWidth - 100;
+        
+        // If it's not a standard UI element and positioned at bottom right
+        if (isAtBottomRight && 
+            !child.id?.includes('root') && 
+            !child.classList.contains('Toaster')) {
+          // Check if it's likely a dev tool
+          if (child.shadowRoot || 
+              child.tagName.includes('-') || 
+              !child.classList.length) {
+            child.remove();
+          }
+        }
+      });
+    };
+    
+    cleanupBodyChildren();
+    return () => {};
+  }, []);
+
+  // Use effect to check if side chat is open
+  useEffect(() => {
+    const checkChatPanel = () => {
+      // Look for chat panel elements
+      const chatPanel = document.querySelector('[role="dialog"]') || 
+                        document.querySelector('.chat-panel') ||
+                        document.querySelector('[class*="chat"]');
+      setIsChatOpen(!!chatPanel && window.innerWidth < 1500);
+    };
+
+    // Initial check
+    checkChatPanel();
+
+    // Set up observer to detect DOM changes that might indicate chat panel opened/closed
+    const observer = new MutationObserver(checkChatPanel);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Also check on resize
+    window.addEventListener('resize', checkChatPanel);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', checkChatPanel);
+    };
+  }, []);
+
+  // Mock data for top stock picks
+  const topStockPicks: StockPick[] = [
+    { symbol: 'MSFT', name: 'Microsoft', ytdReturn: '14.85%', buyRating: '4.86/5' },
+    { symbol: 'AAPL', name: 'Apple', ytdReturn: '16.36%', buyRating: '4.02/5' },
+    { symbol: 'SPY', name: 'S&P 500 ETF', ytdReturn: '7.46%', buyRating: '3.97/5' },
+    { symbol: 'SPSB', name: 'SPDR Short Term Corporate Bond ETF', ytdReturn: '3.59%', buyRating: '4.38/5' },
+    { symbol: 'TSLA', name: 'Tesla', ytdReturn: '17.81%', buyRating: '4.42/5' },
+    { symbol: 'UNH', name: 'UnitedHealth Group', ytdReturn: '9.08%', buyRating: '4.93/5' },
+  ];
+
+  // Investment ideas with icons
+  const investmentIdeas: InvestmentIdea[] = [
+    {
+      title: "High-Growth Tech Stocks",
+      description: "Explore cutting-edge technology companies with high-growth potential",
+      icon: <Atom className="h-20 w-20" />,
+      color: "bg-blue-100 dark:bg-blue-900/30"
+    },
+    {
+      title: "Dividend Royalty",
+      description: "Invest in companies with a history of consistently increasing their dividends",
+      icon: <Crown className="h-20 w-20" />,
+      color: "bg-pink-100 dark:bg-pink-900/30"
+    },
+    {
+      title: "Short Term Bond ETFs",
+      description: "Explore low-risk, stable income generating short-term bond ETFs for low-risk return",
+      icon: <Landmark className="h-20 w-20" />,
+      color: "bg-purple-100 dark:bg-purple-900/30" 
+    },
+    {
+      title: "Medical Technology Gems",
+      description: "Explore the rapidly innovating intersection of new age technology and healthcare",
+      icon: <PlusCircle className="h-20 w-20" />,
+      color: "bg-yellow-100 dark:bg-yellow-900/30"
+    }
+  ];
 
   useEffect(() => {
     const fetchAndSetAccountId = async () => {
@@ -63,7 +187,7 @@ export default function InvestPage() {
             if (!response.ok) {
                 const errorData = await response.json();
                 console.error("Balance API error response:", errorData);
-                throw new Error(errorData.detail || `Failed to fetch balance: ${response.statusText}`);
+                throw new Error(errorData.message || `Failed to fetch balance: ${response.statusText}`);
             }
             const result = await response.json();
             console.log("Balance API success response:", result);
@@ -99,6 +223,10 @@ export default function InvestPage() {
     setIsModalOpen(false);
   };
 
+  const handleStockPickClick = (symbol: string) => {
+    setSelectedSymbol(symbol);
+  };
+
   if (isLoadingAccountId) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -122,16 +250,16 @@ export default function InvestPage() {
   }
 
   return (
-    <div className="relative h-full">
+    <div className="h-full w-full overflow-auto">
       <Toaster position="bottom-center" />
-      <ScrollArea className="h-[calc(100%-80px)]">
-        <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-          <div className="flex items-center justify-between space-y-2">
-            <h2 className="text-3xl font-bold tracking-tight">Invest</h2>
+      <div className="p-4 space-y-6">
+        <div className="flex flex-col space-y-2 mb-2">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Discover Your Investment Opportunities:</h1>
           </div>
           
           {!isLoadingBalance && balanceError && !isLoadingAccountId && (
-            <Alert variant="destructive" className="mb-4">
+            <Alert variant="destructive" className="mb-2">
                 <Terminal className="h-4 w-4" />
                 <AlertTitle>Balance Error</AlertTitle>
                 <AlertDescription>
@@ -139,26 +267,95 @@ export default function InvestPage() {
                 </AlertDescription>
             </Alert>
           )}
-
-          <div className="mb-6">
-            <StockSearchBar onStockSelect={handleStockSelect} />
-          </div>
-
-          <div className="mt-6 pb-20">
-            {selectedSymbol ? (
-              <StockInfoCard symbol={selectedSymbol} />
-            ) : (
-              <div className="text-center text-muted-foreground py-10">
-                Search for a stock symbol above to see details.
-              </div>
-            )}
-          </div>
-
         </div>
-      </ScrollArea>
+
+        {/* Search Bar Section - Now at the top and larger */}
+        <div className="mb-8">
+          <div className="bg-card border rounded-lg p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <Search className="text-primary h-5 w-5" />
+              <h2 className="text-xl font-semibold">Find Investment Opportunities</h2>
+            </div>
+            <div className="w-full py-2">
+              <StockSearchBar onStockSelect={handleStockSelect} />
+            </div>
+          </div>
+        </div>
+
+        {/* Top Picks Section */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="text-blue-500 h-5 w-5" />
+            <h2 className="text-xl font-semibold">Top Picks From Clera's Team</h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {topStockPicks.map((stock) => (
+              <Card 
+                key={stock.symbol}
+                className="border hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => handleStockPickClick(stock.symbol)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex flex-col space-y-1">
+                    <div className="flex justify-between items-center">
+                      <div className="bg-gray-800 dark:bg-gray-700 text-white w-6 h-6 rounded flex items-center justify-center text-xs font-medium">
+                        {stock.symbol.charAt(0)}
+                      </div>
+                      <div className="text-sm font-bold">{stock.symbol}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">YTD Return:</div>
+                    <div className={`text-sm font-semibold ${parseFloat(stock.ytdReturn) > 0 ? 'text-green-600 dark:text-green-500' : 'text-red-600 dark:text-red-500'}`}>
+                      {stock.ytdReturn}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Buy Rating:</div>
+                    <div className="text-sm font-semibold">{stock.buyRating}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* Investment Ideas Section - Now with larger cards */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Lightbulb className="text-yellow-500 h-5 w-5" />
+            <h2 className="text-xl font-semibold">Your Personalized Investment Ideas:</h2>
+            <span className="text-muted-foreground">Opportunistic tailored to your investment strategy.</span>
+          </div>
+          <div className={`grid ${isChatOpen ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'} gap-4`}>
+            {investmentIdeas.map((idea, index) => (
+              <Card 
+                key={index}
+                className={`border hover:shadow-md transition-shadow cursor-pointer overflow-hidden ${idea.color}`}
+              >
+                <CardContent className={`p-6 flex flex-col justify-between ${isChatOpen ? 'h-auto min-h-[120px]' : 'h-48'} relative`}>
+                  <div className="font-bold text-lg mb-2 relative z-10">{idea.title}</div>
+                  {!isChatOpen && (
+                    <div className="text-sm text-muted-foreground relative z-10">{idea.description}</div>
+                  )}
+                  <div className={`absolute inset-0 flex items-center justify-center ${isChatOpen ? 'opacity-10' : 'opacity-15'}`}>
+                    {idea.icon}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        <div className="pb-24">
+          {selectedSymbol ? (
+            <StockInfoCard symbol={selectedSymbol} />
+          ) : (
+            <div className="text-center text-muted-foreground py-8">
+              
+            </div>
+          )}
+        </div>
+      </div>
 
       {selectedSymbol && (
-        <div className="fixed bottom-0 left-0 lg:left-64 right-0 h-20 bg-background border-t border-border p-4 flex items-center justify-between shadow-md z-10">
+        <div className="absolute bottom-0 left-0 right-0 h-20 bg-background border-t border-border p-4 flex items-center justify-between shadow-md z-10">
           <div className="text-left">
              <p className="text-xs text-muted-foreground">Available to Invest</p>
              {isLoadingBalance || isLoadingAccountId ? (

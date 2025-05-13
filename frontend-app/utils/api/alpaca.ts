@@ -130,6 +130,14 @@ export async function createAlpacaAccount(userData: OnboardingData): Promise<Api
     let data;
     try {
       data = JSON.parse(responseText);
+      console.log('Account creation response data:', data);
+      
+      // Ensure accountId is properly extracted
+      if (data && data.id) {
+        console.log('Successfully extracted Alpaca account ID:', data.id);
+      } else {
+        console.warn('Response data missing expected id field:', data);
+      }
     } catch (parseError) {
       console.error('Error parsing response:', parseError);
       throw new Error('Invalid response format from server');

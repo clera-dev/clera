@@ -68,7 +68,11 @@ export default function LogoLink() {
       onClick={handleLogoClick}
       className="font-bold"
     >
-      Clera
+      <img 
+        src="/clera-logo copy.png" 
+        alt="Clera" 
+        className="h-8 w-auto"
+      />
     </Link>
   );
 } 

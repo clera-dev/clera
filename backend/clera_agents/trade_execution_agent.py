@@ -11,6 +11,9 @@ import os
 import logging
 from dotenv import load_dotenv
 
+# Load environment variables first, with override to ensure they're set
+load_dotenv(override=True)
+
 from alpaca.broker.client import BrokerClient
 from alpaca.broker.requests import MarketOrderRequest, LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -22,15 +25,10 @@ from .financial_analyst_agent import get_stock_quote
 # Configure logging
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
-api_key = os.getenv("BROKER_API_KEY")
-secret_key = os.getenv("BROKER_SECRET_KEY")
-
-
+# initialize Alpaca broker client with the correct environment variable names
 broker_client = BrokerClient(
-    api_key,
-    secret_key,
+    api_key=os.getenv("ALPACA_API_KEY"),
+    secret_key=os.getenv("ALPACA_API_SECRET"),
     sandbox=True
 )
 

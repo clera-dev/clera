@@ -14,6 +14,19 @@ export async function saveOnboardingData(
     accountStatus?: string;
   }
 ) {
+  // Log alpacaData for debugging
+  console.log('Saving onboarding data with alpacaData:', alpacaData);
+  
+  // Store Alpaca account ID in localStorage for immediate use
+  if (alpacaData?.accountId) {
+    try {
+      localStorage.setItem('alpacaAccountId', alpacaData.accountId);
+      console.log('Stored Alpaca account ID in localStorage:', alpacaData.accountId);
+    } catch (e) {
+      console.error('Error storing Alpaca account ID in localStorage:', e);
+    }
+  }
+  
   return saveOnboardingDataAction(userId, onboardingData, status, alpacaData);
 }
 

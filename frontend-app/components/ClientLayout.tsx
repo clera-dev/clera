@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { ThemeProvider } from "next-themes";
 import MainSidebar from "@/components/MainSidebar";
 import { createClient } from "@/utils/supabase/client";
+import SideBySideLayout from "./SideBySideLayout";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -12,6 +13,8 @@ interface ClientLayoutProps {
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSideChatOpen, setIsSideChatOpen] = useState(false);
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -27,6 +30,45 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     "/auth/confirm",
     "/protected/reset-password",
   ];
+  
+  // Paths that can have the sidebar chat
+  const sideChatEnabledPaths = [
+    "/portfolio",
+    "/invest",
+    "/news"
+  ];
+  
+  // Check the sidebar collapsed state from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedState = localStorage.getItem('sidebarCollapsed');
+      setIsSidebarCollapsed(storedState === 'true');
+      
+      // Listen for changes to the collapsed state
+      const handleStorageChange = () => {
+        const updatedState = localStorage.getItem('sidebarCollapsed');
+        setIsSidebarCollapsed(updatedState === 'true');
+      };
+      
+      window.addEventListener('storage', handleStorageChange);
+      
+      // Custom event for changes within the same window
+      window.addEventListener('sidebarCollapsedChange', handleStorageChange);
+      
+      return () => {
+        window.removeEventListener('storage', handleStorageChange);
+        window.removeEventListener('sidebarCollapsedChange', handleStorageChange);
+      };
+    }
+  }, []);
+
+  // Check or reset the side chat state when path changes
+  useEffect(() => {
+    // Close side chat when navigating away from supported pages
+    if (!sideChatEnabledPaths.includes(pathname || '')) {
+      setIsSideChatOpen(false);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const checkAuthAndOnboarding = async () => {
@@ -85,6 +127,12 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     checkAuthAndOnboarding();
   }, [pathname]); // Re-check on path changes to catch onboarding updates
 
+  const toggleSideChat = () => {
+    if (sideChatEnabledPaths.includes(pathname || '')) {
+      setIsSideChatOpen(!isSideChatOpen);
+    }
+  };
+
   // Don't show sidebar during onboarding or while loading
   const isOnboardingPage = pathname === '/protected' && !hasCompletedOnboarding;
   
@@ -96,6 +144,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     !nonSidebarPaths.includes(pathname) && 
     !isOnboardingPage;
 
+  // Check if current path supports side chat
+  const canShowSideChat = sideChatEnabledPaths.includes(pathname || '');
+
   return (
     <ThemeProvider
       attribute="class"
@@ -103,16 +154,40 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       enableSystem
       disableTransitionOnChange
     >
-      <div className="flex min-h-screen">
+      <div className="flex h-screen">
+        {/* Hidden spacer div that takes up space but doesn't show content */}
         {shouldShowSidebar && (
-          <MainSidebar 
-            isMobileSidebarOpen={isMobileSidebarOpen} 
-            setIsMobileSidebarOpen={setIsMobileSidebarOpen} 
-          />
+          <div className={`h-full transition-all duration-300 ease-in-out invisible ${isSidebarCollapsed ? 'w-20' : 'w-64'}`} />
         )}
-        <main className="flex-1 w-full overflow-x-hidden min-h-screen">
-          {children}
+        
+        {/* Main content area - adjusted to account for sidebar width */}
+        <main className={`flex-1 overflow-hidden relative ${shouldShowSidebar ? 'ml-0' : ''}`}>
+          <div className="h-16"></div> {/* Spacer for fixed header */}
+          <div className="h-[calc(100%-64px)] overflow-auto">
+            {canShowSideChat ? (
+              <SideBySideLayout 
+                isChatOpen={isSideChatOpen} 
+                onCloseSideChat={() => setIsSideChatOpen(false)}
+              >
+                {children}
+              </SideBySideLayout>
+            ) : (
+              children
+            )}
+          </div>
         </main>
+        
+        {/* Actual sidebar component - now with fixed positioning */}
+        {shouldShowSidebar && (
+          <div className={`fixed left-0 top-0 bottom-0 transition-all duration-300 ease-in-out z-55 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`}>
+            <MainSidebar 
+              isMobileSidebarOpen={isMobileSidebarOpen} 
+              setIsMobileSidebarOpen={setIsMobileSidebarOpen}
+              onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
+              sideChatVisible={isSideChatOpen}
+            />
+          </div>
+        )}
       </div>
     </ThemeProvider>
   );

@@ -67,3 +67,42 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Ensure sidebar elements are visible */
+aside a img,
+aside button img,
+aside a svg,
+aside button svg {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* Fix for header and sidebar positioning */
+.fixed {
+  position: fixed !important;
+}
+
+/* Custom z-index values */
+.z-55 {
+  z-index: 55 !important;
+}
+
+.z-60 {
+  z-index: 60 !important;
+}
+
+.z-50 {
+  z-index: 50 !important;
+}
+
+/* Hide any unexpected floating elements */
+body > *:not([id^="root"]):not([class*="Toaster"]):not([role="dialog"]) {
+  position: relative !important;
+}
+
+/* Hide any React DevTools or debug elements */
+[id*="react-devtools"],
+[id*="react-inspector"],
+body > div:last-child:not([id]):not([class]) {
+  display: none !important;
+}

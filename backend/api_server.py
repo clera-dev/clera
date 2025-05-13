@@ -17,6 +17,14 @@ import requests
 from decimal import Decimal
 from uuid import UUID
 import contextlib
+
+# Add this block at the top before other imports to ensure environment variables are loaded
+# ----------------------
+from dotenv import load_dotenv
+# Load environment variables from .env file before importing any modules that might need them
+load_dotenv(override=True)  # override=True will replace existing environment variables
+# ----------------------
+
 from decouple import config
 import aiohttp
 import traceback
