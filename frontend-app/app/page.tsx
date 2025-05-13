@@ -7,19 +7,30 @@ import Hero from "@/components/hero";
 // import { hasEnvVars } from "@/utils/supabase/check-env-vars";
 
 export default async function Home() {
-  // Await the client creation
-  const supabase = await createClient();
+  try {
+    // Await the client creation
+    const supabase = await createClient();
 
-  // Now getUser can be called
-  const { data, error } = await supabase.auth.getUser();
-
-  // Redirect if user is successfully fetched
-  if (data?.user) {
-    return redirect("/dashboard");
+    // Now getUser can be called - wrap in try/catch to handle auth errors
+    try {
+      const { data } = await supabase.auth.getUser();
+      
+      // Redirect if user is successfully fetched
+      if (data?.user) {
+        return redirect("/dashboard");
+      }
+    } catch (authError) {
+      // Auth error when getting user - just show the hero page
+      console.log("Auth error:", authError);
+      // Continue to render Hero component
+    }
+  } catch (error) {
+    // Error creating Supabase client - just show the hero page
+    console.log("Error initializing Supabase client:", error);
+    // Continue to render Hero component
   }
 
-  // Render the Hero component if there's an error or no user
-  // No need for the else block from previous attempt
+  // Render the Hero component for unauthenticated users
   return (
     <>
       <Hero />

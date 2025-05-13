@@ -11,15 +11,18 @@ import json
 import logging
 from datetime import datetime
 import redis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 import time
+import jwt
+from typing import Optional
 
 # Import services for periodic data refresh
 from portfolio_realtime.symbol_collector import SymbolCollector
 from portfolio_realtime.portfolio_calculator import PortfolioCalculator
+from utils.supabase.db_client import get_user_alpaca_account_id
 
 # Configure logging
 logging.basicConfig(
@@ -201,6 +204,7 @@ app.add_middleware(
         # Allow HTTPS WebSocket origins
         "wss://app.askclera.com",
         "wss://api.askclera.com",
+        "wss://ws.askclera.com",     # New dedicated WebSocket domain
         # Allow HTTP WebSocket origins for local dev
         "ws://localhost:3000",
         "ws://localhost:8000",
@@ -280,46 +284,157 @@ class ConnectionManager:
 # Create connection manager instance
 manager = ConnectionManager()
 
+# --- JWT Verification Helper ---
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET")
+if not SUPABASE_JWT_SECRET:
+    # In a real deployment, you might want to raise an error or exit
+    # if the secret is not configured, as auth won't work.
+    logger.critical("CRITICAL: SUPABASE_JWT_SECRET environment variable not set. WebSocket authentication will fail.")
+
+def verify_token(token: Optional[str]) -> Optional[str]:
+    """Verifies the Supabase JWT token.
+
+    Args:
+        token: The JWT token string.
+
+    Returns:
+        The user ID (sub) if the token is valid, None otherwise.
+    """
+    if not token:
+        logger.warning("WebSocket Auth: No token provided.")
+        return None
+    if not SUPABASE_JWT_SECRET:
+        logger.error("WebSocket Auth: JWT Secret not configured on server.")
+        return None # Cannot verify without secret
+        
+    try:
+        # Verify signature, expiration, and audience ('authenticated')
+        payload = jwt.decode(
+            token, 
+            SUPABASE_JWT_SECRET, 
+            algorithms=["HS256"], 
+            audience="authenticated" # CRUCIAL: Validate audience
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+             logger.warning("WebSocket Auth: Token valid but missing 'sub' (user ID).")
+             return None
+        logger.info(f"WebSocket Auth: Token successfully verified for user: {user_id}")
+        return user_id # Return the user ID (subject)
+    except jwt.ExpiredSignatureError:
+        logger.warning("WebSocket Auth: Token has expired.")
+        return None
+    except jwt.InvalidAudienceError:
+        logger.warning("WebSocket Auth: Invalid token audience.")
+        return None
+    except jwt.InvalidTokenError as e:
+        # Catches other JWT errors (invalid signature, malformed, etc.)
+        logger.warning(f"WebSocket Auth: Invalid token: {e}")
+        return None
+    except Exception as e:
+        # Catch unexpected errors during decoding
+        logger.error(f"WebSocket Auth: Unexpected error verifying token: {e}", exc_info=True)
+        return None
+
 # WebSocket endpoint
 @app.websocket("/ws/portfolio/{account_id}")
-async def websocket_endpoint(websocket: WebSocket, account_id: str):
-    """Handle WebSocket connections for a specific account."""
-    logger.info(f"Incoming WebSocket connection for account {account_id}")
+async def websocket_endpoint(
+    websocket: WebSocket, 
+    account_id: str = Path(...),
+    token: Optional[str] = Query(None) # Extract token from query param
+):
+    # --- Authentication & Authorization ---
+    user_id = verify_token(token)
+    if not user_id:
+        # Deny connection if token is invalid/missing
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication failed")
+        return
+        
+    # Authorization check: Does the authenticated user own this account_id?
+    try:
+        authorized_account_id = get_user_alpaca_account_id(user_id)
+    except Exception as e:
+        # Handle potential DB connection errors during authorization check
+        logger.error(f"WebSocket AuthZ: Error checking account ownership for user {user_id}: {e}", exc_info=True)
+        await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Authorization check failed")
+        return
+        
+    if not authorized_account_id or authorized_account_id != account_id:
+        logger.warning(f"WebSocket AuthZ: User {user_id} forbidden access to account {account_id}. Expected: {authorized_account_id}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Forbidden")
+        return
+        
+    # If checks pass, proceed with connection
+    logger.info(f"WebSocket AuthZ: User {user_id} granted access to account {account_id}")
     
+    # --- Connection Handling (Original Logic) ---
     try:
         await manager.connect(websocket, account_id)
-        logger.info(f"WebSocket connection accepted for {account_id}")
+        # Calculate the count directly instead of calling a non-existent method
+        connection_count = len(manager.active_connections.get(account_id, []))
+        logger.info(f"New connection established for account {account_id}, now {connection_count} connections for this account")
         
-        # After connection is established, send initial portfolio data
+        # Send initial portfolio data if available
         await send_initial_portfolio_data(websocket, account_id)
         
-        # Listen for messages from the client
+        # Keep connection open and handle messages/heartbeats
         while True:
-            # Wait for a message from the client
-            data = await websocket.receive_text()
-            
-            # Handle heartbeat messages from the client
             try:
+                data = await websocket.receive_text()
                 message = json.loads(data)
-                if isinstance(message, dict) and message.get('type') == 'heartbeat':
-                    # Send heartbeat acknowledgment
-                    await websocket.send_json({
-                        'type': 'heartbeat_ack',
-                        'timestamp': int(time.time() * 1000)  # Current time in milliseconds
-                    })
-                    logger.debug(f"Received heartbeat from client for account {account_id}, sent acknowledgment")
-                    continue
-            except (json.JSONDecodeError, TypeError, ValueError):
-                # If not a JSON message or not a heartbeat, ignore it
-                logger.debug(f"Received message from client that is not a heartbeat: {data[:100]}")
-                pass
+                if message.get("type") == "heartbeat":
+                    # Respond to heartbeat
+                    await websocket.send_json({"type": "heartbeat_ack", "timestamp": time.time()})
+                else:
+                    # Handle other message types if needed in the future
+                    logger.info(f"Received unhandled message from {account_id}: {data}")
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket disconnected for account {account_id} (client initiated)")
+                break # Exit loop on disconnect
+            except json.JSONDecodeError:
+                logger.warning(f"Received invalid JSON from {account_id}")
+                # Optionally send an error message back
+                # await websocket.send_json({"error": "Invalid JSON format"})
+            except Exception as e:
+                # Catch other potential errors during receive/process
+                logger.error(f"Error during WebSocket communication for {account_id}: {e}", exc_info=True)
+                # Consider closing the connection if error is severe
+                # await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+                break # Exit loop on other errors
                 
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for account {account_id}")
-        manager.disconnect(websocket, account_id)
+    except WebSocketDisconnect as e:
+        # This catch block is primarily for disconnects *during* the initial connect phase
+        # or if an error occurs before the main loop starts
+        logger.info(f"WebSocket disconnected during setup for account {account_id}, reason: {e.reason} (code: {e.code})")
     except Exception as e:
-        logger.error(f"Error in WebSocket connection for account {account_id}: {str(e)}")
+        # Catch unexpected errors during the connection setup phase
+        logger.error(f"Unexpected error during WebSocket setup for {account_id}: {e}", exc_info=True)
+        # Ensure connection is closed if setup fails
+        # Check if websocket is still open before trying to close
+        if websocket.client_state == websocket.client_state.CONNECTED:
+             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+    finally:
+        # Always ensure cleanup happens
         manager.disconnect(websocket, account_id)
+        # Correctly get remaining connection count for the specific account
+        remaining_count = len(manager.active_connections.get(account_id, []))
+        logger.info(f"Cleaned up connection for account {account_id}, now {remaining_count} connections remaining for this account")
+
+async def send_initial_portfolio_data(websocket: WebSocket, account_id: str):
+    """Send the latest known portfolio value for this account upon connection."""
+    try:
+        # Get the most recent portfolio data from Redis (if available)
+        last_portfolio_key = f"last_portfolio:{account_id}"
+        last_portfolio_data = redis_client.get(last_portfolio_key)
+        
+        if last_portfolio_data:
+            portfolio_data = json.loads(last_portfolio_data)
+            await websocket.send_json(portfolio_data)
+            logger.info(f"Sent initial portfolio data to new connection for account {account_id}")
+        else:
+            logger.warning(f"No initial portfolio data available for account {account_id}")
+    except Exception as e:
+        logger.error(f"Error sending initial data to {account_id}: {str(e)}")
 
 # Health check endpoint
 @app.get("/health")
@@ -352,22 +467,6 @@ async def health_check():
         "data_refresh_interval": os.getenv("DATA_REFRESH_INTERVAL", "300"),
         "full_refresh_interval": os.getenv("FULL_REFRESH_INTERVAL", "900")
     }
-
-async def send_initial_portfolio_data(websocket: WebSocket, account_id: str):
-    """Send initial portfolio data to a new WebSocket connection."""
-    try:
-        # Get the most recent portfolio data from Redis (if available)
-        last_portfolio_key = f"last_portfolio:{account_id}"
-        last_portfolio_data = redis_client.get(last_portfolio_key)
-        
-        if last_portfolio_data:
-            portfolio_data = json.loads(last_portfolio_data)
-            await websocket.send_json(portfolio_data)
-            logger.info(f"Sent initial portfolio data to new connection for account {account_id}")
-        else:
-            logger.warning(f"No initial portfolio data available for account {account_id}")
-    except Exception as e:
-        logger.error(f"Error sending initial data to {account_id}: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

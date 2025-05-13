@@ -1,0 +1,80 @@
+# The manifest for the "websocket-lb-service" service.
+# This deploys the websocket service with its own Application Load Balancer
+name: websocket-lb-service
+type: Load Balanced Web Service
+
+# Distribute traffic to your service via its own dedicated ALB
+http:
+  # Expose the WebSocket endpoint at the root path
+  path: '/'
+  # Simple health check endpoint
+  healthcheck:
+    path: '/health'
+    healthy_threshold: 2
+    unhealthy_threshold: 5
+    interval: 15s
+    timeout: 10s
+  # WebSocket-specific settings
+  deregistration_delay: 60s # Lower deregistration delay from default 300s
+  stickiness: true # Enable session stickiness for WebSocket connections
+  # Note: idle_timeout will be set to 3600s via the post-deployment script
+  allowed_source_ips: ["0.0.0.0/0"]
+
+# Configuration for WebSocket container
+image:
+  build: Dockerfile.websocket
+  port: 8001
+
+cpu: 256      # 0.25 vCPU
+memory: 512  # 0.5 GB RAM, adjust based on expected connection count
+count:
+  range: 1-2
+  cpu_percentage: 70
+  memory_percentage: 80
+  requests: 1000
+platform: linux/amd64
+exec: true
+
+# Environment variables for WebSocket service
+variables:
+  WEBSOCKET_PORT: 8001
+  WEBSOCKET_HOST: 0.0.0.0
+  HEARTBEAT_INTERVAL: 30
+  CONNECTION_TIMEOUT: 300
+  DATA_REFRESH_INTERVAL: 300  # Portfolio value refresh interval (5 min)
+  FULL_REFRESH_INTERVAL: 900  # Symbol collection refresh interval (15 min)
+  WEBSOCKET_PING_INTERVAL: 30 # Client ping interval in seconds
+  WEBSOCKET_PING_TIMEOUT: 10  # Ping response timeout
+  WEBSOCKET_CONNECT_TIMEOUT: 5 # Connection establishment timeout
+  WEBSOCKET_CLOSE_TIMEOUT: 5  # Close handshake timeout
+  LOG_LEVEL: "INFO"           # Set to DEBUG for more verbose logging
+  # Direct Redis connection settings
+  REDIS_HOST: "clera-redis.x1zzpk.0001.usw1.cache.amazonaws.com"
+  REDIS_PORT: "6379"
+  REDIS_DB: 0
+
+# You can also inject secrets from AWS Secrets Manager or Systems Manager Parameter Store.
+# These secrets will be accessible as environment variables in your containers.
+secrets:
+  SUPABASE_JWT_SECRET: /clera/websocket-jwt-secret
+
+# Specify network configuration
+network:
+  connect: true  # Enable service discovery
+  vpc:
+    placement: public
+
+# Environment-specific configurations
+environments:
+  production:
+    logging:
+      retention: 7
+    observability:
+      tracing: awsxray  # Enable X-Ray tracing for better debugging
+    deployment:
+      rolling: 'default'
+      minimum_healthy_percent: 100
+      maximum_percent: 200
+      circuit_breaker:
+        enable: true
+        rollback: true 
