@@ -38,9 +38,9 @@ logger = logging.getLogger(__name__)
 
 # initialize Alpaca broker client
 broker_client = BrokerClient(
-    api_key=os.getenv("ALPACA_API_KEY"),
-    secret_key=os.getenv("ALPACA_API_SECRET"),
-    sandbox=True
+    api_key=os.getenv("BROKER_API_KEY"),
+    secret_key=os.getenv("BROKER_SECRET_KEY"),
+    sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
 )
 
 # Module-level variable to store the last valid account ID

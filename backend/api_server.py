@@ -332,7 +332,7 @@ if BrokerClient:
         broker_client = BrokerClient(
             api_key=os.getenv("BROKER_API_KEY", ""),
             secret_key=os.getenv("BROKER_SECRET_KEY", ""),
-            sandbox=True  # Set to False for production
+            sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"  # Use environment variable instead of hardcoded value
         )
         # Test API keys validity
         if os.getenv("BROKER_API_KEY") and os.getenv("BROKER_SECRET_KEY"):
