@@ -2,20 +2,16 @@ import "@/app/globals.css";
 import { Inter } from "next/font/google";
 import Link from "next/link";
 import ClientLayout from "@/components/ClientLayout";
-import HeaderAuth from "@/components/header-auth";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { hasEnvVars } from "@/utils/supabase/check-env-vars";
 import { EnvVarWarning } from "@/components/env-var-warning";
 import HeaderController from "@/components/HeaderController";
-import LogoLink from "@/components/LogoLink";
+import ConditionalLogoLink from "@/components/ConditionalLogoLink";
+import ClientAuthButtons from "@/components/ClientAuthButtons";
 import BackToTopButton from "@/components/BackToTopButton";
 import FooterComponent from "@/components/FooterComponent";
-import ConditionalLogoLink from "@/components/ConditionalLogoLink";
 
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-});
+const inter = Inter({ subsets: ["latin"], display: "swap" });
 
 const defaultUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -35,21 +31,30 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <body className="bg-background text-foreground">
-        <div className="flex flex-col min-h-screen">
-          {/* Header that spans full width with sign-out button */}
+        <ClientLayout>
+          {/* --- Top nav bar ------------------------------------------------ */}
           <HeaderController>
-            <div className="w-full border-b border-b-foreground/10 h-16 bg-background fixed top-0 right-0 z-50 flex justify-end">
-              <div className="flex justify-end items-center p-3 px-5 text-sm h-full">
-                {!hasEnvVars ? <EnvVarWarning /> : <HeaderAuth />}
+            <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16 fixed top-0 right-0 bg-background z-50">
+              <div className="w-full max-w-5xl flex justify-between items-center p-3 px-5 text-sm">
+                <div className="flex gap-5 items-center font-semibold">
+                  <ConditionalLogoLink />
+                </div>
+                {!hasEnvVars ? <EnvVarWarning /> : <ClientAuthButtons />}
               </div>
-            </div>
+            </nav>
           </HeaderController>
 
-          {/* Main content with sidebar and content area */}
-          <ClientLayout>
-            {children}
-          </ClientLayout>
-        </div>
+          {/* --- Page content ---------------------------------------------- */}
+          <main className="flex-1 w-full flex flex-col items-center pt-20">
+            <div className="flex flex-col w-full max-w-5xl p-4">
+              {children}
+            </div>
+            <BackToTopButton />
+          </main>
+
+          {/* --- Footer ---------------------------------------------------- */}
+          <FooterComponent />
+        </ClientLayout>
       </body>
     </html>
   );

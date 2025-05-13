@@ -192,8 +192,9 @@ export default function AgreementsStep({
         >
           Back
         </Button>
-        <Button 
-          type="submit" 
+
+        <Button
+          type="submit"
           className="flex-1"
           disabled={isSubmitting}
         >
@@ -206,6 +207,7 @@ export default function AgreementsStep({
             </>
           ) : "Continue"}
         </Button>
+
       </div>
     </form>
   );

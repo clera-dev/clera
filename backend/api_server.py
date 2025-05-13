@@ -30,11 +30,6 @@ import aiohttp
 import traceback
 import httpx
 from fastapi import WebSocket
-from starlette.websockets import WebSocketState
-import websockets # Added import
-from websockets.exceptions import ConnectionClosed # Added import
-from urllib.parse import urlparse # ADDED FOR ROBUST URL PARSING
-
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -2257,173 +2252,6 @@ async def get_redis_client():
         logger.error(f"Error connecting to Redis: {e}")
         return None
 
-# Add this WebSocket endpoint to proxy WebSocket connections to the WebSocket server
-@app.websocket("/ws/portfolio/{account_id}")
-async def websocket_proxy(websocket: WebSocket, account_id: str):
-    await websocket.accept() # Accept the incoming WebSocket connection first
-    
-    # Use canonical WebSocket URL from app state
-    target_websocket_url = websocket.app.state.WEBSOCKET_SERVICE_URL
-    actual_custom_environment = os.getenv("ENVIRONMENT", "NOT_SET_CUSTOM") 
-    copilot_env_name = os.getenv("COPILOT_ENVIRONMENT_NAME", "NOT_SET_COPILOT") 
-
-    logger.info(f"[websocket_proxy] For account {account_id}: Starting proxy logic. "
-                f"Using canonical WEBSOCKET_SERVICE_URL='{target_websocket_url}'. "
-                f"Environment context: Custom ENVIRONMENT='{actual_custom_environment}', "
-                f"COPILOT_ENVIRONMENT_NAME='{copilot_env_name}'.")
-
-    # Use urlparse for robust URL extraction
-    parsed_url = urlparse(target_websocket_url)
-    websocket_host = parsed_url.hostname
-    websocket_port = parsed_url.port
-
-    if not websocket_host or not websocket_port:
-        # Log the error and attempt to re-parse if needed
-        logger.error(f"[websocket_proxy] Could not determine host or port from target_websocket_url: '{target_websocket_url}'")
-        
-        if not parsed_url.scheme and ":" in target_websocket_url:
-            parts = target_websocket_url.split(":",1)
-            websocket_host = parts[0]
-            try:
-                websocket_port = int(parts[1])
-                logger.info(f"[websocket_proxy] Re-parsed simple host:port string to host='{websocket_host}', port={websocket_port}")
-            except ValueError:
-                logger.error(f"[websocket_proxy] Failed to parse port from '{parts[1]}'")
-                await websocket.close(code=1008, reason="Invalid WebSocket service URL format (port parsing failed)")
-                return
-        else:
-            logger.error(f"[websocket_proxy] Unrecoverable URL parsing failure - cannot proxy WebSocket connection")
-            await websocket.close(code=1008, reason="Invalid WebSocket service URL configuration")
-            return
-    
-    logger.info(f"[websocket_proxy] Attempting to proxy to host: '{websocket_host}', port: {websocket_port}")
-    
-    target_uri = f"ws://{websocket_host}:{websocket_port}/ws/portfolio/{account_id}"
-    logger.info(f"[websocket_proxy] Constructed target URI for connection: '{target_uri}'")
-
-    client_ws = None
-    client_closed = False
-    server_closed = False
-    
-    try:
-        # Create reliable connection to internal WebSocket service
-        client_ws = await websockets.connect(
-            target_uri, # Use the correctly constructed target_uri
-            ping_interval=float(os.getenv("WEBSOCKET_PING_INTERVAL", "30")),
-            ping_timeout=float(os.getenv("WEBSOCKET_PING_TIMEOUT", "10")),
-            close_timeout=float(os.getenv("WEBSOCKET_CLOSE_TIMEOUT", "5")),
-            max_size=int(os.getenv("WEBSOCKET_MAX_SIZE", "1048576")),
-            open_timeout=float(os.getenv("WEBSOCKET_CONNECT_TIMEOUT", "5")),
-            compression=None
-        )
-        
-        # Set up bidirectional message forwarding
-        client_task = None
-        server_task = None
-        
-        # Forward client -> server messages
-        async def forward_client_to_server():
-            nonlocal client_closed
-            try:
-                while True:
-                    try:
-                        # Receive message from client
-                        message = await websocket.receive_text()
-                        await client_ws.send(message)
-                    except Exception as e:
-                        if isinstance(e, ConnectionClosed):
-                            logger.info(f"Client connection closed for account {account_id}")
-                        else:
-                            logger.error(f"Error receiving from client: {e}")
-                        client_closed = True
-                        break
-            except Exception as e:
-                logger.error(f"Error in client->server forwarding: {e}")
-                client_closed = True
-        
-        # Forward server -> client messages
-        async def forward_server_to_client():
-            nonlocal client_closed
-            try:
-                while True:
-                    try:
-                        # Receive message from WebSocket server
-                        message = await client_ws.recv()
-                        if not client_closed:
-                            await websocket.send_text(message)
-                    except Exception as e:
-                        if isinstance(e, ConnectionClosed):
-                            logger.info(f"Server connection closed for account {account_id}")
-                        else:
-                            logger.error(f"Error receiving from server: {e}")
-                        break
-            except Exception as e:
-                logger.error(f"Error in server->client forwarding: {e}")
-        
-        # Start forwarding tasks
-        client_task = asyncio.create_task(forward_client_to_server())
-        server_task = asyncio.create_task(forward_server_to_client())
-        
-        # Wait for either task to complete
-        done, pending = await asyncio.wait(
-            [client_task, server_task],
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        
-        # Cancel remaining tasks
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        
-    except websockets.exceptions.WebSocketException as e:
-        logger.error(f"[websocket_proxy] Connection failed to target URI '{target_uri}': {e}")
-        if not client_closed:
-            try:
-                await websocket.close(code=1011, reason="Upstream connection error") # Internal server error
-            except Exception: pass # Ignore errors during close
-    except Exception as e:
-        logger.error(f"[websocket_proxy] Unexpected error during proxy for '{target_uri}': {e}", exc_info=True)
-        if not client_closed:
-            try:
-                await websocket.close(code=1011, reason="Internal proxy error")
-            except Exception: pass # Ignore errors during close
-    finally:
-        # Clean up client connection if not already closed
-        if client_ws and client_ws.open:
-             await client_ws.close()
-        if websocket.client_state != WebSocketState.DISCONNECTED and not client_closed:
-            try:
-                await websocket.close()
-            except Exception as e:
-                logger.error(f"[websocket_proxy] Error closing client WebSocket connection: {e}")
-
-# Add this health endpoint for websocket proxy health checks
-@app.get("/ws/health")
-async def websocket_health_check():
-    """Health check endpoint specifically for WebSocket proxy functionality."""
-    # Get WebSocket service URL from environment variable
-    websocket_service_url = os.getenv("WEBSOCKET_SERVICE_URL", "http://websocket-service.production.clera-api.internal:8001")
-    
-    # Split host and port if needed
-    if ":" in websocket_service_url:
-        websocket_host, websocket_port = websocket_service_url.split(":", 1)
-    else:
-        websocket_host = websocket_service_url
-        websocket_port = os.getenv("WEBSOCKET_PORT", "8001")
-    
-    # Return healthy status without checking actual connectivity
-    # This prevents health check failures during startup when WebSocket service might not be available
-    return {
-        "status": "healthy",
-        "service": "api-server-websocket-proxy",
-        "websocket_host": websocket_host,
-        "websocket_port": websocket_port,
-        "timestamp": datetime.now().isoformat()
-    }
-
 @app.get("/api/portfolio/activities")
 async def get_portfolio_activities(
     accountId: str = Query(..., description="Alpaca account ID"),
@@ -2443,39 +2271,16 @@ async def get_portfolio_activities(
         detail="Portfolio activities endpoint not yet implemented"
     )
 
-
-# Add an HTTP GET endpoint to handle WebSocket upgrade requests through ALB
-@app.get("/ws/portfolio/{account_id}")
-async def websocket_http_handler(request: Request, account_id: str):
-    """
-    Handle HTTP GET requests for WebSocket endpoints coming through ALB.
-    """
-    # Determine environment using Copilot's standard variable
-    copilot_env_name = os.getenv("COPILOT_ENVIRONMENT_NAME", "unknown")
-    custom_env_val = os.getenv("ENVIRONMENT", "unknown_custom") # For logging comparison
-    
-    # Use the canonical WebSocket service URL from app state
-    websocket_service_url_val = request.app.state.WEBSOCKET_SERVICE_URL
-    
-    is_production_by_copilot_env = copilot_env_name.lower() == "production"
-
-    logger.info(f"HTTP GET for WebSocket /ws/portfolio/{account_id}: "
-                f"COPILOT_ENVIRONMENT_NAME='{copilot_env_name}' (is_production_by_copilot_env={is_production_by_copilot_env}). "
-                f"Custom ENVIRONMENT='{custom_env_val}'. "
-                f"WEBSOCKET_SERVICE_URL in HTTP handler='{websocket_service_url_val}'. Returning 101.")
-
-    # For ALB, returning 101 is generally expected to trigger the upgrade attempt.
-    # The actual WebSocket connection will fail later if the proxy targets incorrectly.
-    
-    headers = {
-        "Connection": "Upgrade",
-        "Upgrade": "websocket",
+# Add this health endpoint for websocket proxy health checks
+@app.get("/ws/health")
+async def websocket_health_check():
+    """Health check endpoint for WebSocket service status."""
+    return {
+        "status": "healthy",
+        "service": "api-server",
+        "message": "WebSocket connections are now handled directly by the websocket-lb-service",
+        "timestamp": datetime.now().isoformat()
     }
-    
-    return Response(
-        status_code=status.HTTP_101_SWITCHING_PROTOCOLS,
-        headers=headers
-    )
 
 # Placeholder for get_redis_client - replace with actual implementation
 # This is a common pattern. If it's different, the code will need adjustment.
