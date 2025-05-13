@@ -3,14 +3,42 @@
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import BackToTopButton from '@/components/BackToTopButton';
+import { createClient } from "@/utils/supabase/client";
 
 export default function FooterComponent() {
   const pathname = usePathname();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
   // Pages where we don't want to show the footer
-  const noFooterPages = ['/dashboard', '/chat', '/invest', '/portfolio'];
+  const noFooterPages = ['/dashboard', '/chat', '/invest', '/portfolio', '/news'];
   
-  // Check if current path starts with any of the paths where we don't want to show footer
-  const shouldShowFooter = !noFooterPages.some(page => pathname?.startsWith(page));
+  useEffect(() => {
+    setIsClient(true);
+    
+    // Check authentication status
+    const checkAuth = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        setIsAuthenticated(!!user);
+      } catch (error) {
+        console.error("Footer auth check error:", error);
+        
+        // Fallback to localStorage if Supabase check fails
+        const userId = localStorage.getItem("userId");
+        setIsAuthenticated(!!userId);
+      }
+    };
+    
+    checkAuth();
+  }, [pathname]);
+  
+  // Don't show footer on protected pages or when authenticated
+  const shouldShowFooter = 
+    isClient && 
+    !isAuthenticated && 
+    !noFooterPages.some(page => pathname?.startsWith(page));
   
   if (!shouldShowFooter) {
     return null;

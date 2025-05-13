@@ -6,6 +6,7 @@ import { ThemeProvider } from "next-themes";
 import MainSidebar from "@/components/MainSidebar";
 import { createClient } from "@/utils/supabase/client";
 import SideBySideLayout from "./SideBySideLayout";
+import FooterComponent from "@/components/FooterComponent";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -175,6 +176,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
               children
             )}
           </div>
+          
+          {/* Only show footer on non-authenticated pages */}
+          {!isAuthenticated && !isLoading && <FooterComponent />}
         </main>
         
         {/* Actual sidebar component - now with fixed positioning */}

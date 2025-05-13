@@ -53,7 +53,8 @@ export default function RootLayout({
           </main>
 
           {/* --- Footer ---------------------------------------------------- */}
-          <FooterComponent />
+          {/* The FooterComponent already has its own logic for when to display */}
+          {/* but it was being forced to render in the layout anyway */}
         </ClientLayout>
       </body>
     </html>

@@ -138,7 +138,7 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
             timeoutRef.current.connection = setTimeout(() => {
                 if (ws.readyState !== WebSocket.OPEN) {
                     console.log('WebSocket connection timeout after 10 seconds');
-                    ws.close(1006, 'Connection timeout'); // Use code 1006 for abnormal closure
+                    ws.close(1000, 'Connection timeout'); // Changed from 1006 to 1000 for normal closure
                 }
             }, 10000);
             

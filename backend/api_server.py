@@ -337,6 +337,8 @@ if BrokerClient:
         # Test API keys validity
         if os.getenv("BROKER_API_KEY") and os.getenv("BROKER_SECRET_KEY"):
             logger.info("Testing Alpaca broker client connection...")
+            logger.info(f"Broker API Key: {os.getenv('BROKER_API_KEY')}")
+            logger.info(f"Broker Secret Key: {os.getenv('BROKER_SECRET_KEY')}")
             try:
                 broker_client.get_clock()
                 logger.info("Successfully connected to Alpaca broker API")

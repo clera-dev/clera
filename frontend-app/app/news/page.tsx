@@ -3,12 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Globe, TrendingUp, Eye, ArrowDown, ArrowUp, Volume2, Loader2, Search, Plus, AlertCircle } from "lucide-react";
+import { Globe, TrendingUp, Eye, ArrowDown, ArrowUp, Volume2, Loader2, Search, Plus, AlertCircle, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import SideBySideLayout from '@/components/SideBySideLayout';
 import { getAlpacaAccountId } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/client";
 
@@ -291,7 +290,7 @@ export default function NewsPage() {
   }, [searchTerm]);
 
   return (
-    <SideBySideLayout isChatOpen={isChatOpen} onCloseSideChat={() => setIsChatOpen(false)}>
+    <div className="w-full h-full relative">
       <div className="p-4 space-y-4 bg-background text-foreground w-full min-h-full">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-4">
           <div>
@@ -547,6 +546,6 @@ export default function NewsPage() {
           </div>
         </div>
       </div>
-    </SideBySideLayout>
+    </div>
   );
 } 

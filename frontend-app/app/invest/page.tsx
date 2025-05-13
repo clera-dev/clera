@@ -10,7 +10,7 @@ import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, TrendingUp, Lightbulb, Atom, Crown, Landmark, Clock, PlusCircle, Search } from "lucide-react";
+import { Terminal, TrendingUp, Lightbulb, Atom, Crown, Landmark, Clock, PlusCircle, Search, AlertCircle } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 // React DevTools might be causing the floating icon
@@ -240,7 +240,7 @@ export default function InvestPage() {
         <div className="flex items-center justify-center h-full p-4">
             <Alert variant="destructive" className="max-w-md">
                 <Terminal className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
+                <AlertTitle>Account Error</AlertTitle>
                 <AlertDescription>
                     {balanceError}
                 </AlertDescription>
@@ -259,11 +259,11 @@ export default function InvestPage() {
           </div>
           
           {!isLoadingBalance && balanceError && !isLoadingAccountId && (
-            <Alert variant="destructive" className="mb-2">
-                <Terminal className="h-4 w-4" />
-                <AlertTitle>Balance Error</AlertTitle>
+            <Alert variant="default" className="mb-2 bg-amber-50 border-amber-200 text-amber-800">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Account Information Unavailable</AlertTitle>
                 <AlertDescription>
-                    {balanceError}
+                    We're having trouble connecting to your account data. You can still browse investments, but buying functionality may be limited.
                 </AlertDescription>
             </Alert>
           )}
@@ -361,7 +361,7 @@ export default function InvestPage() {
              {isLoadingBalance || isLoadingAccountId ? (
                  <Skeleton className="h-6 w-32 mt-1" />
              ) : balanceError ? (
-                 <p className="text-sm font-semibold text-destructive">Error Loading</p>
+                 <p className="text-sm text-amber-600">Account info unavailable</p>
              ) : (
                  <p className="text-lg font-semibold">{formatCurrency(availableBalance?.cash)}</p>
              )}

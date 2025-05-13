@@ -9,7 +9,8 @@ const protectedPostOnboardingPaths = [
   '/dashboard',
   '/portfolio',
   '/invest',
-  '/chat'
+  '/chat',
+  '/news'
 ];
 
 export async function middleware(request: NextRequest) {

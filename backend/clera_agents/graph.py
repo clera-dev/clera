@@ -21,6 +21,12 @@ from typing import List, Optional, Any, Dict, Tuple, Union, Annotated
 from typing_extensions import TypedDict
 
 # ---------------------------
+# Load environment variables FIRST before any agent imports
+# ---------------------------
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+load_dotenv(override=True)
+
+# ---------------------------
 # Import LangChain / LangGraph components
 # ---------------------------
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, FunctionMessage
@@ -49,14 +55,9 @@ from langchain_perplexity import ChatPerplexity
 
 
 # ---------------------------
-# Import tools for agents to use
+# Import tools for agents to use (AFTER environment variables are loaded)
 # ---------------------------
 from clera_agents import financial_analyst_agent, portfolio_management_agent, trade_execution_agent
-# ---------------------------
-# Disable tokenizer warnings and load environment variables
-# ---------------------------
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-load_dotenv(override=True)
 
 ###############################################################################
 # Define the conversation state type
