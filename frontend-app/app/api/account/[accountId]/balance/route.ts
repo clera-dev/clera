@@ -4,7 +4,7 @@ import { createClient } from '@/utils/supabase/server';
 // Function to fetch account balance from Alpaca API
 export async function GET(
   request: NextRequest,
-  { params }: { params: { accountId: string } }
+  { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
     // Create supabase server client to authenticate the user
@@ -23,7 +23,7 @@ export async function GET(
     }
     
     // Extract account ID from path params
-    const accountId = params.accountId;
+    const { accountId } = await params;
     
     if (!accountId) {
       return NextResponse.json(

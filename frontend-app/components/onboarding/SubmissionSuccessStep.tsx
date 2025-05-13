@@ -8,23 +8,26 @@ import { Check as CheckIcon, XCircle as XCircleIcon, Link as LinkIcon } from "lu
 import { usePostOnboardingNavigation } from "@/utils/navigation";
 
 interface SubmissionSuccessStepProps {
+  data: OnboardingData;
   accountCreated: boolean;
   accountExists?: boolean;
-  error?: string | null;
+  errorMessage?: string;
+  onBack: () => void;
   onReset: () => void;
   onComplete: () => void;
 }
 
 export default function SubmissionSuccessStep({ 
+  data,
   accountCreated, 
   accountExists,
-  error: errorMessage,
+  errorMessage,
+  onBack,
   onReset,
   onComplete
 }: SubmissionSuccessStepProps) {
   const router = useRouter();
   const { navigateAfterOnboarding } = usePostOnboardingNavigation();
-  const data = { firstName: "", lastName: "", email: "" };
   const [isConnectingBank, setIsConnectingBank] = useState(false);
   const [bankConnected, setBankConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
