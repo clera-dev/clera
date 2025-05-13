@@ -1,5 +1,5 @@
 import Link from "next/link";
-import HeaderAuth from "@/components/header-auth"; // Import the actual auth button component
+import { Button } from "@/components/ui/button";
 
 // Placeholder for Clera Logo - Replace with your actual logo component/SVG
 const CleraLogo = () => (
@@ -16,6 +16,20 @@ const CleraLogo = () => (
     <path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.105 0 2 .895 2 2s-.895 2-2 2-2-.895-2-2 .895-2 2-2zM12 14c-2.21 0-4 1.79-4 4h8c0-2.21-1.79-4-4-4z"></path>
   </svg>
 );
+
+// Client-side auth buttons replacement for direct server component usage
+const AuthButtons = () => {
+  return (
+    <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
+      <Button asChild size="lg" className="w-full" variant="outline">
+        <Link href="/sign-in">Sign in</Link>
+      </Button>
+      <Button asChild size="lg" className="w-full bg-blue-600 hover:bg-blue-700">
+        <Link href="/sign-up">Sign up</Link>
+      </Button>
+    </div>
+  );
+};
 
 export default function Hero() {
   return (
@@ -35,10 +49,8 @@ export default function Hero() {
           at a fraction of the cost.
         </p>
 
-        {/* Use the HeaderAuth component for Sign In/Sign Up */}
-        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm mt-4">
-           <HeaderAuth />
-        </div>
+        {/* Use client-side buttons instead of HeaderAuth */}
+        <AuthButtons />
 
         <Link
           href="https://www.askclera.com"

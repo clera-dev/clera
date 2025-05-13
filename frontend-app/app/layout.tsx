@@ -2,12 +2,12 @@ import "@/app/globals.css";
 import { Inter } from "next/font/google";
 import Link from "next/link";
 import ClientLayout from "@/components/ClientLayout";
-import HeaderAuth from "@/components/header-auth";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { hasEnvVars } from "@/utils/supabase/check-env-vars";
 import { EnvVarWarning } from "@/components/env-var-warning";
 import HeaderController from "@/components/HeaderController";
 import LogoLink from "@/components/LogoLink";
+import ClientAuthButtons from "@/components/ClientAuthButtons";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -42,7 +42,7 @@ export default function RootLayout({
                     <div className="flex items-center gap-2">
                     </div>
                   </div>
-                  {!hasEnvVars ? <EnvVarWarning /> : <HeaderAuth />}
+                  {!hasEnvVars ? <EnvVarWarning /> : <ClientAuthButtons />}
                 </div>
               </nav>
             </HeaderController>

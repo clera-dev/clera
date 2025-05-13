@@ -5,15 +5,15 @@ const nextConfig = {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
     
     return [
-      // WebSocket endpoint - proxied through the API server
-      {
-        source: '/ws/portfolio/:accountId*',
-        destination: `${backendUrl}/ws/portfolio/:accountId*`,
-      },
-      {
-        source: '/ws/health',
-        destination: `${backendUrl}/ws/health`,
-      },
+      // REMOVE: WebSocket endpoint - proxied through the API server
+      // {
+      //   source: '/ws/portfolio/:accountId*',
+      //   destination: `${backendUrl}/ws/portfolio/:accountId*`,
+      // },
+      // {
+      //   source: '/ws/health',
+      //   destination: `${backendUrl}/ws/health`,
+      // },
       // Portfolio endpoints
       {
         source: '/api/portfolio/:path*',

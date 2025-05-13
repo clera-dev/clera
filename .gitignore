@@ -50,12 +50,16 @@ fresh_env/
 logs/
 *.log
 npm-debug.log*
+deployment.log
+deployment_new.log
 
 # Testing
 .coverage
 .pytest_cache/
 coverage/
 .nyc_output/
+coverage_report/
+backend/coverage_report/
 
 # Build
 dist/
@@ -77,6 +81,7 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 *.db
+dump.rdb
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
@@ -138,7 +143,6 @@ hs_err_pid*
 fresh_env/
 
 # Docker related
-docker-compose.yml
 .dockerignore
 
 # Python installer
@@ -156,4 +160,12 @@ todo.md
 
 * 2.*
 
-/backend/coverage_report
+# Redis database dumps
+dump.rdb
+
+# AWS deployment files
+.aws/
+setup-aws-secrets.sh
+
+# Watchfiles
+.watchfiles.env
