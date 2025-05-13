@@ -2,7 +2,10 @@
 const nextConfig = {
   // transpilePackages: ['@alpacahq/alpaca-trade-api'], // No longer needed
   async rewrites() {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    // Add a default value for backendUrl if it's not defined in environment variables
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    
+    console.log(`Using backend URL for rewrites: ${backendUrl}`);
     
     return [
       // WebSocket endpoint - proxied through the API server

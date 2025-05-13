@@ -19,13 +19,15 @@ interface AgreementsStepProps {
   onUpdate: (data: Partial<OnboardingData>) => void;
   onContinue: () => void;
   onBack: () => void;
+  isSubmitting?: boolean;
 }
 
 export default function AgreementsStep({
   data,
   onUpdate,
   onContinue,
-  onBack
+  onBack,
+  isSubmitting = false
 }: AgreementsStepProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   
@@ -186,10 +188,24 @@ export default function AgreementsStep({
           variant="outline" 
           onClick={onBack} 
           className="flex-1"
+          disabled={isSubmitting}
         >
           Back
         </Button>
-        <Button type="submit" className="flex-1">Continue</Button>
+        <Button 
+          type="submit" 
+          className="flex-1"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <>
+              <span className="mr-2">
+                <span className="animate-spin inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+              </span>
+              Submitting...
+            </>
+          ) : "Continue"}
+        </Button>
       </div>
     </form>
   );

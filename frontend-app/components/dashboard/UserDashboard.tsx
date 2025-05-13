@@ -59,11 +59,37 @@ export default function UserDashboard({
       setIsLoadingAccountId(true);
       setAccountIdError(null);
       try {
+        // Try to get the Alpaca Account ID using the utility function
         const fetchedId = await getAlpacaAccountId();
+        
         if (fetchedId) {
           setAlpacaAccountId(fetchedId);
         } else {
-          setAccountIdError("Could not retrieve your Alpaca Account ID. Portfolio and Chat features may be unavailable.");
+          // Fallback: Try to directly fetch from Supabase if the utility function fails
+          console.log("Attempting direct DB fallback for Alpaca ID");
+          const supabase = createClient();
+          const { data: { user } } = await supabase.auth.getUser();
+          
+          if (user) {
+            const { data: onboardingData } = await supabase
+              .from('user_onboarding')
+              .select('alpaca_account_id, onboarding_data')
+              .eq('user_id', user.id)
+              .single();
+              
+            if (onboardingData?.alpaca_account_id) {
+              console.log("Direct DB fetch successful:", onboardingData.alpaca_account_id);
+              setAlpacaAccountId(onboardingData.alpaca_account_id);
+              // Store for future use
+              try {
+                localStorage.setItem('alpacaAccountId', onboardingData.alpaca_account_id);
+              } catch (e) { console.error("LocalStorage Error:", e); }
+            } else {
+              setAccountIdError("Could not retrieve your Alpaca Account ID. Portfolio and Chat features may be unavailable.");
+            }
+          } else {
+            setAccountIdError("User authentication required. Please sign in again.");
+          }
         }
       } catch (err) {
         console.error("Error fetching Alpaca Account ID in UserDashboard:", err);

@@ -21,27 +21,37 @@ export default async function Signup(props: {
 
   return (
     <>
-      <form className="flex flex-col min-w-64 max-w-64 mx-auto">
-        <h1 className="text-2xl font-medium">Sign up</h1>
-        <p className="text-sm text text-foreground">
+      <form action={signUpAction} className="flex flex-col min-w-[380px] max-w-[380px] mx-auto bg-black/30 p-10 rounded-xl shadow-lg border border-gray-800">
+        <h1 className="text-3xl font-medium mb-3">Sign up</h1>
+        <p className="text-base text-foreground mb-8">
           Already have an account?{" "}
           <Link className="text-primary font-medium underline" href="/sign-in">
             Sign in
           </Link>
         </p>
-        <div className="flex flex-col gap-2 [&>input]:mb-3 mt-8">
-          <Label htmlFor="email">Email</Label>
-          <Input name="email" placeholder="you@example.com" required />
-          <Label htmlFor="password">Password</Label>
-          <PasswordInput
-            name="password"
-            placeholder="Your password"
-            minLength={6}
-            required
-          />
-          <SubmitButton formAction={signUpAction} pendingText="Signing up...">
-            Sign up
-          </SubmitButton>
+        <div className="flex flex-col gap-6 [&>input]:mb-5">
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-base">Email</Label>
+            <Input name="email" placeholder="you@example.com" required className="h-12 text-base px-4" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password" className="text-base">Password</Label>
+            <PasswordInput
+              name="password"
+              placeholder="Your password"
+              minLength={6}
+              required
+              className="h-12 text-base px-4"
+            />
+          </div>
+          <div className="mt-4">
+            <SubmitButton 
+              pendingText="Signing up..."
+              className="w-full h-12 text-base mt-2"
+            >
+              Sign up
+            </SubmitButton>
+          </div>
           <FormMessage message={searchParams} />
         </div>
       </form>

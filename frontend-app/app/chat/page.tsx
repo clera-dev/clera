@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { PlusIcon } from 'lucide-react';
+import { PlusIcon, Clock } from 'lucide-react';
 import { 
   Message, 
   // createChatSession, // Handled by Chat component interaction with SDK
@@ -25,7 +25,7 @@ export default function ChatPage() {
   const [accountId, setAccountId] = useState<string | null>(null); // Can be null initially
   const [userId, setUserId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Changed to false by default
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isLoading, setIsLoading] = useState(true); // Unified loading state
@@ -195,7 +195,7 @@ export default function ChatPage() {
   // Loading State
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center h-[calc(100vh-64px)]">
         <p className="text-muted-foreground">Loading chat data...</p>
       </div>
     );
@@ -204,7 +204,7 @@ export default function ChatPage() {
   // Error State
   if (error) {
      return (
-        <div className="flex items-center justify-center min-h-screen p-4">
+        <div className="flex items-center justify-center h-[calc(100vh-64px)] p-4">
             <Alert variant="destructive" className="max-w-md">
                 <Terminal className="h-4 w-4" />
                 <AlertTitle>Error Loading Chat</AlertTitle>
@@ -222,7 +222,7 @@ export default function ChatPage() {
   if (!accountId || !userId) {
       // This case should theoretically be covered by the error state, but as a safeguard:
       return (
-        <div className="flex items-center justify-center min-h-screen">
+        <div className="flex items-center justify-center h-[calc(100vh-64px)]">
           <p className="text-muted-foreground">Missing critical user or account data.</p>
         </div>
       );
@@ -230,63 +230,81 @@ export default function ChatPage() {
 
   // Render Chat Page
   return (
-    <div className="flex h-screen overflow-hidden"> {/* Prevent double scrollbars */}
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col"> {/* Use flex column */}
-        {/* Header */}
-        <div className="h-16 border-b flex-shrink-0 flex items-center justify-between px-4">
-          <h1 className="font-semibold">Chat with Clera</h1>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleNewChat}
-              className="flex items-center"
-              disabled={isLoading} // Disable during load
-            >
-              <PlusIcon size={16} className="mr-1" />
-              New Chat
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="lg:hidden"
-            >
-              History
-            </Button>
-          </div>
-        </div>
+    <div className="h-[calc(100vh-64px)] relative">
+      {/* Main Content - ensure it's above any potential overlays */}
+      <div className="h-full flex flex-col max-w-7xl mx-auto px-5 relative z-20">
+        {/* Header - removed border-b class */}
+        <header className="h-16 flex items-center justify-between bg-background relative z-30">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleNewChat}
+            className="flex items-center"
+            disabled={isLoading}
+            style={{ pointerEvents: 'auto' }}
+          >
+            <PlusIcon size={16} className="mr-1" />
+            New Chat
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="flex items-center"
+            style={{ pointerEvents: 'auto' }}
+          >
+            <Clock size={16} className="mr-1" />
+            History
+          </Button>
+        </header>
         
-        {/* Chat Component takes remaining space */}
-        <div className="flex-grow overflow-y-auto"> {/* Allow Chat component to scroll */}
+        {/* Chat Container - ensure it's fully interactive */}
+        <div className="flex-grow relative z-20">
           <Chat 
             accountId={accountId} 
             userId={userId}
             onClose={() => {}} 
             isFullscreen={true} 
             sessionId={currentSessionId}
-            initialMessages={initialMessages} // Pass potentially empty array
-            onQuerySent={handleQuerySent} // Pass the new handler
-            isLimitReached={isLimitReached} // Pass limit status
+            initialMessages={initialMessages}
+            onQuerySent={handleQuerySent}
+            isLimitReached={isLimitReached}
             onSessionCreated={handleSessionCreated}
-            onMessageSent={handleMessageSent} // Added this line
-            // key={currentSessionId || 'new'} // Force re-render on session change
+            onMessageSent={handleMessageSent}
           />
         </div>
       </div>
       
-      {/* Chat Sidebar */}
-      <div className={`w-72 border-l bg-background flex-shrink-0 ${isSidebarOpen ? 'block' : 'hidden lg:block'}`}>
-        <ChatSidebar 
-          accountId={accountId}
-          currentSessionId={currentSessionId}
-          onNewChat={handleNewChat}
-          onSelectSession={handleSelectSession}
-          onClose={() => setIsSidebarOpen(false)}
-          refreshKey={refreshTrigger}
+      {/* Sidebar overlay - only render when sidebar is open */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/10 z-30"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-hidden="true"
         />
-      </div>
+      )}
+      
+      {/* Floating Sidebar - only render when sidebar is open */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed top-16 right-0 bottom-0 w-72 bg-background border-l shadow-lg z-40"
+        >
+          {accountId && (
+            <ChatSidebar 
+              accountId={accountId}
+              currentSessionId={currentSessionId}
+              onNewChat={handleNewChat}
+              onSelectSession={(sessionId) => {
+                handleSelectSession(sessionId);
+                setIsSidebarOpen(false);
+              }}
+              onClose={() => setIsSidebarOpen(false)}
+              refreshKey={refreshTrigger}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 } 

@@ -451,10 +451,10 @@ export default function PortfolioPage() {
 
   if (isLoading && !allTimeHistory) {
     return (
-      <div className="p-6 max-w-7xl mx-auto space-y-8">
+      <div className="p-4 space-y-6">
         <Skeleton className="h-10 w-1/3" />
         <Skeleton className="h-48 w-full" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Skeleton className="h-40 w-full" />
             <Skeleton className="h-40 w-full" />
         </div>
@@ -467,7 +467,7 @@ export default function PortfolioPage() {
 
   if (error && !isLoading && !accountId) {
     return (
-     <div className="p-6 max-w-7xl mx-auto">
+     <div className="p-4">
        <Alert variant="destructive">
          <AlertCircle className="h-4 w-4" />
          <AlertTitle>Error</AlertTitle>
@@ -486,9 +486,9 @@ export default function PortfolioPage() {
   } as React.CSSProperties : undefined;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8 dark bg-background text-foreground">
+    <div className="p-4 space-y-4 bg-background text-foreground w-full h-full">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Your Portfolio</h1>
+        <h1 className="text-2xl font-bold">Your Portfolio</h1>
         <div className="flex items-center gap-2">
           <Button 
             variant="outline" 
@@ -579,8 +579,8 @@ export default function PortfolioPage() {
       {/* Real-time Portfolio Value with integrated chart */}
       {accountId && (
         <Card className="bg-card shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-lg font-medium">Portfolio Summary</CardTitle>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base md:text-lg font-medium">Portfolio Summary</CardTitle>
           </CardHeader>
           <CardContent className="pb-0">
             <LivePortfolioValue accountId={accountId} />
@@ -607,7 +607,7 @@ export default function PortfolioPage() {
       {/* Notification for new users */}
       {!hasTradeHistory && accountId && (
         <Alert variant="default" className="bg-primary/10 border-primary text-foreground">
-          <AlertTitle className="flex items-center gap-2 text-lg">
+          <AlertTitle className="flex items-center gap-2 text-base md:text-lg">
             <LockIcon size={18} className="text-primary" /> 
             Your portfolio analysis is waiting for your first trade
           </AlertTitle>
@@ -620,10 +620,10 @@ export default function PortfolioPage() {
         </Alert>
       )}
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card className="bg-card shadow-lg">
-            <CardHeader>
-             <CardTitle className="text-xl">Portfolio Analytics</CardTitle>
+            <CardHeader className="py-3">
+             <CardTitle className="text-base md:text-lg">Portfolio Analytics</CardTitle>
            </CardHeader>
             <CardContent>
                 {!analytics && isLoading ? (
@@ -643,8 +643,8 @@ export default function PortfolioPage() {
         </Card>
 
         <Card className="bg-card shadow-lg">
-           <CardHeader>
-              <CardTitle className="text-xl">Asset Allocation</CardTitle>
+           <CardHeader className="py-3">
+              <CardTitle className="text-base md:text-lg">Asset Allocation</CardTitle>
            </CardHeader>
            <CardContent>
              {!isLoading && positions.length === 0 && !error ? (
@@ -663,8 +663,8 @@ export default function PortfolioPage() {
 
       <div style={lockedSectionStyle}>
         <Card className="bg-card shadow-lg">
-           <CardHeader>
-               <CardTitle className="text-xl">Investment Growth Projection</CardTitle>
+           <CardHeader className="py-3">
+               <CardTitle className="text-base md:text-lg">Investment Growth Projection</CardTitle>
            </CardHeader>
            <CardContent>
               {isLoading && positions.length === 0 ? (

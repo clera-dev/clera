@@ -41,12 +41,14 @@ export default async function ProtectedPage() {
   // If not in onboarding, show the onboarding flow
   if (!hasCompletedOnboarding) {
     return (
-      <div className="flex-1 w-full flex flex-col p-2 sm:p-4">
+      <div className="flex-1 w-full flex flex-col p-2 sm:p-4 min-h-screen">
         <OnboardingStatusSetter status={onboardingData?.status || 'incomplete'} />
-        <OnboardingFlow 
-          userId={user.id} 
-          initialData={onboardingData?.onboarding_data}
-        />
+        <div className="flex-grow pb-16">
+          <OnboardingFlow 
+            userId={user.id} 
+            initialData={onboardingData?.onboarding_data}
+          />
+        </div>
       </div>
     );
   }
