@@ -18,12 +18,7 @@ from decimal import Decimal
 from uuid import UUID
 import contextlib
 
-# Add this block at the top before other imports to ensure environment variables are loaded
-# ----------------------
 from dotenv import load_dotenv
-# Load environment variables from .env file before importing any modules that might need them
-load_dotenv(override=True)  # override=True will replace existing environment variables
-# ----------------------
 
 from decouple import config
 import aiohttp
@@ -39,12 +34,21 @@ from langgraph.errors import GraphInterrupt
 from langgraph.graph.message import add_messages
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, FunctionMessage
 
+
 # Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
 logger.setLevel(logging.INFO) # Changed to INFO for less verbose startup in prod
 logging_handler = logging.StreamHandler()
 logging_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(logging_handler)
+
+# Only load .env file if not running in a Copilot managed environment (where env vars are injected)
+# or if explicitly in a 'development' environment as per .env.
+if not os.getenv("COPILOT_ENVIRONMENT_NAME") and os.getenv("ENVIRONMENT", "development").lower() == "development":
+    load_dotenv(override=True)  # override=True will replace existing environment variables
+    logger.info("Loaded environment variables from .env file for local development.")
+else:
+    logger.info("Skipping .env file loading. Assuming environment variables are managed externally (e.g., by Copilot).")
 
 # === VERY EARLY ENVIRONMENT CHECK ===
 INITIAL_ENV_VAL = os.getenv("ENVIRONMENT")

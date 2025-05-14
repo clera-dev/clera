@@ -7,6 +7,7 @@ type: Load Balanced Web Service
 http:
   # Expose the WebSocket endpoint at the root path
   path: '/'
+  alias: ws.askclera.com # Ensure HTTPS for the custom domain
   # Simple health check endpoint
   healthcheck:
     path: '/health'
