@@ -39,6 +39,7 @@ interface PositionDataForPie {
 export interface AssetAllocationPieProps {
     positions: PositionDataForPie[];
     accountId: string | null;
+    refreshTimestamp?: number;
 }
 
 // Define color palettes (adjust as needed)
@@ -73,7 +74,7 @@ const CustomTooltip = ({ active, payload }: any) => {
     return null;
 };
 
-const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId }) => {
+const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId, refreshTimestamp }) => {
     const [viewType, setViewType] = useState<'assetClass' | 'sector'>('assetClass');
     
     // State for sector allocation data
@@ -83,11 +84,14 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
 
     // Fetch sector data when the sector tab is active and accountId is available
     useEffect(() => {
-        if (viewType === 'sector' && accountId && !sectorData && !isSectorLoading) {
+        if (viewType === 'sector' && accountId && !isSectorLoading) {
             const fetchSectorData = async () => {
                 setIsSectorLoading(true);
                 setSectorError(null);
                 try {
+                    // If a refresh is triggered, we might want to clear existing sectorData
+                    // or ensure the fetch happens regardless of current sectorData state
+                    // For now, changing refreshTimestamp will trigger this if it's in deps.
                     const response = await fetch(`/api/portfolio/sector-allocation?account_id=${accountId}`);
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({ detail: "Failed to fetch sector allocation data." }));
@@ -102,10 +106,15 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                     setIsSectorLoading(false);
                 }
             };
+            
+            // Fetch if sectorData is not present OR if refreshTimestamp has changed
+            // (assuming refreshTimestamp implies a need to refetch)
+            // The check for !sectorData is to load initially.
+            // The change in refreshTimestamp is for subsequent refreshes.
             fetchSectorData();
         }
         // No explicit cleanup needed, fetch is triggered by state change
-    }, [viewType, accountId, sectorData, isSectorLoading]); // Re-run if viewType or accountId changes, or if data hasn't been loaded yet
+    }, [viewType, accountId, refreshTimestamp]); // Re-run if viewType, accountId, or refreshTimestamp changes. REMOVED isSectorLoading from deps.
 
     const allocationDataByClass = useMemo(() => {
         const totalValue = positions.reduce((sum, pos) => sum + safeParseFloat(pos.market_value), 0);
