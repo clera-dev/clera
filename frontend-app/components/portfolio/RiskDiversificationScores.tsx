@@ -74,6 +74,15 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
     const [error, setError] = useState<string | null>(null);
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Update internal state if initialData prop changes
+    useEffect(() => {
+        setAnalyticsData(initialData);
+        // If initialData is now present, and we were in a loading state due to its absence, set loading to false.
+        if (initialData && isLoading) {
+            setIsLoading(false);
+        }
+    }, [initialData]);
+
     const riskScore = analyticsData ? parseFloat(analyticsData.risk_score) : 0;
     const diversificationScore = analyticsData ? parseFloat(analyticsData.diversification_score) : 0;
 

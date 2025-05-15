@@ -149,6 +149,7 @@ export default function PortfolioPage() {
   const [assetDetailsMap, setAssetDetailsMap] = useState<Record<string, AssetDetails>>({});
   const activitiesEndpointAvailable = React.useRef<boolean | null>(null);
   const [hasTradeHistory, setHasTradeHistory] = useState(false);
+  const [allocationChartRefreshKey, setAllocationChartRefreshKey] = useState<number>(Date.now());
 
   const fetchData = async (url: string, options: RequestInit = {}): Promise<any> => {
     try {
@@ -494,10 +495,12 @@ export default function PortfolioPage() {
             variant="outline" 
             size="sm" 
             onClick={() => {
+              console.log("[Refresh Button Clicked] - Refresh process started.");
               if (accountId) {
                 setIsLoading(true);
                 const loadInitialStaticData = async () => {
                   try {
+                    console.log("[Refresh Button] - Fetching portfolio data...");
                     const positionsUrl = `/api/portfolio/positions?accountId=${accountId}`;
                     const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
                     const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}`;
@@ -509,59 +512,61 @@ export default function PortfolioPage() {
                     ]);
                     
                     setAnalytics(analyticsData);
-                    setOrders(ordersData);
+                    console.log("[Refresh Button] - Analytics data updated.", analyticsData);
                     
+                    // Initialize combinedTransactions with ordersData
+                    let combinedTransactions = Array.isArray(ordersData) ? [...ordersData] : [];
+
                     // Only try to load activities if previously determined to be available
                     if (activitiesEndpointAvailable.current === true) {
                       try {
                         const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100`;
                         const activitiesData = await fetchData(activitiesUrl);
                         
-                        // If we have activities data, combine it with orders for a complete transaction history
                         if (activitiesData && Array.isArray(activitiesData) && activitiesData.length > 0) {
-                          // Merge activities with orders for a complete transaction history
-                          const combinedTransactions = [...ordersData, ...activitiesData];
-                          // Sort by date (newest first)
+                          combinedTransactions = [...combinedTransactions, ...activitiesData];
                           combinedTransactions.sort((a, b) => {
                             const dateA = new Date(a.created_at || a.date || 0);
                             const dateB = new Date(b.created_at || b.date || 0);
                             return dateB.getTime() - dateA.getTime();
                           });
-                          setOrders(combinedTransactions);
                         }
                       } catch (error) {
-                        console.warn("Could not fetch activities, using orders only:", error);
-                        // Update our knowledge about the endpoint
+                        console.warn("[Refresh Button] - Could not fetch activities, using orders only:", error);
                         activitiesEndpointAvailable.current = false;
                       }
                     }
+                    setOrders(combinedTransactions);
+                    console.log("[Refresh Button] - Orders/Transactions data updated.", combinedTransactions);
                     
-                    const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);
+                    const totalMarketValue = Array.isArray(positionsData) ? positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0) : 0;
                     
-                    const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
+                    const enrichedPositions = Array.isArray(positionsData) ? await Promise.all(positionsData.map(async (pos: any) => {
                       const details = await fetchAssetDetails(pos.symbol);
                       const marketValue = safeParseFloat(pos.market_value);
-                      
                       const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
-                      
                       return {
                         ...pos,
                         name: details?.name || pos.symbol,
                         weight: weight,
                       };
-                    }));
+                    })) : [];
                     
                     setPositions(enrichedPositions);
+                    console.log("[Refresh Button] - Positions/Holdings data updated.", enrichedPositions);
                     
                     // Also refresh the history with the current selected time range
                     const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
                     const historyData = await fetchData(historyUrl);
                     setPortfolioHistory(historyData);
+                    console.log("[Refresh Button] - Portfolio history updated for range:", selectedTimeRange, historyData);
                     
                   } catch (err: any) {
-                    console.error("Error refreshing portfolio data:", err);
+                    console.error("[Refresh Button] - Error refreshing portfolio data:", err);
                   } finally {
                     setIsLoading(false);
+                    setAllocationChartRefreshKey(Date.now()); 
+                    console.log("[Refresh Button] - Allocation chart refresh key updated. Refresh process complete.");
                   }
                 };
                 
@@ -652,7 +657,7 @@ export default function PortfolioPage() {
              ) : isLoading && positions.length === 0 ? (
                  <Skeleton className="h-72 w-full" />
              ) : positions.length > 0 ? (
-                 <AssetAllocationPie positions={positions} accountId={accountId} />
+                 <AssetAllocationPie positions={positions} accountId={accountId} refreshTimestamp={allocationChartRefreshKey} />
              ) : (
                 <p className="text-muted-foreground p-6 text-center">Could not load position data. {error}</p>
              )}
