@@ -10,8 +10,15 @@ import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, TrendingUp, Lightbulb, Atom, Crown, Landmark, Clock, PlusCircle, Search, AlertCircle } from "lucide-react";
+import { Terminal, TrendingUp, Lightbulb, Atom, Crown, Landmark, Clock, PlusCircle, Search, AlertCircle, X } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose
+} from "@/components/ui/dialog";
 
 // React DevTools might be causing the floating icon
 // This ensures any dev tools elements are properly handled
@@ -71,13 +78,18 @@ export default function InvestPage() {
           rect.right > rootElement.clientWidth - 100;
         
         // If it's not a standard UI element and positioned at bottom right
+        // Also ensure it's not a Radix UI portal or popper content wrapper
         if (isAtBottomRight && 
             !child.id?.includes('root') && 
-            !child.classList.contains('Toaster')) {
+            !child.classList.contains('Toaster') &&
+            !child.hasAttribute('data-radix-portal') && 
+            !(child.hasAttribute('data-radix-popper-content-wrapper') || child.hasAttribute('data-radix-dialog-content'))
+            ) {
           // Check if it's likely a dev tool
           if (child.shadowRoot || 
               child.tagName.includes('-') || 
-              !child.classList.length) {
+              (!child.classList.length && !Object.keys((child as HTMLElement).dataset).some(key => key.startsWith('radix')))
+            ) {
             child.remove();
           }
         }
@@ -211,6 +223,7 @@ export default function InvestPage() {
 
   const handleStockSelect = (symbol: string) => {
     setSelectedSymbol(symbol);
+    // Open modal instead of scrolling
   };
 
   const handleOpenModal = () => {
@@ -225,6 +238,7 @@ export default function InvestPage() {
 
   const handleStockPickClick = (symbol: string) => {
     setSelectedSymbol(symbol);
+    // Open modal instead of scrolling
   };
 
   if (isLoadingAccountId) {
@@ -258,6 +272,19 @@ export default function InvestPage() {
             <h1 className="text-2xl font-bold">Discover Your Investment Opportunities:</h1>
           </div>
           
+          {/* Search Bar Section - Featured prominently at the top with visual highlight */}
+          <div className="mt-4 mb-6">
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 dark:from-slate-900 dark:to-slate-800 border border-slate-700 rounded-xl p-4 shadow-lg">
+              <div className="flex items-center gap-3 mb-3">
+                <Search className="text-primary h-5 w-5" />
+                <h2 className="text-xl font-semibold text-white">Find Investment Opportunities</h2>
+              </div>
+              <div className="w-full">
+                <StockSearchBar onStockSelect={handleStockSelect} />
+              </div>
+            </div>
+          </div>
+          
           {!isLoadingBalance && balanceError && !isLoadingAccountId && (
             <Alert variant="default" className="mb-2 bg-amber-50 border-amber-200 text-amber-800">
                 <AlertCircle className="h-4 w-4" />
@@ -267,19 +294,6 @@ export default function InvestPage() {
                 </AlertDescription>
             </Alert>
           )}
-        </div>
-
-        {/* Search Bar Section - Now at the top and larger */}
-        <div className="mb-8">
-          <div className="bg-card border rounded-lg p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <Search className="text-primary h-5 w-5" />
-              <h2 className="text-xl font-semibold">Find Investment Opportunities</h2>
-            </div>
-            <div className="w-full py-2">
-              <StockSearchBar onStockSelect={handleStockSelect} />
-            </div>
-          </div>
         </div>
 
         {/* Top Picks Section */}
@@ -316,7 +330,7 @@ export default function InvestPage() {
           </div>
         </div>
 
-        {/* Investment Ideas Section - Now with larger cards */}
+        {/* Investment Ideas Section */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
             <Lightbulb className="text-yellow-500 h-5 w-5" />
@@ -344,38 +358,48 @@ export default function InvestPage() {
         </div>
 
         <div className="pb-24">
-          {selectedSymbol ? (
-            <StockInfoCard symbol={selectedSymbol} />
-          ) : (
-            <div className="text-center text-muted-foreground py-8">
-              
-            </div>
-          )}
+          {/* Empty space for bottom padding */}
         </div>
       </div>
 
-      {selectedSymbol && (
-        <div className="absolute bottom-0 left-0 right-0 h-20 bg-background border-t border-border p-4 flex items-center justify-between shadow-md z-10">
-          <div className="text-left">
-             <p className="text-xs text-muted-foreground">Available to Invest</p>
-             {isLoadingBalance || isLoadingAccountId ? (
-                 <Skeleton className="h-6 w-32 mt-1" />
-             ) : balanceError ? (
-                 <p className="text-sm text-amber-600">Account info unavailable</p>
-             ) : (
-                 <p className="text-lg font-semibold">{formatCurrency(availableBalance?.cash)}</p>
-             )}
+      {/* Stock Information Dialog */}
+      <Dialog open={!!selectedSymbol} onOpenChange={(open) => !open && setSelectedSymbol(null)}>
+        <DialogContent className="sm:max-w-[85vw] lg:max-w-[70vw] xl:max-w-[60vw] p-0 max-h-[90vh] overflow-auto border-0 shadow-xl rounded-lg left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2">
+          <DialogHeader className="bg-slate-950 p-4 flex flex-row items-center justify-between sticky top-0 z-10 border-b border-slate-800">
+            <DialogTitle className="text-white text-xl font-semibold">{selectedSymbol}</DialogTitle>
+            <DialogClose className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded-full p-1">
+              <X className="h-5 w-5" />
+            </DialogClose>
+          </DialogHeader>
+          <div className="p-0">
+            {selectedSymbol && <StockInfoCard symbol={selectedSymbol} />}
           </div>
-          <Button 
-            size="lg" 
-            className="font-semibold text-lg px-6"
-            onClick={handleOpenModal}
-            disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
-           >
-             $ Invest
-           </Button>
-        </div>
-      )}
+          
+          {/* Action Footer */}
+          {selectedSymbol && (
+            <div className="sticky bottom-0 left-0 right-0 mt-auto bg-background border-t border-border p-4 flex items-center justify-between shadow-md z-10">
+              <div className="text-left">
+                <p className="text-xs text-muted-foreground">Available to Invest</p>
+                {isLoadingBalance || isLoadingAccountId ? (
+                  <Skeleton className="h-6 w-32 mt-1" />
+                ) : balanceError ? (
+                  <p className="text-sm text-amber-600">Account info unavailable</p>
+                ) : (
+                  <p className="text-lg font-semibold">{formatCurrency(availableBalance?.cash)}</p>
+                )}
+              </div>
+              <Button 
+                size="lg" 
+                className="font-semibold text-lg px-6"
+                onClick={handleOpenModal}
+                disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
+              >
+                $ Invest
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {selectedSymbol && accountId && (
         <BuyOrderModal 

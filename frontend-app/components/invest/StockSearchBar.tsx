@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useState, useEffect, useMemo } from "react";
-import { Check, ChevronsUpDown, Search, Loader2 } from "lucide-react"
+import { Check, Search, Loader2, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -15,10 +15,11 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 // Define Asset type
 interface Asset {
@@ -32,19 +33,18 @@ interface StockSearchBarProps {
 
 export default function StockSearchBar({ onStockSelect }: StockSearchBarProps) {
   const [open, setOpen] = useState(false)
-  const [selectedValue, setSelectedValue] = useState<string | null>(null); // Stores the selected symbol
-  const [searchTerm, setSearchTerm] = useState("") // Stores the input value
-  const [allAssets, setAllAssets] = useState<Asset[]>([]); // Store all fetched assets
-  const [isLoading, setIsLoading] = useState(true); // Loading state
-  const [error, setError] = useState<string | null>(null); // Error state
-
+  const [searchTerm, setSearchTerm] = useState("") 
+  const [allAssets, setAllAssets] = useState<Asset[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   // Fetch all assets on component mount
   useEffect(() => {
     const fetchAssets = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch('/api/market/assets'); // Use the backend endpoint
+        const response = await fetch('/api/market/assets'); 
         const result = await response.json();
         if (!response.ok || !result.success) {
           throw new Error(result.detail || result.message || 'Failed to fetch assets');
@@ -53,102 +53,105 @@ export default function StockSearchBar({ onStockSelect }: StockSearchBarProps) {
       } catch (err: any) {
         console.error("Error fetching assets:", err);
         setError(err.message || 'Could not load stock data.');
-        setAllAssets([]); // Clear assets on error
+        setAllAssets([]);
       } finally {
         setIsLoading(false);
       }
     };
     fetchAssets();
-  }, []); // Empty dependency array means run once on mount
+  }, []);
 
   // Filter assets based on search term
   const filteredAssets = useMemo(() => {
-    const lowerCaseSearch = searchTerm.toLowerCase();
-    if (!lowerCaseSearch) return allAssets.slice(0, 50); // Show first 50 if search is empty
+    const lowerCaseSearch = searchTerm.toLowerCase().trim();
+    if (!lowerCaseSearch) return allAssets.slice(0, 50);
 
     return allAssets.filter(
       (asset) =>
         asset.symbol.toLowerCase().includes(lowerCaseSearch) ||
         asset.name.toLowerCase().includes(lowerCaseSearch)
-    ).slice(0, 50); // Limit results for performance
+    ).slice(0, 50);
   }, [searchTerm, allAssets]);
 
   const handleSelect = (currentValue: string) => {
     const selectedSymbol = currentValue.toUpperCase();
-    setSelectedValue(selectedSymbol); // Update selected value state
     setOpen(false);
-    setSearchTerm(""); // Clear search term after selection
-    onStockSelect(selectedSymbol); // Notify parent component
+    setSearchTerm("");
+    onStockSelect(selectedSymbol);
   };
 
-  // Get the name of the selected asset
-  const selectedAssetName = useMemo(() => {
-     if (!selectedValue) return null;
-     return allAssets.find(asset => asset.symbol === selectedValue)?.name;
-  }, [selectedValue, allAssets]);
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full max-w-md justify-between text-muted-foreground hover:text-foreground"
-          disabled={isLoading || !!error} // Disable button while loading or if error
-        >
-          {isLoading 
-            ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading Stocks...</>
-            : error
-            ? `Error: ${error}`
-            : selectedValue
-            ? selectedAssetName ?? `Select ${selectedValue}...`
-            : "Search for a stock (e.g., AAPL, TSLA)..."}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-        <Command shouldFilter={false}> {/* We handle filtering manually */}
-          {/* Wrap Input and Icon */}
-          <div className="relative flex items-center px-2 border-b">
-             <Search className="absolute left-4 h-4 w-4 text-muted-foreground" /> {/* Position Icon */}
-             <CommandInput 
-                placeholder="Search stock symbol or name..." 
-                value={searchTerm}
-                onValueChange={setSearchTerm} 
-                className="h-9 w-full pl-8 pr-4 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 border-0" // Adjust padding for icon and remove border/ring
-             />
-          </div>
-          <CommandList>
-            {isLoading ? (
-                <div className="p-4 text-center text-sm text-muted-foreground">Loading...</div>
-            ) : error ? (
-                <div className="p-4 text-center text-sm text-destructive">{error}</div>
-            ) : filteredAssets.length === 0 ? (
-                <CommandEmpty>No stock found.</CommandEmpty>
-            ) : (
-                <CommandGroup heading="Suggestions">
-                {filteredAssets.map((asset) => (
+    <div className="relative w-full">
+      {/* Trigger Button */}
+      <Button
+        variant="outline"
+        onClick={() => setOpen(true)}
+        disabled={isLoading}
+        className="relative w-full justify-between border-slate-300 bg-white text-slate-800 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 h-12 px-4 py-2 shadow-sm rounded-lg"
+      >
+        <div className="flex items-center">
+          <Search className="mr-2 h-4 w-4 shrink-0 text-primary" />
+          <span className="text-sm">
+            {isLoading ? "Loading..." : "Search for stocks..."}
+          </span>
+        </div>
+        <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-slate-300 bg-slate-50 px-1.5 font-mono text-xs font-medium text-slate-600 opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 sm:flex">
+          <span className="text-xs">⌘</span>K
+        </kbd>
+      </Button>
+
+      {/* Search Dialog */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="p-0 gap-0 sm:max-w-[550px] overflow-hidden border-0 shadow-xl rounded-xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Search Stocks</DialogTitle>
+          </DialogHeader>
+          <Command shouldFilter={false} className="rounded-lg">
+            <CommandInput 
+              placeholder="Search for a stock symbol or company name..." 
+              value={searchTerm}
+              onValueChange={setSearchTerm}
+              autoFocus
+              className="border-none h-14 px-4 text-base focus:ring-0"
+            />
+            <CommandList className="max-h-[400px] overflow-auto p-2">
+              {isLoading ? (
+                <div className="py-6 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
+                  <p className="text-sm text-muted-foreground">Loading stocks...</p>
+                </div>
+              ) : error ? (
+                <div className="py-6 text-center">
+                  <p className="text-sm font-medium text-destructive">{error}</p>
+                </div>
+              ) : filteredAssets.length === 0 ? (
+                <CommandEmpty className="py-6 text-center">No stocks matching "{searchTerm}"</CommandEmpty>
+              ) : (
+                <CommandGroup heading="Stocks" className="pb-2">
+                  {filteredAssets.map((asset) => (
                     <CommandItem
-                    key={asset.symbol}
-                    value={asset.symbol} // Use symbol as the value for selection
-                    onSelect={handleSelect}
+                      key={asset.symbol}
+                      value={asset.symbol}
+                      onSelect={handleSelect}
+                      className="cursor-pointer p-3 my-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors data-[selected=true]:bg-slate-200 dark:data-[selected=true]:bg-slate-700"
                     >
-                    <span className="font-medium mr-2">{asset.symbol}</span>
-                    <span className="text-muted-foreground">{asset.name}</span>
-                    <Check
-                        className={cn(
-                        "ml-auto h-4 w-4",
-                        selectedValue === asset.symbol ? "opacity-100" : "opacity-0"
-                        )}
-                    />
+                      <div className="mr-3 flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-slate-200 dark:border-slate-600 dark:bg-slate-800 text-sm font-semibold">
+                        {asset.symbol.charAt(0)}
+                      </div>
+                      <div className="flex-1 overflow-hidden">
+                        <p className="truncate font-semibold">{asset.symbol}</p>
+                        <p className="truncate text-sm text-muted-foreground">
+                          {asset.name}
+                        </p>
+                      </div>
                     </CommandItem>
-                ))}
+                  ))}
                 </CommandGroup>
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+              )}
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 } 

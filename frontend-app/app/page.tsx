@@ -6,6 +6,9 @@ import Hero from "@/components/hero";
 // import SignUpUserSteps from "@/components/tutorial/sign-up-user-steps";
 // import { hasEnvVars } from "@/utils/supabase/check-env-vars";
 
+// This ensures Next.js knows this page should not be statically rendered
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   try {
     // Await the client creation
