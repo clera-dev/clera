@@ -524,3 +524,32 @@ The frontend application connects to the Clera backend services for:
 - Conversational AI features
 - Brokerage account creation through Alpaca's Broker API
 - ACH funding through Plaid integration or manual bank connection
+
+### Real-Time Portfolio Updates (WebSocket)
+
+To provide real-time updates for portfolio values, the frontend establishes a WebSocket connection with the `websocket-lb-service`.
+
+**Connection Details:**
+
+1.  **WebSocket URL**: The frontend connects to a secure WebSocket endpoint:
+    `wss://ws.askclera.com/ws/portfolio/{accountId}`
+    *   `{accountId}` is the user's specific Alpaca account ID.
+
+2.  **Authentication**: The WebSocket connection is authenticated using a Supabase JWT.
+    *   The frontend retrieves the current user's session token (JWT) from Supabase auth.
+    *   This token is then appended as a query parameter to the WebSocket URL:
+        `wss://ws.askclera.com/ws/portfolio/{accountId}?token=YOUR_SUPABASE_JWT`
+
+3.  **Client-Side Implementation**: 
+    *   The primary component responsible for managing this WebSocket connection and displaying real-time values is `frontend-app/components/portfolio/LivePortfolioValue.tsx`.
+    *   This component handles:
+        *   Constructing the correct WebSocket URL with the account ID and JWT.
+        *   Establishing the connection.
+        *   Handling incoming messages (e.g., updated portfolio values).
+        *   Managing connection lifecycle (opening, closing, errors, retries).
+
+**Environment Configuration:**
+
+*   The base WebSocket URL (`wss://ws.askclera.com`) should ideally be configurable via an environment variable in the frontend's `.env.local` or deployment settings, for example:
+    `NEXT_PUBLIC_WEBSOCKET_BASE_URL=wss://ws.askclera.com`
+    This allows for easier changes between development, staging, and production environments.
