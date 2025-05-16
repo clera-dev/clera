@@ -1,0 +1,19 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/update-trending-news",
+      "schedule": "0 14,20 * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/cron/update-trending-news",
+      "headers": [
+        {
+          "key": "Authorization",
+          "value": "Bearer ${CRON_SECRET}"
+        }
+      ]
+    }
+  ]
+} 

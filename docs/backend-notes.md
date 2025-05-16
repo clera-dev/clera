@@ -130,81 +130,102 @@ To run the complete system locally, you need:
 
 #### AWS Deployment
 
-For AWS deployment, two services are needed:
+For AWS deployment, two main services are involved in the real-time portfolio system:
 
-1. **API Server** (Port 8000)
-   - Handles HTTP API requests
-   - Proxies WebSocket connections to WebSocket Server
-   - Requires WebSocket protocol support in load balancer settings
+1.  **API Server** (`api-service` on Port 8000)
+    *   Handles HTTP API requests.
+    *   Previously proxied WebSocket connections, but this is now handled directly by the `websocket-lb-service`.
+    *   Still requires standard load balancer configurations for HTTP/HTTPS.
 
-2. **WebSocket Server** (Port 8001)
-   - Dedicated service for WebSocket connections
-   - Only accessible internally from API Server (not directly exposed)
-   - Uses Redis for inter-service communication
+2.  **WebSocket Load Balanced Service** (`websocket-lb-service` on Port 8001 internally, exposed via HTTPS/WSS on `ws.askclera.com`)
+    *   This is an AWS Copilot "Load Balanced Web Service" type.
+    *   Directly handles client WebSocket connections.
+    *   Uses Redis for inter-service communication if other backend components of the portfolio system need to publish updates (e.g., `market_data_consumer.py` publishing to Redis, `websocket_server.py` in `websocket-lb-service` reading from Redis and pushing to clients).
+    *   Authenticates connections using a JWT passed as a query parameter (`?token=...`), validated against `SUPABASE_JWT_SECRET`.
 
-**Required AWS Copilot Configuration**:
+**Required AWS Copilot Configuration Changes:**
 
-1. Update the API Server manifest (`backend/copilot/api-service/manifest.yml`):
-   ```yaml
-   # Add or update these configurations
-   http:
-     path: '/'
-     healthcheck:
-       path: '/health'
-       healthy_threshold: 2
-       unhealthy_threshold: 2
-       timeout: 5
-       interval: 10
-   
-   # Ensure WebSocket protocol is allowed
-   variables:
-     ALLOWED_ORIGINS: '*'  # Configure more specifically in production
-     WEBSOCKET_TIMEOUT: 300  # Timeout in seconds (5 minutes)
-   
-   # Add permission to communicate with the WebSocket service
-   network:
-     connect: true
-   ```
+1.  **Environment Manifest** (`backend/copilot/environments/production/manifest.yml`):
+    *   Ensure it imports the wildcard SSL certificate for `*.askclera.com`.
 
-2. Create a WebSocket Server manifest (`backend/copilot/websocket-service/manifest.yml`):
-   ```yaml
-   # WebSocket server service definition
-   name: websocket-service
-   type: Backend Service
-   
-   # Internal health check endpoint
-   http:
-     healthcheck:
-       path: '/health'
-       healthy_threshold: 2
-       unhealthy_threshold: 2
-       timeout: 5
-       interval: 10
-   
-   # Important: Ensure sufficient connection time
-   variables:
-     HEARTBEAT_INTERVAL: 30  # Seconds
-     CONNECTION_TIMEOUT: 300  # Seconds
-     REDIS_HOST: '${REDIS_ENDPOINT}'
-     REDIS_PORT: 6379
-     WEBSOCKET_PORT: 8001
-     WEBSOCKET_HOST: '0.0.0.0'
-   
-   # Service discovery configuration
-   network:
-     vpc:
-       placement: 'private'
-   ```
+    ```yaml
+    # In copilot/environments/production/manifest.yml
+    http:
+      public:
+        certificates:
+          - arn:aws:acm:us-west-1:YOUR_ACCOUNT_ID:certificate/YOUR_WILDCARD_CERT_ID # For *.askclera.com
+    # ... other environment configurations ...
+    ```
+    *Replace `YOUR_ACCOUNT_ID` and `YOUR_WILDCARD_CERT_ID` with your actual values.*
 
-3. Update load balancer settings in environment manifest to support WebSockets:
-   ```yaml
-   # In copilot/environments/[env-name]/manifest.yml
-   http:
-     public:
-       ingress:
-         timeout: 300  # Set timeout to match WebSocket timeout
-       protocol: 'HTTPS'  # Required for WSS (secure WebSockets)
-   ```
+2.  **API Server Manifest** (`backend/copilot/api-service/manifest.yml`):
+    *   No longer needs specific WebSocket proxy configurations if the frontend connects directly to `ws.askclera.com`.
+    *   If it still needs to make outbound connections *to* the websocket service for any reason (unlikely for client-facing websockets), `network: connect: true` might be relevant for service discovery.
+    *   It should define its own alias if accessed via a custom domain (e.g., `api.askclera.com`).
+    ```yaml
+    # backend/copilot/api-service/manifest.yml
+    name: api-service
+    type: Load Balanced Web Service # Or Backend Service if not publicly exposed
+
+    http:
+      path: '/' # Or your specific API paths
+      alias: api.askclera.com # If using a custom domain for the API
+      healthcheck:
+        path: '/health'
+    # ... other configurations ...
+    image:
+      port: 8000 # Your application port
+    # ...
+    variables:
+      REDIS_HOST: 'your-redis-endpoint' # Ensure this is correctly configured
+      REDIS_PORT: 6379
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET} # From SSM
+      # ... other env vars
+    secrets:
+      SUPABASE_JWT_SECRET: /copilot/${COPILOT_APPLICATION_NAME}/${COPILOT_ENVIRONMENT_NAME}/secrets/SUPABASE_JWT_SECRET
+    ```
+
+3.  **WebSocket Service Manifest** (`backend/copilot/websocket-lb-service/manifest.yml`):
+    *   This service is now a "Load Balanced Web Service" to be publicly accessible via HTTPS/WSS.
+    ```yaml
+    # backend/copilot/websocket-lb-service/manifest.yml
+    name: websocket-lb-service
+    type: Load Balanced Web Service
+
+    http:
+      path: '/' # The path your WebSocket server listens on, e.g., /ws/portfolio/*
+      alias: ws.askclera.com # Custom domain for WebSocket
+      healthcheck:
+        path: '/health' # A simple HTTP health check endpoint in your WebSocket server code
+        healthy_threshold: 2
+        unhealthy_threshold: 2
+        timeout: 5s
+        interval: 10s
+    
+    image:
+      build: backend/Dockerfile.websocket # Path to your WebSocket Dockerfile
+      port: 8001 # The port your WebSocket application listens on internally
+
+    cpu: 256
+    memory: 512
+    count: 1
+
+    variables:
+      REDIS_HOST: 'your-redis-endpoint' # Ensure this is correctly configured
+      REDIS_PORT: 6379
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET} # From SSM
+      # HEARTBEAT_INTERVAL, CONNECTION_TIMEOUT etc. specific to your app
+    
+    secrets:
+      SUPABASE_JWT_SECRET: /copilot/${COPILOT_APPLICATION_NAME}/${COPILOT_ENVIRONMENT_NAME}/secrets/SUPABASE_JWT_SECRET
+
+    # If this service needs to connect to other services like Redis within the VPC
+    # network:
+    #   vpc:
+    #     placement: 'private' # Or 'public' if direct internet access is needed by the tasks
+    ```
+    *   **Note on Health Check for WebSockets**: ALBs health check HTTP/HTTPS endpoints. Your WebSocket server application (`portfolio_realtime/websocket_server.py`) should expose a simple HTTP GET endpoint (e.g., `/health`) that returns a 200 OK. Copilot uses this to determine task health.
+    *   The `http.path` in the manifest should correspond to the base path the ALB forwards to your service. Your WebSocket server then handles specific paths like `/ws/portfolio/{accountId}`.
 
 For detailed testing and deployment steps, see:
 - `docs/portfolio_realtime_setup.md`
