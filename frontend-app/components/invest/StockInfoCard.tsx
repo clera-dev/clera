@@ -140,40 +140,38 @@ export default function StockInfoCard({ symbol }: StockInfoCardProps) {
 
   if (loading) {
     return (
-      <Card className="w-full max-w-2xl mx-auto">
-        <CardHeader>
-          <Skeleton className="h-8 w-3/5" />
-          <Skeleton className="h-4 w-2/5" />
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-          <Skeleton className="h-20 w-full" />
-           <Skeleton className="h-16 w-full" />
-        </CardContent>
-      </Card>
+      <div className="w-full p-6">
+        <Skeleton className="h-8 w-3/5 mb-2" />
+        <Skeleton className="h-4 w-2/5 mb-6" />
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+        <Skeleton className="h-20 w-full mb-4" />
+        <Skeleton className="h-16 w-full" />
+      </div>
     );
   }
 
   if (error) {
     return (
-       <Alert variant="destructive" className="w-full max-w-2xl mx-auto">
+      <div className="w-full p-6">
+        <Alert variant="destructive">
           <Terminal className="h-4 w-4" />
           <AlertTitle>Error Fetching Data for {symbol}</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      </div>
     );
   }
 
   if (!profile) {
      return (
-       <div className="text-center text-muted-foreground py-10 w-full max-w-2xl mx-auto">
+       <div className="text-center text-muted-foreground py-10 w-full">
           No profile data found for {symbol}.
        </div>
      );
@@ -187,17 +185,17 @@ export default function StockInfoCard({ symbol }: StockInfoCardProps) {
   }
 
   return (
-    <Card className="w-full max-w-2xl mx-auto shadow-lg">
-      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+    <div className="w-full bg-background">
+      <div className="flex flex-row items-start justify-between space-y-0 pb-2 px-4 pt-4">
         <div>
-          <CardTitle className="text-2xl font-bold">{profile.companyName} ({profile.symbol})</CardTitle>
-          <CardDescription>{profile.exchangeShortName} | {profile.sector} | {profile.industry}</CardDescription>
+          <h2 className="text-2xl font-bold">{profile.companyName} ({profile.symbol})</h2>
+          <p className="text-muted-foreground text-sm">{profile.exchangeShortName} | {profile.sector} | {profile.industry}</p>
         </div>
         {profile.image && 
             <img src={profile.image} alt={`${profile.companyName} logo`} className="h-12 w-12 rounded-md object-contain bg-muted p-1" />
         }
-      </CardHeader>
-      <CardContent className="space-y-4">
+      </div>
+      <div className="px-4 pb-6 space-y-4">
         {/* Price & Market Cap */}
         <div className="grid grid-cols-2 gap-4 border-b pb-4">
            <div>
@@ -290,7 +288,7 @@ export default function StockInfoCard({ symbol }: StockInfoCardProps) {
           </div>
         )}
 
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 } 
