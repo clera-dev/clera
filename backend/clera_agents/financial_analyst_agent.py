@@ -58,7 +58,7 @@ def web_search(query: str) -> str:
     is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
 
     if is_in_depth_query:
-        research_prompt = f"""You are the world's BEST financial news analyst. The user has asked for DETAILED/IN-DEPTH research. Provide a thorough, comprehensive analysis with actionable insights on the query below. Focus on concrete facts, figures, sources, and causal relationships. Avoid generic advice.
+        research_prompt = f"""You are the world's BEST financial news analyst. The user has asked for DETAILED/IN-DEPTH research. Provide a thorough, comprehensive analysis with actionable insights on the query below. Focus on concrete facts, figures, sources, and causal relationships. Avoid generic advice. Use recent AND credible financial news sources.
 
 Query: {query}
 """
