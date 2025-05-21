@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 // Polygon.io API response types
 interface PolygonNewsItem {
@@ -249,7 +249,18 @@ export async function GET(request: Request) {
   }
   
   try {
-    const supabase = await createClient();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Supabase URL or Service Role Key is not defined.');
+      return NextResponse.json({ error: 'Supabase configuration error' }, { status: 500 });
+    }
+
+    // Create a direct Supabase client with service role key for admin operations
+    // This approach is appropriate for cron jobs that need to perform admin-level operations
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
     const apiKey = process.env.POLYGON_API_KEY;
     
     if (!apiKey) {
