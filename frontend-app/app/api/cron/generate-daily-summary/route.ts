@@ -4,11 +4,6 @@ import { NextResponse } from 'next/server';
 import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-
 // Initialize Perplexity client
 const perplexity = new OpenAI({
   apiKey: process.env.PPLX_API_KEY,
@@ -255,14 +250,30 @@ async function enrichArticleDetails(url: string): Promise<any | null> {
 }
 
 export async function GET(request: Request) {
-  const authHeader = request.headers.get('authorization');
-  if (!process.env.CRON_SECRET || (process.env.VERCEL_ENV === 'production' && authHeader !== `Bearer ${process.env.CRON_SECRET}`)) {
+  // Basic authorization check
+  const authHeader = request.headers.get('Authorization');
+  const expectedHeader = `Bearer ${process.env.CRON_SECRET}`;
+  
+  if (!process.env.CRON_SECRET || authHeader !== expectedHeader) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   console.log('Starting daily summary generation cron job (using sonar-pro, medium context)...');
 
   try {
+    // Create Supabase client with proper permissions for this cron job
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      console.error('CRON: Supabase URL or Service Role Key is not defined.');
+      return NextResponse.json({ error: 'Supabase configuration error' }, { status: 500 });
+    }
+    
+    // Create a direct Supabase client with service role key for admin operations
+    // This approach is appropriate for cron jobs that need to perform admin-level operations
+    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+    
     const { data: users, error: usersError } = await supabase
       .from('user_onboarding') 
       .select('user_id, alpaca_account_id')
@@ -301,7 +312,7 @@ The user's financial literacy is ${financialLiteracy}. Tailor the language compl
 Focus on information directly impacting their investments or stated goals.
 Current date: ${currentDate}.
 
-When gathering information for this summary, endeavor to consult at least 4-6 distinct news articles from various reputable sources.
+When gathering information for this summary, endeavor to consult at least 4-6 distinct news articles from various reputable sources. (THESE ARTICLES *MUST* BE FROM RECENT AND CREDIBLE SOURCES, SUCH AS WSJ, Bloomberg, Reuters, Financial Times, etc.)
 
 Your response for the main summary MUST be a single, valid JSON object. ABSOLUTELY NO OTHER TEXT, MARKDOWN, OR EXPLANATIONS BEFORE OR AFTER THE JSON OBJECT.
 This JSON object must strictly follow this structure:

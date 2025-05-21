@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 // Types for Alpha Vantage API response
 interface AlphaVantageNewsItem {
@@ -292,6 +292,7 @@ async function updateWatchlistNewsMetadata(supabase: any, nextUpdate: Date): Pro
       
     if (metadataError) {
       console.error('Error updating watchlist news metadata:', metadataError);
+      console.error('Metadata error details:', metadataError);
     } else {
       console.log(`Updated watchlist news metadata with next update at ${nextUpdate.toISOString()}`);
     }
@@ -312,8 +313,17 @@ export async function GET(request: Request) {
   }
   
   try {
-    // Initialize Supabase client (createClient already handles cookies internally)
-    const supabase = await createClient();
+    // Create a direct Supabase client with service role key for admin operations
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Supabase URL or Service Role Key is not defined.');
+      return NextResponse.json({ error: 'Supabase configuration error' }, { status: 500 });
+    }
+
+    // Use direct client with service role key for admin operations
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
     // Fetch new trending news from Alpha Vantage
     const articles = await fetchTrendingNews();

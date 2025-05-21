@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import redisClient from '@/utils/redis';
 
 // Type for our cached news format
 interface CachedNewsItem {
@@ -22,24 +23,87 @@ interface TrendingNewsMetadata {
   next_update: string | null;
 }
 
+// Redis key constants
+const TRENDING_REFRESH_LOCK = 'news:trending:refresh:lock';
+const TRENDING_LAST_REFRESH = 'news:trending:last_refresh';
+const LOCK_TTL = 300; // 5 minutes in seconds
+
 // Function to check if the cache is stale and needs refreshing
 async function shouldRefreshCache(metadata: TrendingNewsMetadata): Promise<boolean> {
+  // If we have no metadata or missing critical fields, we need a refresh
   if (!metadata || !metadata.last_updated || !metadata.next_update) {
+    console.log('No valid metadata found, refresh needed');
     return true;
   }
   
   const nextUpdate = new Date(metadata.next_update);
   const now = new Date();
   
-  return now > nextUpdate;
+  // Calculate how many hours have passed since the scheduled update time
+  const millisecondsSinceNextUpdate = now.getTime() - nextUpdate.getTime();
+  const hoursSinceNextUpdate = millisecondsSinceNextUpdate / (1000 * 60 * 60);
+  
+  // Only trigger user-initiated refresh if data is extremely stale (24+ hours)
+  // This ensures normal refreshes happen only through scheduled cron jobs
+  const isExtremelyStale = hoursSinceNextUpdate > 24;
+  
+  if (isExtremelyStale) {
+    console.log(`Trending news data is extremely stale (${hoursSinceNextUpdate.toFixed(2)} hours past scheduled update). Triggering emergency refresh.`);
+    return true;
+  } else if (now > nextUpdate) {
+    console.log(`Trending news data is stale (${hoursSinceNextUpdate.toFixed(2)} hours past scheduled update), but not triggering refresh. Waiting for cron job.`);
+    return false;
+  }
+  
+  return false;
+}
+
+// Function to acquire a Redis lock
+async function acquireLock(lockKey: string, ttlSeconds: number): Promise<boolean> {
+  // Use Upstash Redis set with NX option (only set if key doesn't exist)
+  // Upstash Redis returns "OK" if the key was set (lock acquired)
+  const result = await redisClient.set(lockKey, '1', {
+    nx: true,
+    ex: ttlSeconds
+  });
+  
+  return result === "OK";
+}
+
+// Function to release a Redis lock
+async function releaseLock(lockKey: string): Promise<void> {
+  await redisClient.del(lockKey);
 }
 
 // Function to trigger the cron job manually
 async function triggerCacheRefresh(): Promise<void> {
+  // Check if last refresh was within the last 5 minutes
+  const lastRefreshTimeStr = await redisClient.get(TRENDING_LAST_REFRESH) as string | null;
+  const now = Date.now();
+  
+  if (lastRefreshTimeStr) {
+    const lastRefreshTime = parseInt(lastRefreshTimeStr, 10);
+    if (now - lastRefreshTime < 5 * 60 * 1000) {
+      console.log('Cache refresh completed recently. Skipping new request.');
+      return;
+    }
+  }
+
+  // Try to acquire the lock
+  const lockAcquired = await acquireLock(TRENDING_REFRESH_LOCK, LOCK_TTL);
+  if (!lockAcquired) {
+    console.log('Cache refresh already in progress. Skipping new request.');
+    return;
+  }
+  
   try {
-    // Get the base URL from env variable or use current origin if in browser
-    const baseUrl = typeof window !== 'undefined' 
-      ? window.location.origin 
+    // Update the last refresh time
+    await redisClient.set(TRENDING_LAST_REFRESH, now.toString());
+    
+    // Determine the base URL for the API
+    // For Next.js App Router, we can use absolute URLs that will be resolved on the server
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
       : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     
     const cronUrl = `${baseUrl}/api/cron/update-trending-news`;
@@ -68,6 +132,10 @@ async function triggerCacheRefresh(): Promise<void> {
   } catch (error) {
     console.error('Error triggering cache refresh:', error);
     // We don't throw here, as we still want to return whatever is in the cache
+  } finally {
+    // Release the lock after completion or error
+    // The lock will expire automatically after TTL, but we release it explicitly for cleaner resource management
+    await releaseLock(TRENDING_REFRESH_LOCK);
   }
 }
 

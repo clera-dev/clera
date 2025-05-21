@@ -1,10 +1,44 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { cookies } from 'next/headers';
 import { OpenAI } from 'openai';
 import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
+import redisClient from '@/utils/redis';
 
 const sentimentAnalyzer = new Sentiment();
+
+// Redis key constants for user generation locks
+const USER_SUMMARY_LOCK_PREFIX = 'news:portfolio:summary:lock:';
+const USER_SUMMARY_LOCK_TTL = 300; // 5 minutes in seconds
+
+// Helper function to get the Redis lock key for a user
+function getUserLockKey(userId: string): string {
+  return `${USER_SUMMARY_LOCK_PREFIX}${userId}`;
+}
+
+// Function to acquire a Redis lock for user summary generation
+async function acquireUserLock(userId: string): Promise<boolean> {
+  const lockKey = getUserLockKey(userId);
+  const result = await redisClient.set(lockKey, Date.now().toString(), {
+    ex: USER_SUMMARY_LOCK_TTL,
+    nx: true
+  });
+  return result === 'OK';
+}
+
+// Function to release a Redis lock
+async function releaseUserLock(userId: string): Promise<void> {
+  const lockKey = getUserLockKey(userId);
+  await redisClient.del(lockKey);
+}
+
+// Function to check if a user lock exists and is still valid
+async function isUserLockActive(userId: string): Promise<boolean> {
+  const lockKey = getUserLockKey(userId);
+  const lockExists = await redisClient.exists(lockKey);
+  return lockExists === 1;
+}
 
 // Helper function to sanitize a string that is almost JSON by escaping control characters.
 function sanitizeForJsonParse(text: string): string {
@@ -289,7 +323,7 @@ The user's financial literacy is ${financialLiteracy}. Tailor the language compl
 Focus on information directly impacting their investments or stated goals.
 Current date: ${currentDate}.
 
-When gathering information for this summary, endeavor to consult at least 4-6 distinct news articles from various reputable sources.
+When gathering information for this summary, endeavor to consult at least 4-6 distinct news articles from various reputable sources. (MAKE SURE THEY ARE RECENT AND CREDIBLE SOURCES, such as CNBC, Bloomberg, Reuters, Wall Street Journal, etc.)
 
 Your response for the main summary MUST be a single, valid JSON object. ABSOLUTELY NO OTHER TEXT, MARKDOWN, OR EXPLANATIONS BEFORE OR AFTER THE JSON OBJECT.
 This JSON object must strictly follow this structure:
@@ -388,7 +422,9 @@ Provide a summary covering:
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url); 
   try {
-    const supabase = await createClient(); 
+    // Use the existing createClient function from utils/supabase/server
+    const supabase = await createClient();
+    
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
@@ -410,22 +446,74 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch summary', details: summaryError.message }, { status: 500 });
     }
 
-    if (!summary) {
-      console.log(`No summary found for user ${user.id}. Generating one now...`);
+    // Check if summary exists and whether it's stale (older than 24 hours)
+    const isStale = !summary ? true : (() => {
+      const generatedTime = new Date(summary.generated_at).getTime();
+      const now = new Date().getTime();
+      const hoursSinceGeneration = (now - generatedTime) / (1000 * 60 * 60);
+      
+      // Log for transparency
+      console.log(`Summary for user ${user.id} was generated ${hoursSinceGeneration.toFixed(2)} hours ago`);
+      
+      // Normal refresh threshold is 24 hours
+      const refreshThreshold = 24; // hours
+      
+      if (hoursSinceGeneration > refreshThreshold) {
+        console.log(`Summary is stale (${hoursSinceGeneration.toFixed(2)} hours old, threshold: ${refreshThreshold} hours)`);
+        return true;
+      } else {
+        console.log(`Summary is still fresh (${hoursSinceGeneration.toFixed(2)} hours old, threshold: ${refreshThreshold} hours)`);
+        return false;
+      }
+    })();
+    
+    // Check if generation is already in progress for this user using Redis
+    const generationInProgress = await isUserLockActive(user.id);
+    
+    if (isStale && !generationInProgress) {
+      console.log(`Portfolio summary for user ${user.id} is ${summary ? 'stale' : 'not found'}, generating a new one...`);
+      
+      // Try to acquire the lock for this user
+      const lockAcquired = await acquireUserLock(user.id);
+      if (!lockAcquired) {
+        console.log(`Another instance is already generating a summary for user ${user.id}.`);
+        // If we have an old summary, return it
+        if (summary) {
+          return NextResponse.json(summary, { status: 200 });
+        }
+        return NextResponse.json({ message: 'Summary generation in progress' }, { status: 202 });
+      }
+      
       try {
         const newSummary = await generateSummaryForUser(user.id, supabase, requestUrl);
         console.log(`Successfully generated new summary for user ${user.id}`);
         return NextResponse.json(newSummary, { status: 200 });
       } catch (genError: any) {
         console.error(`Failed to generate summary for user ${user.id} during on-demand generation:`, genError);
+        
+        // If we have an old summary, return it even if it's stale
+        if (summary) {
+          console.log(`Returning stale summary for user ${user.id} due to generation error`);
+          return NextResponse.json(summary, { status: 200 });
+        }
         return NextResponse.json({ 
           error: 'Failed to generate summary', 
           details: genError.message 
         }, { status: 500 });
+      } finally {
+        // Always release the lock when we're done, whether successful or error
+        await releaseUserLock(user.id);
       }
+    } else if (generationInProgress && isStale) {
+      console.log(`Summary generation already in progress for user ${user.id}. Returning existing summary.`);
+      // If generation is in progress but we have an old summary, return it
+      if (summary) {
+        return NextResponse.json(summary, { status: 200 });
+      }
+      return NextResponse.json({ message: 'Summary generation in progress' }, { status: 202 });
     }
     
-    console.log(`Returning existing summary for user ${user.id}`);
+    console.log(`Returning existing summary for user ${user.id} (generated at ${summary?.generated_at})`);
     return NextResponse.json(summary, { status: 200 });
 
   } catch (error: any) {
@@ -433,3 +521,4 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 });
   }
 }
+ 

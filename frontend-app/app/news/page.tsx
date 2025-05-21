@@ -721,7 +721,7 @@ export default function NewsPage() {
               <CardContent className="p-3 pt-0">
                 {/* Category selection grid */}
                 <div className="mb-3">
-                  <ScrollArea className="max-h-[120px]">
+                  <ScrollArea className="max-h-[160px]">
                     <div className="pb-2">
                       {categoryRows.map((row, rowIndex) => (
                         <div key={rowIndex} className="flex flex-wrap gap-2 mb-2">
