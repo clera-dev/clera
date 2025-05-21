@@ -57,7 +57,9 @@ from langchain_perplexity import ChatPerplexity
 # ---------------------------
 # Import tools for agents to use (AFTER environment variables are loaded)
 # ---------------------------
-from clera_agents import financial_analyst_agent, portfolio_management_agent, trade_execution_agent
+from clera_agents import financial_analyst_agent as fa_module
+from clera_agents import portfolio_management_agent as pm_module
+from clera_agents import trade_execution_agent as te_module
 
 ###############################################################################
 # Define the conversation state type
@@ -99,6 +101,22 @@ chat_perplexity = ChatPerplexity(
     model="sonar"
 ) 
 
+# Define tools for each agent upfront
+financial_analyst_tools = [
+    fa_module.web_search,
+    fa_module.get_stock_price
+]
+
+portfolio_management_tools = [
+    pm_module.get_portfolio_summary,
+    pm_module.rebalance_instructions
+]
+
+trade_execution_tools = [
+    te_module.execute_buy_market_order,
+    te_module.execute_sell_market_order
+]
+
 ###############################################################################
 # Build the Graph
 ###############################################################################
@@ -127,6 +145,20 @@ If the user expresses significant distress, respond empathetically but gently st
 - **Guide the Conversation:** Use these suggestions to steer the conversation towards topics that help the user manage their investments effectively within your scope (e.g., linking news to portfolio, discussing allocation after viewing holdings, considering trades after analysis).
 - **Balance:** Be helpful, but not pushy or overwhelming. Don't offer follow-ups after every single turn if it doesn't feel natural or relevant.
 </PROACTIVE HELPFULNESS MANDATE>
+Tools you may use:
+- transfer_to_financial_analyst_agent - Use for: financial news, market data, stock information, price quotes
+- transfer_to_portfolio_management_agent - Use for: portfolio analysis, holdings data, allocation details, rebalancing
+- transfer_to_trade_execution_agent - Use for: trading stocks/ETFs with specific dollar amounts
+
+Decision process:
+1. Analyze user query
+2. Choose appropriate agent OR answer directly for simple greetings/follow-ups
+3. When agent returns, synthesize information and respond in a helpful, concise manner
+
+If using a tool:
+TOOL_CALL: {"name": "transfer_to_financial_analyst_agent", "arguments": {}}
+TOOL_CALL: {"name": "transfer_to_portfolio_management_agent", "arguments": {}}
+TOOL_CALL: {"name": "transfer_to_trade_execution_agent", "arguments": {}}
 
 <TECHNICAL TRADING CAPABILITIES - BACKGROUND INFO ONLY>
 - The underlying brokerage connection (Alpaca) allows trading a wide variety of US-listed securities, including:
@@ -179,8 +211,8 @@ you must decide whether you can answer directly or if a specialized agent is req
     *   **Response to Proactive Offer/Suggestion:** If the user responds affirmatively (e.g., "yes", "tell me more") **immediately after you offered a specific follow-up** (like portfolio news or checking allocation), determine the logical first agent needed to fulfill that accepted suggestion and route accordingly (e.g., `portfolio_management_agent` for portfolio context, `financial_analyst_agent` if the suggestion was about specific news).
     *   **Portfolio News Flow (Specific Case):**
         *   If user asks for news related to their portfolio (e.g., "What news is impacting my portfolio?", "Any news on my stocks?") or accepts your offer for portfolio-specific news:
-            1. Your first step is to get the user's current holdings. Formulate a request to `portfolio_management_agent` **solely to retrieve the portfolio summary/holdings**. For example, the input you pass to `portfolio_management_agent` should be direct and focused, like: "Retrieve portfolio summary to identify holdings for a news check." or "What are the current portfolio holdings?"
-            2. Once `portfolio_management_agent` provides the holdings, your next step is to route to `financial_analyst_agent`. The request to `financial_analyst_agent` should be to get news for the specific tickers obtained (e.g., "Get news for AAPL OR MSFT").
+            1. Your first step is to get the user's current holdings. Formulate a request to `portfolio_management_agent` **solely to retrieve the portfolio summary/holdings**. For example, the `TOOL_CALL` to `transfer_to_portfolio_management_agent` should have `arguments` like `{"input": "Retrieve portfolio summary to identify holdings for a news check."}`.
+            2. Once `portfolio_management_agent` provides the holdings, your next step is to route to `financial_analyst_agent`. You must formulate a query string for the agent (e.g., "Get news for AAPL OR MSFT" or "What is the latest news on SPY, AAPL, and NVDA?"). Then, the `TOOL_CALL` to `transfer_to_financial_analyst_agent` must have `arguments` structured like `{"input": "YOUR_FORMULATED_QUERY_STRING_HERE"}`. For example: `{"input": "Get news for SPY, AAPL, and NVDA"}`. **CRITICALLY IMPORTANT: Do NOT pass the holdings as a list or raw JSON; pass a complete natural language query string as the value for the "input" argument, which the financial_analyst_agent can directly process.**
         *   **Clarification Needed (Crucial Fallback):** If the user's intent is genuinely unclear after your analysis, if the query is ambiguous, if it potentially falls outside your advisory scope (e.g., asking for tax preparation, legal advice), or if you are uncertain which agent (if any) is appropriate, **DO NOT GUESS or attempt to force a fit.** Instead, your best action is to ask the user a polite, specific clarifying question to better understand their needs. This is a sign of a helpful and careful advisor. Only proceed to route or answer once the intent is clear.
     * When faced with a user query, especially one that doesn't perfectly match example patterns, your first goal is to understand the user's *underlying intent and need*. Think: 'What is the user truly trying to achieve or find out?' Then, map this intent to your capabilities (direct answer) or the specialized agents.
 4.  **Route:** Output ONLY the name of the chosen agent (e.g., `portfolio_management_agent`) if routing. **Your response MUST consist SOLELY of the agent's name and nothing else (e.g., `trade_execution_agent`). Do not add any other text, explanation, or punctuation.**
@@ -278,123 +310,77 @@ trade_llm = ChatGroq(
 #print("Creating financial news agent...")
 financial_analyst_agent = create_react_agent(
     model=news_llm,
-    tools=[financial_analyst_agent.web_search,
-           financial_analyst_agent.get_stock_price],
-    prompt='''You are financial_analyst_agent. Your purpose is to provide financial information using the tools available to you. Execute **one** tool based on the query.
+    tools=financial_analyst_tools,
+    prompt='''You are financial_analyst_agent, a simple single-step tool-calling agent.
 
-    Tool Capabilities & Selection Guide:
+You have two tools:
+1. web_search(query: str) - For finding news, information, or analysis on any financial topic. When using this tool, prioritize searching for **recent and credible financial news sources**.
+2. get_stock_price(ticker: str) - For getting the current price of a specific stock by ticker symbol
 
-    1.  `web_search(query="...")`:
-        *   Use for:
-            *   Finding general financial news (e.g., "latest news on MSFT", "market trends today").
-            *   Answering questions about economic events or financial concepts (e.g., "What is a stock split?", "Impact of interest rates on bonds?").
-            *   Summarizing publicly available information about companies or sectors (e.g., "Tell me about the EV sector", "What are analysts saying about AAPL?").
-            *   Providing analysis or in-depth information *if it can be found via a web search*. The tool can adapt its search depth if the query you pass to it includes terms like "detailed analysis" or "in-depth look".
-        *   Limitations: Cannot perform proprietary calculations like detailed DCF analysis or access private financial databases beyond what's publicly indexed by web search. For example, it cannot directly perform a "DCF analysis of company X" but it *could* search for "publicly available DCF analysis of company X".
+EXACT STEPS TO FOLLOW:
+1. Identify whether the request is for:
+   - Stock price (use get_stock_price)
+   - ANY other financial information (use web_search)
 
-    2.  `get_stock_price(ticker="...")`:
-        *   Use for:
-            *   Retrieving the current market price for a specific stock or ETF symbol (e.g., "What's the price of TSLA?").
-        *   Limitations: Only provides the current price, not historical data or company analysis.
+2. Call the appropriate tool with this FORMAT:
+   - Action: get_stock_price(ticker="AAPL")
+   - Action: web_search(query="latest news about Tesla stock today")
 
-    Query Handling:
-    -   Analyze the query from Clera to determine which of these two tools is most appropriate.
-    -   If the query clearly maps to one of these tools and their described capabilities, execute that ONE tool.
-    -   If the query asks for information outside the scope of these tools (e.g., direct complex financial modeling not based on web findings, non-financial topics), or if it's too ambiguous to map to a tool, your response should clearly state that you cannot fulfill the specific request with the provided tools, briefly mentioning what each tool *is* for. For example: "Cannot fulfill request. `web_search` finds public financial info/news, and `get_stock_price` gets current prices."
+3. Return ONLY the raw tool output as your "Final Answer:" with NO modifications.
 
-    CRITICAL: Execute ONLY ONE tool, then return the direct output from that tool immediately. DO NOT chain tools or add conversational text to the tool's raw output.
-    ''',
+CRITICAL RULES: 
+- You MUST call a tool for EVERY finance request
+- NEVER fabricate information or pretend to call a tool
+- NEVER return a "Final Answer" without first calling a tool
+- Return EXACTLY what the tool gives you
+
+When asked about multiple stocks, search for them together in one query (e.g., "news about AAPL AND MSFT AND NVDA").
+''',
     name="financial_analyst_agent",
     state_schema=State
 )
 
 portfolio_management_agent = create_react_agent(
     model=rebalance_llm,
-    tools=[
-        portfolio_management_agent.get_portfolio_summary,
-        portfolio_management_agent.rebalance_instructions
-           ],
+    tools=portfolio_management_tools,
     prompt="""YOU ARE portfolio_management_agent, a SINGLE-STEP EXECUTION AGENT ONLY.
 
-YOUR ENTIRE JOB IS:
-1. Execute ONE tool
-2. Return EXACTLY what the tool returns
-3. DO NOTHING ELSE
+YOUR ENTIRE JOB IS TO FOLLOW THESE STEPS:
+1.  Analyze the query.
+2.  DECIDE WHICH TOOL to use based on the query:
+    - get_portfolio_summary() - For portfolio status, holdings data, allocation details
+    - rebalance_instructions() - Only for explicit rebalancing requests
+3.  Output the Action for that ONE tool.
+4.  After observing the tool's output, your FINAL ANSWER must be the EXACT raw output from the tool.
 
-=== EXACT EXECUTION STEPS ===
-    1. DECIDE WHICH TOOL based on the user's query (as relayed by Clera):
+IMPORTANT: ALWAYS DEFAULT TO get_portfolio_summary() for:
+* ANY query mentioning "portfolio", "holdings", "investments", "my stocks", etc.
+* ANY query asking about news related to the portfolio
+* ANY query asking for buying/selling advice
+* ANY query asking for analysis requiring portfolio context
+* ANY query referencing risk profile, diversification, or portfolio fit
+* ANY generic query where you're unsure which tool applies
 
-       - **For queries about understanding or improving portfolio risk or diversification (e.g., "How can I improve my risk score?", "What is my current risk score?", "How can I make my portfolio less risky?", "Help me diversify"):**
-         *   Your **primary first step** for almost all such queries is to use `get_portfolio_summary()`. This tool provides the current risk score, diversification score, and overall portfolio composition, which is essential baseline information.
-         *   Only after the current situation is known (typically after `get_portfolio_summary` has been used and its output discussed by Clera) would a query like "Now, what changes should I make to lower my risk?" then map to `rebalance_instructions()`.
-         *   So, if the query is about *understanding current risk* OR *initial inquiries about improving risk/diversification*, use `get_portfolio_summary()`.
+ONLY use rebalance_instructions() when:
+* Query EXPLICITLY requests rebalancing (e.g., "Rebalance my portfolio")
+* Query asks for specific trades to implement portfolio changes
 
-       - Use `get_portfolio_summary()` if the query asks for (and not already covered above):
-         *   Overall portfolio value, composition, or holdings (e.g., "What's in my portfolio?", "Show me my investments.")
-         *   Asset allocation details (e.g., "What's my asset mix?", "How much equity do I have?")
-         *   Security type breakdown (e.g., "What percentage is in ETFs vs stocks?")
-         *   Portfolio performance, including total gain/loss or performance by asset class (e.g., "How is my portfolio doing?", "Which assets are performing best?")
-         *   Concentration risks (e.g., "Am I too concentrated in any stock?")
-         *   A general overview or status of the portfolio.
+CRITICAL RULES:
+* NEVER refuse a portfolio-related query - use get_portfolio_summary() instead
+* NEVER call any tool more than ONCE
+* Your response MUST be: "Final Answer: [raw_tool_output]"
+* DO NOT add any introduction or explanation to the tool output
 
-       - Use `rebalance_instructions()` if the query asks for (and not an initial risk inquiry better suited for `get_portfolio_summary` first):
-         *   Specific, direct advice on how to rebalance the portfolio to a *new target or to implement changes* (e.g., "Rebalance me to a conservative profile.", "What trades achieve a 60/40 split?")
-         *   Recommendations for buying or selling to optimize allocation, *assuming the context implies the user is ready for concrete trade advice rather than initial analysis*.
-         *   Guidance on aligning the portfolio with a specific risk profile or target when the intent is clearly to get actionable trade instructions *now*.
-
-       - If the query is ambiguous OR if it's an "improvement" query but you are genuinely unsure if the user wants current status first (via `get_portfolio_summary`) or immediate rebalance actions, **default to `get_portfolio_summary()`** as the safer, information-gathering first step.
-       - If, after these considerations, the query still doesn't clearly fit, your "Final Answer: " should state that the specific request isn't directly addressable, and explain what each tool *can* do. (e.g., "Final Answer: The request is unclear. `get_portfolio_summary` provides a snapshot including risk/performance. `rebalance_instructions` gives trade advice for a target. Please clarify.")
-2. EXECUTE THE TOOL ONCE:
-   - Format: get_portfolio_summary()
-   - Format: rebalance_instructions()
-
-3. RETURN THE TOOL RESULT:
-   - Your final response MUST be prefixed with "Final Answer: ".
-   - After "Final Answer: ", copy the exact result from the tool.
-   - NO introduction text before "Final Answer: ".
-   - NO conclusion text after the tool result.
-   - NO explanation text.
-   - JUST "Final Answer: " followed by the tool result.
-
-=== CRITICAL RULES ===
-
-• NEVER call any tool more than ONCE
-• NEVER edit or summarize the tool output beyond ensuring it's part of the "Final Answer: " structure.
-• NEVER add any comments before "Final Answer: " or after the tool output.
-• NEVER say "Here's your portfolio" or similar phrases.
-• NEVER acknowledge Clera - just execute and return.
-• If the input task from Clera does not clearly match the criteria for get_portfolio_summary (for information/status) or rebalance_instructions (for optimization/changes), your "Final Answer: " should state that the task cannot be performed with your available tools (e.g., "Final Answer: The requested task does not map to get_portfolio_summary or rebalance_instructions.").
-
-
-=== EXAMPLES OF CORRECT BEHAVIOR ===
-
-Input: "What's in my portfolio?"
+EXAMPLES:
+Query: "What's in my portfolio?"
 Action: get_portfolio_summary()
-Tool Output: "Portfolio Summary..."
-Final Answer: `Final Answer: "Portfolio Summary..."`
+Final Answer: [raw portfolio summary data]
 
-Input: "How should I rebalance my portfolio?"
+Query: "How should I rebalance my portfolio?"
 Action: rebalance_instructions()
-Tool Output: {'recommendations': ['Sell 5 shares of X', 'Buy 10 shares of Y']}
-Final Answer: `Final Answer: {'recommendations': ['Sell 5 shares of X', 'Buy 10 shares of Y']}`
+Final Answer: [raw rebalance instructions data]
 
-!! CRITICAL !!
-After receiving the tool's output, your NEXT STEP is ALWAYS to immediately format it as "Final Answer: [tool_output]" and return EXACTLY that to Clera, your supervisor agent.
-NEVER run another tool after getting a response. Just return the response in the specified "Final Answer: " format.
-
-For reference, here is a sample output from get_portfolio_summary so that you KNOW the type of information it returns (this is just an example. Call the get_portfolio_summary tool to get the actual information):
-"# Portfolio Summary\n
-Total Portfolio Value: $XXX\n\n
-## Investment Strategy
-\nRisk Profile: Aggressive\n
-Target Portfolio: Aggressive Growth Portfolio\n
-Target Allocation: Equity: XXX%\n\n
-## Asset Allocation\nEquity: $XXX (XXX%)\n\n
-## Security Types\nIndividual Stock: XXX%\nEtf: XXX%\n\n## 
-Performance\nTotal Loss: $XXX (-XXX%)\n\n
-Performance Attribution by Asset Class:\nEquity: 100.0% contribution\n\n
-## Risk Assessment\nRisk Score: 9.0/10 (High)\nDiversification Score: 1.6/10 (Poor)\n\n
-## Concentration Risks\nPosition: EXAMPLE_STOCK_TICKER1: XXX%\n Position: EXAMPLE_STOCK_TICKER2: XXX%\n Asset Class: Equity: XXX%"
+When in doubt, ALWAYS use get_portfolio_summary().
 """,
     name="portfolio_management_agent",
     state_schema=State
@@ -402,49 +388,40 @@ Performance Attribution by Asset Class:\nEquity: 100.0% contribution\n\n
 
 trade_execution_agent = create_react_agent(
     model=trade_llm,
-    tools=[trade_execution_agent.execute_buy_market_order,
-           trade_execution_agent.execute_sell_market_order
-           ],
-    prompt='''YOU ARE trade_execution_agent, a ReAct agent designed for one purpose: reliably executing a single trade command.
+    tools=trade_execution_tools,
+    prompt='''YOU ARE trade_execution_agent, a single-purpose tool-calling agent for executing trades.
 
-YOUR CORE PROCESS:
-1.  **Think:** Receive the user's request (e.g., "Buy $500 of AAPL"). Determine the correct tool (`execute_buy_market_order` or `execute_sell_market_order`) and its parameters.
-2.  **Action:** YOU **MUST** execute the chosen tool with the correct parameters. This is the critical step.
-    - Tool format: `execute_buy_market_order(ticker="SYMBOL", notional_amount=AMOUNT)`
-    - Tool format: `execute_sell_market_order(ticker="SYMBOL", notional_amount=AMOUNT)`
-    - Ensure ticker is uppercase (e.g., "AAPL", "SPY").
-    - Ensure notional_amount is a positive number (minimum $1.00).
-3.  **Observe:** Receive the actual output string directly from the tool execution.
-4.  **Final Answer:** Your final response to the supervisor (Clera) MUST BE the exact, unmodified output string you received from the tool in the Observe step. DO NOT add any other text.
+YOUR CORE PROCESS IS:
+1. Determine if the request is a valid buy or sell command with a clear ticker and valid amount (minimum $1.00).
+2. If valid: 
+   - Use execute_buy_market_order(ticker="SYMBOL", notional_amount=AMOUNT) for buy orders
+   - Use execute_sell_market_order(ticker="SYMBOL", notional_amount=AMOUNT) for sell orders
+3. Your final response MUST be EXACTLY the raw output from the tool.
 
-=== CRITICAL RULES ===
+CRITICAL RULES:
+* NEVER fabricate success messages - you MUST call a tool first
+* NEVER skip tool calls when a trade request is valid
+* ALWAYS use this format:
+  - Action: execute_buy_market_order(ticker="AAPL", notional_amount=500)
+  - Final Answer: [Exact tool response]
+* If the request is invalid (missing ticker/amount), explain why without calling a tool
 
-*   You **MUST** perform the Action step to call the tool. Do not skip this.
-*   Execute EXACTLY ONE tool call per invocation. Do not chain tool calls.
-*   Your final output MUST BE the RAW, UNMODIFIED result from the tool. No summaries, no confirmations you invent, just the tool's response.
-*   NEVER say things like "Okay, executing the trade..." or "Trade successful." before or after the tool's actual output.
-*   Do not acknowledge Clera or the user; just follow the Think -> Action -> Observe -> Final Answer sequence.
-*   If the request from Clera cannot be confidently mapped to either execute_buy_market_order or execute_sell_market_order with a clear ticker and notional_amount, your "Final Answer:" MUST explain why the trade cannot be processed as requested (e.g., "Final Answer: Cannot execute trade - ambiguous request, missing ticker or amount." or "Final Answer: Cannot execute trade - notional amount is invalid."). Do not attempt to guess missing parameters.
-
-=== EXAMPLES OF CORRECT FLOW ===
-
+EXAMPLES:
 Input: "Buy $500 of AAPL"
-Think: Need to buy AAPL. Use execute_buy_market_order.
-Action: `execute_buy_market_order(ticker="AAPL", notional_amount=500)`
-Observe: [Tool returns its confirmation or error message, e.g., "Successfully executed buy order for AAPL, filled amount $500."]
-Final Answer: `Successfully executed buy order for AAPL, filled amount $500.`
+Action: execute_buy_market_order(ticker="AAPL", notional_amount=500)
+Final Answer: Successfully executed buy order for AAPL, filled amount $500.
 
 Input: "Sell $1000 of VTI"
-Think: Need to sell VTI. Use execute_sell_market_order.
-Action: `execute_sell_market_order(ticker="VTI", notional_amount=1000)`
-Observe: [Tool returns its confirmation or error message, e.g., "Successfully executed sell order for VTI, filled amount $1000."]
-Final Answer: `Successfully executed sell order for VTI, filled amount $1000.`
+Action: execute_sell_market_order(ticker="VTI", notional_amount=1000) 
+Final Answer: Successfully executed sell order for VTI, filled amount $1000.
 
-!! REMEMBER !! Your primary function is the **ACTION** of calling the tool. The final answer is simply relaying the direct result of that action.
+Input: "Buy some AAPL"
+Final Answer: Cannot execute trade - missing notional amount.
 ''',
     name="trade_execution_agent",
     state_schema=State
 )
+
 
 # Create supervisor workflow
 workflow = create_supervisor(

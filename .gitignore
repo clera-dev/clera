@@ -154,9 +154,11 @@ embeddings.py
 # personal notes and trackers
 notes.md
 todo.md
+test_prompts/
 
 # langgraph
 .langgraph_api/
+backend/.langgraph_api/
 
 * 2.*
 
