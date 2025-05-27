@@ -64,7 +64,7 @@ export default async function ProtectedPage() {
         
         <div className="bg-accent text-sm p-3 px-5 rounded-md text-foreground flex gap-3 items-center mb-4">
           <InfoIcon size={16} strokeWidth={2} />
-          Congrats! Your account is now ready for trading. Head to the dashboard to get started.
+          Congrats! Your account is now ready for trading. Please fund your account below to start trading.
         </div>
       </div>
       

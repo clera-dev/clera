@@ -10,7 +10,7 @@ import os
 import pytest
 import redis
 from datetime import datetime
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock, Mock
 
 # Add parent directory to path for imports
 import sys
@@ -513,4 +513,115 @@ async def test_run_method_starts_both_tasks(redis_client):
         
         # Verify that both methods were called with correct arguments
         mock_listen.assert_called_once()
-        mock_periodic.assert_called_once_with(interval_seconds=30) 
+        mock_periodic.assert_called_once_with(interval_seconds=30)
+
+def test_calculate_portfolio_value_proper_return_calculation(mock_broker_client):
+    """Test that portfolio value calculation uses correct return formula."""
+    mock_instance, test_account_id, mock_account = mock_broker_client
+    
+    # Create test positions
+    test_positions = [
+        {
+            "symbol": "AAPL",
+            "qty": "10",
+            "current_price": "150.00",
+            "market_value": "1500.00"
+        }
+    ]
+    
+    # Configure mock to return test positions
+    mock_instance.get_all_positions_for_account.return_value = test_positions
+    
+    # Mock account details - simulate real-world scenario
+    mock_account.cash = "50000.00"  # Current cash balance
+    mock_account.equity = "51500.00"  # Current total equity (cash + positions)
+    mock_account.last_equity = "51000.00"  # Previous day's equity
+    
+    # Create calculator
+    calculator = PortfolioCalculator(
+        redis_host='localhost',
+        redis_port=6379,
+        redis_db=0,
+        broker_api_key='test-key',
+        broker_secret_key='test-secret',
+        sandbox=True
+    )
+    calculator.broker_client = mock_instance
+    calculator.redis_client = Mock()
+    calculator.redis_client.get.return_value = json.dumps(test_positions)
+    
+    # Mock get_account_base_value to return previous equity
+    calculator.get_account_base_value = Mock(return_value=51000.00)
+    
+    # Calculate portfolio value
+    portfolio_data = calculator.calculate_portfolio_value(test_account_id)
+    
+    # Verify calculation uses simple return: current_equity - last_equity
+    assert portfolio_data is not None
+    assert portfolio_data["account_id"] == test_account_id
+    
+    # Should NOT track deposits anymore
+    assert "deposits_excluded" not in portfolio_data
+    
+    # Expected portfolio value (current cash + positions)
+    expected_total = 50000.00 + 1500.00  # Cash + positions = 51500.00
+    assert portfolio_data["raw_value"] == expected_total
+    
+    # Expected today's return using simple formula: current - previous
+    # 51500 - 51000 = 500
+    expected_return = 51500.00 - 51000.00
+    assert portfolio_data["raw_return"] == expected_return
+    assert portfolio_data["raw_return"] == 500.0
+    
+    # Test negative return case
+    calculator.get_account_base_value = Mock(return_value=52000.00)  # Higher previous value
+    
+    portfolio_data = calculator.calculate_portfolio_value(test_account_id)
+    # Should be 51500 - 52000 = -500
+    assert portfolio_data["raw_return"] == -500.0
+    assert "-$" in portfolio_data["today_return"]  # Should show negative return
+
+def test_edge_cases_portfolio_calculation(mock_broker_client):
+    """Test edge cases in portfolio calculation: zero base value, negative returns."""
+    mock_instance, test_account_id, mock_account = mock_broker_client
+    
+    # Create test positions
+    test_positions = [{"symbol": "AAPL", "qty": "10", "current_price": "150.00", "market_value": "1500.00"}]
+    mock_instance.get_all_positions_for_account.return_value = test_positions
+    
+    # Edge Case 1: Zero base value (new account)
+    mock_account.cash = "1000.00"
+    mock_account.equity = "2500.00"
+    mock_account.last_equity = "0"  # Zero base value
+    
+    calculator = PortfolioCalculator(
+        redis_host='localhost',
+        redis_port=6379,
+        redis_db=0,
+        broker_api_key='test-key',
+        broker_secret_key='test-secret',
+        sandbox=True
+    )
+    calculator.broker_client = mock_instance
+    calculator.redis_client = Mock()
+    calculator.redis_client.get.return_value = json.dumps(test_positions)
+    calculator.get_account_base_value = Mock(return_value=0.0)  # Zero base value
+    
+    portfolio_data = calculator.calculate_portfolio_value(test_account_id)
+    assert portfolio_data is not None
+    # Should not divide by zero
+    assert portfolio_data["raw_return_percent"] == 0
+    
+    # Edge Case 2: Negative return (market loss)
+    mock_account.cash = "1000.00"
+    mock_account.equity = "2500.00"
+    mock_account.last_equity = "10000.00"  # Higher previous value
+    calculator.get_account_base_value = Mock(return_value=10000.00)
+    
+    portfolio_data = calculator.calculate_portfolio_value(test_account_id)
+    
+    # Return should be negative: 2500 - 10000 = -7500
+    assert portfolio_data["raw_return"] == -7500.0
+    assert portfolio_data["raw_return"] < 0
+    assert "-$" in portfolio_data["today_return"]
+    assert "deposits_excluded" not in portfolio_data  # Should not track deposits 

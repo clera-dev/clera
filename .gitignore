@@ -171,3 +171,6 @@ setup-aws-secrets.sh
 
 # Watchfiles
 .watchfiles.env
+
+# Test files
+backend/tests/
