@@ -3,29 +3,22 @@
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { DollarSign } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
-// Placeholder component - Functionality to be added
+// Component that redirects to dashboard with Add Funds dialog
 interface AddFundsButtonProps {
   accountId: string | null;
-  // apiKey: string | null; // Remove apiKey requirement
 }
 
-// const AddFundsButton: React.FC<AddFundsButtonProps> = ({ accountId, apiKey }) => {
 const AddFundsButton: React.FC<AddFundsButtonProps> = ({ accountId }) => {
+    const router = useRouter();
 
     const handleAddFunds = () => {
-        // TODO: Implement actual add funds logic
-        // This might involve: 
-        // 1. Opening a modal
-        // 2. Redirecting to an external funding page (e.g., Plaid, Stripe)
-        // 3. Calling an internal API endpoint
-        console.log("Add Funds Clicked! Account:", accountId);
-        // For now, just alert
-        alert("Add Funds functionality not yet implemented.");
+        // Redirect to dashboard with parameter to auto-open Add Funds dialog
+        router.push('/dashboard?openAddFunds=true');
     };
 
     // Disable button if account info is missing
-    // const isDisabled = !accountId || !apiKey; // Remove apiKey check
     const isDisabled = !accountId;
 
     return (

@@ -91,7 +91,7 @@ class PortfolioAnalyzer:
     @classmethod
     def classify_position(cls, position: PortfolioPosition) -> PortfolioPosition:
         """Classify a position by asset class and security type."""
-        # Simple classification based on symbol - could be enhanced with external data
+        # Strategy 1: Check if symbol is in our known ETF list
         if position.symbol in cls.COMMON_ETFS:
             position.security_type = SecurityType.ETF
             
@@ -105,9 +105,34 @@ class PortfolioAnalyzer:
             else:
                 position.asset_class = AssetClass.EQUITY
         else:
-            # Assume individual stock for now - could be enhanced
-            position.security_type = SecurityType.INDIVIDUAL_STOCK
-            position.asset_class = AssetClass.EQUITY
+            # Strategy 2: Check if we can identify ETF by name from asset cache
+            # (since ALL ETFs on Alpaca have "ETF" in their name)
+            is_etf_by_name = False
+            try:
+                import os
+                import json
+                
+                # Try to read asset details from the cached assets file
+                asset_cache_file = os.path.join(os.path.dirname(__file__), "..", "..", "data", "tradable_assets.json")
+                if os.path.exists(asset_cache_file):
+                    with open(asset_cache_file, 'r') as f:
+                        cached_assets = json.load(f)
+                        cached_asset = next((asset for asset in cached_assets if asset.get('symbol') == position.symbol), None)
+                        if cached_asset and cached_asset.get('name'):
+                            asset_name_lower = cached_asset['name'].lower()
+                            if 'etf' in asset_name_lower:
+                                is_etf_by_name = True
+            except Exception:
+                # Silently continue if asset cache is not available
+                pass
+            
+            if is_etf_by_name:
+                position.security_type = SecurityType.ETF
+                position.asset_class = AssetClass.EQUITY  # Default to equity for unknown ETFs
+            else:
+                # Assume individual stock for now - could be enhanced
+                position.security_type = SecurityType.INDIVIDUAL_STOCK
+                position.asset_class = AssetClass.EQUITY
             
         return position
     

@@ -39,6 +39,17 @@ export default function BankConnectionsCard({
   const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
   const [transferCompleted, setTransferCompleted] = useState(false);
 
+  // Check for URL parameter to auto-open dialog
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('openAddFunds') === 'true') {
+      setIsDialogOpen(true);
+      // Clean up URL parameter
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
+
   const fetchBankAccounts = async () => {
     if (!alpacaAccountId) {
       setIsLoading(false);
@@ -159,24 +170,24 @@ export default function BankConnectionsCard({
       <CardContent className="space-y-4">
         <Button 
           onClick={handleOpenDialog}
-          className="w-full flex gap-2 items-center justify-center bg-primary text-white hover:bg-primary/90"
+          className="w-full flex gap-2 items-center justify-center bg-white text-black border border-gray-300 hover:bg-gray-50"
         >
           <PlusCircle className="h-4 w-4" />
           Add Funds
         </Button>
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-md bg-black text-white">
-            <DialogHeader className="pb-2 border-b border-gray-700">
-              <DialogTitle className="text-xl text-white">
+          <DialogContent className="sm:max-w-md bg-white text-black">
+            <DialogHeader className="pb-2 border-b border-gray-300">
+              <DialogTitle className="text-xl text-black">
                 {view === 'banks' ? 'Add Funds' : 
                  view === 'addBank' ? 'Add a Bank Account' : 'Transfer Funds'}
               </DialogTitle>
             </DialogHeader>
 
             {error && view === 'banks' && (
-              <div className="p-4 my-2 border border-red-600 rounded-lg bg-red-900/50">
-                <p className="text-red-200 text-sm">{error}</p>
+              <div className="p-4 my-2 border border-red-300 rounded-lg bg-red-50">
+                <p className="text-red-800 text-sm">{error}</p>
               </div>
             )}
 
@@ -189,27 +200,27 @@ export default function BankConnectionsCard({
                 {/* Connected Bank Accounts Section */}
                 {bankAccounts.length > 0 ? (
                   <>
-                    <h3 className="text-white font-medium text-lg">Select a bank to transfer funds from</h3>
+                    <h3 className="text-black font-medium text-lg">Select a bank to transfer funds from</h3>
                     {bankAccounts.map((account) => (
                       <div 
                         key={account.id}
-                        className="cursor-pointer rounded-lg border border-gray-700 transition-colors shadow-sm hover:shadow hover:border-primary bg-gray-800/50" 
+                        className="cursor-pointer rounded-lg border border-gray-300 transition-colors shadow-sm hover:shadow hover:border-primary bg-gray-50" 
                         onClick={() => handleBankClick(account.id)}
                       >
                         <div className="p-4 flex items-center gap-4">
                           <div className="bg-primary/20 p-3 rounded-full">
-                            <Wallet className="h-6 w-6 text-primary-foreground" />
+                            <Wallet className="h-6 w-6 text-primary" />
                           </div>
                           <div>
-                            <h3 className="font-medium text-white text-lg">
+                            <h3 className="font-medium text-black text-lg">
                               {account.bankName || account.nickname || "Bank Account"}
                               {account.last4 && (
-                                <span className="ml-2 text-gray-300">
+                                <span className="ml-2 text-gray-600">
                                   •••• {account.last4}
                                 </span>
                               )}
                             </h3>
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-gray-600">
                               Connected on {new Date(account.createdAt).toLocaleDateString()}
                             </p>
                           </div>
@@ -218,38 +229,38 @@ export default function BankConnectionsCard({
                     ))}
                   </>
                 ) : (
-                  <div className="p-4 bg-blue-900/30 rounded-lg border border-blue-700">
-                    <p className="text-blue-200">
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-300">
+                    <p className="text-blue-800">
                       No connected bank accounts found. Please add a new bank account to fund your account.
                     </p>
                   </div>
                 )}
 
                 {/* Add New Bank Option */}
-                <div className="mt-4 pt-4 border-t border-gray-700">
-                  <h3 className="text-white font-medium mb-3 text-lg">
+                <div className="mt-4 pt-4 border-t border-gray-300">
+                  <h3 className="text-black font-medium mb-3 text-lg">
                     {bankAccounts.length > 0 ? "Replace existing bank account" : "Add a bank account"}
                   </h3>
                   {bankAccounts.length > 0 && (
-                    <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded-lg">
-                      <p className="text-yellow-200 text-sm">
+                    <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
+                      <p className="text-yellow-800 text-sm">
                         Note: Alpaca only allows one active bank connection. Adding a new bank will replace your current connection.
                       </p>
                     </div>
                   )}
                   <div 
-                    className="cursor-pointer rounded-lg border border-gray-700 transition-colors shadow-sm hover:shadow hover:border-primary bg-gray-800/50" 
+                    className="cursor-pointer rounded-lg border border-gray-300 transition-colors shadow-sm hover:shadow hover:border-primary bg-gray-50" 
                     onClick={handleAddBank}
                   >
                     <div className="p-4 flex items-center gap-4">
                       <div className="bg-primary/20 p-3 rounded-full">
-                        <PlusCircle className="h-6 w-6 text-primary-foreground" />
+                        <PlusCircle className="h-6 w-6 text-primary" />
                       </div>
                       <div>
-                        <h3 className="font-medium text-white text-lg">
+                        <h3 className="font-medium text-black text-lg">
                           {bankAccounts.length > 0 ? "Replace bank account" : "Enter bank account details"}
                         </h3>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-sm text-gray-600">
                           {bankAccounts.length > 0 
                             ? "Replace your existing bank connection with a new one" 
                             : "Add a new bank account to fund your investments"}

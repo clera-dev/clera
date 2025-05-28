@@ -9,6 +9,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getAlpacaAccountId } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import PortfolioNewsSummaryWithAssist from '@/components/news/PortfolioNewsSummaryWithAssist';
+import TrendingNewsWithAssist from '@/components/news/TrendingNewsWithAssist';
+import NewsWatchlistWithAssist from '@/components/news/NewsWatchlistWithAssist';
 
 // Updated interface for enriched articles
 interface EnrichedArticle {
@@ -570,271 +573,41 @@ export default function NewsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 h-[calc(100vh-140px)]">
           {/* Left Section - 3 columns on large screens, full width on mobile */}
           <div className="lg:col-span-3 h-full flex flex-col">
-            <Card className="flex-1 flex flex-col h-full">
-              <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between py-2 px-4">
-                <CardTitle className="flex items-center text-lg">
-                  <Globe className="mr-2 h-4 w-4" />
-                  News Impacting Your Portfolio
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col overflow-hidden p-3 pt-0">
-                <div className="space-y-1 mb-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-base font-medium">Your Summary:</p>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="rounded-full h-7 w-7 p-0" 
-                      onClick={handleReadSummary}
-                      disabled={isPlaying || isLoadingSummary || !portfolioSummary}
-                      title="Have Clera read summary aloud"
-                    >
-                      {isPlaying ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      ) : (
-                        <Volume2 className="h-4 w-4 text-primary" />
-                      )}
-                      <span className="sr-only">Read summary aloud</span>
-                    </Button>
-                  </div>
-                  {isLoadingSummary && (
-                    <div className="flex items-center space-x-2 text-muted-foreground text-sm">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Loading your personalized summary...</span>
-                    </div>
-                  )}
-                  {summaryError && !isLoadingSummary && (
-                    <Alert variant="destructive" className="text-xs p-2">
-                      <AlertCircle className="h-3 w-3 mr-1" />
-                      <AlertDescription>{summaryError}</AlertDescription>
-                    </Alert>
-                  )}
-                  {!isLoadingSummary && !summaryError && portfolioSummary && (
-                    <div className="text-sm text-muted-foreground space-y-3">
-                      <p style={{ whiteSpace: 'pre-line' }}>
-                        {portfolioSummary.summary_text.replace(/\\n/g, '\n')}
-                      </p>
-                      {/* Display Enriched Referenced Articles */}
-                      {portfolioSummary.referenced_articles.length > 0 ? (
-                        <div className="space-y-3">
-                          {portfolioSummary.referenced_articles
-                            .filter(article => article.shouldDisplay !== false) // Filter out articles with shouldDisplay=false
-                            .map((article, index) => (
-                            <WatchlistNewsItemClient
-                              key={`${article.url}-${index}`}
-                              title={article.title || 'N/A'} 
-                              source={article.source || 'Unknown source'} 
-                              sentimentScore={article.sentimentScore} 
-                              articleUrl={article.url}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-muted-foreground text-sm mt-2">
-                          {/* This message shows if summary is loaded but has no articles */}
-                          No specific articles were referenced for this summary.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <PortfolioNewsSummaryWithAssist
+              portfolioSummary={portfolioSummary}
+              isLoadingSummary={isLoadingSummary}
+              summaryError={summaryError}
+              isPlaying={isPlaying}
+              onReadSummary={handleReadSummary}
+              WatchlistNewsItemClient={WatchlistNewsItemClient}
+              disabled={!accountId || !portfolioSummary}
+            />
           </div>
 
           {/* Right Section - 2 columns on large screens, full width on mobile */}
           <div className="lg:col-span-2 h-full flex flex-col space-y-3">
-            <Card className="flex-1">
-              <CardHeader className="flex flex-row items-center justify-between py-2 px-4">
-                <CardTitle className="flex items-center text-lg">
-                  <TrendingUp className="mr-2 h-4 w-4" />
-                  Trending Market News
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-2 overflow-y-auto p-3 pt-0">
-                {isLoadingTrendingNews && (
-                  <div className="flex items-center space-x-2 text-muted-foreground text-sm py-4 justify-center">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Loading trending news...</span>
-                  </div>
-                )}
-                
-                {trendingNewsError && !isLoadingTrendingNews && (
-                  <Alert variant="destructive" className="text-xs p-2 my-2">
-                    <AlertCircle className="h-3 w-3 mr-1" />
-                    <AlertDescription>{trendingNewsError}</AlertDescription>
-                  </Alert>
-                )}
-                
-                {!isLoadingTrendingNews && !trendingNewsError && (
-                <div className="space-y-2">
-                    {trendingNews.length > 0 ? (
-                      trendingNews.map((news) => (
-                        <a 
-                          key={news.id} 
-                          href={news.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="block p-2 rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                        >
-                      <div className="flex items-center gap-2">
-                            {news.banner_image ? (
-                              <img 
-                                src={news.banner_image} 
-                                alt={news.source}
-                                className="w-6 h-6 rounded-md object-cover" 
-                                onError={(e) => {
-                                  // If image fails to load, replace with source initial
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  // We'll show the source initial div instead (which is the next sibling)
-                                  if (target.nextElementSibling) {
-                                    (target.nextElementSibling as HTMLElement).style.display = 'flex';
-                                  }
-                                }}
-                              />
-                            ) : null}
-                            <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
-                          <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
-                        </div>
-                            <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
-                      </div>
-                        </a>
-                      ))
-                    ) : (
-                      <p className="text-center text-muted-foreground text-sm py-4">
-                        No trending news available at the moment.
-                      </p>
-                    )}
-                    </div>
-                )}
-              </CardContent>
-            </Card>
+            <TrendingNewsWithAssist
+              trendingNews={trendingNews}
+              isLoading={isLoadingTrendingNews}
+              error={trendingNewsError}
+              disabled={false}
+              getSourceInitials={getSourceInitials}
+              getSourceColor={getSourceColor}
+            />
 
-            <Card className="flex-[0.8]">
-              <CardHeader className="flex flex-row items-center justify-between py-2 px-4">
-                <CardTitle className="flex items-center text-lg">
-                  <Eye className="mr-2 h-4 w-4" />
-                  Your News Watchlist
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-3 pt-0">
-                {/* Category selection grid */}
-                <div className="mb-3">
-                  <ScrollArea className="max-h-[160px]">
-                    <div className="pb-2">
-                      {categoryRows.map((row, rowIndex) => (
-                        <div key={rowIndex} className="flex flex-wrap gap-2 mb-2">
-                          {row.map((category) => (
-                            <Badge 
-                              key={category} 
-                              variant={watchlist[category] ? "default" : "outline"}
-                              className="cursor-pointer text-xs px-2 py-1 hover:bg-accent transition-colors"
-                              onClick={() => toggleWatchlistItem(category)}
-                            >
-                              {formatCategoryName(category)}
-                              {watchlist[category] ? " ✓" : ""}
-                            </Badge>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </div>
-                
-                {/* Watchlist News Items */}
-                {isLoadingWatchlistNews && (
-                  <div className="flex items-center space-x-2 text-muted-foreground text-sm py-4 justify-center">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Loading watchlist news...</span>
-                  </div>
-                )}
-                
-                {watchlistNewsError && !isLoadingWatchlistNews && (
-                  <Alert variant="destructive" className="text-xs p-2 my-2">
-                    <AlertCircle className="h-3 w-3 mr-1" />
-                    <AlertDescription>{watchlistNewsError}</AlertDescription>
-                  </Alert>
-                )}
-                
-                {!isLoadingWatchlistNews && !watchlistNewsError && (
-                  <ScrollArea 
-                    className="h-[240px] pr-2" 
-                    style={{
-                      "--scrollbar-foreground": "rgba(255, 255, 255, 0.7)",
-                      "--scrollbar-background": "rgba(255, 255, 255, 0.1)"
-                    } as React.CSSProperties}
-                  >
-                    <div className="space-y-2">
-                      {getFilteredWatchlistNews().map((item, index) => (
-                        <a 
-                          key={`${item.category}-${index}`} 
-                          href={item.url || '#'} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="block p-3 border border-muted rounded-md hover:bg-accent/50 cursor-pointer transition-colors"
-                        >
-                          <div className="flex items-start gap-3">
-                            {/* Left Column: Category, Logo and Source */}
-                            <div className="flex flex-col items-start gap-1.5 min-w-[100px] max-w-[100px]">
-                              {/* Category Badge */}
-                              <Badge variant="secondary" className="text-xs whitespace-nowrap mb-1">
-                                {formatCategoryName(item.category || '')}
-                    </Badge>
-                              
-                              {/* Source with Logo */}
-                              <div className="flex items-center gap-1.5">
-                                {/* Publisher Logo or Fallback */}
-                                {item.logo_url ? (
-                                  <img 
-                                    src={item.logo_url} 
-                                    alt={item.source}
-                                    className="w-4 h-4 rounded-sm object-contain" 
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      target.style.display = 'none';
-                                      if (target.nextElementSibling) {
-                                        (target.nextElementSibling as HTMLElement).style.display = 'flex';
-                                      }
-                                    }}
-                                  />
-                                ) : null}
-                                <div className={`w-4 h-4 rounded-sm flex items-center justify-center ${getSourceColor(item.source || '')} ${item.logo_url ? 'hidden' : ''}`}>
-                                  <span className="font-semibold text-[10px]">{getSourceInitials(item.source || '')}</span>
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate max-w-[70px]">{item.source}</div>
-                              </div>
-                            </div>
-                            
-                            {/* Right Column: Article Title */}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium line-clamp-2">{item.title}</div>
-                            </div>
-                          </div>
-                        </a>
-                      ))}
-                      
-                      {getFilteredWatchlistNews().length === 0 && (
-                        <div className="text-center py-8 px-3 border border-dashed border-muted rounded-md">
-                          {Object.values(watchlist).some(selected => selected) ? (
-                            <p className="text-muted-foreground text-sm">
-                              No news available in your selected categories.
-                            </p>
-                          ) : (
-                            <div className="space-y-3">
-                              <h3 className="text-base font-medium">Welcome to Your News Watchlist!</h3>
-                              <p className="text-muted-foreground text-sm">
-                                Select categories above to view relevant financial news tailored to your interests.
-                              </p>
-                        </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                )}
-              </CardContent>
-            </Card>
+            <NewsWatchlistWithAssist
+              watchlist={watchlist}
+              watchlistNews={watchlistNews}
+              categoryRows={categoryRows}
+              isLoading={isLoadingWatchlistNews}
+              error={watchlistNewsError}
+              disabled={false}
+              toggleWatchlistItem={toggleWatchlistItem}
+              formatCategoryName={formatCategoryName}
+              getSourceInitials={getSourceInitials}
+              getSourceColor={getSourceColor}
+              getFilteredWatchlistNews={getFilteredWatchlistNews}
+            />
           </div>
         </div>
       </div>

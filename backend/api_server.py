@@ -1745,7 +1745,8 @@ def map_alpaca_position_to_portfolio_position(alpaca_pos, asset_details_map: Dic
 
     if alpaca_asset_class == AlpacaTradingAssetClass.US_EQUITY:
         our_asset_class = AssetClass.EQUITY
-        # Use fetched asset details for security type
+        
+        # Try to use fetched asset details first
         if asset_details:
             asset_name_lower = asset_details.name.lower() if asset_details.name else ""
             asset_symbol_upper = asset_details.symbol.upper() if asset_details.symbol else ""
@@ -1760,9 +1761,62 @@ def map_alpaca_position_to_portfolio_position(alpaca_pos, asset_details_map: Dic
             else:
                  security_type = SecurityType.INDIVIDUAL_STOCK
         else:
-            # Fallback if asset details couldn't be fetched
-            logger.warning(f"Missing asset details for equity {alpaca_pos.symbol}, defaulting SecurityType to INDIVIDUAL_STOCK.")
-            security_type = SecurityType.INDIVIDUAL_STOCK
+            # FALLBACK: Use multiple strategies to identify ETFs
+            
+            # Strategy 1: Check if symbol is in our known ETF list
+            COMMON_ETFS = {
+                # US Broad Market
+                'SPY', 'VOO', 'IVV', 'VTI', 'QQQ',
+                # International
+                'VXUS', 'EFA', 'VEA', 'EEM', 'VWO',
+                # Fixed Income
+                'AGG', 'BND', 'VCIT', 'MUB', 'TIP', 'VTIP',
+                # Real Estate
+                'VNQ', 'SCHH', 'IYR',
+                # Commodities
+                'GLD', 'IAU', 'SLV', 'USO',
+                # Sector Specific
+                'XLF', 'XLK', 'XLV', 'XLE',
+            }
+            
+            # Strategy 2: Check if we can fetch asset name from our asset cache file
+            # and look for "ETF" in the name (since ALL ETFs on Alpaca have "ETF" in their name)
+            is_etf_by_name = False
+            try:
+                # Try to read asset details from our cached assets file
+                if os.path.exists(ASSET_CACHE_FILE):
+                    with open(ASSET_CACHE_FILE, 'r') as f:
+                        cached_assets = json.load(f)
+                        cached_asset = next((asset for asset in cached_assets if asset.get('symbol') == alpaca_pos.symbol), None)
+                        if cached_asset and cached_asset.get('name'):
+                            asset_name_lower = cached_asset['name'].lower()
+                            if 'etf' in asset_name_lower:
+                                is_etf_by_name = True
+                                logger.info(f"Identified {alpaca_pos.symbol} as ETF from cached asset name: {cached_asset['name']}")
+            except Exception as e:
+                logger.debug(f"Could not check cached asset name for {alpaca_pos.symbol}: {e}")
+            
+            # Determine if this is an ETF using either strategy
+            if alpaca_pos.symbol in COMMON_ETFS or is_etf_by_name:
+                security_type = SecurityType.ETF
+                
+                if alpaca_pos.symbol in COMMON_ETFS:
+                    logger.info(f"Using fallback ETF classification for known symbol {alpaca_pos.symbol}")
+                else:
+                    logger.info(f"Using fallback ETF classification for {alpaca_pos.symbol} based on asset name containing 'ETF'")
+                
+                # Apply asset class classification for specialized ETFs
+                if alpaca_pos.symbol in ('AGG', 'BND', 'VCIT', 'MUB', 'TIP', 'VTIP'):
+                    our_asset_class = AssetClass.FIXED_INCOME
+                elif alpaca_pos.symbol in ('VNQ', 'SCHH', 'IYR'):
+                    our_asset_class = AssetClass.REAL_ESTATE
+                elif alpaca_pos.symbol in ('GLD', 'IAU', 'SLV', 'USO'):
+                    our_asset_class = AssetClass.COMMODITIES
+                # Keep EQUITY for other ETFs
+            else:
+                # Final fallback if asset details couldn't be fetched and not identified as ETF
+                logger.warning(f"Missing asset details for equity {alpaca_pos.symbol}, defaulting SecurityType to INDIVIDUAL_STOCK.")
+                security_type = SecurityType.INDIVIDUAL_STOCK
 
     elif alpaca_asset_class == AlpacaTradingAssetClass.CRYPTO:
         our_asset_class = AssetClass.EQUITY # Or AssetClass.ALTERNATIVES based on preference

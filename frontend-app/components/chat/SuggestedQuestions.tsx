@@ -7,11 +7,11 @@ interface SuggestedQuestionProps {
 const SuggestedQuestions: React.FC<SuggestedQuestionProps> = ({ onSelect }) => {
   const questions = [
     "How is this account split between stocks and bonds?",
-    "What news is impacting my Portfolio today?",
+    "What news is impacting my portfolio today?",
     "How can I diversify better?",
     "How can I improve my risk score?",
-    "Can you Optimize my Portfolio?",
-    "What is my worst performing Investment?"
+    "Can you optimize my portfolio?",
+    "What is my worst performing investment?"
   ];
 
   return (

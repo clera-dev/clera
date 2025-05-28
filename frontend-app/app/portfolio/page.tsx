@@ -8,15 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import Link from 'next/link';
+import { Badge } from "@/components/ui/badge";
 
 import PortfolioHistoryChart from '@/components/portfolio/PortfolioHistoryChart';
-import RiskDiversificationScores from '@/components/portfolio/RiskDiversificationScores';
-import AssetAllocationPie from '@/components/portfolio/AssetAllocationPie';
+import RiskDiversificationScoresWithAssist from '@/components/portfolio/RiskDiversificationScoresWithAssist';
+import AssetAllocationPieWithAssist from '@/components/portfolio/AssetAllocationPieWithAssist';
 import WhatIfCalculator from '@/components/portfolio/WhatIfCalculator';
 import HoldingsTable from '@/components/portfolio/HoldingsTable';
 import TransactionsTable from '@/components/portfolio/TransactionsTable';
 import AddFundsButton from '@/components/portfolio/AddFundsButton';
 import LivePortfolioValue from '@/components/portfolio/LivePortfolioValue';
+import PortfolioSummaryWithAssist from '@/components/portfolio/PortfolioSummaryWithAssist';
+import InvestmentGrowthWithAssist from '@/components/portfolio/InvestmentGrowthWithAssist';
+import HoldingsTableWithAssist from '@/components/portfolio/HoldingsTableWithAssist';
+import { getAlpacaAccountId } from "@/lib/utils";
+import { createClient } from "@/utils/supabase/client";
 
 interface PortfolioHistoryData {
   timestamp: number[];
@@ -206,15 +212,23 @@ export default function PortfolioPage() {
     }
   };
 
-  const fetchAssetDetails = async (symbolOrId: string): Promise<AssetDetails | null> => {
-    if (assetDetailsMap[symbolOrId]) {
+  const fetchAssetDetails = async (symbolOrId: string, bypassCache: boolean = false): Promise<AssetDetails | null> => {
+    // Check cache only if not bypassing cache
+    if (!bypassCache && assetDetailsMap[symbolOrId]) {
         return assetDetailsMap[symbolOrId];
     }
     try {
         // Use the Next.js API route that properly includes the API key
         // This will go through /app/api/assets/[assetId]/route.ts instead of directly to the backend
-        const url = `/api/assets/${symbolOrId}`;
-        const details = await fetchData(url);
+        const cacheBuster = bypassCache ? `?_cb=${Date.now()}` : '';
+        const url = `/api/assets/${symbolOrId}${cacheBuster}`;
+        const details = await fetchData(url, bypassCache ? {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        } : {});
         setAssetDetailsMap(prev => ({ ...prev, [symbolOrId]: details }));
         return details;
     } catch (err) {
@@ -494,25 +508,56 @@ export default function PortfolioPage() {
           <Button 
             variant="outline" 
             size="sm" 
+            disabled={isLoading}
             onClick={() => {
-              console.log("[Refresh Button Clicked] - Refresh process started.");
+              console.log("[Refresh Button Clicked] - Enhanced refresh process started with cache busting.");
               if (accountId) {
                 setIsLoading(true);
+                
+                // Clear any existing state to force fresh data
+                setAnalytics(null);
+                setPositions([]);
+                setOrders([]);
+                setPortfolioHistory(null);
+                setError(null);
+                
+                // Clear asset details cache to force fresh asset fetches
+                setAssetDetailsMap({});
+                
                 const loadInitialStaticData = async () => {
                   try {
-                    console.log("[Refresh Button] - Fetching portfolio data...");
-                    const positionsUrl = `/api/portfolio/positions?accountId=${accountId}`;
-                    const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
-                    const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}`;
+                    console.log("[Refresh Button] - Fetching fresh portfolio data with cache busting...");
+                    
+                    // Add cache-busting timestamp to all requests
+                    const cacheBuster = `_cb=${Date.now()}`;
+                    const positionsUrl = `/api/portfolio/positions?accountId=${accountId}&${cacheBuster}`;
+                    const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true&${cacheBuster}`;
+                    const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}&${cacheBuster}`;
+                    
+                    // Use fetch with cache-busting headers to ensure fresh data
+                    const fetchWithCacheBusting = async (url: string) => {
+                      return fetchData(url, {
+                        headers: {
+                          'Cache-Control': 'no-cache, no-store, must-revalidate',
+                          'Pragma': 'no-cache',
+                          'Expires': '0'
+                        }
+                      });
+                    };
                     
                     const [positionsData, ordersData, analyticsData] = await Promise.all([
-                      fetchData(positionsUrl),
-                      fetchData(ordersUrl),
-                      fetchData(analyticsUrl),
+                      fetchWithCacheBusting(positionsUrl),
+                      fetchWithCacheBusting(ordersUrl),
+                      fetchWithCacheBusting(analyticsUrl),
                     ]);
                     
+                    // Set analytics data first and log the fresh values
                     setAnalytics(analyticsData);
-                    console.log("[Refresh Button] - Analytics data updated.", analyticsData);
+                    console.log("[Refresh Button] - FRESH Analytics data updated:", {
+                      risk_score: analyticsData?.risk_score,
+                      diversification_score: analyticsData?.diversification_score,
+                      timestamp: new Date().toISOString()
+                    });
                     
                     // Initialize combinedTransactions with ordersData
                     let combinedTransactions = Array.isArray(ordersData) ? [...ordersData] : [];
@@ -520,8 +565,8 @@ export default function PortfolioPage() {
                     // Only try to load activities if previously determined to be available
                     if (activitiesEndpointAvailable.current === true) {
                       try {
-                        const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100`;
-                        const activitiesData = await fetchData(activitiesUrl);
+                        const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100&${cacheBuster}`;
+                        const activitiesData = await fetchWithCacheBusting(activitiesUrl);
                         
                         if (activitiesData && Array.isArray(activitiesData) && activitiesData.length > 0) {
                           combinedTransactions = [...combinedTransactions, ...activitiesData];
@@ -541,8 +586,10 @@ export default function PortfolioPage() {
                     
                     const totalMarketValue = Array.isArray(positionsData) ? positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0) : 0;
                     
+                    // Force fresh asset details fetch for each position
                     const enrichedPositions = Array.isArray(positionsData) ? await Promise.all(positionsData.map(async (pos: any) => {
-                      const details = await fetchAssetDetails(pos.symbol);
+                      // Force fresh asset details fetch by bypassing cache
+                      const details = await fetchAssetDetails(pos.symbol, true); // true = bypass cache
                       const marketValue = safeParseFloat(pos.market_value);
                       const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
                       return {
@@ -556,17 +603,24 @@ export default function PortfolioPage() {
                     console.log("[Refresh Button] - Positions/Holdings data updated.", enrichedPositions);
                     
                     // Also refresh the history with the current selected time range
-                    const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
-                    const historyData = await fetchData(historyUrl);
+                    const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}&${cacheBuster}`;
+                    const historyData = await fetchWithCacheBusting(historyUrl);
                     setPortfolioHistory(historyData);
                     console.log("[Refresh Button] - Portfolio history updated for range:", selectedTimeRange, historyData);
                     
+                    // Update all time history if we're on MAX timeframe
+                    if (selectedTimeRange === 'MAX') {
+                      setAllTimeHistory(historyData);
+                    }
+                    
                   } catch (err: any) {
                     console.error("[Refresh Button] - Error refreshing portfolio data:", err);
+                    setError(`Failed to refresh portfolio data: ${err.message}`);
                   } finally {
                     setIsLoading(false);
+                    // Force refresh of all chart components
                     setAllocationChartRefreshKey(Date.now()); 
-                    console.log("[Refresh Button] - Allocation chart refresh key updated. Refresh process complete.");
+                    console.log("[Refresh Button] - Enhanced refresh process complete with cache busting. All components should show fresh data.");
                   }
                 };
                 
@@ -574,8 +628,8 @@ export default function PortfolioPage() {
               }
             }}
           >
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Refresh
+            <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+            {isLoading ? 'Refreshing...' : 'Refresh'}
           </Button>
           <AddFundsButton accountId={accountId} />
         </div>
@@ -583,30 +637,16 @@ export default function PortfolioPage() {
       
       {/* Real-time Portfolio Value with integrated chart */}
       {accountId && (
-        <Card className="bg-card shadow-lg">
-          <CardHeader className="py-3">
-            <CardTitle className="text-base md:text-lg font-medium">Portfolio Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-0">
-            <LivePortfolioValue accountId={accountId} />
-            
-            {!portfolioHistory && isLoading ? (
-              <Skeleton className="h-80 w-full mt-6" />
-            ) : portfolioHistory ? (
-              <div className="mt-4">
-                <PortfolioHistoryChart
-                  data={portfolioHistory}
-                  timeRange={selectedTimeRange}
-                  setTimeRange={setSelectedTimeRange}
-                  allTimeReturnAmount={null}
-                  allTimeReturnPercent={null}
-                />
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-center p-4 mt-6">Could not load portfolio history.</p>
-            )}
-          </CardContent>
-        </Card>
+        <PortfolioSummaryWithAssist
+          accountId={accountId}
+          portfolioHistory={portfolioHistory}
+          selectedTimeRange={selectedTimeRange}
+          setSelectedTimeRange={setSelectedTimeRange}
+          isLoading={isLoading}
+          disabled={!hasTradeHistory}
+          allTimeReturnAmount={null}
+          allTimeReturnPercent={null}
+        />
       )}
 
       {/* Notification for new users */}
@@ -626,59 +666,75 @@ export default function PortfolioPage() {
       )}
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        <Card className="bg-card shadow-lg">
-            <CardHeader className="py-3">
-             <CardTitle className="text-base md:text-lg">Portfolio Analytics</CardTitle>
-           </CardHeader>
-            <CardContent>
-                {!analytics && isLoading ? (
-                    <div className="space-y-6">
-                         <Skeleton className="h-20 w-full" />
-                         <Skeleton className="h-20 w-full" />
-                     </div>
-                ) : analytics ? (
-                    <RiskDiversificationScores
-                        accountId={accountId}
-                        initialData={analytics}
-                    />
-                 ) : (
-                    <p className="text-muted-foreground text-center">Could not load analytics scores. {error}</p>
-                 )}
-            </CardContent>
-        </Card>
+        {!analytics && isLoading ? (
+          <RiskDiversificationScoresWithAssist
+            accountId={accountId}
+            initialData={analytics}
+            isLoading={true}
+            disabled={!hasTradeHistory}
+            skeletonContent={
+              <div className="space-y-6">
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-20 w-full" />
+              </div>
+            }
+          />
+        ) : analytics ? (
+          <RiskDiversificationScoresWithAssist
+            accountId={accountId}
+            initialData={analytics}
+            disabled={!hasTradeHistory}
+          />
+        ) : (
+          <RiskDiversificationScoresWithAssist
+            accountId={accountId}
+            initialData={analytics}
+            disabled={!hasTradeHistory}
+            error={`Could not load analytics scores. ${error}`}
+          />
+        )}
 
-        <Card className="bg-card shadow-lg">
-           <CardHeader className="py-3">
-              <CardTitle className="text-base md:text-lg">Asset Allocation</CardTitle>
-           </CardHeader>
-           <CardContent>
-             {!isLoading && positions.length === 0 && !error ? (
-                  <p className="text-muted-foreground p-6 text-center">No positions available to display allocation.</p>
-             ) : isLoading && positions.length === 0 ? (
-                 <Skeleton className="h-72 w-full" />
-             ) : positions.length > 0 ? (
-                 <AssetAllocationPie positions={positions} accountId={accountId} refreshTimestamp={allocationChartRefreshKey} />
-             ) : (
-                <p className="text-muted-foreground p-6 text-center">Could not load position data. {error}</p>
-             )}
-           </CardContent>
-        </Card>
-
+        {!isLoading && positions.length === 0 && !error ? (
+          <AssetAllocationPieWithAssist
+            positions={positions}
+            accountId={accountId}
+            refreshTimestamp={allocationChartRefreshKey}
+            disabled={!hasTradeHistory}
+            error="No positions available to display allocation."
+          />
+        ) : isLoading && positions.length === 0 ? (
+          <AssetAllocationPieWithAssist
+            positions={positions}
+            accountId={accountId}
+            refreshTimestamp={allocationChartRefreshKey}
+            isLoading={true}
+            disabled={!hasTradeHistory}
+            skeletonContent={<Skeleton className="h-72 w-full" />}
+          />
+        ) : positions.length > 0 ? (
+          <AssetAllocationPieWithAssist
+            positions={positions}
+            accountId={accountId}
+            refreshTimestamp={allocationChartRefreshKey}
+            disabled={!hasTradeHistory}
+          />
+        ) : (
+          <AssetAllocationPieWithAssist
+            positions={positions}
+            accountId={accountId}
+            refreshTimestamp={allocationChartRefreshKey}
+            disabled={!hasTradeHistory}
+            error={`Could not load position data. ${error}`}
+          />
+        )}
       </div>
 
       <div style={lockedSectionStyle}>
-        <Card className="bg-card shadow-lg">
-           <CardHeader className="py-3">
-               <CardTitle className="text-base md:text-lg">Investment Growth Projection</CardTitle>
-           </CardHeader>
-           <CardContent>
-              {isLoading && positions.length === 0 ? (
-                   <Skeleton className="h-40 w-full" />
-              ) : (
-                   <WhatIfCalculator currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)} />
-              )}
-           </CardContent>
-        </Card>
+        <InvestmentGrowthWithAssist
+          currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)}
+          isLoading={isLoading && positions.length === 0}
+          disabled={!hasTradeHistory}
+        />
       </div>
 
       <div style={lockedSectionStyle}>
@@ -694,7 +750,11 @@ export default function PortfolioPage() {
                 {isLoading && positions.length === 0 && !error ? (
                   <Skeleton className="h-64 w-full rounded-t-none" />
                 ) : positions.length > 0 ? (
-                  <HoldingsTable positions={positions} />
+                  <HoldingsTableWithAssist 
+                    positions={positions} 
+                    isLoading={isLoading}
+                    disabled={!hasTradeHistory}
+                  />
                 ) : (
                    <p className="text-muted-foreground p-6 text-center">
                       Waiting for your first trade to display holdings.
@@ -717,7 +777,7 @@ export default function PortfolioPage() {
                    />
                   ) : (
                    <p className="text-muted-foreground p-6 text-center">
-                      Waiting for your first transaction.
+                      No pending orders.
                    </p>
                   )}
                </CardContent>
