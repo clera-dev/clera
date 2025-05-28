@@ -10,10 +10,8 @@ import {
     Tooltip,
     CartesianGrid
 } from 'recharts';
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { format } from 'date-fns';
 
@@ -69,16 +67,16 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioValue = 0 }) => {
-    const initialInvestmentValue = currentPortfolioValue ?? 10000; // Default if prop is null/undefined
+    const initialInvestmentValue = Math.round(currentPortfolioValue ?? 1000); // Round to nearest dollar and default to 1000
     const [initialInvestment, setInitialInvestment] = useState<number>(initialInvestmentValue);
-    const [annualInvestment, setAnnualInvestment] = useState<number>(5000);
+    const [monthlyInvestment, setMonthlyInvestment] = useState<number>(500);
     const [timeHorizon, setTimeHorizon] = useState<number>(20); // years
     const [investmentStrategy, setInvestmentStrategy] = useState<string>('moderate');
 
     // Update initial investment if prop changes after initial render
     React.useEffect(() => {
         if (currentPortfolioValue !== null && currentPortfolioValue !== undefined) {
-            setInitialInvestment(currentPortfolioValue);
+            setInitialInvestment(Math.round(currentPortfolioValue));
         }
     }, [currentPortfolioValue]);
 
@@ -88,6 +86,7 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
         const data = [];
         let currentValue = initialInvestment;
         const currentYear = new Date().getFullYear();
+        const annualInvestment = monthlyInvestment * 12; // Convert monthly to annual
 
         if (initialInvestment < 0) return []; // Cannot project negative initial value
 
@@ -100,7 +99,7 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
             data.push({ year: currentYear + i, value: currentValue });
         }
         return data;
-    }, [initialInvestment, annualInvestment, timeHorizon, expectedReturn]);
+    }, [initialInvestment, monthlyInvestment, timeHorizon, expectedReturn]);
 
     const finalProjectedValue = projectionData[projectionData.length - 1]?.value ?? initialInvestment;
 
@@ -109,43 +108,82 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
             {/* Inputs Column */}
             <div className="md:col-span-1 space-y-6">
                 <div>
-                    <Label htmlFor="initialInvestment" className="text-sm font-medium">Initial Investment</Label>
-                    <Input
+                    <Label htmlFor="initialInvestment" className="text-sm font-medium">
+                        Initial Investment ({formatCurrency(initialInvestment)})
+                    </Label>
+                    <Slider
                         id="initialInvestment"
-                        type="number"
-                        value={initialInvestment}
-                        onChange={(e) => setInitialInvestment(Math.max(0, parseFloat(e.target.value) || 0))}
-                        className="mt-1"
-                        min="0"
+                        min={0}
+                        max={50000}
+                        step={100}
+                        value={[initialInvestment]}
+                        onValueChange={(value: number[]) => setInitialInvestment(value[0])}
+                        className="mt-2"
                     />
                     <p className="text-xs text-muted-foreground mt-1">Defaults to current portfolio value.</p>
                 </div>
 
                 <div>
-                    <Label htmlFor="annualInvestment" className="text-sm font-medium">Annual Investment</Label>
-                    <Input
-                        id="annualInvestment"
-                        type="number"
-                        value={annualInvestment}
-                        onChange={(e) => setAnnualInvestment(Math.max(0, parseFloat(e.target.value) || 0))}
-                        className="mt-1"
-                        min="0"
-                        step="100"
+                    <Label htmlFor="monthlyInvestment" className="text-sm font-medium">
+                        Additional Monthly Investment ({formatCurrency(monthlyInvestment)})
+                    </Label>
+                    <Slider
+                        id="monthlyInvestment"
+                        min={0}
+                        max={5000}
+                        step={25}
+                        value={[monthlyInvestment]}
+                        onValueChange={(value: number[]) => setMonthlyInvestment(value[0])}
+                        className="mt-2"
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Annual: {formatCurrency(monthlyInvestment * 12)}
+                    </p>
                 </div>
 
-                 <div>
+                <div>
                     <Label className="text-sm font-medium">Investment Strategy (Expected Return)</Label>
-                    <Select value={investmentStrategy} onValueChange={setInvestmentStrategy}>
-                        <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Select strategy" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="conservative">Conservative ({(STRATEGY_RETURNS.conservative * 100).toFixed(0)}%)</SelectItem>
-                            <SelectItem value="moderate">Moderate ({(STRATEGY_RETURNS.moderate * 100).toFixed(0)}%)</SelectItem>
-                            <SelectItem value="aggressive">Aggressive ({(STRATEGY_RETURNS.aggressive * 100).toFixed(0)}%)</SelectItem>
-                        </SelectContent>
-                    </Select>
+                    <div className="flex gap-2 mt-2">
+                        <button
+                            onClick={() => setInvestmentStrategy('conservative')}
+                            className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                                investmentStrategy === 'conservative'
+                                    ? 'bg-primary text-primary-foreground border-primary'
+                                    : 'bg-background hover:bg-accent border-border'
+                            }`}
+                        >
+                            <div className="text-center">
+                                <div className="font-medium">Conservative</div>
+                                <div className="text-xs opacity-75">{(STRATEGY_RETURNS.conservative * 100).toFixed(0)}%</div>
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => setInvestmentStrategy('moderate')}
+                            className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                                investmentStrategy === 'moderate'
+                                    ? 'bg-primary text-primary-foreground border-primary'
+                                    : 'bg-background hover:bg-accent border-border'
+                            }`}
+                        >
+                            <div className="text-center">
+                                <div className="font-medium">Moderate</div>
+                                <div className="text-xs opacity-75">{(STRATEGY_RETURNS.moderate * 100).toFixed(0)}%</div>
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => setInvestmentStrategy('aggressive')}
+                            className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                                investmentStrategy === 'aggressive'
+                                    ? 'bg-primary text-primary-foreground border-primary'
+                                    : 'bg-background hover:bg-accent border-border'
+                            }`}
+                        >
+                            <div className="text-center">
+                                <div className="font-medium">Aggressive</div>
+                                <div className="text-xs opacity-75">{(STRATEGY_RETURNS.aggressive * 100).toFixed(0)}%</div>
+                            </div>
+                        </button>
+                    </div>
                 </div>
 
                 <div>

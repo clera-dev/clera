@@ -106,3 +106,151 @@ body > *:not([id^="root"]):not([class*="Toaster"]):not([role="dialog"]) {
 body > div:last-child:not([id]):not([class]) {
   display: none !important;
 }
+
+/* Clera Assist Styles */
+.clera-glow {
+  box-shadow: 
+    0 0 20px rgba(0, 122, 255, 0.15),
+    0 0 40px rgba(90, 200, 250, 0.1),
+    0 0 60px rgba(0, 122, 255, 0.05);
+  border: 1px solid rgba(0, 122, 255, 0.2);
+  transition: all 0.3s ease-out;
+}
+
+.clera-assist-button {
+  background: linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%);
+  box-shadow: 
+    0 4px 15px rgba(0, 122, 255, 0.3),
+    0 2px 8px rgba(90, 200, 250, 0.2);
+  transition: all 0.2s ease-out;
+  position: relative;
+  overflow: hidden;
+  z-index: 9999 !important;
+}
+
+.clera-assist-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.clera-assist-button:hover::before {
+  left: 100%;
+}
+
+.clera-assist-button:hover {
+  transform: scale(1.05) translateY(-1px);
+  box-shadow: 
+    0 6px 20px rgba(0, 122, 255, 0.4),
+    0 3px 12px rgba(90, 200, 250, 0.3);
+}
+
+.clera-pulse {
+  animation: clera-pulse 2s infinite;
+}
+
+@keyframes clera-pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Enhanced card header layout */
+.clera-assist-card-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  z-index: 9998;
+  isolation: isolate;
+}
+
+.clera-assist-card-header .card-title {
+  flex: 1;
+  margin-right: 12px;
+}
+
+/* Smooth transitions for button appearance */
+.clera-assist-button-container {
+  transition: all 0.3s ease-out;
+  opacity: 0;
+  transform: translateY(4px);
+  z-index: 9999 !important;
+  position: relative;
+}
+
+.clera-assist-button-container.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Tooltip z-index and solid background */
+[data-radix-tooltip-content] {
+  z-index: 10000 !important;
+  background: hsl(var(--popover)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Dark mode tooltip */
+.dark [data-radix-tooltip-content] {
+  background: hsl(var(--popover)) !important;
+  color: hsl(var(--popover-foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Tooltip portal container */
+[data-radix-tooltip-portal] {
+  z-index: 10000 !important;
+}
+
+/* General positioning fixes for Clera Assist */
+.clera-assist-card-header > div:last-child {
+  z-index: 9999 !important;
+  position: relative;
+}
+
+/* Ensure cards don't create stacking contexts that interfere */
+.clera-assist-card-header {
+  isolation: isolate;
+}
+
+/* Fix for any components that might create stacking contexts */
+[data-clera-assist] {
+  z-index: 9999 !important;
+  position: relative;
+}
+
+/* Specific fixes for tooltip content */
+.clera-assist-button + [data-radix-tooltip-content] {
+  z-index: 10001 !important;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .clera-assist-button {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  .clera-pulse {
+    animation-duration: 1.5s;
+  }
+}

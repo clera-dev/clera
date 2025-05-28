@@ -365,6 +365,31 @@ export default function Chat({
     }
   }, [isProcessing, isInterrupting]);
 
+  // Listen for Clera Assist prompts
+  useEffect(() => {
+    const handleCleraAssistPrompt = (event: CustomEvent) => {
+      const { prompt, context } = event.detail;
+      if (prompt) {
+        // Set the prompt as input
+        setInput(prompt);
+        // Use a ref to trigger submission after the input is set
+        setTimeout(() => {
+          // Trigger form submission programmatically
+          const form = document.querySelector('form[data-chat-form="true"]') as HTMLFormElement;
+          if (form) {
+            const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(submitEvent);
+          }
+        }, 100);
+      }
+    };
+
+    window.addEventListener('cleraAssistPrompt', handleCleraAssistPrompt as EventListener);
+    return () => {
+      window.removeEventListener('cleraAssistPrompt', handleCleraAssistPrompt as EventListener);
+    };
+  }, []);
+
   // Update internal state when the session ID prop changes (e.g., new chat started or existing selected)
   useEffect(() => {
       console.log("Chat component received session/thread ID prop change:", initialSessionId);
@@ -386,11 +411,91 @@ export default function Chat({
   const errorMessage = error ? (error instanceof Error ? error.message : String(error)) : null;
 
   // Add this function to handle selecting a suggested question
-  const handleSuggestedQuestion = (question: string) => {
-    setInput(question);
-    // Auto-submit the question after a short delay to allow UI to update
-    setTimeout(() => handleSendMessage(), 50);
-  };
+  const handleSuggestedQuestion = useCallback(async (question: string) => {
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion || isProcessing || isInterrupting) return;
+
+    // Clear the input field immediately
+    setInput('');
+
+    // Reset textarea height after sending
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.rows = 1;
+    }
+
+    let targetThreadId = currentThreadId;
+
+    // Handle Session Creation OR Subsequent Message (same logic as handleSendMessage)
+    if (targetThreadId === null) {
+        // This is the FIRST message in a new chat
+        setIsCreatingSession(true);
+        console.log("No current thread ID. Attempting to create new session...");
+        try {
+            const newTitle = formatChatTitle(trimmedQuestion);
+            const newSession = await createChatSession(accountId, userId, newTitle);
+
+            if (newSession && newSession.id) {
+                targetThreadId = newSession.id;
+                console.log("New session created successfully:", targetThreadId);
+
+                // Set the pending message content
+                setPendingFirstMessage(trimmedQuestion);
+                // Update the thread ID state - this will trigger the useEffect
+                setCurrentThreadId(targetThreadId);
+
+                if (onSessionCreated) {
+                    onSessionCreated(targetThreadId);
+                }
+            } else {
+                throw new Error("Failed to create chat session or received invalid response.");
+            }
+        } catch (err) {
+            console.error("Error creating session in handleSuggestedQuestion:", err);
+            setPendingFirstMessage(null);
+        } finally {
+             setIsCreatingSession(false);
+        }
+    } else {
+        // This is a SUBSEQUENT message in an existing chat
+        console.log(`Submitting SUBSEQUENT suggested question to thread ${targetThreadId}`);
+
+        const runInput = {
+            messages: [{ type: 'human' as const, content: trimmedQuestion }],
+        };
+        
+        const runConfig = {
+          configurable: {
+            user_id: userId,
+            account_id: accountId
+          },
+          stream_mode: 'messages-tuple' as const
+        };
+
+        console.log(`Submitting suggested question via thread.submit to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
+        try {
+            thread.submit(runInput, {
+                config: runConfig,
+                optimisticValues(prev) {
+                    const prevMessages = prev.messages ?? [];
+                    const newMessage: LangGraphMessage = {
+                        type: 'human' as const,
+                        content: trimmedQuestion,
+                        id: `temp-${Date.now()}`
+                    };
+                    return { ...prev, messages: [...prevMessages, newMessage] };
+                },
+            });
+
+            // Callbacks after successful submission initiation
+            onMessageSent?.();
+            await onQuerySent?.();
+
+        } catch (err) {
+            console.error("Error calling thread.submit for suggested question:", err);
+        }
+    }
+  }, [isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent]);
 
   return (
     <div className={`flex flex-col h-full ${isFullscreen ? 'max-h-[calc(100vh-64px)]' : ''}`}>
@@ -486,6 +591,7 @@ export default function Chat({
           <form 
             onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleSendMessage(); }} 
             className="flex items-end space-x-2"
+            data-chat-form="true"
           >
             <Textarea
               ref={inputRef}

@@ -7,6 +7,7 @@ import MainSidebar from "@/components/MainSidebar";
 import { createClient } from "@/utils/supabase/client";
 import SideBySideLayout from "./SideBySideLayout";
 import FooterComponent from "@/components/FooterComponent";
+import { CleraAssistProvider } from "@/components/ui/clera-assist-provider";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -155,7 +156,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       enableSystem
       disableTransitionOnChange
     >
-      <div className="flex h-screen">
+      <CleraAssistProvider
+        onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
+        sideChatVisible={isSideChatOpen}
+      >
+        <div className="flex h-screen">
         {/* Hidden spacer div that takes up space but doesn't show content */}
         {shouldShowSidebar && (
           <div className={`h-full transition-all duration-300 ease-in-out invisible ${isSidebarCollapsed ? 'w-20' : 'w-64'}`} />
@@ -192,7 +197,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             />
           </div>
         )}
-      </div>
+        </div>
+      </CleraAssistProvider>
     </ThemeProvider>
   );
 } 

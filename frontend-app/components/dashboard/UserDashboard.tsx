@@ -4,17 +4,13 @@ import { useState, useEffect } from "react";
 import { InfoIcon, Terminal } from "lucide-react";
 import PortfolioCard from './PortfolioCard';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import ChatButton from "../chat/ChatButton";
 import { 
     getAlpacaAccountId, 
-    formatCurrency, 
-    getUserDailyQueryCount,
-    recordUserQuery
+    formatCurrency
 } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/utils/supabase/client";
-import { DAILY_QUERY_LIMIT } from "@/lib/constants";
 
 interface UserDashboardProps {
   firstName: string;
@@ -33,26 +29,6 @@ export default function UserDashboard({
   const [alpacaAccountId, setAlpacaAccountId] = useState<string | null>(null);
   const [isLoadingAccountId, setIsLoadingAccountId] = useState(true);
   const [accountIdError, setAccountIdError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [queryCount, setQueryCount] = useState<number>(0);
-  const [isLimitReached, setIsLimitReached] = useState<boolean>(false);
-  const [isLoadingLimit, setIsLoadingLimit] = useState<boolean>(true);
-
-  useEffect(() => {
-    const fetchUserId = async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUserId(user.id);
-        try {
-          localStorage.setItem('userId', user.id);
-        } catch (e) { console.error("LocalStorage Error:", e); }
-      } else {
-        console.error("UserDashboard: Could not retrieve user ID.");
-      }
-    };
-    fetchUserId();
-  }, []);
 
   useEffect(() => {
     const fetchId = async () => {
@@ -101,56 +77,12 @@ export default function UserDashboard({
     fetchId();
   }, []);
 
-  useEffect(() => {
-    const fetchInitialCount = async () => {
-      if (!userId) return;
-      
-      setIsLoadingLimit(true);
-      try {
-        const count = await getUserDailyQueryCount(userId);
-        setQueryCount(count);
-        setIsLimitReached(count >= DAILY_QUERY_LIMIT);
-        console.log(`UserDashboard: Initial query count ${count}, Limit reached: ${count >= DAILY_QUERY_LIMIT}`);
-      } catch (error) {
-        console.error("UserDashboard: Error fetching initial query count:", error);
-        setIsLimitReached(false);
-      } finally {
-        setIsLoadingLimit(false);
-      }
-    };
-    fetchInitialCount();
-  }, [userId]);
-
-  const handleQuerySent = async () => {
-    if (!userId) {
-        console.error("handleQuerySent: Cannot record query, userId is missing.");
-        return;
-    }
-    if (isLimitReached) {
-        console.warn("handleQuerySent: Query limit already reached, not recording.");
-        return;
-    }
-    
-    try {
-      await recordUserQuery(userId);
-      const newCount = queryCount + 1;
-      setQueryCount(newCount);
-      const limitNowReached = newCount >= DAILY_QUERY_LIMIT;
-      setIsLimitReached(limitNowReached);
-      console.log(`UserDashboard: Recorded query. New count ${newCount}, Limit reached: ${limitNowReached}`);
-    } catch (error) {
-      console.error("UserDashboard: Error recording user query:", error);
-    }
-  };
-
   const displayBankName = accountDetails?.bankName || "Not Connected";
   const displayLast4 = accountDetails?.bankAccountLast4 ? `•••• ${accountDetails.bankAccountLast4}` : "N/A";
   const displayTransferAmount = accountDetails?.latestTransferAmount 
     ? formatCurrency(accountDetails.latestTransferAmount)
     : null;
   const displayTransferStatus = accountDetails?.latestTransferStatus;
-
-  const canShowChat = !isLoadingAccountId && alpacaAccountId && userId && !isLoadingLimit;
 
   return (
     <div className="space-y-6">
@@ -200,17 +132,6 @@ export default function UserDashboard({
           </CardContent>
         </Card>
       </div>
-      
-      {canShowChat && (
-        <ChatButton 
-            accountId={alpacaAccountId!}
-            userId={userId!}
-            isLimitReached={isLimitReached} 
-            onQuerySent={handleQuerySent} 
-        />
-      )}
-      {!canShowChat && isLoadingAccountId && <p>Loading chat...</p>} 
-      {!canShowChat && !isLoadingAccountId && userId && <p>Chat unavailable. Account ID or query limit check failed.</p>} 
     </div>
   );
 }
