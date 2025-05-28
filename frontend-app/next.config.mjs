@@ -35,7 +35,7 @@ const nextConfig = {
         source: '/api/chat/:path*', // Include if chat still goes through backend
         destination: `${backendUrl}/api/chat/:path*`,
       },
-       {
+      {
         source: '/api/chat-stream/:path*', // Added for streaming
         destination: `${backendUrl}/api/chat-stream/:path*`,
       },
@@ -47,16 +47,26 @@ const nextConfig = {
         source: '/api/account/:path*',
         destination: `${backendUrl}/api/account/:path*`,
       },
-      // REMOVED: Direct asset API proxy - now using Next.js API route
-      // {
-      //   source: '/api/assets/:path*',
-      //   destination: `${backendUrl}/api/assets/:path*`,
-      // },
-      // Add other specific backend API paths here if needed
       // IMPORTANT: Do NOT add a generic `/api/:path*` rule here, 
       // as it would conflict with Next.js internal API routes (like /api/fmp)
-    ]
+      
+      // Add PostHog rewrites
+      {
+        source: '/ingest/static/:path*',
+        destination: 'https://us-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/ingest/:path*',
+        destination: 'https://us.i.posthog.com/:path*',
+      },
+      {
+        source: '/ingest/decide',
+        destination: 'https://us.i.posthog.com/decide',
+      },
+    ];
   },
+  // This is required to support PostHog trailing slash API requests
+  skipTrailingSlashRedirect: true,
 };
 
-export default nextConfig; 
+export default nextConfig;
