@@ -68,10 +68,10 @@ export default function SideBySideLayout({
         {children}
       </div>
       
-      {/* Chat container - only shown when chat is open */}
+      {/* Chat container - only shown when chat is open, positioned below main header */}
       {isChatOpen && !isLoading && accountId && userId && (
         <div 
-          className="absolute top-0 bottom-0 right-0 overflow-hidden z-10"
+          className="absolute top-16 bottom-0 right-0 overflow-hidden z-10"
           style={{ width: "50%" }}
         >
           <SidebarChat 

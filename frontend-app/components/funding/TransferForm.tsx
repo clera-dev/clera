@@ -4,13 +4,14 @@ import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface TransferFormProps {
   alpacaAccountId: string;
   relationshipId: string;
   onTransferComplete?: (amount: string) => void;
+  onBack?: () => void;
   bankAccountNumber?: string;
   bankRoutingNumber?: string;
 }
@@ -19,6 +20,7 @@ export default function TransferForm({
   alpacaAccountId, 
   relationshipId,
   onTransferComplete,
+  onBack,
   bankAccountNumber = '',
   bankRoutingNumber = ''
 }: TransferFormProps) {
@@ -131,9 +133,9 @@ export default function TransferForm({
   if (transferCompleted && !onTransferComplete) {
     return (
       <div className="w-full max-w-md mx-auto">
-        <div className="p-4 mb-6 border border-green-200 rounded-lg bg-green-50">
-          <h4 className="font-medium text-green-800 mb-1">Transfer initiated!</h4>
-          <p className="text-green-700 text-sm">
+        <div className="p-4 mb-6 border border-emerald-200 rounded-lg bg-emerald-50">
+          <h4 className="font-medium text-emerald-800 mb-1">Transfer initiated!</h4>
+          <p className="text-emerald-700 text-sm">
             Your transfer of ${parseFloat(amount).toFixed(2)} has been initiated. 
             Funds may take 1-3 business days to process.
           </p>
@@ -144,9 +146,21 @@ export default function TransferForm({
 
   return (
     <div className="w-full max-w-md mx-auto">
+      {onBack && (
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onBack}
+          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+      )}
+      
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold mb-2">Fund Your Account</h2>
-        <p className="text-muted-foreground">
+        <h2 className="text-2xl font-bold mb-2 text-foreground">Fund Your Account</h2>
+        <p className="text-foreground/80 text-base leading-relaxed">
           You have successfully connected your account! To start investing in your future, 
           please enter how much you would like to add to your account.
         </p>
@@ -160,18 +174,20 @@ export default function TransferForm({
       
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="space-y-2">
-          <Label htmlFor="amount">Amount to Transfer (USD)</Label>
+          <Label htmlFor="amount" className="text-foreground font-medium text-base">
+            Amount to Transfer (USD)
+          </Label>
           <div className="relative">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-foreground/70 font-medium">
               $
             </span>
             <Input
               id="amount"
               type="number"
               min="1"
-              step="0.01"
-              placeholder="0.00"
-              className="pl-7"
+              step="1"
+              placeholder="0"
+              className="pl-7 bg-card dark:bg-card border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-blue-500 focus-visible:border-blue-500 h-12 text-lg font-medium"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               required
@@ -182,7 +198,7 @@ export default function TransferForm({
         
         <Button 
           type="submit" 
-          className="w-full flex items-center justify-center gap-2"
+          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-medium h-12 rounded-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-blue-500/20 shadow-md"
           disabled={isTransferring || !isValidAmount()}
         >
           {isTransferring ? (

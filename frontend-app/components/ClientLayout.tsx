@@ -43,8 +43,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   // Check the sidebar collapsed state from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // Immediately get the initial state to prevent layout shift
       const storedState = localStorage.getItem('sidebarCollapsed');
-      setIsSidebarCollapsed(storedState === 'true');
+      const initialCollapsed = storedState === 'true';
+      setIsSidebarCollapsed(initialCollapsed);
       
       // Listen for changes to the collapsed state
       const handleStorageChange = () => {
@@ -52,6 +54,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         setIsSidebarCollapsed(updatedState === 'true');
       };
       
+      // Handle storage events from other tabs/windows
       window.addEventListener('storage', handleStorageChange);
       
       // Custom event for changes within the same window
@@ -63,6 +66,20 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       };
     }
   }, []);
+
+  // Additional effect to ensure state consistency during pathname changes
+  useEffect(() => {
+    // Re-check localStorage state on every pathname change to ensure consistency
+    if (typeof window !== 'undefined') {
+      const storedState = localStorage.getItem('sidebarCollapsed');
+      const shouldBeCollapsed = storedState === 'true';
+      
+      // Only update if there's a mismatch to prevent unnecessary re-renders
+      if (isSidebarCollapsed !== shouldBeCollapsed) {
+        setIsSidebarCollapsed(shouldBeCollapsed);
+      }
+    }
+  }, [pathname, isSidebarCollapsed]);
 
   // Check or reset the side chat state when path changes
   useEffect(() => {
@@ -168,8 +185,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         
         {/* Main content area - adjusted to account for sidebar width */}
         <main className={`flex-1 overflow-hidden relative ${shouldShowSidebar ? 'ml-0' : ''}`}>
-          <div className="h-16"></div> {/* Spacer for fixed header */}
-          <div className="h-[calc(100%-64px)] overflow-auto">
+          <div className="h-full overflow-auto">
             {canShowSideChat ? (
               <SideBySideLayout 
                 isChatOpen={isSideChatOpen} 

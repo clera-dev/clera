@@ -56,6 +56,9 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
 }) => {
   const { openChatWithPrompt, isEnabled } = useCleraAssist();
   
+  // Maximum number of articles to display to prevent layout issues
+  const MAX_PORTFOLIO_ARTICLES = 5;
+  
   // Extract key data for dynamic prompts
   const articleCount = portfolioSummary?.referenced_articles?.length || 0;
   const hasPositiveNews = portfolioSummary?.referenced_articles?.some(article => article.sentimentScore > 0) || false;
@@ -109,21 +112,6 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
           <div className="space-y-1 mb-2">
             <div className="flex items-center justify-between">
               <p className="text-base font-medium">Your Summary:</p>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="rounded-full h-7 w-7 p-0" 
-                onClick={onReadSummary}
-                disabled={isPlaying || isLoadingSummary || !portfolioSummary}
-                title="Have Clera read summary aloud"
-              >
-                {isPlaying ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                ) : (
-                  <Volume2 className="h-4 w-4 text-primary" />
-                )}
-                <span className="sr-only">Read summary aloud</span>
-              </Button>
             </div>
             {isLoadingSummary && (
               <div className="flex items-center space-x-2 text-muted-foreground text-sm">
@@ -147,6 +135,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                   <div className="space-y-3">
                     {portfolioSummary.referenced_articles
                       .filter(article => article.shouldDisplay !== false)
+                      .slice(0, MAX_PORTFOLIO_ARTICLES)
                       .map((article, index) => (
                       <WatchlistNewsItemClient
                         key={`${article.url}-${index}`}
@@ -156,6 +145,11 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                         articleUrl={article.url}
                       />
                     ))}
+                    {portfolioSummary.referenced_articles.filter(article => article.shouldDisplay !== false).length > MAX_PORTFOLIO_ARTICLES && (
+                      <p className="text-xs text-muted-foreground italic">
+                        Showing {MAX_PORTFOLIO_ARTICLES} of {portfolioSummary.referenced_articles.filter(article => article.shouldDisplay !== false).length} referenced articles
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p className="text-muted-foreground text-sm mt-2">
@@ -190,21 +184,6 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
         <div className="space-y-1 mb-2 flex-1 flex flex-col">
           <div className="flex items-center justify-between">
             <p className="text-base font-medium">Your Summary:</p>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="rounded-full h-7 w-7 p-0" 
-              onClick={onReadSummary}
-              disabled={isPlaying || isLoadingSummary || !portfolioSummary}
-              title="Have Clera read summary aloud"
-            >
-              {isPlaying ? (
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              ) : (
-                <Volume2 className="h-4 w-4 text-primary" />
-              )}
-              <span className="sr-only">Read summary aloud</span>
-            </Button>
           </div>
           
           <div className="flex-1 overflow-auto">
@@ -230,6 +209,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                   <div className="space-y-3">
                     {portfolioSummary.referenced_articles
                       .filter(article => article.shouldDisplay !== false)
+                      .slice(0, MAX_PORTFOLIO_ARTICLES)
                       .map((article, index) => (
                       <WatchlistNewsItemClient
                         key={`${article.url}-${index}`}
@@ -239,6 +219,11 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                         articleUrl={article.url}
                       />
                     ))}
+                    {portfolioSummary.referenced_articles.filter(article => article.shouldDisplay !== false).length > MAX_PORTFOLIO_ARTICLES && (
+                      <p className="text-xs text-muted-foreground italic">
+                        Showing {MAX_PORTFOLIO_ARTICLES} of {portfolioSummary.referenced_articles.filter(article => article.shouldDisplay !== false).length} referenced articles
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p className="text-muted-foreground text-sm mt-2">

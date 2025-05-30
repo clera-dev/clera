@@ -20,7 +20,6 @@ import ChatMessage, { ChatMessageProps } from './ChatMessage';
 import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import ChatSkeleton from './ChatSkeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import SuggestedQuestions from './SuggestedQuestions';
 
 // Define the expected state type and interrupt type
@@ -343,20 +342,19 @@ export default function Chat({
     }
   }, [isInterrupting, thread, userId, accountId]); // Add userId and accountId
 
-  // Auto-scroll: Only scroll down if user is near the bottom
-  // useEffect(() => {
-  //   const scrollElement = scrollContainerRef.current;
-  //   if (scrollElement) {
-  //     // Access the direct scrollable child (often the first child)
-  //     const viewport = scrollElement.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
-  //     if (viewport) {
-  //       const isScrolledToBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100; // Threshold of 100px
-  //       if (isScrolledToBottom) {
-  //         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  //       }
-  //     }
-  //   }
-  // }, [messagesToDisplay]); // Keep dependency array the same
+  // Auto-scroll: Scroll to bottom when messages change
+  useEffect(() => {
+    const scrollElement = scrollContainerRef.current;
+    if (scrollElement && messagesEndRef.current) {
+      // Check if user is near bottom (within 100px)
+      const isNearBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 100;
+      
+      // Auto-scroll if near bottom or if processing (new message being generated)
+      if (isNearBottom || isProcessing) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, [messagesToDisplay, isProcessing]);
 
   // Focus input
   useEffect(() => {
@@ -498,7 +496,7 @@ export default function Chat({
   }, [isProcessing, isInterrupting, thread, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent]);
 
   return (
-    <div className={`flex flex-col h-full ${isFullscreen ? 'max-h-[calc(100vh-64px)]' : ''}`}>
+    <div className="flex flex-col h-full">
       {!isFullscreen && !isSidebarMode && (
         <div className="flex-shrink-0 flex items-center justify-between p-2 border-b">
           <div className="flex items-center space-x-2">
@@ -526,118 +524,114 @@ export default function Chat({
         </div>
       )}
       
-      <div className="flex flex-col h-full">
-        <ScrollArea 
-          ref={scrollContainerRef} 
-          className="flex-grow overflow-y-auto"
-          style={{
-            height: isSidebarMode ? 'calc(100% - 120px)' : 'auto'
-          }}
-        >
-        <div className="p-4 space-y-4">
-          {messagesToDisplay.map((msg: Message, index: number) => (
-              <ChatMessage 
-              key={`msg-${index}`}
-              message={msg}
-              isLast={index === messagesToDisplay.length - 1 && !isProcessing && !isInterrupting}
-            />
-          ))}
-          
-          {isInterrupting && (
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm text-center">
-              <p className="text-sm text-blue-900 mb-3 whitespace-pre-wrap">{interruptMessage || 'Action Required'}</p>
-              <div className="flex justify-center space-x-3">
-                <Button 
-                  variant="outline" 
-                  className="border-gray-400 text-gray-700 hover:bg-gray-100"
-                  size="sm"
-                  onClick={() => handleInterruptConfirmation('no')}
-                  disabled={isProcessing}
-                >
-                  <BanIcon className="mr-2 h-4 w-4" /> No
-                </Button>
-                <Button 
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white"
-                  size="sm"
-                  onClick={() => handleInterruptConfirmation('yes')}
-                  disabled={isProcessing}
-                >
-                  <CheckIcon className="mr-2 h-4 w-4" /> Yes
-                </Button>
-              </div>
+      {/* Messages Container - Native scroll like Vercel */}
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4"
+      >
+        {messagesToDisplay.map((msg: Message, index: number) => (
+            <ChatMessage 
+            key={`msg-${index}`}
+            message={msg}
+            isLast={index === messagesToDisplay.length - 1 && !isProcessing && !isInterrupting}
+          />
+        ))}
+        
+        {isInterrupting && (
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm text-center">
+            <p className="text-sm text-blue-900 mb-3 whitespace-pre-wrap">{interruptMessage || 'Action Required'}</p>
+            <div className="flex justify-center space-x-3">
+              <Button 
+                variant="outline" 
+                className="border-gray-400 text-gray-700 hover:bg-gray-100"
+                size="sm"
+                onClick={() => handleInterruptConfirmation('no')}
+                disabled={isProcessing}
+              >
+                <BanIcon className="mr-2 h-4 w-4" /> No
+              </Button>
+              <Button 
+                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white"
+                size="sm"
+                onClick={() => handleInterruptConfirmation('yes')}
+                disabled={isProcessing}
+              >
+                <CheckIcon className="mr-2 h-4 w-4" /> Yes
+              </Button>
             </div>
-          )}
-          
-          {isProcessing && !isInterrupting && <ChatSkeleton />}
-          
-          <div ref={messagesEndRef} />
-        </div>
-      </ScrollArea>
+          </div>
+        )}
+        
+        {isProcessing && !isInterrupting && <ChatSkeleton />}
+        
+        <div ref={messagesEndRef} />
+      </div>
       
+      {/* Suggested Questions - Fixed position when no messages */}
       {messagesToDisplay.length === 0 && 
        !isProcessing && 
        !isInterrupting && 
        !currentThreadId && (
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 px-4 pb-4">
           <SuggestedQuestions onSelect={handleSuggestedQuestion} />
         </div>
       )}
       
-        <div className="flex-shrink-0 border-t bg-background mt-auto">
+      {/* Input Area - Fixed at bottom */}
+      <div className="flex-shrink-0 border-t bg-background">
         {errorMessage && (
             <div className="text-red-500 text-sm py-1 px-3">Error: {errorMessage}</div>
         )}
-          <div className="p-2">
-          <form 
-            onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleSendMessage(); }} 
-            className="flex items-end space-x-2"
-            data-chat-form="true"
-          >
-            <Textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
-              placeholder={isInterrupting ? "Confirm or deny above..." : "Ask about your portfolio..."}
-              disabled={isProcessing || isInterrupting}
-                className="flex-1 resize-none min-h-[38px] max-h-[80px]"
-              rows={1}
-              onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-                if (e.key === 'Enter' && !e.shiftKey && !isProcessing && !isInterrupting) {
-                  e.preventDefault(); 
-                  handleSendMessage();
-                }
-              }}
-            />
-            {isProcessing && !thread.isLoading ? (
-                <Button 
-                  type="button" 
-                  size="icon" 
-                  disabled={true} 
-                  title="Creating session..."
-                >
-                    <RefreshCcw size={18} className="animate-spin" /> 
-                </Button>
-            ) : isProcessing ? (
+        <div className="p-2">
+        <form 
+          onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleSendMessage(); }} 
+          className="flex items-end space-x-2"
+          data-chat-form="true"
+        >
+          <Textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+            placeholder={isInterrupting ? "Confirm or deny above..." : "Ask about your portfolio..."}
+            disabled={isProcessing || isInterrupting}
+              className="flex-1 resize-none min-h-[38px] max-h-[80px]"
+            rows={1}
+            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+              if (e.key === 'Enter' && !e.shiftKey && !isProcessing && !isInterrupting) {
+                e.preventDefault(); 
+                handleSendMessage();
+              }
+            }}
+          />
+          {isProcessing && !thread.isLoading ? (
               <Button 
                 type="button" 
-                variant="destructive" 
                 size="icon" 
-                onClick={() => thread.stop?.()} 
-                title="Stop generation"
+                disabled={true} 
+                title="Creating session..."
               >
-                <XIcon size={18} />
+                  <RefreshCcw size={18} className="animate-spin" /> 
               </Button>
-            ) : (
-              <Button 
-                type="submit" 
-                disabled={!input.trim() || isProcessing || isInterrupting}
-                size="icon"
-              >
-                <SendIcon size={18} />
-              </Button>
-            )}
-          </form>
-          </div>
+          ) : isProcessing ? (
+            <Button 
+              type="button" 
+              variant="destructive" 
+              size="icon" 
+              onClick={() => thread.stop?.()} 
+              title="Stop generation"
+            >
+              <XIcon size={18} />
+            </Button>
+          ) : (
+            <Button 
+              type="submit" 
+              disabled={!input.trim() || isProcessing || isInterrupting}
+              size="icon"
+            >
+              <SendIcon size={18} />
+            </Button>
+          )}
+        </form>
         </div>
       </div>
     </div>

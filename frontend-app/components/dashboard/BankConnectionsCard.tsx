@@ -170,16 +170,16 @@ export default function BankConnectionsCard({
       <CardContent className="space-y-4">
         <Button 
           onClick={handleOpenDialog}
-          className="w-full flex gap-2 items-center justify-center bg-white text-black border border-gray-300 hover:bg-gray-50"
+          className="w-full flex gap-2 items-center justify-center bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white border-0 hover:shadow-lg transition-all duration-200 font-medium h-12 rounded-lg shadow-blue-500/20 shadow-md"
         >
           <PlusCircle className="h-4 w-4" />
           Add Funds
         </Button>
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-md bg-white text-black">
-            <DialogHeader className="pb-2 border-b border-gray-300">
-              <DialogTitle className="text-xl text-black">
+          <DialogContent className="sm:max-w-md bg-card text-foreground border-border shadow-xl z-50">
+            <DialogHeader className="pb-2 border-b border-border">
+              <DialogTitle className="text-xl text-foreground">
                 {view === 'banks' ? 'Add Funds' : 
                  view === 'addBank' ? 'Add a Bank Account' : 'Transfer Funds'}
               </DialogTitle>
@@ -191,76 +191,67 @@ export default function BankConnectionsCard({
               </div>
             )}
 
-            {isLoading && view === 'banks' ? (
+            {transferCompleted ? (
+              <div className="py-8 text-center">
+                <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-emerald-100 mb-4">
+                  <svg className="h-6 w-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-foreground mb-2">Transfer Initiated!</h3>
+                <p className="text-foreground/80">Your funds will be processed in 1-3 business days.</p>
+              </div>
+            ) : isLoading && view === 'banks' ? (
               <div className="flex justify-center py-8">
-                <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+                <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full" />
               </div>
             ) : view === 'banks' ? (
-              <div className="grid gap-5 py-5">
-                {/* Connected Bank Accounts Section */}
-                {bankAccounts.length > 0 ? (
+              <div className="pt-2">
+                <div className="space-y-4">
+                  {bankAccounts.length > 0 && (
                   <>
-                    <h3 className="text-black font-medium text-lg">Select a bank to transfer funds from</h3>
-                    {bankAccounts.map((account) => (
+                      <h3 className="text-foreground font-medium">Fund from Connected Bank</h3>
+                      {bankAccounts.map((bank) => (
                       <div 
-                        key={account.id}
-                        className="cursor-pointer rounded-lg border border-gray-300 transition-colors shadow-sm hover:shadow hover:border-primary bg-gray-50" 
-                        onClick={() => handleBankClick(account.id)}
+                          key={bank.id}
+                          className="cursor-pointer rounded-lg border border-border transition-all duration-200 hover:border-blue-300 hover:shadow-md bg-card" 
+                          onClick={() => handleBankClick(bank.id)}
                       >
                         <div className="p-4 flex items-center gap-4">
-                          <div className="bg-primary/20 p-3 rounded-full">
-                            <Wallet className="h-6 w-6 text-primary" />
+                            <div className="bg-blue-100 dark:bg-blue-900/30 p-3 rounded-full">
+                              <Wallet className="h-6 w-6 text-blue-600" />
                           </div>
                           <div>
-                            <h3 className="font-medium text-black text-lg">
-                              {account.bankName || account.nickname || "Bank Account"}
-                              {account.last4 && (
-                                <span className="ml-2 text-gray-600">
-                                  •••• {account.last4}
-                                </span>
+                              <h3 className="font-medium text-foreground text-lg">
+                                {bank.bankName || "Bank Account"}
+                                {bank.last4 && (
+                                  <span className="ml-2 text-muted-foreground">•••• {bank.last4}</span>
                               )}
                             </h3>
-                            <p className="text-sm text-gray-600">
-                              Connected on {new Date(account.createdAt).toLocaleDateString()}
+                              <p className="text-sm text-muted-foreground">
+                                Connected on {new Date(bank.createdAt).toLocaleDateString()}
                             </p>
                           </div>
                         </div>
                       </div>
                     ))}
-                  </>
-                ) : (
-                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-300">
-                    <p className="text-blue-800">
-                      No connected bank accounts found. Please add a new bank account to fund your account.
-                    </p>
-                  </div>
+                      <div className="my-4 border-t border-border"></div>
+                    </>
                 )}
 
-                {/* Add New Bank Option */}
-                <div className="mt-4 pt-4 border-t border-gray-300">
-                  <h3 className="text-black font-medium mb-3 text-lg">
-                    {bankAccounts.length > 0 ? "Replace existing bank account" : "Add a bank account"}
-                  </h3>
-                  {bankAccounts.length > 0 && (
-                    <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
-                      <p className="text-yellow-800 text-sm">
-                        Note: Alpaca only allows one active bank connection. Adding a new bank will replace your current connection.
-                      </p>
-                    </div>
-                  )}
                   <div 
-                    className="cursor-pointer rounded-lg border border-gray-300 transition-colors shadow-sm hover:shadow hover:border-primary bg-gray-50" 
+                    className="cursor-pointer rounded-lg border border-border transition-all duration-200 hover:border-blue-300 hover:shadow-md bg-muted/50" 
                     onClick={handleAddBank}
                   >
                     <div className="p-4 flex items-center gap-4">
-                      <div className="bg-primary/20 p-3 rounded-full">
-                        <PlusCircle className="h-6 w-6 text-primary" />
+                      <div className="bg-blue-100 dark:bg-blue-900/30 p-3 rounded-full">
+                        <PlusCircle className="h-6 w-6 text-blue-600" />
                       </div>
                       <div>
-                        <h3 className="font-medium text-black text-lg">
+                        <h3 className="font-medium text-foreground text-lg">
                           {bankAccounts.length > 0 ? "Replace bank account" : "Enter bank account details"}
                         </h3>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-muted-foreground">
                           {bankAccounts.length > 0 
                             ? "Replace your existing bank connection with a new one" 
                             : "Add a new bank account to fund your investments"}
@@ -276,6 +267,7 @@ export default function BankConnectionsCard({
                   alpacaAccountId={alpacaAccountId || ''}
                   userName={userName}
                   onTransferComplete={handleBankAdded}
+                  onBack={() => setView('banks')}
                 />
               </div>
             ) : view === 'transfer' && selectedBankId ? (
@@ -283,6 +275,7 @@ export default function BankConnectionsCard({
                 alpacaAccountId={alpacaAccountId || ''}
                 relationshipId={selectedBankId}
                 onTransferComplete={handleTransferComplete}
+                onBack={() => setView('banks')}
               />
             ) : null}
           </DialogContent>

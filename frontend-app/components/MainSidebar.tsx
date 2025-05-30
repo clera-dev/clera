@@ -38,6 +38,7 @@ export default function MainSidebar({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [lastClickTime, setLastClickTime] = useState<number>(0);
+  const [isNavigating, setIsNavigating] = useState(false);
   const router = useRouter();
   
   // Set mounted state for client-side rendering
@@ -47,17 +48,32 @@ export default function MainSidebar({
   
   // Store collapsed state in localStorage to persist between page refreshes
   useEffect(() => {
-    // Try to get the collapsed state from localStorage on component mount
+    // Immediately get the collapsed state from localStorage on component mount
     const storedState = localStorage.getItem('sidebarCollapsed');
     if (storedState) {
-      setIsCollapsed(storedState === 'true');
+      const collapsed = storedState === 'true';
+      setIsCollapsed(collapsed);
     }
   }, []);
   
   // Update localStorage when collapsed state changes
   useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', isCollapsed.toString());
-  }, [isCollapsed]);
+    if (isMounted) {
+      localStorage.setItem('sidebarCollapsed', isCollapsed.toString());
+    }
+  }, [isCollapsed, isMounted]);
+
+  // Ensure state stays consistent during navigation
+  useEffect(() => {
+    if (isNavigating) {
+      // Immediately restore collapsed state from localStorage during navigation
+      const storedState = localStorage.getItem('sidebarCollapsed');
+      if (storedState === 'true') {
+        setIsCollapsed(true);
+      }
+      setIsNavigating(false);
+    }
+  }, [pathname, isNavigating]);
 
   const navItems = [
     {
@@ -70,6 +86,9 @@ export default function MainSidebar({
         
         if (currentTime - lastClickTime < DOUBLE_CLICK_THRESHOLD) {
           // Double click - navigate to chat page
+          if (isCollapsed) {
+            setIsNavigating(true);
+          }
           router.push('/chat');
         } else {
           // Single click - toggle side chat
@@ -121,12 +140,29 @@ export default function MainSidebar({
     const newState = !isCollapsed;
     setIsCollapsed(newState);
     
-    // Update localStorage
+    // Update localStorage immediately
     localStorage.setItem('sidebarCollapsed', newState.toString());
     
     // Dispatch a custom event to notify other components in the same window
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('sidebarCollapsedChange'));
+    }
+  };
+
+  // Enhanced navigation handler that preserves collapsed state
+  const handleNavigation = (href: string, e: React.MouseEvent) => {
+    if (!e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      
+      // If sidebar is collapsed, mark that we're navigating to preserve state
+      if (isCollapsed) {
+        setIsNavigating(true);
+        // Ensure the collapsed state is saved before navigation
+        localStorage.setItem('sidebarCollapsed', 'true');
+      }
+      
+      router.push(href);
+      setIsMobileSidebarOpen(false);
     }
   };
 
@@ -197,11 +233,7 @@ export default function MainSidebar({
                           href={item.href}
                           onClick={item.onClick || ((e) => {
                             if (item.href) {
-                              if (!e.ctrlKey && !e.metaKey) {
-                                e.preventDefault();
-                                router.push(item.href);
-                                setIsMobileSidebarOpen(false);
-                              }
+                              handleNavigation(item.href, e);
                             }
                           })}
                           className={cn(
@@ -237,7 +269,10 @@ export default function MainSidebar({
                         isActive ? "text-primary" : "text-muted-foreground",
                         isCollapsed ? "justify-center" : "px-3"
                       )}
-                      onClick={() => setIsMobileSidebarOpen(false)}
+                      onClick={(e) => {
+                        // Use the same navigation handler for bottom icons
+                        handleNavigation(item.href, e);
+                      }}
                       title={item.name}
                     >
                       <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">

@@ -127,7 +127,7 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
           </Button>
         </div>
       </div>
-      <div className="flex-grow h-[calc(100%-40px)] overflow-hidden relative">
+      <div className="flex-1 min-h-0 overflow-hidden relative">
         <Chat
           accountId={accountId}
           userId={userId}

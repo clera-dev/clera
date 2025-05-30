@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import BackToTopButton from '@/components/BackToTopButton';
 import { createClient } from "@/utils/supabase/client";
 
 export default function FooterComponent() {
@@ -77,7 +76,6 @@ export default function FooterComponent() {
             <div className="text-sm text-gray-500">
               Copyright © {new Date().getFullYear()} Clera. All rights reserved.
             </div>
-            <BackToTopButton />
           </div>
         </div>
       </div>

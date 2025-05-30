@@ -8,7 +8,6 @@ import { EnvVarWarning } from "@/components/env-var-warning";
 import HeaderController from "@/components/HeaderController";
 import ConditionalLogoLink from "@/components/ConditionalLogoLink";
 import ClientAuthButtons from "@/components/ClientAuthButtons";
-import BackToTopButton from "@/components/BackToTopButton";
 import FooterComponent from "@/components/FooterComponent";
 import { PostHogProvider } from "@/components/PostHogProvider";
 
@@ -47,11 +46,10 @@ export default function RootLayout({
             </HeaderController>
 
             {/* --- Page content ---------------------------------------------- */}
-            <main className="flex-1 w-full flex flex-col items-center pt-20">
+            <main className="flex-1 w-full flex flex-col items-center pt-16">
               <div className="flex flex-col w-full max-w-5xl p-4">
                 {children}
               </div>
-              <BackToTopButton />
             </main>
 
             {/* --- Footer ---------------------------------------------------- */}

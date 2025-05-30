@@ -230,18 +230,17 @@ export default function ChatPage() {
 
   // Render Chat Page
   return (
-    <div className="h-[calc(100vh-64px)] relative">
-      {/* Main Content - ensure it's above any potential overlays */}
-      <div className="h-full flex flex-col max-w-7xl mx-auto px-5 relative z-20">
-        {/* Header - removed border-b class */}
-        <header className="h-16 flex items-center justify-between bg-background relative z-30">
+    <div className="h-[calc(100vh-64px)] flex flex-col relative overflow-hidden -m-4">
+      {/* Main Content */}
+      <div className="flex flex-col h-full max-w-7xl mx-auto w-full relative z-20">
+        {/* Header - Fixed at top */}
+        <header className="flex-shrink-0 h-16 flex items-center justify-between bg-background relative z-30 px-5 border-b">
           <Button
             variant="outline"
             size="sm"
             onClick={handleNewChat}
             className="flex items-center"
             disabled={isLoading}
-            style={{ pointerEvents: 'auto' }}
           >
             <PlusIcon size={16} className="mr-1" />
             New Chat
@@ -252,15 +251,14 @@ export default function ChatPage() {
             size="sm"
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="flex items-center"
-            style={{ pointerEvents: 'auto' }}
           >
             <Clock size={16} className="mr-1" />
             History
           </Button>
         </header>
         
-        {/* Chat Container - ensure it's fully interactive */}
-        <div className="flex-grow relative z-20">
+        {/* Chat Container - Takes remaining height */}
+        <div className="flex-1 min-h-0 relative z-20">
           <Chat 
             accountId={accountId} 
             userId={userId}
