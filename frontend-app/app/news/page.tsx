@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Globe, TrendingUp, Eye, ArrowDown, ArrowUp, Volume2, Loader2, AlertCircle, MessageSquare, Link as LinkIcon } from "lucide-react";
+import { Globe, TrendingUp, Eye, ArrowDown, ArrowUp, Volume2, Loader2, AlertCircle, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -130,9 +130,28 @@ const WatchlistNewsItemClient: React.FC<WatchlistNewsItemClientProps> = ({ title
 
   const isPositive = sentimentScore >= 0;
   
-  // Use LinkIcon if title is N/A or source, otherwise ArrowUp/ArrowDown based on new logic
-  const isFallbackTitle = title === source || title === `Error fetching: ${source}` || title === `Non-HTML: ${source}` || title === 'N/A';
-  const SentimentIcon = isFallbackTitle ? LinkIcon : isPositive ? ArrowUp : ArrowDown;
+  // Better fallback title detection and handling
+  const isFallbackTitle = title === source || 
+                         title === `Error fetching: ${source}` || 
+                         title === `Non-HTML: ${source}` || 
+                         title === 'N/A' ||
+                         title.includes('Access to this page has been denied') ||
+                         title.includes('access denied') ||
+                         title.includes('Access denied') ||
+                         title.includes('page has been denied');
+  
+  // Create a better fallback title when access is denied
+  const displayTitle = isFallbackTitle ? 
+    `${source} - ${new Date().toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })}` : 
+    title;
+  
+  // For portfolio summary articles, ALWAYS show sentiment arrows (never link icon)
+  // For other contexts, show link icon only for true fallback cases
+  const SentimentIcon = isPositive ? ArrowUp : ArrowDown;
   const sentimentColor = isPositive ? 'text-green-500' : 'text-red-500';
   const sentimentBg = isPositive ? 'bg-green-500/10' : 'bg-red-500/10';
   const sentimentBorder = isPositive ? 'border-green-500/50' : 'border-red-500/50';
@@ -148,7 +167,7 @@ const WatchlistNewsItemClient: React.FC<WatchlistNewsItemClientProps> = ({ title
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-100 group-hover:text-white truncate">{title}</p>
+          <p className="text-sm font-medium text-gray-100 group-hover:text-white truncate">{displayTitle}</p>
           <div className="flex items-center space-x-2">
             <span className="text-xs text-gray-400 truncate">{source}</span>
             {ticker && <Badge variant="outline" className="text-xs">{ticker}</Badge>}

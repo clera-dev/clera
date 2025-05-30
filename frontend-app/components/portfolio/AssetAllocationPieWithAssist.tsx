@@ -48,7 +48,7 @@ const AssetAllocationPieWithAssist: React.FC<AssetAllocationPieWithAssistProps> 
   skeletonContent,
   disabled = false
 }) => {
-  const { openChatWithPrompt, isEnabled } = useCleraAssist();
+  const { openChatWithPrompt, isEnabled, sideChatVisible } = useCleraAssist();
   
   // Calculate allocation percentages
   const totalValue = positions.reduce((sum, pos) => sum + (parseFloat(pos.market_value) || 0), 0);
@@ -102,6 +102,7 @@ const AssetAllocationPieWithAssist: React.FC<AssetAllocationPieWithAssistProps> 
         positions={positions}
         accountId={accountId}
         refreshTimestamp={refreshTimestamp}
+        sideChatVisible={sideChatVisible}
       />
     </CleraAssistCard>
   );

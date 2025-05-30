@@ -665,68 +665,70 @@ export default function PortfolioPage() {
         </Alert>
       )}
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        {!analytics && isLoading ? (
-          <RiskDiversificationScoresWithAssist
-            accountId={accountId}
-            initialData={analytics}
-            isLoading={true}
-            disabled={!hasTradeHistory}
-            skeletonContent={
-              <div className="space-y-6">
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </div>
-            }
-          />
-        ) : analytics ? (
-          <RiskDiversificationScoresWithAssist
-            accountId={accountId}
-            initialData={analytics}
-            disabled={!hasTradeHistory}
-          />
-        ) : (
-          <RiskDiversificationScoresWithAssist
-            accountId={accountId}
-            initialData={analytics}
-            disabled={!hasTradeHistory}
-            error={`Could not load analytics scores. ${error}`}
-          />
-        )}
+      <div style={lockedSectionStyle}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          {!analytics && isLoading ? (
+            <RiskDiversificationScoresWithAssist
+              accountId={accountId}
+              initialData={analytics}
+              isLoading={true}
+              disabled={!hasTradeHistory}
+              skeletonContent={
+                <div className="space-y-6">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              }
+            />
+          ) : analytics ? (
+            <RiskDiversificationScoresWithAssist
+              accountId={accountId}
+              initialData={analytics}
+              disabled={!hasTradeHistory}
+            />
+          ) : (
+            <RiskDiversificationScoresWithAssist
+              accountId={accountId}
+              initialData={analytics}
+              disabled={!hasTradeHistory}
+              error={`Could not load analytics scores. ${error}`}
+            />
+          )}
 
-        {!isLoading && positions.length === 0 && !error ? (
-          <AssetAllocationPieWithAssist
-            positions={positions}
-            accountId={accountId}
-            refreshTimestamp={allocationChartRefreshKey}
-            disabled={!hasTradeHistory}
-            error="No positions available to display allocation."
-          />
-        ) : isLoading && positions.length === 0 ? (
-          <AssetAllocationPieWithAssist
-            positions={positions}
-            accountId={accountId}
-            refreshTimestamp={allocationChartRefreshKey}
-            isLoading={true}
-            disabled={!hasTradeHistory}
-            skeletonContent={<Skeleton className="h-72 w-full" />}
-          />
-        ) : positions.length > 0 ? (
-          <AssetAllocationPieWithAssist
-            positions={positions}
-            accountId={accountId}
-            refreshTimestamp={allocationChartRefreshKey}
-            disabled={!hasTradeHistory}
-          />
-        ) : (
-          <AssetAllocationPieWithAssist
-            positions={positions}
-            accountId={accountId}
-            refreshTimestamp={allocationChartRefreshKey}
-            disabled={!hasTradeHistory}
-            error={`Could not load position data. ${error}`}
-          />
-        )}
+          {!isLoading && positions.length === 0 && !error ? (
+            <AssetAllocationPieWithAssist
+              positions={positions}
+              accountId={accountId}
+              refreshTimestamp={allocationChartRefreshKey}
+              disabled={!hasTradeHistory}
+              error="No positions available to display allocation."
+            />
+          ) : isLoading && positions.length === 0 ? (
+            <AssetAllocationPieWithAssist
+              positions={positions}
+              accountId={accountId}
+              refreshTimestamp={allocationChartRefreshKey}
+              isLoading={true}
+              disabled={!hasTradeHistory}
+              skeletonContent={<Skeleton className="h-72 w-full" />}
+            />
+          ) : positions.length > 0 ? (
+            <AssetAllocationPieWithAssist
+              positions={positions}
+              accountId={accountId}
+              refreshTimestamp={allocationChartRefreshKey}
+              disabled={!hasTradeHistory}
+            />
+          ) : (
+            <AssetAllocationPieWithAssist
+              positions={positions}
+              accountId={accountId}
+              refreshTimestamp={allocationChartRefreshKey}
+              disabled={!hasTradeHistory}
+              error={`Could not load position data. ${error}`}
+            />
+          )}
+        </div>
       </div>
 
       <div style={lockedSectionStyle}>

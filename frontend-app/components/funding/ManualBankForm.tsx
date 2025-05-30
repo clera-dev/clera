@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft } from "lucide-react";
 import TransferForm from "./TransferForm";
 import { useRouter } from "next/navigation";
 
@@ -12,12 +13,14 @@ interface ManualBankFormProps {
   alpacaAccountId: string;
   userName: string;
   onTransferComplete?: () => void; // Add callback for dialog usage
+  onBack?: () => void; // Add back button handler
 }
 
 export default function ManualBankForm({ 
   alpacaAccountId,
   userName,
-  onTransferComplete
+  onTransferComplete,
+  onBack // Add back handler
 }: ManualBankFormProps) {
   const router = useRouter();
   const [bankAccountType, setBankAccountType] = useState<"CHECKING" | "SAVINGS">("CHECKING");
@@ -28,6 +31,9 @@ export default function ManualBankForm({
   const [bankConnected, setBankConnected] = useState(false);
   const [relationshipId, setRelationshipId] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(true);
+
+  // Add container ref for Select portal
+  const selectContainerRef = useRef<HTMLDivElement>(null);
 
   // Check if user already has an ACH relationship
   const checkExistingRelationship = async () => {
@@ -191,6 +197,12 @@ export default function ManualBankForm({
     }
   };
 
+  // Handle back from transfer form
+  const handleBackFromTransfer = () => {
+    setBankConnected(false);
+    setRelationshipId(null);
+  };
+
   // Only show transfer form when not in dialog mode 
   // (when onTransferComplete is not provided)
   if (bankConnected && relationshipId && !onTransferComplete) {
@@ -201,6 +213,7 @@ export default function ManualBankForm({
         bankAccountNumber={bankAccountNumber}
         bankRoutingNumber={bankRoutingNumber}
         onTransferComplete={handleTransferComplete}
+        onBack={handleBackFromTransfer}
       />
     );
   }
@@ -208,17 +221,30 @@ export default function ManualBankForm({
   if (isChecking) {
     return (
       <div className="w-full max-w-md mx-auto text-center">
-        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-        <p>Checking your banking information...</p>
+        <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+        <p className="text-foreground/80">Checking your banking information...</p>
       </div>
     );
   }
 
   return (
     <div className="w-full max-w-md mx-auto">
+      {/* Add back button */}
+      {onBack && (
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onBack}
+          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+      )}
+      
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold mb-2">Connect Your Bank Account</h2>
-        <p className="text-muted-foreground">
+        <h2 className="text-2xl font-bold mb-2 text-foreground">Connect Your Bank Account</h2>
+        <p className="text-foreground/80 text-base leading-relaxed">
           Enter your bank account details to fund your investment account.
         </p>
       </div>
@@ -231,27 +257,36 @@ export default function ManualBankForm({
       
       <form onSubmit={handleConnectBank} className="space-y-6">
         <div className="space-y-2">
-          <Label htmlFor="bankAccountType">Bank Account Type</Label>
+          <Label htmlFor="bankAccountType" className="text-foreground font-medium text-base">
+            Bank Account Type
+          </Label>
           <Select 
             value={bankAccountType} 
             onValueChange={(value: "CHECKING" | "SAVINGS") => setBankAccountType(value)}
           >
-            <SelectTrigger>
+            <SelectTrigger className="bg-card border-border text-foreground h-12 focus:ring-blue-500 focus:border-blue-500">
               <SelectValue placeholder="Select account type" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="CHECKING">Checking</SelectItem>
-              <SelectItem value="SAVINGS">Savings</SelectItem>
+            <SelectContent className="z-[100] bg-popover border-border shadow-xl">
+              <SelectItem value="CHECKING" className="text-foreground hover:bg-accent focus:bg-accent cursor-pointer">
+                Checking
+              </SelectItem>
+              <SelectItem value="SAVINGS" className="text-foreground hover:bg-accent focus:bg-accent cursor-pointer">
+                Savings
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="bankAccountNumber">Bank Account Number</Label>
+          <Label htmlFor="bankAccountNumber" className="text-foreground font-medium text-base">
+            Bank Account Number
+          </Label>
           <Input
             id="bankAccountNumber"
             type="text"
             placeholder="Enter account number"
+            className="bg-card border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-blue-500 focus-visible:border-blue-500 h-12"
             value={bankAccountNumber}
             onChange={(e) => setBankAccountNumber(e.target.value)}
             required
@@ -259,11 +294,14 @@ export default function ManualBankForm({
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="bankRoutingNumber">Bank Routing Number</Label>
+          <Label htmlFor="bankRoutingNumber" className="text-foreground font-medium text-base">
+            Bank Routing Number
+          </Label>
           <Input
             id="bankRoutingNumber"
             type="text"
             inputMode="numeric"
+            className="bg-muted border-border text-muted-foreground h-12"
             value={bankRoutingNumber}
             onChange={(e) => setBankRoutingNumber(e.target.value)}
             required
@@ -274,8 +312,8 @@ export default function ManualBankForm({
         
         <Button 
           type="submit" 
-          className="w-full"
-          disabled={isConnecting || (!bankConnected && !isFormValid())}
+          className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-medium h-12 rounded-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-blue-500/20 shadow-md"
+          disabled={isConnecting || !isFormValid()}
         >
           {isConnecting ? (
             <>

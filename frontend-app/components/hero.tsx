@@ -24,7 +24,7 @@ const AuthButtons = () => (
  * ------------------------------------------------------------------------------------------------*/
 export default function Hero() {
   return (
-    <div className="min-h-screen w-full flex justify-center items-start pt-24">
+    <div className="min-h-screen w-full flex justify-center items-start pt-8">
       <div className="w-full max-w-7xl mx-auto bg-gradient-to-br from-gray-900 via-gray-950 to-black text-gray-200 rounded-lg overflow-hidden">
         <div className="container flex flex-col lg:flex-row items-center justify-between w-full px-6 md:px-8 lg:px-10 py-16 gap-12">
           {/* Left column -------------------------------------------------- */}

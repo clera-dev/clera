@@ -22,22 +22,23 @@ interface SectorAllocationPieProps {
   accountId: string | null;
   initialData: SectorAllocationData | null;
   error: string | null;
+  useCompactLayout?: boolean;
 }
 
-// Refined color palette for sectors - aiming for a professional and distinct look
+// Refined color palette for sectors - using a professional, consistent palette
 const SECTOR_COLORS: Record<string, string> = {
-  'Technology': 'hsl(210, 70%, 55%)',         // Professional Blue
-  'Healthcare': 'hsl(145, 60%, 45%)',        // Softer Green
-  'Financial Services': 'hsl(35, 85%, 60%)', // Rich Gold/Orange
-  'Industrials': 'hsl(0, 65%, 55%)',          // Muted Red
-  'Consumer Discretionary': 'hsl(260, 60%, 65%)', // Clear Purple
-  'Consumer Staples': 'hsl(30, 40%, 50%)',    // Earthy Brown
-  'Energy': 'hsl(25, 75%, 60%)',             // Warm Orange/Red
-  'Utilities': 'hsl(190, 40%, 55%)',         // Teal/Cyan
-  'Real Estate': 'hsl(90, 50%, 55%)',         // Olive Green
-  'Communication Services': 'hsl(320, 60%, 60%)',// Magenta/Pinkish
-  'Basic Materials': 'hsl(200, 50%, 65%)',     // Sky Blue
-  'Unknown': 'hsl(0, 0%, 65%)',              // Neutral Gray
+  'Technology': 'hsl(210, 70%, 55%)',         // Professional Blue (matching us_equity)
+  'Healthcare': 'hsl(145, 60%, 50%)',         // Medical Green
+  'Financial Services': 'hsl(35, 75%, 55%)',  // Financial Gold
+  'Industrials': 'hsl(25, 65%, 55%)',         // Industrial Orange
+  'Consumer Discretionary': 'hsl(260, 60%, 60%)', // Consumer Purple
+  'Consumer Staples': 'hsl(90, 50%, 50%)',    // Staples Green
+  'Energy': 'hsl(15, 75%, 55%)',              // Energy Red-Orange
+  'Utilities': 'hsl(190, 55%, 50%)',          // Utility Teal
+  'Real Estate': 'hsl(120, 45%, 45%)',        // Property Green
+  'Communication Services': 'hsl(280, 55%, 60%)', // Comm Purple
+  'Basic Materials': 'hsl(200, 60%, 55%)',    // Materials Blue
+  'Unknown': 'hsl(0, 0%, 60%)',               // Neutral Gray
 };
 
 const generateFallbackColor = (index: number): string => {
@@ -69,13 +70,24 @@ const CustomTooltipContent = ({ active, payload }: any) => {
   return null;
 };
 
-const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, initialData, error }) => {
+const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, initialData, error, useCompactLayout = false }) => {
   const allocationData = initialData;
 
   const pieDataForChart = useMemo(() => {
     if (!allocationData || !allocationData.sectors) return [];
-    // Filter very small slices for cleaner chart, but legend will show all
-    return allocationData.sectors.filter(s => s.percentage > 0.5);
+    
+    // Prepare data with formatted names for legend display
+    const formattedData = allocationData.sectors.map((entry, index) => ({
+      ...entry,
+      // Use the formatted display name for the legend
+      name: `${entry.sector} (${entry.percentage.toFixed(1)}%)`,
+      // Keep the original sector name for color mapping and tooltips
+      sector: entry.sector,
+      color: getSectorColor(entry.sector, index)
+    }));
+    
+    // Filter small slices for cleaner pie chart
+    return formattedData.filter(entry => entry.percentage > 0.5);
   }, [allocationData]);
 
   if (error) {
@@ -90,29 +102,22 @@ const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, in
     return <p className="text-sm text-muted-foreground text-center p-4 h-[280px] flex items-center justify-center">No sector allocation data to display.</p>;
   }
 
-  // const RADIAN = Math.PI / 180;
-  // const renderCustomizedLabel = ({
-  //   cx, cy, midAngle, innerRadius, outerRadius, percent, index, payload
-  // }: any) => {
-  //   if (percent < 0.03) return null; // Don't render label for very small slices (e.g., < 3%)
-  //   const radius = innerRadius + (outerRadius - innerRadius) * 0.5; 
-  //   const x = cx + radius * Math.cos(-midAngle * RADIAN);
-  //   const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
-  //   return (
-  //     <text
-  //       x={x}
-  //       y={y}
-  //       fill="white"
-  //       textAnchor={x > cx ? 'start' : 'end'}
-  //       dominantBaseline="central"
-  //       fontSize="10px"
-  //       fontWeight="bold"
-  //     >
-  //       {`${(percent * 100).toFixed(0)}%`}
-  //     </text>
-  //   );
-  // };
+  // Responsive chart configuration
+  const chartConfig = useCompactLayout ? {
+    // Compact layout: horizontal legend below chart
+    legendLayout: "horizontal" as const,
+    legendAlign: "center" as const,
+    legendVerticalAlign: "bottom" as const,
+    pieOuterRadius: 70,
+    pieCenterY: "45%", // Move pie up slightly to make room for legend below
+  } : {
+    // Standard layout: vertical legend on right
+    legendLayout: "vertical" as const,
+    legendAlign: "right" as const,
+    legendVerticalAlign: "middle" as const,
+    pieOuterRadius: 85,
+    pieCenterY: "50%",
+  };
 
   return (
     // Match height of AssetAllocationPie's chart container
@@ -120,40 +125,37 @@ const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, in
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
-            data={pieDataForChart} // Use filtered data for cleaner pie
+            data={pieDataForChart} // Use the already filtered data
             dataKey="value"
-            nameKey="sector"
+            nameKey="name"
             cx="50%"
-            cy="50%"
-            outerRadius={85} // Matching AssetAllocationPie style
-            innerRadius={45} // Matching AssetAllocationPie style (donut)
-            fill="#8884d8" // Default fill, overridden by Cell
+            cy={chartConfig.pieCenterY}
+            outerRadius={chartConfig.pieOuterRadius}
+            innerRadius={45}
+            fill="#8884d8"
             paddingAngle={1}
             labelLine={false}
-            isAnimationActive={true} // Ensure animation is enabled
+            isAnimationActive={true}
           >
             {pieDataForChart.map((entry, index) => (
               <Cell 
                 key={`cell-${index}`}
-                fill={getSectorColor(entry.sector, index)}
-                stroke="hsl(var(--card))" // Use card BG for stroke like in AssetAllocationPie
+                fill={entry.color}
+                stroke="hsl(var(--card))"
                 strokeWidth={2}
               />
             ))}
           </Pie>
           <RechartsTooltip content={<CustomTooltipContent />} />
           <Legend 
-            layout="vertical" 
-            align="right" 
-            verticalAlign="middle" 
+            layout={chartConfig.legendLayout}
+            align={chartConfig.legendAlign}
+            verticalAlign={chartConfig.legendVerticalAlign}
             iconSize={10} 
-            wrapperStyle={{ fontSize: '12px' }} // Matching AssetAllocationPie legend style
-            // Use all sectors for the legend, not just the filtered ones in the pie
-            payload={allocationData.sectors.map((entry, index) => ({
-                value: `${entry.sector} (${entry.percentage.toFixed(1)}%)`,
-                type: 'square',
-                color: getSectorColor(entry.sector, index),
-            }))}
+            wrapperStyle={{ 
+              fontSize: '12px',
+              paddingTop: useCompactLayout ? '10px' : '0px'
+            }}
           />
         </PieChart>
       </ResponsiveContainer>

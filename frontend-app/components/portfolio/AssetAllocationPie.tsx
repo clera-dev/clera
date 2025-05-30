@@ -40,15 +40,16 @@ export interface AssetAllocationPieProps {
     positions: PositionDataForPie[];
     accountId: string | null;
     refreshTimestamp?: number;
+    sideChatVisible?: boolean; // Add prop to detect when chat sidebar is open
 }
 
-// Define color palettes (adjust as needed)
+// Define color palettes - harmonious with sector colors for professional consistency
 const ASSET_CLASS_COLORS: Record<string, string> = {
-    'us_equity': 'hsl(210, 40%, 50%)', // Blue
-    'crypto': 'hsl(48, 96%, 50%)', // Yellow/Gold
-    'us_option': 'hsl(260, 50%, 60%)', // Purple
-    'cash': 'hsl(120, 40%, 60%)', // Green (Placeholder if cash represented)
-    'other': 'hsl(0, 0%, 50%)' // Grey
+    'us_equity': 'hsl(210, 70%, 55%)', // Professional Blue (matching Technology sector)
+    'crypto': 'hsl(35, 75%, 55%)', // Gold (matching Financial Services)
+    'us_option': 'hsl(260, 60%, 60%)', // Purple (matching Consumer Discretionary)
+    'cash': 'hsl(145, 60%, 50%)', // Green (matching Healthcare)
+    'other': 'hsl(0, 0%, 60%)' // Grey (matching Unknown)
 };
 
 // TODO: Define Industry colors if industry data becomes available
@@ -74,13 +75,16 @@ const CustomTooltip = ({ active, payload }: any) => {
     return null;
 };
 
-const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId, refreshTimestamp }) => {
+const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId, refreshTimestamp, sideChatVisible = false }) => {
     const [viewType, setViewType] = useState<'assetClass' | 'sector'>('assetClass');
     
     // State for sector allocation data
     const [sectorData, setSectorData] = useState<SectorAllocationData | null>(null);
     const [isSectorLoading, setIsSectorLoading] = useState<boolean>(false);
     const [sectorError, setSectorError] = useState<string | null>(null);
+
+    // Use compact layout when chat sidebar is visible (splits screen in half)
+    const useCompactLayout = sideChatVisible;
 
     // Fetch sector data when the sector tab is active and accountId is available
     useEffect(() => {
@@ -127,11 +131,16 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                 groupedData[key] = (groupedData[key] || 0) + value;
             });
 
-        return Object.entries(groupedData).map(([name, value]) => ({
-            name: name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            value: (value / totalValue) * 100,
+        return Object.entries(groupedData).map(([name, value]) => {
+            const percentage = (value / totalValue) * 100;
+            const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            return {
+                name: `${displayName} (${percentage.toFixed(1)}%)`,
+                value: percentage,
             rawValue: value,
-        })).sort((a, b) => b.rawValue - a.rawValue);
+                color: ASSET_CLASS_COLORS[name] || ASSET_CLASS_COLORS['other']
+            };
+        }).sort((a, b) => b.rawValue - a.rawValue);
 
     }, [positions]);
 
@@ -152,17 +161,34 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                      </div>
                 );
             }
-            // Asset Class chart already wrapped in div with height: 280
+
+            // Responsive chart configuration based on chat sidebar state
+            const chartConfig = useCompactLayout ? {
+                // Compact layout: horizontal legend below chart (when chat is open)
+                legendLayout: "horizontal" as const,
+                legendAlign: "center" as const,
+                legendVerticalAlign: "bottom" as const,
+                pieOuterRadius: 70,
+                pieCenterY: "45%", // Move pie up slightly to make room for legend below
+            } : {
+                // Standard layout: vertical legend on right (when chat is closed)
+                legendLayout: "vertical" as const,
+                legendAlign: "right" as const,
+                legendVerticalAlign: "middle" as const,
+                pieOuterRadius: 85,
+                pieCenterY: "50%",
+            };
+
             return (
-                <div style={{ width: '100%', height: 280 }}> 
-                    <ResponsiveContainer>
+                <div className="w-full h-[280px]" aria-label="Asset class allocation pie chart"> 
+                    <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie
                                 data={allocationDataByClass}
                                 cx="50%"
-                                cy="50%"
+                                cy={chartConfig.pieCenterY}
                                 labelLine={false}
-                                outerRadius={85}
+                                outerRadius={chartConfig.pieOuterRadius}
                                 innerRadius={45}
                                 fill="#8884d8"
                                 dataKey="value"
@@ -172,11 +198,20 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                                 isAnimationActive={true} // Ensure animation is enabled
                             >
                                 {allocationDataByClass.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={ASSET_CLASS_COLORS[entry.name.toLowerCase().replace(/ /g, '_')] || ASSET_CLASS_COLORS['other']} />
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
                                 ))}
                             </Pie>
                             <Tooltip content={<CustomTooltip />} />
-                            <Legend layout="vertical" align="right" verticalAlign="middle" iconSize={10} wrapperStyle={{ fontSize: '12px' }}/>
+                            <Legend 
+                                layout={chartConfig.legendLayout}
+                                align={chartConfig.legendAlign}
+                                verticalAlign={chartConfig.legendVerticalAlign}
+                                iconSize={10} 
+                                wrapperStyle={{ 
+                                    fontSize: '12px',
+                                    paddingTop: useCompactLayout ? '10px' : '0px'
+                                }}
+                            />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
@@ -191,7 +226,8 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                         <SectorAllocationPie 
                           accountId={accountId} 
                           initialData={sectorData} 
-                          error={sectorError} 
+                          error={sectorError}
+                          useCompactLayout={useCompactLayout}
                         />
                     )}
                 </div>

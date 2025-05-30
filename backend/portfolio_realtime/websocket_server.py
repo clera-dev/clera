@@ -22,6 +22,7 @@ from typing import Optional
 # Import services for periodic data refresh
 from portfolio_realtime.symbol_collector import SymbolCollector
 from portfolio_realtime.portfolio_calculator import PortfolioCalculator
+from portfolio_realtime.sector_data_collector import SectorDataCollector
 from utils.supabase.db_client import get_user_alpaca_account_id
 
 # Configure logging
@@ -55,8 +56,38 @@ async def periodic_data_refresh(refresh_interval=300):  # Changed default from 6
         sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
     )
     
-    # Track last full refresh time to avoid redundant API calls
+    # Create sector data collector instance
+    try:
+        sector_collector = SectorDataCollector(
+            redis_host=redis_host,
+            redis_port=redis_port,
+            redis_db=redis_db,
+            FINANCIAL_MODELING_PREP_API_KEY=os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
+        )
+        logger.info("Sector data collector initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize sector data collector: {e}. Sector data will not be available.")
+        sector_collector = None
+    
+    # Track last full refresh time and last sector collection time
     last_full_refresh = 0
+    last_sector_collection = 0
+    # Run sector collection once per day (24 hours = 86400 seconds)
+    sector_collection_interval = 86400
+    
+    # Check if we need to run sector collection immediately on startup
+    if sector_collector is not None:
+        try:
+            # Check if sector data exists in Redis
+            existing_sector_data = redis_client.get('sector_data')
+            if not existing_sector_data:
+                logger.info("No sector data found in Redis. Running initial sector collection...")
+                await sector_collector.collect_sector_data()
+                last_sector_collection = time.time()
+                logger.info("Initial sector data collection completed")
+                await asyncio.sleep(2)  # Small delay after initial collection
+        except Exception as e:
+            logger.error(f"Error during initial sector data collection: {e}", exc_info=True)
     
     while True:
         try:
@@ -67,14 +98,36 @@ async def periodic_data_refresh(refresh_interval=300):  # Changed default from 6
             full_refresh_interval = int(os.getenv("FULL_REFRESH_INTERVAL", "900"))  # 15 minutes default
             need_full_refresh = (current_time - last_full_refresh) > full_refresh_interval
             
+            # Determine if we need sector data collection (once per day)
+            need_sector_collection = (
+                sector_collector is not None and 
+                (current_time - last_sector_collection) > sector_collection_interval
+            )
+            
             # Log before refresh
             refresh_start = current_time
-            if need_full_refresh:
+            if need_full_refresh and need_sector_collection:
+                logger.info("Starting full data refresh cycle (including symbols collection and sector data)")
+            elif need_full_refresh:
                 logger.info("Starting full data refresh cycle (including symbols collection)")
+            elif need_sector_collection:
+                logger.info("Starting sector data collection cycle")
             else:
                 logger.info("Starting portfolio value refresh cycle (without symbols collection)")
             
-            # 1. Collect symbols and positions only during full refresh
+            # 1. Collect sector data if needed (do this first, as it's infrequent and important)
+            if need_sector_collection:
+                try:
+                    logger.info("Starting sector data collection...")
+                    await sector_collector.collect_sector_data()
+                    last_sector_collection = current_time
+                    logger.info("Sector data collection completed successfully")
+                    # Add small delay after sector collection
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    logger.error(f"Error during sector data collection: {e}", exc_info=True)
+            
+            # 2. Collect symbols and positions only during full refresh
             if need_full_refresh:
                 await symbol_collector.collect_symbols()
                 last_full_refresh = current_time
@@ -82,11 +135,11 @@ async def periodic_data_refresh(refresh_interval=300):  # Changed default from 6
                 # Add small delay to avoid rate limiting
                 await asyncio.sleep(1)
             
-            # 2. Get account IDs from Redis
+            # 3. Get account IDs from Redis
             account_keys = redis_client.keys('account_positions:*')
             accounts_refreshed = 0
             
-            # 3. Calculate portfolio values for each account
+            # 4. Calculate portfolio values for each account
             for key in account_keys:
                 try:
                     account_id = key.decode('utf-8').split(':')[1]
@@ -105,8 +158,12 @@ async def periodic_data_refresh(refresh_interval=300):  # Changed default from 6
             
             # Log after refresh
             refresh_duration = time.time() - refresh_start
-            if need_full_refresh:
+            if need_full_refresh and need_sector_collection:
+                logger.info(f"Full data refresh with sector collection complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
+            elif need_full_refresh:
                 logger.info(f"Full data refresh complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
+            elif need_sector_collection:
+                logger.info(f"Sector data collection with portfolio refresh complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
             else:
                 logger.info(f"Portfolio value refresh complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
             

@@ -39,6 +39,9 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
 }) => {
   const { openChatWithPrompt, isEnabled } = useCleraAssist();
   
+  // Maximum number of trending articles to display to prevent layout issues
+  const MAX_TRENDING_ARTICLES = 7;
+  
   // Extract news context for dynamic prompts
   const hasNews = trendingNews.length > 0;
   const newsCount = trendingNews.length;
@@ -123,36 +126,43 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
           {!isLoading && !error && (
             <div className="space-y-2">
               {trendingNews.length > 0 ? (
-                trendingNews.map((news) => (
-                  <a 
-                    key={news.id} 
-                    href={news.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="block p-2 rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      {news.banner_image ? (
-                        <img 
-                          src={news.banner_image} 
-                          alt={news.source}
-                          className="w-6 h-6 rounded-md object-cover" 
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            if (target.nextElementSibling) {
-                              (target.nextElementSibling as HTMLElement).style.display = 'flex';
-                            }
-                          }}
-                        />
-                      ) : null}
-                      <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
-                        <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
+                <>
+                  {trendingNews.slice(0, MAX_TRENDING_ARTICLES).map((news) => (
+                    <a 
+                      key={news.id} 
+                      href={news.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="block p-2 rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        {news.banner_image ? (
+                          <img 
+                            src={news.banner_image} 
+                            alt={news.source}
+                            className="w-6 h-6 rounded-md object-cover" 
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              if (target.nextElementSibling) {
+                                (target.nextElementSibling as HTMLElement).style.display = 'flex';
+                              }
+                            }}
+                          />
+                        ) : null}
+                        <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
+                          <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
+                        </div>
+                        <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
                       </div>
-                      <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
-                    </div>
-                  </a>
-                ))
+                    </a>
+                  ))}
+                  {trendingNews.length > MAX_TRENDING_ARTICLES && (
+                    <p className="text-xs text-muted-foreground italic text-center">
+                      Showing {MAX_TRENDING_ARTICLES} of {trendingNews.length} trending articles
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="text-center text-muted-foreground text-sm py-4">
                   No trending news available at the moment.
@@ -195,36 +205,43 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
         {!isLoading && !error && (
           <div className="space-y-2">
             {trendingNews.length > 0 ? (
-              trendingNews.map((news) => (
-                <a 
-                  key={news.id} 
-                  href={news.url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="block p-2 rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    {news.banner_image ? (
-                      <img 
-                        src={news.banner_image} 
-                        alt={news.source}
-                        className="w-6 h-6 rounded-md object-cover" 
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          if (target.nextElementSibling) {
-                            (target.nextElementSibling as HTMLElement).style.display = 'flex';
-                          }
-                        }}
-                      />
-                    ) : null}
-                    <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
-                      <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
+              <>
+                {trendingNews.slice(0, MAX_TRENDING_ARTICLES).map((news) => (
+                  <a 
+                    key={news.id} 
+                    href={news.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block p-2 rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      {news.banner_image ? (
+                        <img 
+                          src={news.banner_image} 
+                          alt={news.source}
+                          className="w-6 h-6 rounded-md object-cover" 
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            if (target.nextElementSibling) {
+                              (target.nextElementSibling as HTMLElement).style.display = 'flex';
+                            }
+                          }}
+                        />
+                      ) : null}
+                      <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
+                        <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
+                      </div>
+                      <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
                     </div>
-                    <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
-                  </div>
-                </a>
-              ))
+                  </a>
+                ))}
+                {trendingNews.length > MAX_TRENDING_ARTICLES && (
+                  <p className="text-xs text-muted-foreground italic text-center">
+                    Showing {MAX_TRENDING_ARTICLES} of {trendingNews.length} trending articles
+                  </p>
+                )}
+              </>
             ) : (
               <p className="text-center text-muted-foreground text-sm py-4">
                 No trending news available at the moment.
