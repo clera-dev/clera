@@ -7,10 +7,16 @@ const publicPaths = ['/', '/sign-in', '/sign-up', '/auth/callback', '/auth/confi
 // Paths that are accessible only after onboarding is complete
 const protectedPostOnboardingPaths = [
   '/dashboard',
-  '/portfolio',
   '/invest',
   '/chat',
-  '/news'
+  '/news',
+  '/info',
+  '/settings'
+];
+
+// Paths that require both completed onboarding AND funding
+const fundingRequiredPaths = [
+  '/portfolio'
 ];
 
 export async function middleware(request: NextRequest) {
@@ -82,6 +88,55 @@ export async function middleware(request: NextRequest) {
         const redirectResponse = NextResponse.redirect(redirectUrl);
         
         // Store the intended URL in a cookie for later (after onboarding completion)
+        redirectResponse.cookies.set('intended_redirect', path, {
+          maxAge: 3600,
+          path: '/',
+          sameSite: 'strict'
+        });
+        
+        return redirectResponse;
+      }
+    }
+
+    // For funding required paths
+    if (fundingRequiredPaths.some(fundingPath => path.startsWith(fundingPath))) {
+      // First check if onboarding is complete
+      const { data: onboardingData } = await supabase
+        .from('user_onboarding')
+        .select('status')
+        .eq('user_id', user.id)
+        .single();
+      
+      const hasCompletedOnboarding = 
+        onboardingData?.status === 'submitted' || 
+        onboardingData?.status === 'approved';
+      
+      if (!hasCompletedOnboarding) {
+        // Redirect to protected page to complete onboarding first
+        const redirectUrl = new URL('/protected', request.url);
+        const redirectResponse = NextResponse.redirect(redirectUrl);
+        
+        redirectResponse.cookies.set('intended_redirect', path, {
+          maxAge: 3600,
+          path: '/',
+          sameSite: 'strict'
+        });
+        
+        return redirectResponse;
+      }
+      
+      // Check if user has funded their account (has transfers)
+      const { data: transfers } = await supabase
+        .from('user_transfers')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1);
+      
+      // If they haven't funded their account, redirect to protected page for funding
+      if (!transfers || transfers.length === 0) {
+        const redirectUrl = new URL('/protected', request.url);
+        const redirectResponse = NextResponse.redirect(redirectUrl);
+        
         redirectResponse.cookies.set('intended_redirect', path, {
           maxAge: 3600,
           path: '/',
