@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import PortfolioNewsSummaryWithAssist from '@/components/news/PortfolioNewsSummaryWithAssist';
 import TrendingNewsWithAssist from '@/components/news/TrendingNewsWithAssist';
 import NewsWatchlistWithAssist from '@/components/news/NewsWatchlistWithAssist';
+import MarketEnvironment from '@/components/news/MarketEnvironment';
 
 // Updated interface for enriched articles
 interface EnrichedArticle {
@@ -589,9 +590,9 @@ export default function NewsPage() {
           </Alert>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 h-[calc(100vh-140px)]">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-6">
           {/* Left Section - 3 columns on large screens, full width on mobile */}
-          <div className="lg:col-span-3 h-full flex flex-col">
+          <div className="lg:col-span-3 flex flex-col">
             <PortfolioNewsSummaryWithAssist
               portfolioSummary={portfolioSummary}
               isLoadingSummary={isLoadingSummary}
@@ -604,7 +605,7 @@ export default function NewsPage() {
           </div>
 
           {/* Right Section - 2 columns on large screens, full width on mobile */}
-          <div className="lg:col-span-2 h-full flex flex-col space-y-3">
+          <div className="lg:col-span-2 flex flex-col space-y-3">
             <TrendingNewsWithAssist
               trendingNews={trendingNews}
               isLoading={isLoadingTrendingNews}
@@ -629,6 +630,9 @@ export default function NewsPage() {
             />
           </div>
         </div>
+
+        {/* Market Environment Section - appears below all other sections */}
+        <MarketEnvironment />
       </div>
     </div>
   );

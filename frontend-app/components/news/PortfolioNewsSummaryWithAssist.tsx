@@ -104,8 +104,8 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
       <Card className="flex-1 flex flex-col h-full">
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between py-2 px-4">
           <CardTitle className="flex items-center text-lg">
-            <Globe className="mr-2 h-4 w-4" />
             News Impacting Your Portfolio
+            <Globe className="ml-2 h-4 w-4" />
           </CardTitle>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col overflow-hidden p-3 pt-0">
@@ -133,6 +133,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                 {/* Display Enriched Referenced Articles */}
                 {portfolioSummary.referenced_articles.length > 0 ? (
                   <div className="space-y-3">
+                    <p className="text-base font-medium text-foreground">Sources Used:</p>
                     {portfolioSummary.referenced_articles
                       .filter(article => article.shouldDisplay !== false)
                       .slice(0, MAX_PORTFOLIO_ARTICLES)
@@ -177,9 +178,6 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
       className="flex-1 flex flex-col h-full"
     >
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center mb-2">
-          <Globe className="mr-2 h-4 w-4" />
-        </div>
         
         <div className="space-y-1 mb-2 flex-1 flex flex-col">
           <div className="flex items-center justify-between">
@@ -207,6 +205,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                 {/* Display Enriched Referenced Articles */}
                 {portfolioSummary.referenced_articles.length > 0 ? (
                   <div className="space-y-3">
+                    <p className="text-base font-medium text-foreground">Sources Used:</p>
                     {portfolioSummary.referenced_articles
                       .filter(article => article.shouldDisplay !== false)
                       .slice(0, MAX_PORTFOLIO_ARTICLES)

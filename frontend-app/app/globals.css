@@ -117,6 +117,88 @@ body > div:last-child:not([id]):not([class]) {
   transition: all 0.3s ease-out;
 }
 
+.clera-glow:hover {
+  box-shadow: 
+    0 0 25px rgba(0, 122, 255, 0.2),
+    0 0 50px rgba(90, 200, 250, 0.15),
+    0 0 80px rgba(0, 122, 255, 0.08);
+  border: 1px solid rgba(0, 122, 255, 0.3);
+}
+
+/* Enhanced chart glow effects */
+.chart-container {
+  position: relative;
+}
+
+.chart-container::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, 
+    rgba(0, 122, 255, 0.1), 
+    rgba(90, 200, 250, 0.1), 
+    rgba(0, 122, 255, 0.1)
+  );
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.chart-container:hover::before {
+  opacity: 1;
+}
+
+/* Chart line glow animation */
+@keyframes chart-glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(0, 122, 255, 0.6));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(0, 122, 255, 0.8));
+  }
+}
+
+.chart-line-glow {
+  animation: chart-glow-pulse 3s ease-in-out infinite;
+}
+
+/* Subtle chart line glow animation - more refined */
+@keyframes chart-subtle-glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(0, 122, 255, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 4px rgba(0, 122, 255, 0.5));
+  }
+}
+
+.chart-line-subtle-glow {
+  animation: chart-subtle-glow-pulse 4s ease-in-out infinite;
+}
+
+/* Price change indicators with glow */
+.price-indicator-positive {
+  background: linear-gradient(135deg, 
+    rgba(34, 197, 94, 0.1) 0%, 
+    rgba(34, 197, 94, 0.05) 100%
+  );
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.1);
+}
+
+.price-indicator-negative {
+  background: linear-gradient(135deg, 
+    rgba(239, 68, 68, 0.1) 0%, 
+    rgba(239, 68, 68, 0.05) 100%
+  );
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
+}
+
 .clera-assist-button {
   background: linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%);
   box-shadow: 
@@ -125,7 +207,7 @@ body > div:last-child:not([id]):not([class]) {
   transition: all 0.2s ease-out;
   position: relative;
   overflow: hidden;
-  z-index: 9999 !important;
+  z-index: 12;
 }
 
 .clera-assist-button::before {
@@ -176,7 +258,7 @@ body > div:last-child:not([id]):not([class]) {
   align-items: center;
   justify-content: space-between;
   min-height: 40px;
-  z-index: 9998;
+  z-index: 10;
   isolation: isolate;
 }
 
@@ -190,7 +272,7 @@ body > div:last-child:not([id]):not([class]) {
   transition: all 0.3s ease-out;
   opacity: 0;
   transform: translateY(4px);
-  z-index: 9999 !important;
+  z-index: 11;
   position: relative;
 }
 
@@ -201,7 +283,7 @@ body > div:last-child:not([id]):not([class]) {
 
 /* Tooltip z-index and solid background */
 [data-radix-tooltip-content] {
-  z-index: 10000 !important;
+  z-index: 1000 !important;
   background: hsl(var(--popover)) !important;
   border: 1px solid hsl(var(--border)) !important;
   backdrop-filter: none !important;
@@ -218,12 +300,12 @@ body > div:last-child:not([id]):not([class]) {
 
 /* Tooltip portal container */
 [data-radix-tooltip-portal] {
-  z-index: 10000 !important;
+  z-index: 1000 !important;
 }
 
 /* General positioning fixes for Clera Assist */
 .clera-assist-card-header > div:last-child {
-  z-index: 9999 !important;
+  z-index: 11 !important;
   position: relative;
 }
 
@@ -234,13 +316,13 @@ body > div:last-child:not([id]):not([class]) {
 
 /* Fix for any components that might create stacking contexts */
 [data-clera-assist] {
-  z-index: 9999 !important;
+  z-index: 11 !important;
   position: relative;
 }
 
 /* Specific fixes for tooltip content */
 .clera-assist-button + [data-radix-tooltip-content] {
-  z-index: 10001 !important;
+  z-index: 1001 !important;
 }
 
 /* Mobile optimizations */
@@ -253,4 +335,15 @@ body > div:last-child:not([id]):not([class]) {
   .clera-pulse {
     animation-duration: 1.5s;
   }
+}
+
+/* Enhanced dialog backdrop for better contrast */
+[data-radix-dialog-overlay] {
+  background-color: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+/* Ensure dialog content stays prominent */
+[data-radix-dialog-content] {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
 }

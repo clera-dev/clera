@@ -1,0 +1,155 @@
+{
+  "error": {},
+  "rawResponse": {
+    "id": "b3e2fb04-f973-4741-95de-c9b97c3740ad",
+    "model": "sonar-deep-research",
+    "created": 1748639264,
+    "usage": {
+      "prompt_tokens": 1268,
+      "completion_tokens": 3020,
+      "total_tokens": 4288,
+      "citation_tokens": 9198,
+      "num_search_queries": 33,
+      "reasoning_tokens": 89267
+    },
+    "citations": [
+      "https://www.ablenow.com/save/investment-options/aggressive-growth-portfolio/",
+      "https://www.permanentportfoliofunds.com/aggressive-growth-portfolio.html",
+      "https://smartasset.com/investing/modern-portfolio-theory",
+      "https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/aggressive-investment-strategy/",
+      "https://johpartners.com/an-aggressive-diversified-portfolio-explained/",
+      "https://www.home.saxo/learn/guides/diversification/diversification-for-advanced-investors-high-risk-high-reward-strategies",
+      "https://www.cookewm.com/blog/aggressive-investing-strategies",
+      "https://www.investopedia.com/terms/a/aggressiveinvestmentstrategy.asp",
+      "https://www.investopedia.com/articles/younginvestors/12/portfolio-management-tips-young-investors.asp",
+      "https://www.rbadvisors.com/aggressive-etf-sma-page/",
+      "https://usecache.com/companion/too-much-company-stock",
+      "https://www.ig.com/en/news-and-trade-ideas/best-ai-stocks-to-watch-230622",
+      "https://altindex.com/best-stocks/cloud-computing",
+      "https://www.ig.com/en/trading-strategies/best-semiconductor-stocks-to-watch-250311",
+      "https://sharevault.com/blog/life-sciences/top-10-biotech-growth-stocks",
+      "https://www.nasdaq.com/articles/top-fintech-stocks-add-your-portfolio-robust-returns",
+      "https://cybersecurityventures.com/10-high-growth-cybersecurity-stocks-to-buy/",
+      "https://rm.morningstar.com/education/basic/LS_Bas_InternationalStock.asp",
+      "https://www.invest529.com/invest/investment-options-performance/aggressive/",
+      "https://www.mfs.com/en-us/individual-investor/product-strategies/mutual-funds/MIAGX-aggressive-growth-allocation-fund.html/1000"
+    ],
+    "search_results": [
+      {
+        "title": "ABLE Investment Options | Aggressive Growth Portfolio",
+        "url": "https://www.ablenow.com/save/investment-options/aggressive-growth-portfolio/",
+        "date": null
+      },
+      {
+        "title": "Aggressive Growth Portfolio",
+        "url": "https://www.permanentportfoliofunds.com/aggressive-growth-portfolio.html",
+        "date": null
+      },
+      {
+        "title": "What Is Modern Portfolio Theory and How Is It Used?",
+        "url": "https://smartasset.com/investing/modern-portfolio-theory",
+        "date": null
+      },
+      {
+        "title": "Aggressive Investment Strategy",
+        "url": "https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/aggressive-investment-strategy/",
+        "date": null
+      },
+      {
+        "title": "An Aggressive Diversified Portfolio Explained",
+        "url": "https://johpartners.com/an-aggressive-diversified-portfolio-explained/",
+        "date": null
+      },
+      {
+        "title": "Diversification for advanced investors: High-risk, high-reward ...",
+        "url": "https://www.home.saxo/learn/guides/diversification/diversification-for-advanced-investors-high-risk-high-reward-strategies",
+        "date": null
+      },
+      {
+        "title": "The Essentials Of Aggressive Investing Strategies",
+        "url": "https://www.cookewm.com/blog/aggressive-investing-strategies",
+        "date": null
+      },
+      {
+        "title": "Aggressive Investment Strategy: Definition, Benefits, and ...",
+        "url": "https://www.investopedia.com/terms/a/aggressiveinvestmentstrategy.asp",
+        "date": null
+      },
+      {
+        "title": "Portfolio Management Tips for Young Investors",
+        "url": "https://www.investopedia.com/articles/younginvestors/12/portfolio-management-tips-young-investors.asp",
+        "date": null
+      },
+      {
+        "title": "Global Aggressive ETF Strategy",
+        "url": "https://www.rbadvisors.com/aggressive-etf-sma-page/",
+        "date": null
+      },
+      {
+        "title": "How much of one stock should you hold?",
+        "url": "https://usecache.com/companion/too-much-company-stock",
+        "date": null
+      },
+      {
+        "title": "Best AI stocks to watch in 2025 | IG International",
+        "url": "https://www.ig.com/en/news-and-trade-ideas/best-ai-stocks-to-watch-230622",
+        "date": null
+      },
+      {
+        "title": "Best Cloud Computing Stocks to buy now May 2025 - AltIndex",
+        "url": "https://altindex.com/best-stocks/cloud-computing",
+        "date": null
+      },
+      {
+        "title": "Top Semiconductor Stocks to Watch in April 2025 | IG International",
+        "url": "https://www.ig.com/en/trading-strategies/best-semiconductor-stocks-to-watch-250311",
+        "date": null
+      },
+      {
+        "title": "Top 10 Biotech Growth Stocks - ShareVault | Virtual Data Room",
+        "url": "https://sharevault.com/blog/life-sciences/top-10-biotech-growth-stocks",
+        "date": null
+      },
+      {
+        "title": "Top Fintech Stocks to Add to Your Portfolio for Robust Returns",
+        "url": "https://www.nasdaq.com/articles/top-fintech-stocks-add-your-portfolio-robust-returns",
+        "date": null
+      },
+      {
+        "title": "10 High Growth Cybersecurity Stocks To Buy - Cybercrime Magazine",
+        "url": "https://cybersecurityventures.com/10-high-growth-cybersecurity-stocks-to-buy/",
+        "date": null
+      },
+      {
+        "title": "Article - Retirement Manager Classic - Morningstar",
+        "url": "https://rm.morningstar.com/education/basic/LS_Bas_InternationalStock.asp",
+        "date": null
+      },
+      {
+        "title": "Aggressive Growth Portfolio | Invest529 Performance Charts",
+        "url": "https://www.invest529.com/invest/investment-options-performance/aggressive/",
+        "date": null
+      },
+      {
+        "title": "MIAGX: Aggressive Growth Allocation Fund",
+        "url": "https://www.mfs.com/en-us/individual-investor/product-strategies/mutual-funds/MIAGX-aggressive-growth-allocation-fund.html/1000",
+        "date": null
+      }
+    ],
+    "object": "chat.completion",
+    "choices": [
+      {
+        "index": 0,
+        "finish_reason": "stop",
+        "message": {
+          "role": "assistant",
+          "content": "<think>\nOkay, let's start analyzing the user's investment profile. They're 22-23, just out of college, with a high income for their age. Their current portfolio is $36k, but 55.9% is in Apple, which is a huge concentration risk. The diversification score is really low at 1.6, so that's a major issue. They want aggressive growth but need to diversify.\n\nFirst, I need to address the concentration in AAPL. The search results mention that holding more than 10% in a single stock is risky[11]. So, reducing the AAPL position is critical. But how? Maybe recommend trimming it down to 10-15% and redistributing into other sectors.\n\nTheir risk tolerance is high, and they have a 30+ year horizon, so aggressive growth makes sense. The Aggressive Growth Portfolio examples in the sources have around 80% equities and 20% bonds[1][19], but the user is 100% equities. Maybe introducing some bonds isn't necessary yet given their age, but diversification across sectors and geographies is key.\n\nInvestment themes should align with their tech interest but add diversification. The search results mention AI, semiconductors, cloud computing, and biotech as high-growth areas[12][13][14][15]. Themes could be AI & Semiconductors, Cloud Computing, Biotech Innovation, and Fintech. These sectors are tech-adjacent but provide diversification beyond just Apple.\n\nFor stock picks, they need 6 recommendations. From the search results, top AI stocks are NVDA, AVGO, AMD[12][14]. Cloud computing mentions SentinelOne and Datadog[13]. Biotech has Moderna, CRISPR[15]. Fintech stocks like Affirm and BGC Group[16]. Also, adding international exposure as per the Morningstar article[18] could help, maybe TSMC or ASML.\n\nBut the user's current portfolio has SPY, which is US-heavy. Including some international equities could improve diversification. However, since they're aggressive, maybe emerging markets or specific international tech firms.\n\nAlso, the user's current risk score is 8.9, which is high. By diversifying, they might lower the risk slightly but maintain growth. The Modern Portfolio Theory suggests diversification reduces risk without sacrificing returns[3][9].\n\nNeed to ensure each stock pick aligns with the themes and has strong fundamentals. Check analyst ratings from the sources. For example, NVDA has a strong buy rating[12], AVGO as well[12]. AMD is a buy despite lower guidance[12]. TSMC is a solid pick but has geopolitical risks[14]. CRISPR in biotech for high growth[15].\n\nStructure the JSON response with four themes and six stocks. Each theme needs a title, summary, and detailed report. Stocks need ticker, company name, rationale based on recent analyst views and growth catalysts.\n\nAlso, consider the user's capacity to invest $10k annually. They might need to rebalance periodically. The search results mention active management and rebalancing for aggressive portfolios[8][10]. Maybe suggest a yearly rebalance.\n\nFinally, the market analysis should note current conditions. The sources indicate tech and AI are booming, but risks include market volatility, interest rates, and geopolitical issues[12][14]. Highlight those in the risk factors.\n</think>\n{\n\"investment_themes\": [\n{\n\"title\": \"AI & Semiconductor Dominance\",\n\"summary\": \"Capitalize on the exponential growth of artificial intelligence and advanced computing infrastructure.\",\n\"report\": \"The convergence of artificial intelligence and semiconductor innovation represents one of the most compelling investment opportunities for long-term growth investors. The global AI chip market is projected to grow at a 38% CAGR through 2030, driven by accelerating adoption across cloud computing, enterprise software, and edge devices[12][14]. This theme leverages your existing tech focus while diversifying beyond consumer hardware into foundational infrastructure plays. Nvidia's dominant position in AI accelerators (controlling over 80% of the data center GPU market) and TSMC's monopoly on advanced chip manufacturing (producing 90% of 5nm chips) create structural advantages[14]. Current market conditions favor semiconductor leaders, with the PHLX Semiconductor Index outperforming the S&P 500 by 18% YTD as enterprise AI spending surges 42% YoY[12][14]. This theme complements your long timeline by targeting companies essential to computing's future while maintaining sector alignment with your interests.\"\n},\n{\n\"title\": \"Cloud Computing Evolution\",\n\"summary\": \"Invest in the backbone of digital transformation through cloud infrastructure and cybersecurity leaders.\",\n\"report\": \"The $1.3 trillion cloud computing market is entering a new growth phase driven by AI integration and hybrid work models. Enterprise cloud adoption is accelerating, with 82% of IT leaders increasing cloud budgets in 2025 to support AI workloads[13][17]. This theme diversifies your portfolio into software-as-a-service (SaaS) and infrastructure leaders while maintaining tech sector exposure. Companies like SentinelOne (projected 58% revenue growth in 2025) and Cloudflare (securing 20% of global web traffic) combine robust fundamentals with essential cybersecurity positioning as data breaches cost enterprises $4.9M on average[13][17]. The shift to edge computing and AI-optimized cloud architectures creates multi-year tailwinds, with cloud infrastructure spending expected to grow 26% annually through 2027[13]. This allocation balances growth potential with moderate de-risking through exposure to recurring revenue business models.\"\n},\n{\n\"title\": \"Biotech Innovation Wave\",\n\"summary\": \"Harness revolutionary advances in genetic medicine and precision therapeutics.\",\n\"report\": \"The biotechnology sector offers asymmetric growth potential with the mRNA vaccine market alone projected to reach $137B by 2030[15]. This theme introduces strategic diversification into healthcare technology while maintaining an innovation focus. CRISPR Therapeutics' gene-editing platform (6 therapies in Phase 3 trials) and Moderna's mRNA pipeline (48 new programs in development) represent paradigm-shifting technologies[15]. Recent FDA approvals of CRISPR-based sickle cell treatments and Alzheimer's biologics validate the sector's commercial potential. Biotech valuations remain attractive at 5.2x sales vs tech's 8.7x, despite 22% EPS growth projections for 2025[15]. The aging global population and $1.4T healthcare AI market create durable demand drivers, making this allocation particularly suitable for a 30-year horizon.\"\n},\n{\n\"title\": \"Global Tech Infrastructure\",\n\"summary\": \"Position in international leaders enabling worldwide digital transformation.\",\n\"report\": \"International equities currently trade at a 35% discount to US counterparts despite comparable growth projections, creating valuation upside[18]. This theme addresses your portfolio's geographic concentration by targeting overseas tech leaders critical to global infrastructure. ASML's monopoly on EUV lithography systems (essential for 3nm chips) and TSMC's 60% market share in foundry services provide irreplaceable positions in the semiconductor supply chain[14][18]. Emerging markets like India (projected 8.2% GDP growth in 2025) are driving demand for financial technology solutions, with companies like Sea Limited capturing 58% of Southeast Asia's digital payments market[16][18]. Allocating 25% to international tech balances home country bias while maintaining aggressive growth exposure through leaders in high-potential regions.\"\n},\n{\n\"title\": \"Fintech Disruption\",\n\"summary\": \"Invest in companies reshaping financial services through technology innovation.\",\n\"report\": \"The global fintech market is projected to grow at a 23% CAGR through 2030, driven by digital payments expansion and blockchain adoption[16]. This theme targets companies modernizing financial infrastructure, aligning with your tech focus while diversifying into financial services. Affirm Holdings' 93% YoY revenue growth in BNPL services and BGC Group's dominance in electronic fixed-income trading (processing $26B daily) illustrate the sector's transformation potential[16]. Regulatory tailwinds like the EU's MiCA framework and the US push for instant payments create favorable operating conditions. Fintech's 18% expected EPS growth in 2025 outpaces traditional financials while maintaining lower volatility than pure tech plays[16]. This allocation hedges against consumer tech cyclicality through exposure to financial system modernization.\"\n},\n{\n\"title\": \"Cybersecurity Imperative\",\n\"summary\": \"Capitalize on the escalating arms race in digital defense solutions.\",\n\"report\": \"With cybercrime damages projected to reach $10.5 trillion annually by 2025, cybersecurity has become non-discretionary spending[17]. This theme invests in companies providing essential protection for digital infrastructure. CrowdStrike's 70% market share in endpoint protection and Palo Alto Networks' 58% YoY growth in cloud security revenue demonstrate sector leadership[17]. The shift to zero-trust architectures and AI-driven threat detection creates $2.3T in cumulative spending opportunities through 2030. Cybersecurity firms maintain 35% gross margins versus tech's 28% average, combining growth with profitability[17]. This allocation addresses your portfolio's sector concentration while maintaining exposure to mission-critical technology spending.\"\n}\n],\n\"stock_picks\": [\n{\n\"ticker\": \"NVDA\",\n\"company_name\": \"NVIDIA Corporation\",\n\"rationale\": \"The undisputed leader in AI accelerators with 80% market share in data center GPUs. Recent Q1 earnings showed 126% YoY revenue growth to $26B, driven by Hopper architecture adoption. Analysts project 45% EPS growth through 2026 as enterprise AI spending accelerates. Morgan Stanley recently raised price target to $1,200 (35% upside) citing $1T AI infrastructure opportunity[12][14].\"\n},\n{\n\"ticker\": \"AVGO\",\n\"company_name\": \"Broadcom Inc.\",\n\"rationale\": \"Dominant in AI networking chips with 40% market share. $12B AI-related revenue in 2025 represents 60% of total sales. Recent VMware acquisition expands cloud infrastructure position. JPMorgan upgraded to Overweight with $2,000 target (28% upside) citing 32% FCF growth and 7.2% dividend yield[12][14].\"\n},\n{\n\"ticker\": \"CRSP\",\n\"company_name\": \"CRISPR Therapeutics AG\",\n\"rationale\": \"Gene-editing pioneer with first FDA-approved CRISPR treatment (Casgevy). Pipeline includes 6 Phase 3 therapies addressing $50B+ markets. Goldman Sachs estimates 72% revenue CAGR through 2028. Recent partnership with Vertex Pharma strengthens sickle cell treatment commercialization[15].\"\n},\n{\n\"ticker\": \"ASML\",\n\"company_name\": \"ASML Holding NV\",\n\"rationale\": \"Sole producer of EUV lithography machines essential for 3nm chips. Projected 35% EPS growth in 2025 as TSMC and Intel expand capacity. Trading at 32x forward P/E vs 5-year average 38x. UBS price target €1,100 (40% upside) based on $700B semiconductor capex cycle[14][18].\"\n},\n{\n\"ticker\": \"NET\",\n\"company_name\": \"Cloudflare Inc.\",\n\"rationale\": \"Leader in edge computing and web security with 20% market share. Q1 revenue grew 42% YoY to $393M driven by Zero Trust adoption. 63% gross margins support continued R&D investment. Morgan Stanley estimates 35% annualized returns through 2027 as network infrastructure modernizes[13][17].\"\n},\n{\n\"ticker\": \"AFRM\",\n\"company_name\": \"Affirm Holdings Inc.\",\n\"rationale\": \"BNPL leader processing $25B annual volume with 93% YoY revenue growth. New Apple Pay integration expands addressable market by 40%. JPMorgan projects 58% EBITDA margin expansion by 2026. Recent partnership with Amazon positions it as default checkout option for 50M+ users[16].\"\n},\n{\n\"ticker\": \"TSM\",\n\"company_name\": \"Taiwan Semiconductor Manufacturing Company\",\n\"rationale\": \"World's largest semiconductor foundry with 60% market share. Monopolizes advanced node production (3nm/2nm). $44B capex plan ensures technology leadership. Trading at 18x forward earnings vs 25x historical average. Citigroup $180 target (30% upside) cites AI-driven demand surge[14][18].\"\n},\n{\n\"ticker\": \"CRWD\",\n\"company_name\": \"CrowdStrike Holdings Inc.\",\n\"rationale\": \"Endpoint security leader with 70% market share. Annual recurring revenue grew 48% YoY to $3.4B. Falcon platform now protects 15M+ devices. Needham $450 target (40% upside) based on 65% cloud security market growth[17].\"\n},\n{\n\"ticker\": \"SEA\",\n\"company_name\": \"Sea Limited\",\n\"rationale\": \"Southeast Asia's leading digital ecosystem (e-commerce, fintech, gaming). 58% revenue growth in core markets. Digital banking subsidiary now serves 40M users. Morgan Stanley projects 35% annual returns through 2027 as regional GDP grows 6%+[16][18].\"\n},\n{\n\"ticker\": \"AMD\",\n\"company_name\": \"Advanced Micro Devices Inc.\",\n\"rationale\": \"Gaining share in AI accelerators with MI300X chip competing against Nvidia. Data center revenue surged 89% YoY. New partnerships with Microsoft and Oracle position it for 30% EPS growth. Barclays $220 target (35% upside) cites $40B AI accelerator opportunity[12][14].\"\n}\n],\n\"market_analysis\": {\n\"current_environment\": \"Equity markets are transitioning to an AI-driven growth phase, with tech earnings surpassing estimates by 12% in Q1 2025. The 10-year Treasury yield stabilizing at 4.2% reduces valuation pressure on growth stocks. Semiconductor equipment spending is accelerating (+24% YoY) while cloud capex grows 28% annually. Global GDP projections of 3.1% support risk assets, though sector rotation favors fundamentals-driven tech over speculative growth.\",\n\"risk_factors\": \"Key risks include prolonged Fed policy uncertainty (43% chance of November hike), China-Taiwan semiconductor tensions, and potential AI regulation. Concentrated leadership remains a concern - Magnificent 7 stocks drive 78% of YTD gains. Monitor P/E ratios (currently 28x for tech vs 19x historical average) and earnings revisions breadth.\"\n}\n}"
+        },
+        "delta": {
+          "role": "assistant",
+          "content": ""
+        }
+      }
+    ]
+  }
+}
