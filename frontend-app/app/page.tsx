@@ -20,6 +20,32 @@ export default async function Home() {
       
       // Redirect if user is successfully fetched
       if (data?.user) {
+        // Check onboarding status
+        const { data: onboardingData } = await supabase
+          .from('user_onboarding')
+          .select('status')
+          .eq('user_id', data.user.id)
+          .single();
+        
+        const hasCompletedOnboarding = 
+          onboardingData?.status === 'submitted' || 
+          onboardingData?.status === 'approved';
+        
+        if (hasCompletedOnboarding) {
+          // Check if user has funded their account (has transfers)
+          const { data: transfers } = await supabase
+            .from('user_transfers')
+            .select('id')
+            .eq('user_id', data.user.id)
+            .limit(1);
+          
+          // If they have completed onboarding and have funded their account, go to portfolio
+          if (transfers && transfers.length > 0) {
+            return redirect("/portfolio");
+          }
+        }
+        
+        // Default: go to dashboard for users who haven't completed onboarding or funding
         return redirect("/dashboard");
       }
     } catch (authError) {
