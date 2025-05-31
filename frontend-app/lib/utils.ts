@@ -23,8 +23,30 @@ export const formatNumber = (num: number | null | undefined): string => {
 };
 
 // Helper to format currency
-export const formatCurrency = (num: number | null | undefined, currency: string = 'USD'): string => {
+export const formatCurrency = (
+  num: number | null | undefined, 
+  currency: string = 'USD', 
+  options?: { compact?: boolean }
+): string => {
   if (num === null || num === undefined) return 'N/A';
+  
+  // Compact formatting for chart axes
+  if (options?.compact) {
+    if (Math.abs(num) >= 1e12) {
+      return `$${(num / 1e12).toFixed(1)}T`;
+    }
+    if (Math.abs(num) >= 1e9) {
+      return `$${(num / 1e9).toFixed(1)}B`;
+    }
+    if (Math.abs(num) >= 1e6) {
+      return `$${(num / 1e6).toFixed(1)}M`;
+    }
+    if (Math.abs(num) >= 1e3) {
+      return `$${(num / 1e3).toFixed(1)}K`;
+    }
+    return `$${num.toFixed(2)}`;
+  }
+  
   // Check if the number is extremely small and format appropriately
   if (Math.abs(num) < 0.01 && Math.abs(num) > 0) {
       return num.toLocaleString(undefined, { style: 'currency', currency: currency, minimumSignificantDigits: 1, maximumSignificantDigits: 3 });

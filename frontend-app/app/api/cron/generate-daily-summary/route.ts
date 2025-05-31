@@ -312,7 +312,7 @@ The user's financial literacy is ${financialLiteracy}. Tailor the language compl
 Focus on information directly impacting their investments or stated goals.
 Current date: ${currentDate}.
 
-When gathering information for this summary, endeavor to consult at least 4-6 distinct news articles from various reputable sources. (THESE ARTICLES *MUST* BE FROM RECENT AND CREDIBLE SOURCES, SUCH AS WSJ, Bloomberg, Reuters, Financial Times, etc.)
+When gathering information for this summary, endeavor to consult at least 4-6 distinct news articles from various reputable sources. (THESE ARTICLES *MUST* BE FROM RECENT AND CREDIBLE SOURCES, SUCH AS WSJ, Bloomberg, Reuters, Financial Times, etc. Specifically search for those and other Wall Street sources)
 
 Your response for the main summary MUST be a single, valid JSON object. ABSOLUTELY NO OTHER TEXT, MARKDOWN, OR EXPLANATIONS BEFORE OR AFTER THE JSON OBJECT.
 This JSON object must strictly follow this structure:
