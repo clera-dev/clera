@@ -1389,3 +1389,163 @@ When making changes:
    - Verify client connectivity
 
 This deployment process has been tested and verified to work with both services running properly and communicating via Redis. The WebSocket proxy in the API service successfully forwards client connections to the WebSocket service.
+
+## Troubleshooting and Debugging
+
+### LangChain Tool Function Calling Issues
+
+When you encounter `groq.APIError: Failed to call a function. Please adjust your prompt. See 'failed_generation' for more details.`, the root cause is almost always **Pydantic validation errors** in the function signature.
+
+#### The Problem: Pydantic Type Enforcement
+
+LangChain tools use Pydantic for parameter validation. When an LLM tries to call a function, Pydantic strictly validates each parameter against the expected type. Common issues:
+
+1. **None values for string parameters**: If a function has `param: str = None`, Pydantic will reject `None` because it expects a string
+2. **Type mismatches**: Passing integers where strings are expected, or vice versa
+3. **Missing required parameters**: LLM fails to provide all required arguments
+
+#### Debugging Process
+
+**Step 1: Test the function directly**
+
+```bash
+cd backend
+python -c "
+from clera_agents.your_agent import your_function
+result = your_function.invoke({
+    'param1': 'value1',
+    'param2': '',  # Use empty string instead of None
+    'param3': True
+})
+print('SUCCESS: Function worked')
+"
+```
+
+**Step 2: Check for common Pydantic issues**
+
+Look for these patterns in your function signatures:
+
+```python
+# PROBLEMATIC - Pydantic rejects None for string parameters
+@tool("my_tool")
+def my_function(
+    symbol: str,
+    end_date: str = None,  # ❌ This will cause validation errors
+    compare: bool = True
+) -> str:
+    pass
+
+# SOLUTION - Use empty string as default
+@tool("my_tool") 
+def my_function(
+    symbol: str,
+    end_date: str = "",  # ✅ Pydantic accepts empty string
+    compare: bool = True
+) -> str:
+    # Handle empty string in your logic
+    if not end_date or end_date == "":
+        end_date = datetime.now().strftime('%Y-%m-%d')
+    pass
+```
+
+**Step 3: Update system prompts**
+
+Ensure all examples in agent system prompts match the fixed signature:
+
+```python
+# In your agent system prompt
+User: "How has Apple done YTD?"
+→ calculate_investment_performance(symbol="AAPL", start_date="2025-01-01", end_date="", compare_to_sp500=True)
+#                                                                            ^^^ Use empty string, not None
+```
+
+#### Common Pydantic Validation Patterns
+
+1. **Optional String Parameters**:
+   ```python
+   # Instead of: param: str = None
+   # Use: param: str = ""
+   # Handle in function: if not param: param = default_value
+   ```
+
+2. **Optional Boolean Parameters**:
+   ```python
+   # These work fine as-is
+   param: bool = True
+   param: bool = False
+   ```
+
+3. **Optional Numeric Parameters**:
+   ```python
+   # Instead of: param: int = None
+   # Use: param: int = 0 or param: int = -1
+   # Handle in function: if param <= 0: param = default_value
+   ```
+
+#### Real Example: Financial Analyst Function Fix
+
+**Problem**: `calculate_investment_performance` was failing with "Failed to call a function"
+
+**Root Cause**: Function signature had `end_date: str = None`, but Pydantic rejected `None` values
+
+**Solution**:
+```python
+# Before (broken)
+def calculate_investment_performance(
+    symbol: str,
+    start_date: str,
+    end_date: str = None,  # ❌ Pydantic validation error
+    compare_to_sp500: bool = True
+) -> str:
+    if end_date is None:  # This logic was never reached
+        end_date = datetime.now().strftime('%Y-%m-%d')
+
+# After (working)  
+def calculate_investment_performance(
+    symbol: str,
+    start_date: str,
+    end_date: str = "",  # ✅ Pydantic accepts empty string
+    compare_to_sp500: bool = True
+) -> str:
+    if not end_date or end_date == "":  # Fixed logic
+        end_date = datetime.now().strftime('%Y-%m-%d')
+```
+
+#### Prevention Tips
+
+1. **Always test functions directly** before deploying agent changes
+2. **Use Pydantic-friendly defaults**: empty strings, 0, False, etc. instead of None
+3. **Update system prompt examples** whenever you change function signatures
+4. **Use consistent parameter naming** across all agent functions
+5. **Test with the exact parameter format** the LLM will use
+
+#### Advanced Debugging: Pydantic Error Details
+
+If you need more detailed Pydantic error information:
+
+```python
+from pydantic import ValidationError
+from your_module import your_function
+
+try:
+    result = your_function.invoke({
+        'param1': 'value',
+        'param2': None,  # This will fail
+    })
+except ValidationError as e:
+    print("Pydantic validation errors:")
+    for error in e.errors():
+        print(f"  - Field: {error['loc']}")
+        print(f"    Error: {error['msg']}")
+        print(f"    Input: {error['input']}")
+```
+
+### General Debugging Principles
+
+1. **Start from First Principles**: When an error occurs, test the individual components before testing the full system
+2. **Validate Assumptions**: Don't assume the function works—test it directly with the exact parameters the LLM would use
+3. **Check Type Systems**: Modern Python uses strict type validation—ensure your defaults match the expected types
+4. **Read Error Messages Carefully**: "Failed to call a function" usually means parameter validation, not logic errors
+5. **Test Incrementally**: Fix one parameter at a time and test after each fix
+
+This debugging approach—testing functions directly, checking Pydantic validation, and updating system prompts—will resolve 95% of LangChain tool calling issues.

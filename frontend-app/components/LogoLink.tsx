@@ -59,12 +59,12 @@ export default function LogoLink() {
       e.preventDefault();
       router.push('/protected');
     }
-    // Otherwise, the default Link behavior will navigate to dashboard
+    // Otherwise, the default Link behavior will navigate to portfolio
   };
   
   return (
     <Link 
-      href="/dashboard" 
+      href="/portfolio" 
       onClick={handleLogoClick}
       className="font-bold"
     >

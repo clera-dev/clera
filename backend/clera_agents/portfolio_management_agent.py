@@ -10,7 +10,9 @@ from urllib.request import urlopen
 import certifi
 import json
 from typing import List, Optional, Dict
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from datetime import datetime, timedelta
+import pandas as pd
 
 # Load environment variables first, with override to ensure they're set
 load_dotenv(override=True)
@@ -189,145 +191,332 @@ def create_rebalance_instructions(positions_data: List, target_portfolio_type: O
     try:
         # Ensure positions are retrieved if not passed directly (though they usually are)
         if not positions_data:
-             positions_data = retrieve_portfolio_positions(state=state, config=config)
-             if not positions_data:
-                  return "Error: Could not retrieve portfolio positions to generate rebalancing instructions."
-             
-        positions = [PortfolioPosition.from_alpaca_position(position) for position in positions_data]
+            positions_data = retrieve_portfolio_positions(state=state, config=config)
         
-        # Get target portfolio based on type (or potentially from user state/config in future)
-        if target_portfolio_type.lower() == "balanced":
-            target_portfolio = TargetPortfolio.create_balanced_portfolio()
-        elif target_portfolio_type.lower() == "conservative":
-            target_portfolio = TargetPortfolio.create_conservative_portfolio()
-        else: 
-            target_portfolio = TargetPortfolio.create_aggressive_growth_portfolio()
-            
-        instructions = PortfolioAnalyzer.generate_rebalance_instructions(
-            positions=positions,
-            target_portfolio=target_portfolio
+            if not positions_data:
+                return "❌ **Portfolio Error:** No positions found in your account. Cannot generate rebalancing instructions."
+        # Initialize our analytics engine
+        analyzer = PortfolioAnalyzer()
+        engine = PortfolioAnalyticsEngine()
+        
+        # Convert Alpaca positions to our internal format
+        portfolio_positions = []
+        
+        for position in positions_data:
+            try:
+                # Using market_value as the notional amount (total dollar value)
+                notional_value = float(position.market_value)
+                
+                # Convert Alpaca position to our PortfolioPosition format
+                portfolio_position = PortfolioPosition(
+                    symbol=position.symbol,
+                    notional_amount=notional_value,
+                    asset_class=AssetClass.US_EQUITY,  # Most positions will be US equity
+                    security_type=SecurityType.STOCK  # Default to stock
+                )
+                portfolio_positions.append(portfolio_position)
+                
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"[Rebalance] Could not process position {position.symbol}: {e}")
+                continue
+        
+        if not portfolio_positions:
+            return "❌ **Rebalancing Error:** Could not process any positions from your account."
+        
+        # Get target portfolio based on user preference
+        target_portfolio = get_target_portfolio_by_type(target_portfolio_type)
+        
+        # Calculate current and target allocations
+        current_allocation = analyzer.calculate_current_allocation(portfolio_positions)
+        total_value = sum(pos.notional_amount for pos in portfolio_positions)
+        
+        # Generate rebalancing instructions
+        rebalancing_instructions = analyzer.generate_rebalancing_instructions(
+            current_allocation, target_portfolio, total_value
         )
-        return instructions
+        
+        # Format the instructions for human readability
+        instructions_text = f"""📊 **Portfolio Rebalancing Analysis**
+
+**Current Portfolio Value:** ${total_value:,.2f}
+**Target Strategy:** {target_portfolio_type.title()}
+
+**Current Allocation:**
+"""
+        
+        for asset_class, percentage in current_allocation.items():
+            instructions_text += f"• {asset_class.value}: {percentage:.1f}%\n"
+        
+        instructions_text += f"""
+**Target Allocation:**
+"""
+        for asset_class, percentage in target_portfolio.allocations.items():
+            instructions_text += f"• {asset_class.value}: {percentage:.1f}%\n"
+        
+        instructions_text += f"""
+**📋 Rebalancing Instructions:**
+
+"""
+        
+        if not rebalancing_instructions:
+            instructions_text += "✅ **Your portfolio is already well-balanced!** No trades needed at this time."
+        else:
+            for instruction in rebalancing_instructions:
+                action = "🟢 BUY" if instruction['action'] == 'buy' else "🔴 SELL"
+                instructions_text += f"{action} ${instruction['amount']:,.2f} of {instruction['asset_class'].value}\n"
+                if 'reason' in instruction:
+                    instructions_text += f"   Reason: {instruction['reason']}\n"
+                instructions_text += "\n"
+        
+        instructions_text += """
+**💡 Next Steps:**
+1. Review these recommendations carefully
+2. Consider your risk tolerance and investment timeline
+3. Use the trade execution agent to implement specific trades
+4. Monitor and rebalance quarterly or when allocations drift >5%
+
+**⚠️ Important Note:** These are general recommendations. Consider consulting with a financial advisor for personalized advice."""
+        
+        return instructions_text
+        
     except Exception as e:
-        logger.error(f"[Portfolio Agent] Error generating rebalance instructions: {e}", exc_info=True)
-        return f"Error processing portfolio data: {str(e)}"
+        logger.error(f"[Rebalance] Error generating rebalancing instructions: {e}", exc_info=True)
+        return f"❌ **Rebalancing Error:** Could not generate rebalancing instructions. Error: {str(e)}"
 
 
 @tool("rebalance_instructions")
 def rebalance_instructions(state=None, config=None) -> str:
-    """Generate one-time rebalancing recommendations for the user's portfolio.
+    """Generate portfolio rebalancing instructions based on the user's current holdings.
     
-    This function retrieves the current portfolio positions, analyzes them against the user's
-    investment strategy, and provides specific buy/sell recommendations to optimize the portfolio.
+    This tool analyzes the user's current portfolio and provides specific rebalancing
+    recommendations to optimize their asset allocation. All recommendations are provided
+    in dollar amounts that can be directly executed using trade execution functions.
     
     Returns:
-        str: A detailed set of instructions for rebalancing the portfolio
+        str: Detailed rebalancing instructions including:
+             - Current vs target allocation analysis
+             - Specific buy/sell recommendations in dollar amounts
+             - Reasoning for each recommended change
+             - Next steps for implementation
     """
     try:
-        # Get positions using context
-        positions_data = retrieve_portfolio_positions(state=state, config=config)
-        if not positions_data:
-             # Handle case where positions couldn't be retrieved
-             # Maybe check account status?
-             account_id = get_account_id(config=config)
-             return f"Could not retrieve portfolio positions for account {account_id}. Please ensure the account is active and funded."
-
-        # Get user strategy (currently static, uses config for account_id)
-        investment_strategy = get_user_investment_strategy(state=state, config=config)
-        target_type = investment_strategy.get("risk_profile", "aggressive") # Default to aggressive
+        # Get current positions
+        positions = retrieve_portfolio_positions(state=state, config=config)
         
-        return create_rebalance_instructions(
-            positions_data=positions_data, 
-            target_portfolio_type=target_type,
+        # Get user's investment strategy to determine target portfolio
+        user_strategy = get_user_investment_strategy(state=state, config=config)
+        target_portfolio_type = user_strategy.get('portfolio_type', 'aggressive')
+        
+        # Generate rebalancing instructions
+        instructions = create_rebalance_instructions(
+            positions, 
+            target_portfolio_type, 
             state=state, 
             config=config
         )
         
+        return instructions
+        
     except Exception as e:
-        logger.error(f"[Portfolio Agent] Error in rebalance_instructions tool: {e}", exc_info=True)
-        return f"Error analyzing portfolio: {str(e)}"
+        logger.error(f"[Portfolio Agent] Error in rebalance_instructions: {e}", exc_info=True)
+        return f"❌ **Error:** Could not generate rebalancing instructions. Please try again later.\n\nError details: {str(e)}"
 
 
 @tool("get_portfolio_summary")
 def get_portfolio_summary(state=None, config=None) -> str:
-    """Generate a one-time comprehensive summary of the user's investment portfolio.
+    """Get a comprehensive summary of the user's current portfolio.
     
-    This tool provides a detailed analysis of the portfolio including:
-    - Total portfolio value and asset allocation
-    - Performance analysis with gain/loss by asset class
-    - Risk assessment with risk and diversification scores
-    - Concentration risk identification
-    - Comparison to target allocation based on investment strategy
+    This tool retrieves and analyzes the user's current portfolio positions,
+    providing insights into allocation, performance, and key metrics.
     
     Returns:
-        str: Formatted portfolio summary with detailed metrics
+        str: Formatted portfolio summary including:
+             - Total portfolio value and position count
+             - Individual position details with performance metrics
+             - Asset allocation breakdown
+             - Key portfolio statistics and insights
     """
     try:
-        # Get positions using context
-        positions_data = retrieve_portfolio_positions(state=state, config=config)
-        if not positions_data:
-             account_id = get_account_id(config=config)
-             # Consider more specific error based on Alpaca client response if available
-             return f"Could not retrieve portfolio positions for account {account_id}. The portfolio might be empty or the account inactive."
+        account_id = get_account_id(config=config)
+        logger.info(f"[Portfolio Agent] Generating portfolio summary for account: {account_id}")
+        
+        # Get all positions
+        positions = retrieve_portfolio_positions(state=state, config=config)
+        
+        if not positions:
+            return """📊 **Portfolio Summary**
 
-        investment_strategy = get_user_investment_strategy(state=state, config=config)
+❌ **No Positions Found**
+
+Your portfolio appears to be empty or we couldn't retrieve your positions. This could be because:
+• You haven't made any investments yet
+• Your positions are still settling
+• There's a temporary issue with account access
+
+💡 **Next Steps:**
+• Check your account status
+• Consider making your first investment
+• Contact support if you believe this is an error"""
+
+        # Calculate portfolio totals
+        total_value = 0
+        total_unrealized_pl = 0
+        total_cost_basis = 0
         
-        positions = [PortfolioPosition.from_alpaca_position(position) for position in positions_data]
+        position_details = []
         
-        for i, position in enumerate(positions):
-            if position.asset_class is None or position.security_type is None:
-                positions[i] = PortfolioAnalyzer.classify_position(position)
+        for position in positions:
+            try:
+                # Extract numeric values
+                market_value = float(position.market_value)
+                unrealized_pl = float(position.unrealized_pl)
+                cost_basis = float(position.cost_basis)
+                unrealized_plpc = float(position.unrealized_plpc) * 100  # Convert to percentage
+                
+                total_value += market_value
+                total_unrealized_pl += unrealized_pl
+                total_cost_basis += cost_basis
+                
+                # Format position details
+                gain_loss_emoji = "📈" if unrealized_pl >= 0 else "📉"
+                position_details.append({
+                    'symbol': position.symbol,
+                    'market_value': market_value,
+                    'unrealized_pl': unrealized_pl,
+                    'unrealized_plpc': unrealized_plpc,
+                    'emoji': gain_loss_emoji,
+                    'weight': market_value / total_value if total_value > 0 else 0
+                })
+                
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"[Portfolio Agent] Could not process position {position.symbol}: {e}")
+                continue
         
-        # TODO: Retrieve actual cash balance from Alpaca account details
-        cash_value = Decimal('0') 
+        # Calculate overall return percentage
+        overall_return_pct = (total_unrealized_pl / total_cost_basis * 100) if total_cost_basis > 0 else 0
+        overall_emoji = "📈" if total_unrealized_pl >= 0 else "📉"
         
-        metrics = PortfolioAnalyticsEngine.generate_complete_portfolio_metrics(
-            positions=positions,
-            cash_value=cash_value
-        )
+        # Sort positions by market value (largest first)
+        position_details.sort(key=lambda x: x['market_value'], reverse=True)
         
-        summary = PortfolioAnalyticsEngine.format_portfolio_summary(
-            metrics=metrics,
-            investment_strategy=investment_strategy
-        )
+        # Get current timestamp
+        current_timestamp = datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')
+        
+        # Build summary
+        summary = f"""📊 **Portfolio Summary**
+**Generated:** {current_timestamp}
+
+{overall_emoji} **Portfolio Overview**
+• **Total Value:** ${total_value:,.2f}
+• **Total Positions:** {len(position_details)}
+• **Unrealized P&L:** ${total_unrealized_pl:+,.2f} ({overall_return_pct:+.2f}%)
+• **Cost Basis:** ${total_cost_basis:,.2f}
+
+📈 **Holdings Breakdown**
+"""
+        
+        # Add position details
+        for pos in position_details:
+            weight_display = f"{pos['weight']*100:.1f}%"
+            summary += f"""
+{pos['emoji']} **{pos['symbol']}** ({weight_display})
+• Value: ${pos['market_value']:,.2f}
+• P&L: ${pos['unrealized_pl']:+,.2f} ({pos['unrealized_plpc']:+.2f}%)"""
+        
+        # Add insights
+        summary += f"""
+
+💡 **Portfolio Insights**
+• **Largest Position:** {position_details[0]['symbol']} ({position_details[0]['weight']*100:.1f}% of portfolio)
+• **Best Performer:** {max(position_details, key=lambda x: x['unrealized_plpc'])['symbol']} ({max(position_details, key=lambda x: x['unrealized_plpc'])['unrealized_plpc']:+.2f}%)
+• **Concentration Risk:** {'HIGH' if position_details[0]['weight'] > 0.3 else 'MODERATE' if position_details[0]['weight'] > 0.2 else 'LOW'}"""
+        
+        if len(position_details) >= 3:
+            summary += f"""
+• **Top 3 Holdings:** {position_details[0]['symbol']}, {position_details[1]['symbol']}, {position_details[2]['symbol']}"""
+        
+        summary += """
+
+📋 **Quick Actions**
+• Want to rebalance? Ask for rebalancing instructions
+• Need analysis? Ask about specific stock performance
+• Ready to trade? Use the trade execution agent"""
+        
+        logger.info(f"[Portfolio Agent] Successfully generated portfolio summary with {len(position_details)} positions")
         return summary
         
     except Exception as e:
-        # Catch specific exceptions if possible (e.g., AlpacaAPIError)
-        logger.error(f"[Portfolio Agent] Error in get_portfolio_summary tool: {e}", exc_info=True)
-        # Provide a more user-friendly error message
-        return f"Error generating portfolio summary: {str(e)}. Please try again later."
+        logger.error(f"[Portfolio Agent] Error generating portfolio summary: {e}", exc_info=True)
+        return f"❌ **Error:** Could not generate portfolio summary. Please try again later.\n\nError details: {str(e)}"
 
 
-#@tool("get_user_investment_strategy")
 def get_user_investment_strategy(state=None, config=None) -> Dict:
-    """Get the user's investment risk profile and strategy details.
+    """Get the user's investment strategy and risk profile.
     
-    Args:
-       None
+    This function would typically query a user preferences database,
+    but for now returns a default aggressive strategy.
     
     Returns:
-        A dictionary containing:
-        - risk_profile: The user's risk profile
-        - target_portfolio: Details about the target portfolio allocation
-        - notes: Additional notes about the user's investment preferences
+        Dict: User's investment strategy including portfolio type and risk profile
     """
-    # In the future, this might retrieve actual user preferences from a database
-    # For now, we're using a static aggressive growth strategy
-
-    account_id = get_account_id(config=config)
-    logger.info(f"[Portfolio Agent] Determining investment strategy for account: {account_id}")
-    
-    target_portfolio = TargetPortfolio.create_aggressive_growth_portfolio()
-    
+    # TODO: Implement actual user preference lookup from database
+    # For now, return default strategy
     return {
-        "risk_profile": target_portfolio.risk_profile.value,
-        "target_portfolio": {
-            "name": target_portfolio.name,
-            "equity_percentage": 100.0,
-            "fixed_income_percentage": 0.0,
-            "etf_percentage": 50.0,
-            "individual_stock_percentage": 50.0
-        },
-        "notes": "Long-term aggressive growth strategy suitable for investors with high risk tolerance and long time horizons."
+        'portfolio_type': 'aggressive',
+        'risk_profile': 'high',
+        'rebalancing_frequency': 'quarterly',
+        'tax_optimization': True
     }
+
+
+def get_target_portfolio_by_type(portfolio_type: str) -> TargetPortfolio:
+    """Get target portfolio allocation by type.
+    
+    Args:
+        portfolio_type: Type of portfolio ('aggressive', 'balanced', 'conservative')
+    
+    Returns:
+        TargetPortfolio: Target allocation strategy
+    """
+    if portfolio_type.lower() == 'aggressive':
+        return TargetPortfolio(
+            name="Aggressive Growth",
+            allocations={
+                AssetClass.US_EQUITY: 70.0,
+                AssetClass.INTERNATIONAL_EQUITY: 30.0,
+                AssetClass.FIXED_INCOME: 0.0,
+                AssetClass.ALTERNATIVES: 0.0,
+                AssetClass.CASH: 0.0
+            },
+            risk_profile=RiskProfile.HIGH,
+            description="High-growth portfolio focused on equity investments"
+        )
+    elif portfolio_type.lower() == 'balanced':
+        return TargetPortfolio(
+            name="Balanced",
+            allocations={
+                AssetClass.US_EQUITY: 40.0,
+                AssetClass.INTERNATIONAL_EQUITY: 20.0,
+                AssetClass.FIXED_INCOME: 35.0,
+                AssetClass.ALTERNATIVES: 0.0,
+                AssetClass.CASH: 5.0
+            },
+            risk_profile=RiskProfile.MEDIUM,
+            description="Balanced portfolio with moderate risk and diversification"
+        )
+    elif portfolio_type.lower() == 'conservative':
+        return TargetPortfolio(
+            name="Conservative",
+            allocations={
+                AssetClass.US_EQUITY: 20.0,
+                AssetClass.INTERNATIONAL_EQUITY: 10.0,
+                AssetClass.FIXED_INCOME: 60.0,
+                AssetClass.ALTERNATIVES: 0.0,
+                AssetClass.CASH: 10.0
+            },
+            risk_profile=RiskProfile.LOW,
+            description="Conservative portfolio focused on capital preservation"
+        )
+    else:
+        # Default to balanced if unknown type
+        return get_target_portfolio_by_type('balanced')

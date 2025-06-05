@@ -741,12 +741,13 @@ class PortfolioAnalyticsEngine:
         )
     
     @classmethod
-    def format_portfolio_summary(cls, metrics: PortfolioMetrics, investment_strategy: Dict = None) -> str:
+    def format_portfolio_summary(cls, metrics: PortfolioMetrics, investment_strategy: Dict = None, positions: List[PortfolioPosition] = None) -> str:
         """Format portfolio metrics into a readable summary.
         
         Args:
             metrics: Portfolio metrics
             investment_strategy: Optional user investment strategy
+            positions: Optional list of positions for detailed P/L display
             
         Returns:
             str: Formatted portfolio summary
@@ -798,6 +799,30 @@ class PortfolioAnalyticsEngine:
             if float(percentage) > 0:
                 security_type_name = security_type.value.replace('_', ' ').title()
                 summary.append(f"{security_type_name}: {float(percentage):.1f}%")
+        
+        # Individual positions with P/L (if provided)
+        if positions and len(positions) > 0:
+            summary.append(f"\n## Individual Positions")
+            summary.append("*P/L shown below represents unrealized gains/losses since purchase (total position performance)*")
+            
+            # Sort positions by market value (largest first)
+            sorted_positions = sorted(positions, key=lambda p: p.market_value, reverse=True)
+            
+            for position in sorted_positions:
+                if position.market_value > 0:  # Only show positions with value
+                    position_line = f"{position.symbol}: ${float(position.market_value):,.2f}"
+                    
+                    # Add P/L information if available
+                    if position.unrealized_pl is not None and position.unrealized_plpc is not None:
+                        pl_indicator = "📈" if position.unrealized_pl >= 0 else "📉"
+                        pl_value = float(position.unrealized_pl)
+                        pl_percent = float(position.unrealized_plpc) * 100  # Convert decimal to percentage
+                        
+                        # More descriptive P/L explanation
+                        pl_description = "gain" if position.unrealized_pl >= 0 else "loss"
+                        position_line += f" ({pl_indicator} {pl_description} of ${abs(pl_value):,.2f}, {pl_percent:+.2f}% since purchase)"
+                    
+                    summary.append(f"  {position_line}")
         
         # Performance
         summary.append(f"\n## Performance")

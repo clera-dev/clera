@@ -2,21 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from "@supabase/ssr";
 
 // Paths that are always accessible regardless of auth state
-const publicPaths = ['/', '/sign-in', '/sign-up', '/auth/callback', '/auth/confirm', '/protected/reset-password'];
+const publicPaths = ['/', '/auth/callback', '/auth/confirm', '/protected/reset-password'];
 
-// Paths that are accessible only after onboarding is complete
-const protectedPostOnboardingPaths = [
+// Auth pages that authenticated users should not access
+const authPages = ['/sign-in', '/sign-up', '/forgot-password'];
+
+const protectedPaths = [
   '/dashboard',
+  '/portfolio',
   '/invest',
   '/chat',
   '/news',
-  '/info',
-  '/settings'
+  '/settings',
+  '/notes',
 ];
 
-// Paths that require both completed onboarding AND funding
-const fundingRequiredPaths = [
-  '/portfolio'
+// API routes that require completed onboarding
+const protectedApiPaths = [
+  '/api/portfolio',
+  '/api/broker',
+  '/api/investment',
+  '/api/account',
+  '/api/chat',
+  '/api/conversations',
+  '/api/resume-chat',
+  '/api/news/portfolio-summary',
+  '/api/news/watchlist',
+  '/api/assets',
+  '/api/user',
+  '/api/ws/portfolio',
 ];
 
 export async function middleware(request: NextRequest) {
@@ -28,7 +42,7 @@ export async function middleware(request: NextRequest) {
       },
     });
 
-    // Create supabase client with the non-deprecated pattern
+    // Create supabase client
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -55,75 +69,107 @@ export async function middleware(request: NextRequest) {
       return response;
     }
 
-    // Get user - Note: In server-side middleware, getUser is actually appropriate
-    // but we're adding explicit context to prevent confusion with client-side usage
+    // Get user authentication status
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    // If no session, redirect to sign in
+    // Handle auth pages (sign-in, sign-up, forgot-password)
+    if (authPages.some(authPage => path.startsWith(authPage))) {
+      // If user is authenticated, redirect to portfolio
+      if (user) {
+        const redirectUrl = new URL('/portfolio', request.url);
+        return NextResponse.redirect(redirectUrl);
+      }
+      // If not authenticated, allow access to auth pages
+      return response;
+    }
+
+    // For all other routes, require authentication
     if (!user) {
       const redirectUrl = new URL('/sign-in', request.url);
       return NextResponse.redirect(redirectUrl);
     }
 
-    // For protected paths that require completed onboarding
-    if (protectedPostOnboardingPaths.some(protectedPath => path.startsWith(protectedPath))) {
-      // Check onboarding status from the database
-      const { data: onboardingData } = await supabase
-        .from('user_onboarding')
-        .select('status')
-        .eq('user_id', user.id)
-        .single();
-      
-      // Check if onboarding is complete (status is 'submitted' or 'approved')
-      const hasCompletedOnboarding = 
-        onboardingData?.status === 'submitted' || 
-        onboardingData?.status === 'approved';
-      
-      // If still in progress or not started, redirect to the onboarding flow
-      if (!hasCompletedOnboarding) {
-        // Redirect to protected page to continue onboarding
-        const redirectUrl = new URL('/protected', request.url);
-        const redirectResponse = NextResponse.redirect(redirectUrl);
+    // For protected paths and API routes that require completed onboarding
+    const requiresOnboarding = 
+      protectedPaths.some(protectedPath => path.startsWith(protectedPath)) ||
+      protectedApiPaths.some(apiPath => path.startsWith(apiPath));
+
+    if (requiresOnboarding) {
+      try {
+        // Check onboarding status from the database
+        const { data: onboardingData, error } = await supabase
+          .from('user_onboarding')
+          .select('status')
+          .eq('user_id', user.id)
+          .single();
         
-        // Store the intended URL in a cookie for later (after onboarding completion)
-        redirectResponse.cookies.set('intended_redirect', path, {
-          maxAge: 3600,
-          path: '/',
-          sameSite: 'strict'
-        });
+        // Handle database errors or missing records
+        if (error) {
+          console.error('Onboarding status check error:', error);
+          // If we can't check onboarding status, assume incomplete and redirect to onboarding
+          if (path.startsWith('/api/')) {
+            // For API routes, return 401 instead of redirect
+            return new NextResponse(
+              JSON.stringify({ error: 'Onboarding not completed' }),
+              { status: 401, headers: { 'Content-Type': 'application/json' } }
+            );
+          } else {
+            // For page routes, redirect to onboarding
+            const redirectUrl = new URL('/protected', request.url);
+            const redirectResponse = NextResponse.redirect(redirectUrl);
+            redirectResponse.cookies.set('intended_redirect', path, {
+              maxAge: 3600,
+              path: '/',
+              sameSite: 'strict'
+            });
+            return redirectResponse;
+          }
+        }
         
-        return redirectResponse;
+        // Check if onboarding is complete (status is 'submitted' or 'approved')
+        const hasCompletedOnboarding = 
+          onboardingData?.status === 'submitted' || 
+          onboardingData?.status === 'approved';
+        
+        // If onboarding not completed, redirect to onboarding flow or return error
+        if (!hasCompletedOnboarding) {
+          if (path.startsWith('/api/')) {
+            // For API routes, return 401 instead of redirect
+            return new NextResponse(
+              JSON.stringify({ error: 'Onboarding not completed' }),
+              { status: 401, headers: { 'Content-Type': 'application/json' } }
+            );
+          } else {
+            // For page routes, redirect to onboarding
+            const redirectUrl = new URL('/protected', request.url);
+            const redirectResponse = NextResponse.redirect(redirectUrl);
+            
+            // Store the intended URL for after onboarding completion
+            redirectResponse.cookies.set('intended_redirect', path, {
+              maxAge: 3600,
+              path: '/',
+              sameSite: 'strict'
+            });
+            
+            return redirectResponse;
+          }
+        }
+      } catch (dbError) {
+        console.error('Database connection error in middleware:', dbError);
+        // If database is completely unavailable, redirect to onboarding for safety
+        if (path.startsWith('/api/')) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Service temporarily unavailable' }),
+            { status: 503, headers: { 'Content-Type': 'application/json' } }
+          );
+        } else {
+          const redirectUrl = new URL('/protected', request.url);
+          return NextResponse.redirect(redirectUrl);
+        }
       }
     }
-
-    // For funding required paths
-    if (fundingRequiredPaths.some(fundingPath => path.startsWith(fundingPath))) {
-      // First check if onboarding is complete
-      const { data: onboardingData } = await supabase
-        .from('user_onboarding')
-        .select('status')
-        .eq('user_id', user.id)
-        .single();
-      
-      const hasCompletedOnboarding = 
-        onboardingData?.status === 'submitted' || 
-        onboardingData?.status === 'approved';
-      
-      if (!hasCompletedOnboarding) {
-        // Redirect to protected page to complete onboarding first
-        const redirectUrl = new URL('/protected', request.url);
-        const redirectResponse = NextResponse.redirect(redirectUrl);
-        
-        redirectResponse.cookies.set('intended_redirect', path, {
-          maxAge: 3600,
-          path: '/',
-          sameSite: 'strict'
-        });
-        
-        return redirectResponse;
-      }
       
       // Check if user has funded their account (has transfers)
       const { data: transfers } = await supabase
@@ -151,6 +197,7 @@ export async function middleware(request: NextRequest) {
 
   } catch (error) {
     console.error('Middleware error:', error);
+    // On any other error, allow the request through but log the error
     return NextResponse.next();
   }
 }
