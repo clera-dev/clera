@@ -9,14 +9,17 @@ import { useRouter } from "next/navigation";
 export default function ClientAuthButtons() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isClient, setIsClient] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
+    setIsClient(true);
+    
     // Immediately check session on component mount
     const checkSession = async () => {
       try {
-        // Get session is more reliable than getUser for checking current auth state
+        // Get session first for immediate response
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
@@ -52,6 +55,9 @@ export default function ClientAuthButtons() {
           setUser(null);
           router.refresh();
         }
+        
+        // Ensure loading is false after auth state changes
+        setLoading(false);
       }
     );
 
@@ -77,7 +83,8 @@ export default function ClientAuthButtons() {
     }
   };
 
-  if (loading) {
+  // Don't render anything on server-side or while loading to prevent flash
+  if (!isClient || loading) {
     return <div className="h-8 w-24 bg-gray-200 animate-pulse rounded-md"></div>;
   }
 

@@ -7,7 +7,6 @@ const publicPaths = ['/', '/auth/callback', '/auth/confirm', '/protected/reset-p
 // Auth pages that authenticated users should not access
 const authPages = ['/sign-in', '/sign-up', '/forgot-password'];
 
-// Paths that require authentication AND completed onboarding
 const protectedPaths = [
   '/dashboard',
   '/portfolio',
@@ -169,6 +168,28 @@ export async function middleware(request: NextRequest) {
           const redirectUrl = new URL('/protected', request.url);
           return NextResponse.redirect(redirectUrl);
         }
+      }
+    }
+      
+      // Check if user has funded their account (has transfers)
+      const { data: transfers } = await supabase
+        .from('user_transfers')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1);
+      
+      // If they haven't funded their account, redirect to protected page for funding
+      if (!transfers || transfers.length === 0) {
+        const redirectUrl = new URL('/protected', request.url);
+        const redirectResponse = NextResponse.redirect(redirectUrl);
+        
+        redirectResponse.cookies.set('intended_redirect', path, {
+          maxAge: 3600,
+          path: '/',
+          sameSite: 'strict'
+        });
+        
+        return redirectResponse;
       }
     }
 

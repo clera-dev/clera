@@ -28,4 +28,5 @@ stages:
     # requires_approval: true  # Removed - PR approval is sufficient
     # Optional: use test commands to validate this stage of your build.
     # test_commands: [echo 'running tests', make test]
+    # Pipeline updated to deploy both api-service and websocket-lb-service automatically
 
