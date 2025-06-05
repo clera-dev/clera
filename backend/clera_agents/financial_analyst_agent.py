@@ -5,10 +5,15 @@
 
 # Import necessary libraries
 import os
+import logging
 from dotenv import load_dotenv
 from urllib.request import urlopen
 import certifi
 import json
+from typing import Dict
+from decimal import Decimal, InvalidOperation
+from datetime import datetime, timedelta
+import pandas as pd
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 
@@ -23,6 +28,21 @@ if openai_api_key:
     os.environ["OPENAI_API_KEY"] = openai_api_key
 
 fin_modeling_prep_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
+
+# Initialize Alpaca historical data client for performance analysis
+from alpaca.data import StockHistoricalDataClient, TimeFrame
+from alpaca.data.requests import StockBarsRequest
+
+data_client = StockHistoricalDataClient(
+    api_key=os.getenv("APCA_API_KEY_ID"),
+    secret_key=os.getenv("APCA_API_SECRET_KEY")
+)
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Import shared market data utilities
+from utils.market_data import get_stock_quote
 
 ###############################################################################
 # Import LLM client(s)
@@ -77,16 +97,6 @@ Query: {query}
     except Exception as e:
         return f"Error searching for information: {e}"
 
-@tool("build_investment_themes")
-def build_investment_themes(query: str) -> str:
-    """Build in-depth investment themes based on the user's query."""
-    research_prompt = f"You are the world's BEST financial analyst. Build in-depth investment themes based on the user's query that provide actionable insights for the user to make informed investment decisions."
-    messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
-    try:
-        response = deep_research_perplexity.invoke(messages)
-        return response.content
-    except Exception as e:
-        return f"Error building investment themes: {e}"
 
 @tool("get_stock_price")
 def get_stock_price(ticker: str) -> str:
@@ -104,13 +114,339 @@ def get_stock_price(ticker: str) -> str:
 
     return f"The current price of {ticker} is {price}."
 
-def get_jsonparsed_data(url):
-    """Get the JSON data from a URL."""
-    response = urlopen(url, cafile=certifi.where())
-    data = response.read().decode("utf-8")
-    return json.loads(data)
+###############################################################################
+# Performance Analysis Functions (moved from portfolio_management_agent.py)
+###############################################################################
 
-def get_stock_quote(symbol: str) -> dict:
-    """Get the stock quote for a given symbol using the Financial Modeling Prep API."""
-    url = (f"https://financialmodelingprep.com/api/v3/quote-short/{symbol}?apikey={fin_modeling_prep_api_key}")
-    return get_jsonparsed_data(url)
+def validate_symbol_and_dates(symbol: str, start_date: str, end_date: str) -> Dict:
+    """Validate inputs and check data availability.
+    
+    Args:
+        symbol: Stock symbol to validate
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+    
+    Returns:
+        Dict: Validation result with 'valid' key or 'error' key
+    """
+    # Validate date format and range
+    try:
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        if start_dt >= end_dt:
+            return {"error": "Start date must be before end date"}
+        
+        if (end_dt - start_dt).days > 365 * 5:  # 5 years max
+            return {"error": "Date range too large (max 5 years)"}
+        
+        # Check if dates are too far in the future
+        if end_dt > datetime.now() + timedelta(days=1):
+            return {"error": "End date cannot be in the future"}
+            
+    except ValueError:
+        return {"error": "Invalid date format. Use YYYY-MM-DD"}
+    
+    # Basic symbol validation
+    if not symbol or not symbol.isalpha():
+        return {"error": "Invalid symbol format. Use uppercase letters only (e.g., 'AAPL')"}
+    
+    # Symbol should be reasonable length
+    if len(symbol) > 10:
+        return {"error": "Symbol too long. Most stock symbols are 1-5 characters"}
+    
+    return {"valid": True}
+
+
+def adjust_for_market_days(date_str: str, direction: str = "backward") -> str:
+    """Adjust date to nearest market day if needed.
+    
+    Args:
+        date_str: Date string in YYYY-MM-DD format
+        direction: "backward" or "forward" for adjustment direction
+    
+    Returns:
+        str: Adjusted date string
+    """
+    try:
+        from pandas.tseries.holiday import USFederalHolidayCalendar
+        from pandas.tseries.offsets import CustomBusinessDay
+        
+        date_obj = pd.to_datetime(date_str)
+        us_bd = CustomBusinessDay(calendar=USFederalHolidayCalendar())
+        
+        if direction == "backward":
+            # Find previous business day if current date is not a business day
+            if date_obj.weekday() >= 5:  # Weekend
+                adjusted_date = date_obj - pd.DateOffset(days=(date_obj.weekday() - 4))
+            else:
+                adjusted_date = date_obj
+        else:
+            # Find next business day if current date is not a business day
+            if date_obj.weekday() >= 5:  # Weekend
+                adjusted_date = date_obj + pd.DateOffset(days=(7 - date_obj.weekday()))
+            else:
+                adjusted_date = date_obj
+        
+        return adjusted_date.strftime('%Y-%m-%d')
+    except Exception as e:
+        logger.warning(f"Could not adjust date {date_str} for market days: {e}")
+        return date_str
+
+
+def get_historical_prices(symbol: str, start_date: str, end_date: str = None) -> Dict:
+    """Get historical prices for performance calculation.
+    
+    Args:
+        symbol: Stock symbol (e.g., 'AAPL', 'SPY')
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format (defaults to today)
+    
+    Returns:
+        Dict: Historical price data with start/end prices and metadata
+    
+    Raises:
+        ValueError: If no data available for the symbol/date range
+        Exception: For API errors or other issues
+    """
+    if end_date is None:
+        end_date = datetime.now().strftime('%Y-%m-%d')
+    
+    logger.info(f"[Performance Analysis] Fetching historical data for {symbol} from {start_date} to {end_date}")
+    
+    try:
+        # Convert dates to timezone-aware datetime objects (market timezone)
+        start_time = pd.to_datetime(start_date).tz_localize('America/New_York')
+        end_time = pd.to_datetime(end_date).tz_localize('America/New_York')
+        
+        # Create request for daily bars
+        request_params = StockBarsRequest(
+            symbol_or_symbols=[symbol],
+            timeframe=TimeFrame.Day,
+            start=start_time,
+            end=end_time
+        )
+        
+        # Fetch data
+        bars = data_client.get_stock_bars(request_params)
+        
+        # Convert to DataFrame for easy manipulation
+        df = bars.df
+        if df.empty:
+            raise ValueError(f"No price data available for {symbol} in the specified date range ({start_date} to {end_date})")
+        
+        # Extract start and end prices
+        start_price = df.iloc[0]['close']
+        end_price = df.iloc[-1]['close']
+        
+        # Get actual dates from the data (in case of market holidays/weekends)
+        actual_start_date = df.index[0][1].strftime('%Y-%m-%d')  # [1] because of MultiIndex (symbol, timestamp)
+        actual_end_date = df.index[-1][1].strftime('%Y-%m-%d')
+        
+        logger.info(f"[Performance Analysis] Retrieved {len(df)} data points for {symbol}")
+        
+        return {
+            'symbol': symbol,
+            'requested_start_date': start_date,
+            'requested_end_date': end_date,
+            'actual_start_date': actual_start_date,
+            'actual_end_date': actual_end_date,
+            'start_price': Decimal(str(start_price)),
+            'end_price': Decimal(str(end_price)),
+            'price_change': Decimal(str(end_price - start_price)),
+            'percentage_change': Decimal(str((end_price - start_price) / start_price * 100)),
+            'data_points': len(df),
+            'has_data': True
+        }
+        
+    except Exception as e:
+        logger.error(f"[Performance Analysis] Error fetching data for {symbol}: {e}")
+        raise
+
+
+def calculate_annualized_return(total_return_pct: Decimal, days: int) -> Decimal:
+    """Calculate annualized return from total return percentage and time period.
+    
+    Args:
+        total_return_pct: Total return as percentage (e.g., 10.5 for 10.5%)
+        days: Number of days in the period
+    
+    Returns:
+        Decimal: Annualized return as percentage
+    """
+    if days <= 0:
+        return Decimal('0')
+    
+    years = Decimal(str(days)) / Decimal('365.25')
+    
+    # Handle edge cases
+    if total_return_pct <= Decimal('-100'):  # Total loss
+        return Decimal('-100')
+    
+    if years < Decimal('0.1'):  # Less than ~36 days, return simple annualized
+        return total_return_pct * (Decimal('365.25') / Decimal(str(days)))
+    
+    # Convert percentage to decimal (e.g., 10% -> 0.1)
+    total_return_decimal = total_return_pct / Decimal('100')
+    
+    try:
+        # Calculate: (1 + return)^(1/years) - 1
+        compound_factor = (Decimal('1') + total_return_decimal) ** (Decimal('1') / years)
+        annualized_return = (compound_factor - Decimal('1')) * Decimal('100')
+        return annualized_return
+    except (OverflowError, InvalidOperation):
+        # Fallback for extreme values
+        return total_return_pct * (Decimal('365.25') / Decimal(str(days)))
+
+
+def format_performance_analysis(performance_data: Dict, benchmark_data: Dict = None) -> str:
+    """Format performance data into user-friendly output.
+    
+    Args:
+        performance_data: Performance data from get_historical_prices
+        benchmark_data: Optional benchmark comparison data
+    
+    Returns:
+        str: Formatted performance analysis
+    """
+    symbol = performance_data['symbol']
+    start_date = performance_data['actual_start_date']
+    end_date = performance_data['actual_end_date']
+    price_change = performance_data['price_change']
+    pct_change = performance_data['percentage_change']
+    
+    # Get current timestamp for analysis recency
+    current_timestamp = datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')
+    
+    # Calculate time period
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+    days = (end_dt - start_dt).days
+    
+    # Calculate annualized return
+    annualized_return = calculate_annualized_return(pct_change, days)
+    
+    # Determine performance emoji
+    perf_emoji = "📈" if pct_change >= 0 else "📉"
+    
+    summary = f"""📊 **ANALYSIS GENERATED:** {current_timestamp}
+
+{perf_emoji} **Performance Analysis: {symbol}**
+
+**Period:** {start_date} to {end_date} ({days} days)
+
+**Price Performance:**
+• Start Price: ${performance_data['start_price']:,.2f}
+• End Price: ${performance_data['end_price']:,.2f}
+• Price Change: ${price_change:+,.2f} ({pct_change:+.2f}%)
+
+**Returns Analysis:**
+• Total Return: {pct_change:+.2f}%
+• Annualized Return: {annualized_return:+.2f}%"""
+
+    # Add time period context
+    if days < 30:
+        summary += f"\n• Note: Short period analysis (<30 days)"
+    elif days < 365:
+        summary += f"\n• Note: Less than 1 year of data"
+
+    # Add benchmark comparison if available
+    if benchmark_data and benchmark_data.get('has_data'):
+        spy_return = benchmark_data['percentage_change']
+        outperformance = pct_change - spy_return
+        
+        outperf_emoji = "🎯" if outperformance >= 0 else "📊"
+        
+        summary += f"""
+
+{outperf_emoji} **vs S&P 500 (SPY) Benchmark:**
+• SPY Return: {spy_return:+.2f}%
+• Outperformance: {outperformance:+.2f} percentage points
+• Relative Performance: {"Better" if outperformance >= 0 else "Worse"} than market"""
+
+        if abs(outperformance) > 5:
+            summary += f"\n• Note: Significant {'outperformance' if outperformance > 0 else 'underperformance'} vs market"
+
+    summary += f"""
+
+**Data Quality:**
+• Data Points: {performance_data['data_points']} trading days
+• Data Source: Alpaca Markets (daily close prices)"""
+
+    return summary
+
+
+@tool("calculate_investment_performance")
+def calculate_investment_performance(
+    symbol: str,
+    start_date: str,
+    end_date: str = "",
+    compare_to_sp500: bool = True
+) -> str:
+    """Calculate investment performance between two dates.
+    
+    This tool analyzes the price performance of any stock symbol over a specified
+    time period, with optional comparison to the S&P 500 (SPY) as a benchmark.
+    
+    Args:
+        symbol: Stock symbol (e.g., 'AAPL', 'MSFT', 'TSLA')
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format (defaults to today if not specified)
+        compare_to_sp500: Whether to include S&P 500 benchmark comparison (default: True)
+    
+    Returns:
+        str: Formatted performance analysis including:
+             - Price change (absolute and percentage)
+             - Annualized return calculation
+             - Optional S&P 500 benchmark comparison
+             - Key statistics and data quality metrics
+    
+    Examples:
+        - YTD performance: calculate_investment_performance('AAPL', '2024-01-01')
+        - Custom period: calculate_investment_performance('MSFT', '2023-06-15', '2024-06-15')
+        - No benchmark: calculate_investment_performance('TSLA', '2024-01-01', compare_to_sp500=False)
+    """
+    try:
+        # Set default end date to today if not provided
+        if not end_date or end_date == "":
+            end_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # Validate inputs
+        validation = validate_symbol_and_dates(symbol.upper(), start_date, end_date)
+        if 'error' in validation:
+            return f"❌ **Error:** {validation['error']}"
+        
+        # Adjust dates for market days if needed
+        adjusted_start = adjust_for_market_days(start_date, "forward")
+        adjusted_end = adjust_for_market_days(end_date, "backward")
+        
+        logger.info(f"[Performance Analysis] Analyzing {symbol.upper()} from {start_date} to {end_date}")
+        
+        # Get performance data for the target symbol
+        try:
+            performance_data = get_historical_prices(symbol.upper(), adjusted_start, adjusted_end)
+        except ValueError as ve:
+            return f"❌ **Data Error:** {str(ve)}\n\nPlease verify the symbol exists and has trading data for the specified period."
+        except Exception as e:
+            logger.error(f"[Performance Analysis] API error for {symbol}: {e}")
+            return f"❌ **API Error:** Could not retrieve data for {symbol.upper()}. This might be due to:\n• Invalid symbol\n• Market data service unavailable\n• Network connectivity issues\n\nPlease try again later or verify the symbol."
+        
+        # Get benchmark data if requested
+        benchmark_data = None
+        if compare_to_sp500:
+            try:
+                logger.info(f"[Performance Analysis] Fetching S&P 500 benchmark data")
+                benchmark_data = get_historical_prices('SPY', adjusted_start, adjusted_end)
+            except Exception as e:
+                logger.warning(f"[Performance Analysis] Could not fetch SPY benchmark data: {e}")
+                # Continue without benchmark rather than failing
+        
+        # Format and return the analysis
+        analysis = format_performance_analysis(performance_data, benchmark_data)
+        
+        logger.info(f"[Performance Analysis] Successfully completed analysis for {symbol.upper()}")
+        return analysis
+        
+    except Exception as e:
+        logger.error(f"[Performance Analysis] Unexpected error in calculate_investment_performance: {e}", exc_info=True)
+        return f"❌ **Unexpected Error:** An error occurred while analyzing {symbol}. Please try again later.\n\nError details: {str(e)}"

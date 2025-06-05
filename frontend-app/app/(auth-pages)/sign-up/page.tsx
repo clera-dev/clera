@@ -6,10 +6,23 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { SmtpMessage } from "../smtp-message";
+import { createClient } from "@/utils/supabase/server";
+import { redirect } from "next/navigation";
 
 export default async function Signup(props: {
   searchParams: Promise<Message>;
 }) {
+  // Check if user is already signed in
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // If user is authenticated, redirect to portfolio
+  if (user) {
+    redirect("/portfolio");
+  }
+
   const searchParams = await props.searchParams;
   if ("message" in searchParams) {
     return (

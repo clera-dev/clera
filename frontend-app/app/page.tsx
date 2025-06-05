@@ -20,7 +20,7 @@ export default async function Home() {
       
       // Redirect if user is successfully fetched
       if (data?.user) {
-        return redirect("/dashboard");
+        return redirect("/portfolio");
       }
     } catch (authError) {
       // Auth error when getting user - just show the hero page

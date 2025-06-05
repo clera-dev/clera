@@ -74,8 +74,8 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
       const redirectCookie = cookies.find(cookie => cookie.trim().startsWith('intended_redirect='));
       
       if (!redirectCookie) {
-        // If there's no redirect cookie yet, set default to dashboard
-        document.cookie = 'intended_redirect=/dashboard; Path=/; Max-Age=3600; SameSite=Strict';
+        // If there's no redirect cookie yet, set default to portfolio
+        document.cookie = 'intended_redirect=/portfolio; Path=/; Max-Age=3600; SameSite=Strict';
       }
     }
   }, []);

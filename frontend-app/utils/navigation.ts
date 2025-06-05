@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
  * Get the intended redirect URL from cookies after onboarding is complete
  */
 export function getIntendedRedirect(): string {
-  if (typeof document === 'undefined') return '/dashboard';
+  if (typeof document === 'undefined') return '/portfolio';
   
   // Get the redirect cookie
   const cookies = document.cookie.split(';');
@@ -23,7 +23,7 @@ export function getIntendedRedirect(): string {
   }
   
   // Default redirect if no intended URL was stored
-  return '/dashboard';
+  return '/portfolio';
 }
 
 /**

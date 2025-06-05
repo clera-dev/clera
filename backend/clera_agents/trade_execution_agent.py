@@ -20,7 +20,7 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 
 # Import our Supabase helper
 from utils.supabase import get_user_alpaca_account_id
-from .financial_analyst_agent import get_stock_quote
+from utils.market_data import get_stock_quote
 
 # Configure logging
 logger = logging.getLogger(__name__)

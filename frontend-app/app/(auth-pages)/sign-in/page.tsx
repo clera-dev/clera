@@ -5,8 +5,21 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { createClient } from "@/utils/supabase/server";
+import { redirect } from "next/navigation";
 
 export default async function Login(props: { searchParams: Promise<Message> }) {
+  // Check if user is already signed in
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // If user is authenticated, redirect to portfolio
+  if (user) {
+    redirect("/portfolio");
+  }
+
   const searchParams = await props.searchParams;
   return (
     <form action={signInAction} className="flex flex-col min-w-[380px] max-w-[380px] mx-auto bg-black/30 p-10 rounded-xl shadow-lg border border-gray-800">
