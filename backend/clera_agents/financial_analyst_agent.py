@@ -29,14 +29,24 @@ if openai_api_key:
 
 fin_modeling_prep_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
 
-# Initialize Alpaca historical data client for performance analysis
+# Import Alpaca historical data client for performance analysis (initialize on demand)
 from alpaca.data import StockHistoricalDataClient, TimeFrame
 from alpaca.data.requests import StockBarsRequest
 
-data_client = StockHistoricalDataClient(
-    api_key=os.getenv("APCA_API_KEY_ID"),
-    secret_key=os.getenv("APCA_API_SECRET_KEY")
-)
+def get_data_client():
+    """Get Alpaca data client with proper error handling."""
+    api_key = os.getenv("APCA_API_KEY_ID")
+    secret_key = os.getenv("APCA_API_SECRET_KEY")
+    
+    if not api_key or not secret_key:
+        logger.warning("[Financial Analyst] Alpaca API credentials not found - some features may be limited")
+        return None
+    
+    try:
+        return StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
+    except Exception as e:
+        logger.error(f"[Financial Analyst] Failed to initialize Alpaca data client: {e}")
+        return None
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -227,7 +237,11 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str = None) ->
             end=end_time
         )
         
-        # Fetch data
+        # Get data client and fetch data
+        data_client = get_data_client()
+        if not data_client:
+            raise Exception("Alpaca data client not available - API credentials may be missing")
+        
         bars = data_client.get_stock_bars(request_params)
         
         # Convert to DataFrame for easy manipulation
