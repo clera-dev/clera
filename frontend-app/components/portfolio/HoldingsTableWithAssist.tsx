@@ -35,12 +35,18 @@ interface HoldingsTableWithAssistProps {
   positions: PositionData[];
   isLoading: boolean;
   disabled?: boolean;
+  onInvestClick?: (symbol: string) => void;
+  onSellClick?: (symbol: string, currentQty: string) => void;
+  accountId?: string | null;
 }
 
 const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
   positions,
   isLoading,
-  disabled = false
+  disabled = false,
+  onInvestClick,
+  onSellClick,
+  accountId
 }) => {
   const { openChatWithPrompt, isEnabled } = useCleraAssist();
   
@@ -108,15 +114,20 @@ const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
     return (
       <Card className="bg-card shadow-lg mt-4">
         <CardContent className="p-0">
-          {isLoading && positions.length === 0 ? (
-            <Skeleton className="h-64 w-full rounded-t-none" />
-          ) : positions.length > 0 ? (
-            <HoldingsTable positions={positions} />
-          ) : (
-            <p className="text-muted-foreground p-6 text-center">
-              Waiting for your first trade to display holdings.
-            </p>
-          )}
+                  {isLoading && positions.length === 0 ? (
+          <Skeleton className="h-64 w-full rounded-t-none" />
+        ) : positions.length > 0 ? (
+          <HoldingsTable 
+            positions={positions} 
+            onInvestClick={onInvestClick}
+            onSellClick={onSellClick}
+            accountId={accountId}
+          />
+        ) : (
+          <p className="text-muted-foreground p-6 text-center">
+            Waiting for your first trade to display holdings.
+          </p>
+        )}
         </CardContent>
       </Card>
     );
@@ -138,7 +149,12 @@ const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
         {isLoading && positions.length === 0 ? (
           <Skeleton className="h-64 w-full rounded-t-none" />
         ) : positions.length > 0 ? (
-          <HoldingsTable positions={positions} />
+          <HoldingsTable 
+            positions={positions} 
+            onInvestClick={onInvestClick}
+            onSellClick={onSellClick}
+            accountId={accountId}
+          />
         ) : (
           <p className="text-muted-foreground p-6 text-center">
             Waiting for your first trade to display holdings.

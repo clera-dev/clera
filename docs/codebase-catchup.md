@@ -83,8 +83,9 @@ clera/
 ### 5. AI Agent System
 - **Agents**:
   - Financial Analyst Agent (company analysis, recommendations)
-  - Portfolio Management Agent (portfolio optimization)
+  - Portfolio Management Agent (portfolio optimization, purchase history analysis)
   - Trade Execution Agent (order management)
+- **Implementation**: Fixed import errors and consolidated duplicate functions across agents
 - **Orchestration**: LangGraph workflows in `backend/clera_agents/graph.py`
 
 ## Database Schema (Supabase)

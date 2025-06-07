@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from "@supabase/ssr";
 
 // Paths that are always accessible regardless of auth state
-const publicPaths = ['/', '/auth/callback', '/auth/confirm', '/protected/reset-password'];
+const publicPaths = [
+  '/auth/callback', 
+  '/auth/confirm', 
+  '/protected/reset-password', 
+  '/ingest',
+  '/.well-known'
+];
 
 // Auth pages that authenticated users should not access
 const authPages = ['/sign-in', '/sign-up', '/forgot-password'];
@@ -35,6 +41,8 @@ const protectedApiPaths = [
 ];
 
 export async function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+  
   try {
     // Create a response object
     let response = NextResponse.next({
@@ -62,33 +70,50 @@ export async function middleware(request: NextRequest) {
       }
     );
 
-    // Get current path
-    const path = request.nextUrl.pathname;
+    console.log(`[Middleware] Processing: ${path}`);
+
+    // Handle the homepage specifically
+    if (path === '/') {
+      console.log(`[Middleware] Homepage access allowed: ${path}`);
+      return response;
+    }
 
     // Check if the route is public (no auth needed)
     if (publicPaths.some(publicPath => path.startsWith(publicPath))) {
+      console.log(`[Middleware] Public path allowed: ${path}`);
       return response;
     }
 
     // Get user authentication status
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    let user = null;
+    try {
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+      user = authUser;
+      console.log(`[Middleware] User auth status: ${user ? 'authenticated' : 'unauthenticated'}`);
+    } catch (authError) {
+      console.log(`[Middleware] Auth error: ${authError instanceof Error ? authError.message : 'Unknown auth error'}`);
+      user = null;
+    }
 
     // Handle auth pages (sign-in, sign-up, forgot-password)
     if (authPages.some(authPage => path.startsWith(authPage))) {
       // If user is authenticated, redirect to portfolio
       if (user) {
+        console.log(`[Middleware] Authenticated user accessing auth page, redirecting to portfolio`);
         const redirectUrl = new URL('/portfolio', request.url);
         return NextResponse.redirect(redirectUrl);
       }
       // If not authenticated, allow access to auth pages
+      console.log(`[Middleware] Unauthenticated user accessing auth page, allowing`);
       return response;
     }
 
     // For all other routes, require authentication
     if (!user) {
-      const redirectUrl = new URL('/sign-in', request.url);
+      console.log(`[Middleware] Unauthenticated user accessing protected route, redirecting to homepage`);
+      const redirectUrl = new URL('/', request.url);
       return NextResponse.redirect(redirectUrl);
     }
 
@@ -172,11 +197,28 @@ export async function middleware(request: NextRequest) {
       }
     }
 
+    console.log(`[Middleware] Allowing access to: ${path}`);
     return response;
 
   } catch (error) {
-    console.error('Middleware error:', error);
-    // On any other error, allow the request through but log the error
+    console.error('Middleware error for path:', path, error);
+    
+    // For unauthenticated users trying to access protected routes, redirect to home
+    if (protectedPaths.some(protectedPath => path.startsWith(protectedPath))) {
+      console.log(`[Middleware] Error occurred for protected path, redirecting to homepage`);
+      const redirectUrl = new URL('/', request.url);
+      return NextResponse.redirect(redirectUrl);
+    }
+    
+    // For API routes, return error
+    if (protectedApiPaths.some(apiPath => path.startsWith(apiPath))) {
+      return new NextResponse(
+        JSON.stringify({ error: 'Authentication error' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // For other errors, allow request through but log
     return NextResponse.next();
   }
 }

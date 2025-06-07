@@ -11,7 +11,7 @@ import certifi
 import json
 from typing import List, Optional, Dict
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 # Load environment variables first, with override to ensure they're set
@@ -31,9 +31,13 @@ from clera_agents.types.portfolio_types import (
 from clera_agents.tools.portfolio_analysis import (
     PortfolioPosition, PortfolioAnalyzer, PortfolioAnalyticsEngine
 )
+from clera_agents.tools.purchase_history import (
+    get_comprehensive_account_activities,
+    find_first_purchase_dates
+)
+from utils.account_utils import get_account_id
 
-# Import our Supabase helper
-from utils.supabase import get_user_alpaca_account_id
+
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -45,90 +49,7 @@ broker_client = BrokerClient(
     sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
 )
 
-# Module-level variable to store the last valid account ID
-_LAST_VALID_ACCOUNT_ID = None
-_LAST_VALID_USER_ID = None
 
-def get_account_id(config: RunnableConfig = None) -> str:
-    """Get the account ID for the human.
-
-    Primarily uses get_config() when running in LangGraph Cloud.
-    Falls back to last known ID or Supabase lookup if needed.
-
-    Args:
-        config: Optional RunnableConfig (automatically passed or retrieved).
-
-    Returns:
-        str: Account ID to use for operations.
-    """
-    global _LAST_VALID_ACCOUNT_ID, _LAST_VALID_USER_ID
-
-    current_user_id = None
-    current_account_id = None
-
-    # ---- STRATEGY 1: Use get_config() (Primary for LangGraph Cloud) ----
-    retrieved_config = config
-    if retrieved_config is None:
-        try:
-            retrieved_config = get_config()
-            logger.info(f"[Portfolio Agent] Retrieved config via get_config(): {retrieved_config}")
-        except Exception as e:
-            logger.warning(f"[Portfolio Agent] Failed to get config via get_config(), proceeding with fallback strategies: {e}")
-            retrieved_config = None
-
-    if retrieved_config and isinstance(retrieved_config.get('configurable'), dict):
-        configurable = retrieved_config['configurable']
-        current_account_id = configurable.get('account_id')
-        current_user_id = configurable.get('user_id') # Get user_id as well
-
-        if current_account_id:
-            logger.info(f"[Portfolio Agent] Using account_id from config: {current_account_id}")
-            _LAST_VALID_ACCOUNT_ID = current_account_id
-            if current_user_id: _LAST_VALID_USER_ID = current_user_id
-            return current_account_id
-        elif current_user_id:
-            _LAST_VALID_USER_ID = current_user_id
-            logger.info(f"[Portfolio Agent] User ID found in config ({current_user_id}), but no account_id. Will try Supabase lookup.")
-        else:
-            logger.info(f"[Portfolio Agent] Config retrieved but lacks account_id and user_id.")
-    else:
-        logger.info(f"[Portfolio Agent] No valid config retrieved via get_config() or passed argument.")
-
-    # ---- STRATEGY 2: Use User ID (from config if available) for Supabase Lookup ----
-    if current_user_id:
-        logger.info(f"[Portfolio Agent] Attempting Supabase lookup for user_id from config: {current_user_id}")
-        try:
-            db_account_id = get_user_alpaca_account_id(current_user_id)
-            if db_account_id:
-                logger.info(f"[Portfolio Agent] Found account_id via Supabase: {db_account_id}")
-                _LAST_VALID_ACCOUNT_ID = db_account_id
-                return db_account_id
-            else:
-                 logger.warning(f"[Portfolio Agent] Supabase lookup failed for user_id: {current_user_id}")
-        except Exception as e:
-            logger.error(f"[Portfolio Agent] Error during Supabase lookup for {current_user_id}: {e}", exc_info=True)
-
-    # ---- STRATEGY 3: Use last known valid account_id ----
-    if _LAST_VALID_ACCOUNT_ID:
-        logger.info(f"[Portfolio Agent] Using last known valid account_id: {_LAST_VALID_ACCOUNT_ID}")
-        return _LAST_VALID_ACCOUNT_ID
-
-    # ---- STRATEGY 4: Try to get account_id from last known user_id ----
-    if _LAST_VALID_USER_ID:
-        logger.info(f"[Portfolio Agent] Attempting Supabase lookup for last known user_id: {_LAST_VALID_USER_ID}")
-        try:
-            db_account_id = get_user_alpaca_account_id(_LAST_VALID_USER_ID)
-            if db_account_id:
-                logger.info(f"[Portfolio Agent] Found account_id via Supabase (last known user): {db_account_id}")
-                _LAST_VALID_ACCOUNT_ID = db_account_id
-                return db_account_id
-        except Exception as e:
-             logger.error(f"[Portfolio Agent] Error during Supabase lookup for last known user {_LAST_VALID_USER_ID}: {e}", exc_info=True)
-
-    # ---- FALLBACK ----
-    fallback_account_id = "4a045111-ef77-46aa-9f33-6002703376f6" # static account id for testing
-    logger.error("[Portfolio Agent] CRITICAL: Using fallback account_id - all retrieval strategies failed")
-    return fallback_account_id
 
 #@tool("retrieve_portfolio_positions")
 def retrieve_portfolio_positions(state=None, config=None) -> List:
@@ -191,9 +112,9 @@ def create_rebalance_instructions(positions_data: List, target_portfolio_type: O
     try:
         # Ensure positions are retrieved if not passed directly (though they usually are)
         if not positions_data:
-            positions_data = retrieve_portfolio_positions(state=state, config=config)
+             positions_data = retrieve_portfolio_positions(state=state, config=config)
         
-            if not positions_data:
+             if not positions_data:
                 return "❌ **Portfolio Error:** No positions found in your account. Cannot generate rebalancing instructions."
         # Initialize our analytics engine
         analyzer = PortfolioAnalyzer()
@@ -399,6 +320,13 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         # Sort positions by market value (largest first)
         position_details.sort(key=lambda x: x['market_value'], reverse=True)
         
+        # Get first purchase dates for enhanced information
+        first_purchases = find_first_purchase_dates(config=config)
+        
+        # Add first purchase dates to position details
+        for pos in position_details:
+            pos['first_purchase'] = first_purchases.get(pos['symbol'])
+        
         # Get current timestamp
         current_timestamp = datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')
         
@@ -418,10 +346,24 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         # Add position details
         for pos in position_details:
             weight_display = f"{pos['weight']*100:.1f}%"
+            first_purchase_str = ""
+            if pos.get('first_purchase'):
+                purchase_date = pos['first_purchase'].strftime('%b %d, %Y')
+                holding_days = (datetime.now(timezone.utc) - pos['first_purchase']).days
+                if holding_days < 30:
+                    holding_str = f"{holding_days} days"
+                elif holding_days < 365:
+                    months = holding_days // 30
+                    holding_str = f"{months} month{'s' if months != 1 else ''}"
+                else:
+                    years = holding_days // 365
+                    holding_str = f"{years} year{'s' if years != 1 else ''}"
+                first_purchase_str = f"\n• First purchased: {purchase_date} ({holding_str} ago)"
+            
             summary += f"""
 {pos['emoji']} **{pos['symbol']}** ({weight_display})
 • Value: ${pos['market_value']:,.2f}
-• P&L: ${pos['unrealized_pl']:+,.2f} ({pos['unrealized_plpc']:+.2f}%)"""
+• P&L: ${pos['unrealized_pl']:+,.2f} ({pos['unrealized_plpc']:+.2f}%){first_purchase_str}"""
         
         # Add insights
         summary += f"""
@@ -520,3 +462,46 @@ def get_target_portfolio_by_type(portfolio_type: str) -> TargetPortfolio:
     else:
         # Default to balanced if unknown type
         return get_target_portfolio_by_type('balanced')
+
+
+@tool("get_account_activities")
+def get_account_activities_tool(state=None, config=None) -> str:
+    """Get comprehensive account activities including trading history, dividends, and other account transactions.
+    
+    This tool provides a complete view of your account activities including:
+    - Purchase history (all buy and sell transactions that have been FILLED)  
+    - Trading statistics and summaries
+    - Dividends, fees, and other account activities
+    - First purchase dates and holding periods
+    
+    IMPORTANT NOTES:
+    - Trading activities shown are FILLED orders only (does NOT include pending orders)
+    - Recent trading activities cover the last 60 days
+    - First purchase dates cover the last 365 days for historical context
+    - Pending/open orders are not included in this report
+    
+    This is the primary tool for understanding your complete executed trading and account history.
+    
+    Returns:
+        str: Comprehensive formatted account activities report with trading history
+    """
+    try:
+        logger.info("[Portfolio Agent] Retrieving comprehensive account activities")
+        
+        # Get comprehensive activities (60 days by default)
+        activities_report = get_comprehensive_account_activities(days_back=60, config=config)
+        
+        return activities_report
+        
+    except Exception as e:
+        logger.error(f"[Portfolio Agent] Error retrieving account activities: {str(e)}")
+        return f"""📋 **Account Activities**
+
+❌ **Error Retrieving Activities**
+
+Could not retrieve account activities: {str(e)}
+
+💡 **Troubleshooting:**
+• Check your internet connection
+• Verify account permissions
+• Try again in a few moments"""
