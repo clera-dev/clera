@@ -21,6 +21,8 @@ import LivePortfolioValue from '@/components/portfolio/LivePortfolioValue';
 import PortfolioSummaryWithAssist from '@/components/portfolio/PortfolioSummaryWithAssist';
 import InvestmentGrowthWithAssist from '@/components/portfolio/InvestmentGrowthWithAssist';
 import HoldingsTableWithAssist from '@/components/portfolio/HoldingsTableWithAssist';
+import OrderModal from '@/components/invest/OrderModal';
+import { Toaster } from 'react-hot-toast';
 import { getAlpacaAccountId } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/client";
 
@@ -116,11 +118,11 @@ interface AssetDetails {
     maintenance_margin_requirement?: number | null;
 }
 
-const safeParseFloat = (value: string | null | undefined): number | null => {
+  const safeParseFloat = (value: string | null | undefined): number | null => {
     if (value === null || value === undefined) return null;
     const parsed = parseFloat(value);
     return isNaN(parsed) ? null : parsed;
-};
+  };
 
 export default function PortfolioPage() {
   const [isLoading, setIsLoading] = useState(true);
@@ -156,6 +158,40 @@ export default function PortfolioPage() {
   const activitiesEndpointAvailable = React.useRef<boolean | null>(null);
   const [hasTradeHistory, setHasTradeHistory] = useState(false);
   const [allocationChartRefreshKey, setAllocationChartRefreshKey] = useState<number>(Date.now());
+  
+  // Trade action states
+  const [selectedSymbolForTrade, setSelectedSymbolForTrade] = useState<string | null>(null);
+  const [selectedOrderType, setSelectedOrderType] = useState<'BUY' | 'SELL'>('BUY');
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState<PositionData | null>(null);
+
+  // Trade action handlers
+  const handleInvestClick = (symbol: string) => {
+    setSelectedSymbolForTrade(symbol);
+    setSelectedOrderType('BUY');
+    setSelectedPosition(null);
+    setIsOrderModalOpen(true);
+  };
+
+  const handleSellClick = (symbol: string, currentQty: string) => {
+    const position = positions.find((pos: PositionData) => pos.symbol === symbol);
+    setSelectedPosition(position || null);
+    setSelectedSymbolForTrade(symbol);
+    setSelectedOrderType('SELL');
+    setIsOrderModalOpen(true);
+  };
+
+  const handleOrderModalClose = (shouldRefresh = false) => {
+    setIsOrderModalOpen(false);
+    setSelectedSymbolForTrade(null);
+    setSelectedPosition(null);
+    
+    // Refresh portfolio data after successful trade
+    if (shouldRefresh) {
+      // Trigger a reload of positions and portfolio data
+      window.location.reload();
+    }
+  };
 
   const fetchData = async (url: string, options: RequestInit = {}): Promise<any> => {
     try {
@@ -747,23 +783,30 @@ export default function PortfolioPage() {
           </TabsList>
 
           <TabsContent value="holdings">
-            <Card className="bg-card shadow-lg mt-4">
-              <CardContent className="p-0">
-                {isLoading && positions.length === 0 && !error ? (
+            {isLoading && positions.length === 0 && !error ? (
+              <Card className="bg-card shadow-lg mt-4">
+                <CardContent className="p-0">
                   <Skeleton className="h-64 w-full rounded-t-none" />
-                ) : positions.length > 0 ? (
-                  <HoldingsTableWithAssist 
-                    positions={positions} 
-                    isLoading={isLoading}
-                    disabled={!hasTradeHistory}
-                  />
-                ) : (
-                   <p className="text-muted-foreground p-6 text-center">
-                      Waiting for your first trade to display holdings.
-                   </p>
-                )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            ) : positions.length > 0 ? (
+              <HoldingsTableWithAssist 
+                positions={positions} 
+                isLoading={isLoading}
+                disabled={!hasTradeHistory}
+                onInvestClick={handleInvestClick}
+                onSellClick={handleSellClick}
+                accountId={accountId}
+              />
+            ) : (
+              <Card className="bg-card shadow-lg mt-4">
+                <CardContent className="p-0">
+                  <p className="text-muted-foreground p-6 text-center">
+                    Waiting for your first trade to display holdings.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="transactions">
@@ -787,6 +830,53 @@ export default function PortfolioPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Order Modal for Trade Actions */}
+      {selectedSymbolForTrade && accountId && (
+        <OrderModal
+          isOpen={isOrderModalOpen}
+          onClose={handleOrderModalClose}
+          symbol={selectedSymbolForTrade}
+          accountId={accountId}
+          orderType={selectedOrderType}
+          currentQuantity={selectedPosition?.qty}
+          currentMarketValue={selectedPosition?.market_value}
+        />
+      )}
+
+      {/* Toast notifications */}
+      <Toaster 
+        position="bottom-center"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#1f2937',
+            color: '#fff',
+            border: '1px solid #374151',
+            borderRadius: '0.5rem',
+            fontSize: '14px',
+            padding: '12px 16px',
+          },
+          success: {
+            iconTheme: {
+              primary: '#10b981',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#fff',
+            },
+          },
+          loading: {
+            iconTheme: {
+              primary: '#6b7280',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
     </div>
   );
 } 

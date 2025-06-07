@@ -240,8 +240,10 @@ The system uses LangGraph to orchestrate multiple specialized agents:
    - Provides investment insights and recommendations
 
 2. **Portfolio Management Agent** (`portfolio_management_agent.py`)
-   - Manages investment portfolios
-   - Suggests portfolio adjustments and rebalancing
+   - Manages investment portfolios and suggests portfolio adjustments and rebalancing
+   - Implementation includes purchase history analysis and account activity tracking
+   - Integrates with shared utilities for account management via `utils.account_utils`
+   - Fixed undefined variable errors and consolidated duplicate functions for cleaner code architecture
 
 3. **Trade Execution Agent** (`trade_execution_agent.py`)
    - Executes trades via brokerage APIs (Alpaca)

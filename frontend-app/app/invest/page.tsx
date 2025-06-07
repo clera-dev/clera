@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import StockSearchBar from '@/components/invest/StockSearchBar';
 import StockInfoCard from '@/components/invest/StockInfoCard';
-import BuyOrderModal from '@/components/invest/BuyOrderModal';
+import OrderModal from '@/components/invest/OrderModal';
 import InvestmentResearch from '@/components/invest/InvestmentResearch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -207,7 +207,38 @@ export default function InvestPage() {
 
   return (
     <div className="h-full w-full overflow-auto">
-      <Toaster position="bottom-center" />
+      <Toaster 
+        position="bottom-center"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#1f2937',
+            color: '#fff',
+            border: '1px solid #374151',
+            borderRadius: '0.5rem',
+            fontSize: '14px',
+            padding: '12px 16px',
+          },
+          success: {
+            iconTheme: {
+              primary: '#10b981',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#fff',
+            },
+          },
+          loading: {
+            iconTheme: {
+              primary: '#6b7280',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
       <div className="p-4 space-y-6">
         <div className="flex flex-col space-y-2 mb-2">
           <div className="flex items-center justify-between">
@@ -289,11 +320,12 @@ export default function InvestPage() {
       </Dialog>
 
       {selectedSymbol && accountId && (
-        <BuyOrderModal 
+        <OrderModal 
             isOpen={isModalOpen} 
             onClose={handleCloseModal} 
             symbol={selectedSymbol} 
-            accountId={accountId} 
+            accountId={accountId}
+            orderType="BUY"
         />
       )}
     </div>
