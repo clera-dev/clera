@@ -86,9 +86,15 @@ def web_search(query: str) -> str:
     """
     # Determine if in-depth research is requested
     is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
+    current_date = datetime.now().strftime("%Y-%m-%d")
 
     if is_in_depth_query:
-        research_prompt = f"""You are the world's BEST financial news analyst. The user has asked for DETAILED/IN-DEPTH research. Provide a thorough, comprehensive analysis with actionable insights on the query below. Focus on concrete facts, figures, sources, and causal relationships. Avoid generic advice. Use recent AND credible financial news sources.
+        research_prompt = f"""You are the world's BEST financial news analyst. 
+        The user has asked for DETAILED/IN-DEPTH research. 
+        Provide a thorough, comprehensive analysis with actionable insights on the query below. 
+        Focus on concrete facts, figures, sources, and causal relationships. 
+        Avoid generic advice. Use recent AND credible financial news sources. 
+        Today's date is {current_date}.
 
 Query: {query}
 """
