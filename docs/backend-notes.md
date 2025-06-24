@@ -1392,6 +1392,56 @@ When making changes:
 
 This deployment process has been tested and verified to work with both services running properly and communicating via Redis. The WebSocket proxy in the API service successfully forwards client connections to the WebSocket service.
 
+## Data Collection Scripts
+
+### Company Profiles Collection (`scripts/`)
+
+The backend includes data collection scripts for populating the Supabase database with company profile information from external APIs.
+
+#### Company Profiles Script (`collect_company_profiles_supabase.py`)
+
+**Purpose**: Fetches company profile data from Financial Modeling Prep (FMP) API for all symbols in `tradable_assets.json` and stores them in the Supabase `company_profiles` table.
+
+**Features**:
+- Uses Supabase Python client for reliable database connectivity
+- Respects FMP rate limit (270 requests per minute = 4.5 per second)
+- Proper data validation to prevent database errors (especially date fields)
+- Progress tracking with time estimates
+- Resume capability for interrupted runs
+- Batch processing for efficiency
+
+**Database Schema**: The script stores data in the `company_profiles` table with fields for:
+- Basic company info (symbol, name, sector, industry)
+- Financial metrics (price, market cap, beta, etc.)
+- Company details (description, CEO, website, logo URL)
+- Metadata (IPO date, exchange, trading status)
+
+**Usage**:
+```bash
+cd backend/scripts
+python3 collect_company_profiles_supabase.py [--batch-size 50] [--start-from-symbol AAPL]
+```
+
+**Performance**: Processes ~240 symbols per minute (estimated 48 minutes for all 11,657 symbols)
+
+**Data Quality**: Includes validation for:
+- Date fields: Converts empty strings to NULL to prevent PostgreSQL errors
+- Numeric fields: Handles empty/invalid values gracefully
+- Text fields: Cleans and validates optional text data
+- Boolean fields: Proper type conversion
+
+**Integration**: The collected company profiles are used by the frontend for:
+- Company logos in search results
+- Stock picker displays  
+- Relevant stocks in investment themes
+- Cached company information for UI performance
+
+**Note**: When users click on a security for detailed information, the system still fetches live data from FMP to ensure current pricing and metrics. The cached profiles are only used for display/logo purposes.
+
+**Environment Requirements**:
+- `FINANCIAL_MODELING_PREP_API_KEY`: FMP API access
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`: Database access
+
 ## Troubleshooting and Debugging
 
 ### LangChain Tool Function Calling Issues

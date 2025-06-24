@@ -24,12 +24,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { RelevantStocks } from './RelevantStocks';
+import { CompanyLogo } from '@/components/ui/CompanyLogo';
+import { useCompanyProfile } from '@/hooks/useCompanyProfile';
 
 // Types for investment research data
 interface InvestmentTheme {
   title: string;
   summary: string;
   report: string;
+  relevant_tickers: string[];
 }
 
 interface StockPick {
@@ -52,6 +56,7 @@ interface InvestmentResearchData {
 interface InvestmentResearchProps {
   onStockSelect: (symbol: string) => void;
   isChatOpen?: boolean;
+  onThemeSelect?: () => void;
 }
 
 // Mock user profile for MVP testing (only used when force generating)
@@ -85,7 +90,39 @@ const MOCK_USER_PROFILE = {
 - Opportunity to leverage long time horizon for aggressive growth`
 };
 
-// Citations from Perplexity response
+// Component for individual stock pick cards with company logos
+function StockPickCard({ stock, onStockSelect }: { stock: StockPick; onStockSelect: (symbol: string) => void }) {
+  const { logoUrl, displayName } = useCompanyProfile(stock.ticker);
+
+  return (
+    <Card 
+      className="border hover:shadow-md transition-shadow cursor-pointer group"
+      onClick={() => onStockSelect(stock.ticker)}
+    >
+      <CardContent className="p-4">
+        <div className="flex flex-col space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <CompanyLogo
+              symbol={stock.ticker}
+              companyName={stock.company_name}
+              imageUrl={logoUrl || undefined}
+              size="sm"
+            />
+            <div className="text-lg font-bold">{stock.ticker}</div>
+          </div>
+          <div className="text-xs text-muted-foreground line-clamp-2">
+            {stock.company_name}
+          </div>
+          <div className="text-xs text-blue-600 dark:text-blue-400 line-clamp-3 group-hover:text-blue-800 dark:group-hover:text-blue-300">
+            {stock.rationale.substring(0, 80)}...
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Citations from Perplexity response (fallback)
 const CITATIONS = [
   "https://www.permanentportfoliofunds.com/aggressive-growth-portfolio.html",
   "https://madisonfunds.com/funds/aggressive-allocation-fund/",
@@ -109,12 +146,38 @@ const CITATIONS = [
   "https://capex.com/en/academy/investing-in-ev-stocks"
 ];
 
-export default function InvestmentResearch({ onStockSelect, isChatOpen = false }: InvestmentResearchProps) {
+export default function InvestmentResearch({ onStockSelect, isChatOpen = false, onThemeSelect }: InvestmentResearchProps) {
   const [researchData, setResearchData] = useState<InvestmentResearchData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastGenerated, setLastGenerated] = useState<string | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<InvestmentTheme | null>(null);
+  const [citations, setCitations] = useState<string[]>([]);
+  const [allCitations, setAllCitations] = useState<string[]>([]);
+
+  // Clean inline citations from text for cleaner reading
+  const cleanInlineCitations = (text: string) => {
+    return text.replace(/\[\d+\]/g, '').replace(/\s{2,}/g, ' ').trim();
+  };
+
+  // Collect all unique citations from all themes
+  const collectAllCitations = (data: InvestmentResearchData | null) => {
+    if (!data) return [];
+    
+    const citationSet = new Set<string>();
+    
+    // Add citations from metadata if available
+    if (citations.length > 0) {
+      citations.forEach(citation => citationSet.add(citation));
+    }
+    
+    // Fallback to hardcoded citations if no dynamic ones
+    if (citationSet.size === 0) {
+      CITATIONS.forEach(citation => citationSet.add(citation));
+    }
+    
+    return Array.from(citationSet);
+  };
 
   // Load cached data on component mount (no cost)
   const loadCachedData = async () => {
@@ -141,7 +204,9 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
       
       if (result.success && result.data) {
         setResearchData(result.data);
-        setLastGenerated(new Date(result.metadata.generated_at).toLocaleString());
+        setLastGenerated(new Date(result.metadata.generated_at).toLocaleDateString());
+        setCitations(result.metadata?.citations || []); // Set citations from metadata
+        setAllCitations(collectAllCitations(result.data));
         console.log('Cached investment research loaded successfully');
       } else {
         throw new Error(result.error || 'Failed to load cached research');
@@ -156,26 +221,15 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
     }
   };
 
-  // Parse citations from report text and create a mapping
-  const parseCitationsWithNumbers = (text: string) => {
-    const citationNumbers = text.match(/\[(\d+)\]/g);
-    if (!citationNumbers) return [];
-    
-    // Get unique citation numbers and sort them
-    const uniqueNumbers = Array.from(new Set(citationNumbers.map(match => {
-      return parseInt(match.replace(/\[|\]/g, ''));
-    }))).sort((a, b) => a - b);
-    
-    return uniqueNumbers.map(num => ({
-      number: num,
-      url: CITATIONS[num - 1]
-    })).filter(item => item.url);
-  };
-
   // Load cached data on component mount
   useEffect(() => {
     loadCachedData();
   }, []);
+
+  // Update allCitations whenever citations or researchData changes
+  useEffect(() => {
+    setAllCitations(collectAllCitations(researchData));
+  }, [citations, researchData]);
 
   const LoadingSkeleton = () => (
     <div className="space-y-6">
@@ -245,7 +299,7 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
       
       {/* Fallback to static content */}
       <div className="opacity-50">
-        <StaticFallbackContent onStockSelect={onStockSelect} isChatOpen={isChatOpen} />
+        <StaticFallbackContent onStockSelect={onStockSelect} isChatOpen={isChatOpen} onThemeSelect={onThemeSelect} />
       </div>
     </div>
   );
@@ -259,35 +313,22 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
         <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
-            {lastGenerated && <span>Generated: {lastGenerated}</span>}
+            {lastGenerated && <span>Updated: {lastGenerated}</span>}
           </div>
         </div>
 
         {/* Top Picks Section */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="text-blue-500 h-5 w-5" />
             <h2 className="text-xl font-semibold">Stock Picks From Clera</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
             {researchData.stock_picks.map((stock, index) => (
-              <Card 
+              <StockPickCard 
                 key={stock.ticker}
-                className="border hover:shadow-md transition-shadow cursor-pointer group"
-                onClick={() => onStockSelect(stock.ticker)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex flex-col space-y-1">
-                    <div className="text-lg font-bold">{stock.ticker}</div>
-                    <div className="text-xs text-muted-foreground line-clamp-2">
-                      {stock.company_name}
-                    </div>
-                    <div className="text-xs text-blue-600 dark:text-blue-400 line-clamp-3 group-hover:text-blue-800 dark:group-hover:text-blue-300">
-                      {stock.rationale.substring(0, 80)}...
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                stock={stock}
+                onStockSelect={onStockSelect}
+              />
             ))}
           </div>
         </div>
@@ -295,25 +336,28 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
         {/* Investment Ideas Section */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="text-yellow-500 h-5 w-5" />
             <h2 className="text-xl font-semibold">Your Personalized Investment Ideas</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {researchData.investment_themes.map((theme, index) => (
               <Card 
                 key={index}
                 className="border hover:shadow-md transition-shadow cursor-pointer overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800"
-                onClick={() => setSelectedTheme(theme)}
+                onClick={() => {
+                  // Auto-collapse sidebar when investment theme dialog opens
+                  onThemeSelect?.();
+                  setSelectedTheme(theme);
+                }}
               >
-                <CardContent className="p-6 flex flex-col justify-between h-48 relative">
+                <CardContent className="p-4 sm:p-5 flex flex-col justify-between h-32 sm:h-36 relative">
                   <div>
-                    <div className="font-bold text-lg mb-2 relative z-10">{theme.title}</div>
-                    <div className="text-sm text-muted-foreground relative z-10 line-clamp-3">
-                      {theme.summary}
+                    <div className="font-bold text-base sm:text-lg mb-1 sm:mb-2 relative z-10">{theme.title}</div>
+                    <div className="text-xs sm:text-sm text-muted-foreground relative z-10 line-clamp-3">
+                      {cleanInlineCitations(theme.summary)}
                     </div>
                   </div>
-                  <div className="absolute inset-0 flex items-center justify-center opacity-15">
-                    <TrendingUp className="h-20 w-20 text-slate-400" />
+                  <div className="absolute inset-0 flex items-center justify-center opacity-10">
+                    <TrendingUp className="h-16 w-16 sm:h-20 sm:w-20 text-slate-400" />
                   </div>
                 </CardContent>
               </Card>
@@ -321,9 +365,57 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
           </div>
         </div>
 
+        {/* Comprehensive Sources Section */}
+        {allCitations.length > 0 && (
+          <div className="mt-8 border-t pt-6">
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-xl font-semibold">Research Sources</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              All sources used to generate your personalized investment themes
+            </p>
+            <div className="relative">
+              <div className="max-h-80 overflow-y-auto border rounded-lg bg-gray-50 dark:bg-gray-900/50 p-4 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {allCitations.map((citation, index) => (
+                  <a
+                    key={index}
+                    href={citation}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm p-3 border rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors group bg-white dark:bg-gray-800"
+                  >
+                    <div className="flex items-start gap-2">
+                      <ExternalLink className="h-4 w-4 flex-shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">
+                          {new URL(citation).hostname.replace(/^www\./, '')}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {citation.replace(/^https?:\/\//, '')}
+                        </div>
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+                              {allCitations.length > 20 && (
+                  <div className="text-center mt-4 pt-4 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      Showing all {allCitations.length} research sources
+                    </p>
+                  </div>
+                )}
+                </div>
+              </div>
+              {/* Scroll fade indicator */}
+              <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-gray-50 to-transparent dark:from-gray-900/50 pointer-events-none rounded-b-lg"></div>
+            </div>
+        )}
+
         {/* Investment Theme Dialog */}
-        <Dialog open={!!selectedTheme} onOpenChange={() => setSelectedTheme(null)}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto overflow-x-hidden">
+        <Dialog open={!!selectedTheme} onOpenChange={(open) => !open && setSelectedTheme(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-xl font-bold">{selectedTheme?.title}</DialogTitle>
             </DialogHeader>
@@ -331,35 +423,36 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
               <div className="space-y-4">
                 <div>
                   <h4 className="font-semibold mb-2 text-foreground">Summary:</h4>
-                  <p className="text-sm text-muted-foreground">{selectedTheme.summary}</p>
+                  <p className="text-sm text-muted-foreground">{cleanInlineCitations(selectedTheme.summary)}</p>
                 </div>
-                <div>
-                  <h4 className="font-semibold mb-2 text-foreground">Report:</h4>
-                  <p className="text-sm text-muted-foreground leading-relaxed break-words">{selectedTheme.report}</p>
-                </div>
-                {parseCitationsWithNumbers(selectedTheme.report).length > 0 && (
+                
+                {/* Relevant stocks in dialog */}
+                {selectedTheme.relevant_tickers && selectedTheme.relevant_tickers.length > 0 && (
                   <div>
-                    <h4 className="font-semibold mb-2 text-foreground">Sources:</h4>
-                    <div className="space-y-2">
-                      {parseCitationsWithNumbers(selectedTheme.report).map((item, index) => (
-                        <div key={index} className="flex items-start gap-2 min-w-0">
-                          <span className="flex-shrink-0 w-6 h-6 bg-muted text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center">
-                            {item.number}
-                          </span>
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-start text-xs text-blue-500 hover:text-blue-700 gap-1 min-w-0 flex-1 break-all"
-                          >
-                            <ExternalLink className="h-3 w-3 flex-shrink-0 mt-0.5" />
-                            <span className="break-all">{item.url.replace(/^https?:\/\//, '').replace(/^www\./, '')}</span>
-                          </a>
-                        </div>
-                      ))}
-                    </div>
+                    <h4 className="font-semibold mb-3 text-foreground">Relevant Stocks:</h4>
+                    <RelevantStocks 
+                      tickers={selectedTheme.relevant_tickers}
+                      onStockSelect={(symbol) => {
+                        setSelectedTheme(null); // Close dialog first
+                        onStockSelect(symbol);  // Then trigger stock selection
+                      }}
+                      maxDisplay={selectedTheme.relevant_tickers.length} // Show all in dialog
+                    />
                   </div>
                 )}
+                
+                <div>
+                  <h4 className="font-semibold mb-2 text-foreground">Report:</h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed break-words">{cleanInlineCitations(selectedTheme.report)}</p>
+                </div>
+                
+                {/* Note about sources being available below */}
+                <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                  <p className="text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                    <ExternalLink className="h-3 w-3" />
+                    All research sources are available in the "Research Sources" section below
+                  </p>
+                </div>
               </div>
             )}
           </DialogContent>
@@ -369,7 +462,7 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
   };
 
   // Static fallback content (original content)
-  const StaticFallbackContent = ({ onStockSelect, isChatOpen }: { onStockSelect: (symbol: string) => void, isChatOpen: boolean }) => {
+  const StaticFallbackContent = ({ onStockSelect, isChatOpen, onThemeSelect }: { onStockSelect: (symbol: string) => void, isChatOpen: boolean, onThemeSelect?: () => void }) => {
     const topStockPicks = [
       { symbol: 'MSFT', name: 'Microsoft', ytdReturn: '14.85%', buyRating: '4.86/5' },
       { symbol: 'AAPL', name: 'Apple', ytdReturn: '16.36%', buyRating: '4.02/5' },
@@ -411,10 +504,9 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
         {/* Top Picks Section */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="text-blue-500 h-5 w-5" />
             <h2 className="text-xl font-semibold">Stock Picks From Clera</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
             {topStockPicks.map((stock) => (
               <Card 
                 key={stock.symbol}
@@ -445,20 +537,21 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
         {/* Investment Ideas Section */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="text-yellow-500 h-5 w-5" />
             <h2 className="text-xl font-semibold">Your Personalized Investment Ideas</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {investmentIdeas.map((idea, index) => (
               <Card 
                 key={index}
                 className={`border hover:shadow-md transition-shadow cursor-pointer overflow-hidden ${idea.color}`}
               >
-                <CardContent className="p-6 flex flex-col justify-between h-48 relative">
-                  <div className="font-bold text-lg mb-2 relative z-10">{idea.title}</div>
-                  <div className="text-sm text-muted-foreground relative z-10">{idea.description}</div>
-                  <div className="absolute inset-0 flex items-center justify-center opacity-15">
-                    {idea.icon}
+                <CardContent className="p-4 sm:p-5 flex flex-col justify-between h-32 sm:h-36 relative">
+                  <div>
+                    <div className="font-bold text-base sm:text-lg mb-1 sm:mb-2 relative z-10">{idea.title}</div>
+                    <div className="text-xs sm:text-sm text-muted-foreground relative z-10 line-clamp-3">{idea.description}</div>
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center opacity-10">
+                    <TrendingUp className="h-16 w-16 sm:h-20 sm:w-20 text-slate-400" />
                   </div>
                 </CardContent>
               </Card>
@@ -482,5 +575,5 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false }
   }
 
   // Fallback to static content if no data
-  return <StaticFallbackContent onStockSelect={onStockSelect} isChatOpen={isChatOpen} />;
+  return <StaticFallbackContent onStockSelect={onStockSelect} isChatOpen={isChatOpen} onThemeSelect={onThemeSelect} />;
 }

@@ -341,9 +341,28 @@ body > div:last-child:not([id]):not([class]) {
 [data-radix-dialog-overlay] {
   background-color: rgba(0, 0, 0, 0.75) !important;
   backdrop-filter: blur(4px) !important;
+  z-index: 90 !important;
 }
 
 /* Ensure dialog content stays prominent */
 [data-radix-dialog-content] {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+  z-index: 100 !important;
+}
+
+/* Ensure main content doesn't overlap sidebar on mobile */
+@media (max-width: 1023px) {
+  main {
+    z-index: 1 !important;
+  }
+  
+  /* Ensure sidebar overlay is above main content */
+  .sidebar-overlay {
+    z-index: 50 !important;
+  }
+  
+  /* Ensure sidebar is above overlay */
+  .sidebar-container {
+    z-index: 55 !important;
+  }
 }

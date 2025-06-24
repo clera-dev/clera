@@ -13,7 +13,8 @@ import {
   Settings,
   Info,
   DollarSign,
-  Newspaper
+  Newspaper,
+  X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,25 @@ export default function MainSidebar({
       const collapsed = storedState === 'true';
       setIsCollapsed(collapsed);
     }
+    
+    // Listen for changes to the collapsed state from other components
+    const handleStorageChange = () => {
+      const updatedState = localStorage.getItem('sidebarCollapsed');
+      const newCollapsedState = updatedState === 'true';
+      console.log('MainSidebar: Received storage change event, updating collapsed state to:', newCollapsedState);
+      setIsCollapsed(newCollapsedState);
+    };
+    
+    // Handle storage events from other tabs/windows
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Custom event for changes within the same window (like from autoCollapseSidebar)
+    window.addEventListener('sidebarCollapsedChange', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('sidebarCollapsedChange', handleStorageChange);
+    };
   }, []);
   
   // Update localStorage when collapsed state changes
@@ -168,21 +188,10 @@ export default function MainSidebar({
 
   return (
     <>
-      {/* Mobile sidebar toggle */}
-      <div className="lg:hidden fixed left-4 top-4 z-60">
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-        >
-          <Menu size={24} />
-        </Button>
-      </div>
-
       {/* Sidebar content - layout positioning handled by ClientLayout */}
       {isMounted && (
         <>
-          <aside className="h-full flex flex-col bg-background border-r">
+          <aside className="h-full flex flex-col bg-background border-r shadow-lg">
             {/* Logo / Brand - Fixed at top, same height as the header */}
             <div className="flex items-center h-16 px-4 border-b justify-between flex-shrink-0">
               {isCollapsed ? (
@@ -205,14 +214,26 @@ export default function MainSidebar({
                     />
                   </div>
                   
+                  {/* Desktop collapse button */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="flex"
+                    className="hidden lg:flex"
                     onClick={toggleCollapse}
                     aria-label="Collapse sidebar"
                   >
                     <ChevronLeft size={16} />
+                  </Button>
+                  
+                  {/* Mobile close button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="lg:hidden"
+                    onClick={() => setIsMobileSidebarOpen(false)}
+                    aria-label="Close sidebar"
+                  >
+                    <X size={16} />
                   </Button>
                 </div>
               )}
@@ -320,7 +341,7 @@ export default function MainSidebar({
           
           {/* Expand button - when sidebar is collapsed */}
           {isCollapsed && (
-            <div className="fixed top-4 left-24 z-60">
+            <div className="hidden lg:block fixed top-4 left-24 z-60">
               <Button
                 variant="ghost"
                 size="icon"

@@ -27,31 +27,6 @@ interface OrderModalProps {
   currentMarketValue?: string; // For sell orders, to show current value
 }
 
-// Minimal number pad component
-const NumberPad = ({ onInput }: { onInput: (value: string) => void }) => {
-  const buttons = [
-    '1', '2', '3', 
-    '4', '5', '6', 
-    '7', '8', '9', 
-    '.', '0', '⌫' // Backspace
-  ];
-  return (
-    <div className="grid grid-cols-3 gap-2 mt-4">
-      {buttons.map((btn) => (
-        <Button
-          key={btn}
-          variant="outline"
-          size="lg"
-          className="text-xl font-semibold h-14"
-          onClick={() => onInput(btn)}
-        >
-          {btn}
-        </Button>
-      ))}
-    </div>
-  );
-};
-
 export default function OrderModal({ 
   isOpen, 
   onClose, 
@@ -227,22 +202,23 @@ export default function OrderModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-[95vw] max-w-md mx-auto max-h-[90vh] overflow-hidden">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold flex items-center gap-2">
+          <DialogTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
             {isBuyOrder ? (
-              <TrendingUp className="h-5 w-5 text-green-600" />
+              <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
             ) : (
-              <TrendingDown className="h-5 w-5 text-red-600" />
+              <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5 text-red-600" />
             )}
             {isBuyOrder ? 'Buy' : 'Sell'} {symbol} Confirmation
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm">
             Enter the dollar amount you wish to {isBuyOrder ? 'invest' : 'sell'}.
           </DialogDescription>
         </DialogHeader>
         
-        <div className="mt-4 space-y-3">
+        <div className="overflow-y-auto flex-1 space-y-3">
+          <div className="space-y-3">
            <div className="flex justify-between items-center bg-muted p-3 rounded-md">
                <span className="text-sm font-medium text-muted-foreground">Order Type:</span>
                <Badge variant="outline" className={orderTypeColor}>
@@ -288,36 +264,54 @@ export default function OrderModal({
                 placeholder="0.00"
                 value={amount}
                 onChange={handleInputChange}
-                className="text-center text-2xl font-bold h-14 focus-visible:ring-primary"
+                  className="text-center text-xl sm:text-2xl font-bold h-12 sm:h-14 focus-visible:ring-primary"
                 disabled={isSubmitting}
             />
         </div>
 
-        <NumberPad onInput={handleNumberPadInput} />
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            {[
+              '1', '2', '3', 
+              '4', '5', '6', 
+              '7', '8', '9', 
+              '.', '0', '⌫'
+            ].map((btn) => (
+              <Button
+                key={btn}
+                variant="outline"
+                size="lg"
+                className="text-lg sm:text-xl font-semibold h-12 sm:h-14"
+                onClick={() => handleNumberPadInput(btn)}
+              >
+                {btn}
+              </Button>
+            ))}
+          </div>
 
         {submitError && (
              <Alert variant="destructive" className="mt-4">
                 <Terminal className="h-4 w-4" />
                 <AlertTitle>Order Submission Error</AlertTitle>
-                <AlertDescription>{submitError}</AlertDescription>
+                  <AlertDescription className="text-sm">{submitError}</AlertDescription>
             </Alert>
         )}
+        </div>
 
-        <DialogFooter className="mt-6">
+        <div className="sticky bottom-0 bg-background pt-4 border-t mt-4">
           <Button 
             type="button"
             size="lg"
-            className={`w-full ${buttonColorClasses} text-white font-bold text-lg`}
+            className={`w-full ${buttonColorClasses} text-white font-bold text-base sm:text-lg`}
             onClick={handlePlaceOrder}
             disabled={isSubmitting || isLoadingPrice || !amount || parseFloat(amount) <= 0}
           >
             {isSubmitting ? (
-              <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Placing Order...</>
+              <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> Placing Order...</>
             ) : (
               `Place ${isBuyOrder ? 'Buy' : 'Sell'} Order`
             )}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
