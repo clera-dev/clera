@@ -20,6 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { CompanyLogo } from "@/components/ui/CompanyLogo"
+import { useCompanyProfiles } from "@/hooks/useCompanyProfile"
 
 // Define Asset type
 interface Asset {
@@ -73,6 +75,10 @@ export default function StockSearchBar({ onStockSelect }: StockSearchBarProps) {
     ).slice(0, 50);
   }, [searchTerm, allAssets]);
 
+  // Get company profiles for filtered assets to show logos
+  const symbols = filteredAssets.map(asset => asset.symbol);
+  const { profiles, getProfile } = useCompanyProfiles(symbols);
+
   const handleSelect = (currentValue: string) => {
     const selectedSymbol = currentValue.toUpperCase();
     setOpen(false);
@@ -124,24 +130,34 @@ export default function StockSearchBar({ onStockSelect }: StockSearchBarProps) {
                 <CommandEmpty className="py-6 text-center">No stocks matching "{searchTerm}"</CommandEmpty>
               ) : (
                 <CommandGroup heading="Stocks" className="pb-2">
-                  {filteredAssets.map((asset) => (
-                    <CommandItem
-                      key={asset.symbol}
-                      value={asset.symbol}
-                      onSelect={handleSelect}
-                      className="cursor-pointer p-3 my-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors data-[selected=true]:bg-slate-200 dark:data-[selected=true]:bg-slate-700"
-                    >
-                      <div className="mr-3 flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-slate-200 dark:border-slate-600 dark:bg-slate-800 text-sm font-semibold">
-                        {asset.symbol.charAt(0)}
-                      </div>
-                      <div className="flex-1 overflow-hidden">
-                        <p className="truncate font-semibold">{asset.symbol}</p>
-                        <p className="truncate text-sm text-muted-foreground">
-                          {asset.name}
-                        </p>
-                      </div>
-                    </CommandItem>
-                  ))}
+                  {filteredAssets.map((asset) => {
+                    const profile = getProfile(asset.symbol);
+                    
+                    return (
+                      <CommandItem
+                        key={asset.symbol}
+                        value={asset.symbol}
+                        onSelect={handleSelect}
+                        className="cursor-pointer p-3 my-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors data-[selected=true]:bg-slate-200 dark:data-[selected=true]:bg-slate-700"
+                      >
+                        <div className="mr-3">
+                          <CompanyLogo
+                            symbol={asset.symbol}
+                            companyName={profile?.companyName || asset.name}
+                            imageUrl={profile?.image || undefined}
+                            size="md"
+                            className="border border-slate-300 dark:border-slate-600"
+                          />
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                          <p className="truncate font-semibold">{asset.symbol}</p>
+                          <p className="truncate text-sm text-muted-foreground">
+                            {profile?.companyName || asset.name}
+                          </p>
+                        </div>
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               )}
             </CommandList>

@@ -28,7 +28,6 @@ const protectedPaths = [
 const protectedApiPaths = [
   '/api/portfolio',
   '/api/broker',
-  '/api/investment',
   '/api/account',
   '/api/chat',
   '/api/conversations',
@@ -38,6 +37,13 @@ const protectedApiPaths = [
   '/api/assets',
   '/api/user',
   '/api/ws/portfolio',
+];
+
+// API routes that require authentication but not necessarily completed onboarding
+const authRequiredApiPaths = [
+  '/api/investment',
+  '/api/companies/profiles',
+  '/api/fmp',
 ];
 
 export async function middleware(request: NextRequest) {
@@ -72,19 +78,7 @@ export async function middleware(request: NextRequest) {
 
     console.log(`[Middleware] Processing: ${path}`);
 
-    // Handle the homepage specifically
-    if (path === '/') {
-      console.log(`[Middleware] Homepage access allowed: ${path}`);
-      return response;
-    }
-
-    // Check if the route is public (no auth needed)
-    if (publicPaths.some(publicPath => path.startsWith(publicPath))) {
-      console.log(`[Middleware] Public path allowed: ${path}`);
-      return response;
-    }
-
-    // Get user authentication status
+    // Get user authentication status first for homepage handling
     let user = null;
     try {
       const {
@@ -97,6 +91,27 @@ export async function middleware(request: NextRequest) {
       user = null;
     }
 
+    // Handle the homepage specifically
+    if (path === '/') {
+      // If user is authenticated, redirect to portfolio
+      if (user) {
+        console.log(`[Middleware] Authenticated user accessing homepage, redirecting to portfolio`);
+        const redirectUrl = new URL('/portfolio', request.url);
+        return NextResponse.redirect(redirectUrl);
+      }
+      // If not authenticated, allow access to homepage
+      console.log(`[Middleware] Unauthenticated user accessing homepage, allowing`);
+      return response;
+    }
+
+    // Check if the route is public (no auth needed)
+    if (publicPaths.some(publicPath => path.startsWith(publicPath))) {
+      console.log(`[Middleware] Public path allowed: ${path}`);
+      return response;
+    }
+
+    // User authentication status already checked above
+
     // Handle auth pages (sign-in, sign-up, forgot-password)
     if (authPages.some(authPage => path.startsWith(authPage))) {
       // If user is authenticated, redirect to portfolio
@@ -108,6 +123,28 @@ export async function middleware(request: NextRequest) {
       // If not authenticated, allow access to auth pages
       console.log(`[Middleware] Unauthenticated user accessing auth page, allowing`);
       return response;
+    }
+
+    // Check if this is an API route that requires authentication but not onboarding
+    const requiresAuth = authRequiredApiPaths.some(apiPath => path.startsWith(apiPath));
+    
+    if (requiresAuth && !user) {
+      // Check for beta testing mode - allow unauthenticated access to certain endpoints
+      const isBetaMode = process.env.NEXT_PUBLIC_BETA_TESTING === 'true';
+      const isInvestmentResearch = path.startsWith('/api/investment/research');
+      const isFMPChart = path.startsWith('/api/fmp/chart');
+      const isCompanyProfiles = path.startsWith('/api/companies/profiles');
+      
+      if (isBetaMode && (isInvestmentResearch || isFMPChart || isCompanyProfiles)) {
+        console.log(`[Middleware] Beta mode: allowing unauthenticated access to ${path}`);
+        return NextResponse.next();
+      }
+      
+      console.log(`[Middleware] Unauthenticated user accessing auth-required API, returning 401`);
+      return new NextResponse(
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
     // For all other routes, require authentication

@@ -8,15 +8,29 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal, TrendingUp, TrendingDown } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import MarketHolidayUtil from "@/lib/marketHolidays";
+import TimezoneUtil, { 
+  formatChartDate, 
+  convertUTCToUserTimezone, 
+  getStartOfTodayInUserTimezone,
+  logTimezoneDebugInfo,
+  isToday,
+  getTimezoneInfo,
+  getTimezoneOffsetMinutes,
+  parseFMPEasternTimestamp,
+  getUserTimezone
+} from "@/lib/timezone";
 
 interface StockChartProps {
   symbol: string;
 }
 
 interface ChartDataPoint {
-  date: string;
-  price?: number; // For daily data
-  open?: number;  // For intraday data
+  date?: string;      // For intraday data
+  datetime?: string;  // Alternative field name that FMP might use
+  timestamp?: string; // Another possible field name
+  price?: number;     // For daily data
+  open?: number;      // For intraday data
   high?: number;
   low?: number;
   close?: number;
@@ -29,6 +43,7 @@ interface ProcessedDataPoint {
   volume: number;
   formattedDate: string;
   timestamp: number;
+  localDate: Date; // New: the date converted to user timezone
 }
 
 const TIME_INTERVALS = [
@@ -48,6 +63,36 @@ export default function StockChart({ symbol }: StockChartProps) {
   const [priceChange, setPriceChange] = useState<number | null>(null);
   const [priceChangePercent, setPriceChangePercent] = useState<number | null>(null);
 
+  const formatDateForInterval = (localDate: Date, interval: string): string => {
+    const selectedConfig = TIME_INTERVALS.find(t => t.key === selectedInterval);
+    
+    if (selectedInterval === '1D') {
+      // 1D: Show full format with time and timezone: "9:30 AM PDT, June 23"
+      return formatChartDate(localDate, interval, true);
+    } else if (selectedInterval === '1W') {
+      // 1W: Show full format with time and timezone: "9:30 AM PDT, June 23"  
+      return formatChartDate(localDate, interval, true);
+    } else if (interval.includes('min') || interval.includes('hour')) {
+      // Other intraday: show abbreviated format
+      const timeStr = formatChartDate(localDate, interval, true);
+      // For intraday longer than 1D, show compact format
+      return timeStr.split(',')[1]?.trim() || timeStr; // Just the date part
+    } else {
+      // For daily and longer periods: include year for periods > 3 months
+      const shouldIncludeYear = selectedConfig && selectedConfig.days > 90;
+      
+      if (shouldIncludeYear) {
+        return localDate.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric',
+          year: 'numeric'
+        });
+      } else {
+        return formatChartDate(localDate, interval, false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!symbol) return;
     fetchChartData();
@@ -61,42 +106,280 @@ export default function StockChart({ symbol }: StockChartProps) {
       const intervalConfig = TIME_INTERVALS.find(t => t.key === selectedInterval);
       if (!intervalConfig) return;
 
-      // Calculate date range
-      const toDate = new Date();
-      const fromDate = new Date();
-      fromDate.setDate(toDate.getDate() - intervalConfig.days);
-
-      const params = new URLSearchParams({
-        interval: intervalConfig.interval,
-        from: fromDate.toISOString().split('T')[0],
-        to: toDate.toISOString().split('T')[0]
-      });
-
-      const response = await fetch(`/api/fmp/chart/${symbol}?${params}`);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch chart data: ${response.statusText}`);
+      const timezoneInfo = getTimezoneInfo('US_EQUITIES');
+      
+      // Calculate smart date range based on interval type and current date
+      const now = new Date();
+      let toDate: Date;
+      let fromDate: Date;
+      let useIntraday = false;
+      
+      if (intervalConfig.interval.includes('min') || intervalConfig.interval.includes('hour')) {
+        useIntraday = true;
+        
+        // Check if markets are currently closed using proper Eastern Time
+        const easternFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/New_York',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        
+        const easternParts = easternFormatter.formatToParts(now);
+        const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
+        const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
+        const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
+        const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
+        
+        const easternToday = new Date(easternYear, easternMonth - 1, easternDay);
+        const easternDayOfWeek = easternToday.getDay();
+        
+        const isAfterHours = easternHour >= 16 || easternHour < 9;
+        const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
+        const isMarketClosed = isAfterHours || isWeekend;
+        
+        if (selectedInterval === '1D') {
+          if (isMarketClosed) {
+            // If markets are closed, use the most recent trading day
+            const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
+            
+            // For 1D after hours, we want ALL data from the most recent trading day
+            // Set fromDate to start of the trading day, toDate to end of the trading day
+            fromDate = new Date(mostRecentTradingDay);
+            fromDate.setDate(fromDate.getDate() - 1); // Go back one day to ensure we capture all data
+            
+            toDate = new Date(mostRecentTradingDay);
+            toDate.setHours(23, 59, 59, 999); // End of the trading day
+          } else {
+            // 1D CHART: ONLY TODAY'S DATA
+            // Get start of today in user's timezone
+            const startOfToday = getStartOfTodayInUserTimezone();
+            
+            // For 1D, we want data from start of today until now
+            fromDate = startOfToday;
+            toDate = now;
+          }
+        } else {
+          // For other intraday intervals (1W), use trading days logic
+          toDate = MarketHolidayUtil.getLastTradingDay(now);
+          fromDate = MarketHolidayUtil.getLastTradingDay(now, intervalConfig.days);
+        }
+      } else {
+        // For daily/weekly/monthly data, use calendar days but ensure end date is a trading day
+        toDate = MarketHolidayUtil.getLastTradingDay(now);
+        fromDate = new Date(toDate);
+        fromDate.setDate(fromDate.getDate() - intervalConfig.days);
       }
 
-      const rawData: ChartDataPoint[] = await response.json();
+      const fromStr = fromDate.toISOString().split('T')[0];
+      const toStr = toDate.toISOString().split('T')[0];
       
-      // Process the data
+      // Add comprehensive debugging for the current issue
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[StockChart Debug] Chart request details:', {
+          symbol,
+          selectedInterval,
+          intervalConfig,
+          currentTime: now.toISOString(),
+          useIntraday,
+          fromStr,
+          toStr,
+          userTimezone: getUserTimezone()
+        });
+      }
+      
+      // Function to process raw data into chart format with timezone conversion
+      const processRawData = (rawData: ChartDataPoint[]) => {
+        const now = new Date(); // Current time for filtering future data
+        
+        // Debug: log the structure of the first few items to understand FMP response format
+        if (process.env.NODE_ENV === 'development' && rawData.length > 0) {
+          console.log('[FMP Data Structure Debug]', {
+            symbol,
+            interval: selectedInterval,
+            rawDataCount: rawData.length,
+            firstItem: rawData[0],
+            hasDate: !!rawData[0]?.date,
+            hasDatetime: !!rawData[0]?.datetime,
+            hasTimestamp: !!rawData[0]?.timestamp,
+            fields: Object.keys(rawData[0] || {})
+          });
+        }
+        
       const processedData = rawData
         .map((item) => {
+            // CORRECT FIX: FMP returns timestamps in Eastern Time (EST/EDT), NOT UTC
+            // Extract the timestamp field from FMP response (field name may vary)
+            const fmpTimestamp = item.date || item.datetime || item.timestamp;
+            
+            if (!fmpTimestamp) {
+              console.warn('[FMP Data Warning] No timestamp found in data item:', item);
+              return null; // Skip items without timestamps
+            }
+            
+            try {
+              // Parse FMP Eastern timestamp correctly using our utility function
+              const utcDate = parseFMPEasternTimestamp(fmpTimestamp);
+              
+              // Filter out any future data points
+              if (utcDate > now) {
+                if (process.env.NODE_ENV === 'development') {
+                  console.warn(`[Future Data Filter] Removing future data point: ${fmpTimestamp} (ET) -> ${formatChartDate(utcDate, '5min', true)} - Current time: ${formatChartDate(now, '5min', true)}`);
+                }
+                return null; // Will be filtered out
+              }
+              
+              // FIXED: Simplified filtering logic that doesn't over-filter valid data
+              // For 1D charts, only filter if we're specifically looking for intraday data
+              // and the data is clearly from a different trading session
+              if (selectedInterval === '1D' && useIntraday) {
+                // Get current time in Eastern timezone for market hours check
+                const easternFormatter = new Intl.DateTimeFormat('en-US', {
+                  timeZone: 'America/New_York',
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false
+                });
+                
+                const easternParts = easternFormatter.formatToParts(now);
+                const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
+                const easternDayOfWeek = new Date().getDay();
+                
+                const isAfterHours = easternHour >= 16 || easternHour < 9;
+                const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
+                const isMarketClosed = isAfterHours || isWeekend;
+                
+                if (isMarketClosed) {
+                  // If markets are closed, show data from the most recent trading day
+                  // Get Eastern time representation of both current time and data point
+                  const year = easternParts.find(part => part.type === 'year')?.value;
+                  const month = easternParts.find(part => part.type === 'month')?.value;
+                  const day = easternParts.find(part => part.type === 'day')?.value;
+                  
+                  if (!year || !month || !day) {
+                    console.error('[Date Construction Error] Missing date components:', { year, month, day });
+                    return null; // Skip this data point if we can't determine the trading day
+                  }
+                  
+                  const easternToday = new Date(`${year}-${month}-${day}`);
+                  
+                  // Validate the constructed date before using it
+                  if (isNaN(easternToday.getTime())) {
+                    console.error('[Date Construction Error] Invalid date created:', `${year}-${month}-${day}`);
+                    return null; // Skip this data point
+                  }
+                  
+                  const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
+                  
+                  // Convert data point to Eastern time for comparison
+                  const dataEasternFormatter = new Intl.DateTimeFormat('en-CA', {
+                    timeZone: 'America/New_York',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                  });
+                  
+                  const dataEasternDate = dataEasternFormatter.format(utcDate);
+                  const tradingDayStr = mostRecentTradingDay.toISOString().split('T')[0];
+                  
+                  // Only filter out if the data is NOT from the most recent trading day
+                  if (dataEasternDate !== tradingDayStr) {
+                    if (process.env.NODE_ENV === 'development') {
+                      console.log(`[Trading Day Filter] Removing data from ${dataEasternDate}, keeping only ${tradingDayStr}`);
+                    }
+                    return null;
+                  }
+                } else {
+                  // Markets are open - be more lenient and allow recent data
+                  // Only filter out data that's clearly from previous days
+                  const dataAge = now.getTime() - utcDate.getTime();
+                  const oneDayMs = 24 * 60 * 60 * 1000;
+                  
+                  // Only filter if data is more than 24 hours old
+                  if (dataAge > oneDayMs) {
+                    if (process.env.NODE_ENV === 'development') {
+                      console.log(`[Age Filter] Removing old data point: ${fmpTimestamp} (${Math.round(dataAge / oneDayMs)} days old)`);
+                    }
+                    return null;
+                  }
+                }
+              }
+              
           const price = item.price !== undefined ? item.price : item.close || 0;
-          const date = new Date(item.date);
           
           return {
-            date: item.date,
+                date: fmpTimestamp, // Use the actual timestamp field that was found
             price,
             volume: item.volume,
-            formattedDate: formatDateForInterval(date, intervalConfig.interval),
-            timestamp: date.getTime()
+                formattedDate: formatDateForInterval(utcDate, intervalConfig.interval),
+                timestamp: utcDate.getTime(),
+                localDate: utcDate
           };
-        })
-        .sort((a, b) => a.timestamp - b.timestamp);
+            } catch (error) {
+              console.error(`[FMP Timestamp Parse Error] Failed to parse ${fmpTimestamp}:`, error);
+              return null; // Skip invalid timestamps
+            }
+          })
+          .filter(item => item !== null) // Remove filtered items
+          .sort((a, b) => a!.timestamp - b!.timestamp) as ProcessedDataPoint[];
 
-      // Calculate price change
+        // Enhanced debugging for development
+        if (process.env.NODE_ENV === 'development') {
+          const filteredCount = rawData.length - processedData.length;
+          const userTimezone = getUserTimezone();
+          
+          console.log('[Chart Data Processing Results]', {
+            symbol,
+            interval: selectedInterval,
+            userTimezone,
+            currentTime: formatChartDate(now, '5min', true),
+            originalCount: rawData.length,
+            processedCount: processedData.length,
+            filteredCount: filteredCount,
+            timeRange: processedData.length > 0 ? {
+              firstPoint: {
+                fmpOriginal: processedData[0].date,
+                parsedUTC: processedData[0].localDate.toISOString(),
+                displayTime: processedData[0].formattedDate
+              },
+              lastPoint: {
+                fmpOriginal: processedData[processedData.length - 1].date,
+                parsedUTC: processedData[processedData.length - 1].localDate.toISOString(),
+                displayTime: processedData[processedData.length - 1].formattedDate
+              }
+            } : null
+          });
+          
+          if (filteredCount > 0) {
+            console.warn(`[Data Filter] Removed ${filteredCount} data points from ${symbol} chart`);
+          }
+          
+          // If we have no data after processing, log the raw data for debugging
+          if (processedData.length === 0 && rawData.length > 0) {
+            console.error(`[Critical] All data was filtered out! Raw data sample:`, {
+              rawDataSample: rawData.slice(0, 3),
+              filteringSettings: {
+                selectedInterval,
+                useIntraday,
+                fromStr,
+                toStr,
+                currentTime: now.toISOString()
+              }
+            });
+          }
+        }
+
+        return processedData;
+      };
+
+      // Function to calculate price changes
+      const calculatePriceChanges = (processedData: ProcessedDataPoint[]) => {
       if (processedData.length >= 2) {
         const firstPrice = processedData[0].price;
         const lastPrice = processedData[processedData.length - 1].price;
@@ -106,95 +389,141 @@ export default function StockChart({ symbol }: StockChartProps) {
         setPriceChange(change);
         setPriceChangePercent(changePercent);
       }
+      };
 
+      // Make the API request
+      const response = await fetch(`/api/fmp/chart/${symbol}?interval=${intervalConfig.interval}&from=${fromStr}&to=${toStr}`);
+      
+      if (!response.ok) {
+        // If intraday data fails and we're on a weekend/holiday, try daily data
+        if (useIntraday && (response.status === 404 || response.status === 400)) {
+          const fallbackResponse = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${fromStr}&to=${toStr}`);
+          
+          if (!fallbackResponse.ok) {
+            const errorData = await fallbackResponse.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || `Failed to fetch chart data: ${fallbackResponse.status}`);
+          }
+          
+          const fallbackData = await fallbackResponse.json();
+          const processedFallbackData = processRawData(fallbackData);
+          
+          if (processedFallbackData.length === 0) {
+            throw new Error(`No chart data available for ${symbol}. The requested time period may be outside of trading hours or contain no market data.`);
+          }
+          
+          calculatePriceChanges(processedFallbackData);
+          setData(processedFallbackData);
+          return;
+        }
+        
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `Failed to fetch chart data: ${response.status}`);
+      }
+      
+      const rawData = await response.json();
+      
+      if (!rawData || rawData.length === 0) {
+        // If no data returned, try daily data as fallback for intraday
+        if (useIntraday) {
+          const fallbackResponse = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${fromStr}&to=${toStr}`);
+          
+          if (fallbackResponse.ok) {
+            const fallbackData = await fallbackResponse.json();
+            if (fallbackData && fallbackData.length > 0) {
+              const processedFallbackData = processRawData(fallbackData);
+              
+              if (processedFallbackData.length === 0) {
+                throw new Error(`No chart data available for ${symbol}. The data may be filtered out due to timing or market hours constraints.`);
+              }
+              
+              calculatePriceChanges(processedFallbackData);
+              setData(processedFallbackData);
+              return;
+            }
+          }
+        }
+        
+        // If still no data, try extending the date range to get recent data
+        const extendedFromDate = new Date(fromDate);
+        extendedFromDate.setDate(extendedFromDate.getDate() - 7); // Go back 7 more days
+        const extendedFromStr = extendedFromDate.toISOString().split('T')[0];
+        
+        const extendedResponse = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${extendedFromStr}&to=${toStr}`);
+        if (extendedResponse.ok) {
+          const extendedData = await extendedResponse.json();
+          if (extendedData && extendedData.length > 0) {
+            const processedExtendedData = processRawData(extendedData);
+            
+            if (processedExtendedData.length === 0) {
+              throw new Error(`No chart data available for ${symbol}. All available data was filtered out - this may be due to timezone or market hours constraints.`);
+            }
+            
+            calculatePriceChanges(processedExtendedData);
+            setData(processedExtendedData);
+            return;
+          }
+        }
+        
+        throw new Error(`No chart data available for ${symbol}. This may be due to market closure, data unavailability, or the symbol may not be valid.`);
+      }
+      
+      // Process the successful data
+      const processedData = processRawData(rawData);
+      
+      if (processedData.length === 0) {
+        // CRITICAL FIX: Add detailed error message when all data is filtered out
+        const errorDetails = process.env.NODE_ENV === 'development' ? 
+          ` Raw data received: ${rawData.length} points, but all were filtered out during processing. Check console for detailed filtering logs.` : 
+          '';
+        
+        // If processed data is empty (due to filtering), try daily data as fallback
+        const fallbackResponse = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${fromStr}&to=${toStr}`);
+        
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          if (fallbackData && fallbackData.length > 0) {
+            const processedFallbackData = processRawData(fallbackData);
+            if (processedFallbackData.length > 0) {
+              calculatePriceChanges(processedFallbackData);
+              setData(processedFallbackData);
+              return;
+            }
+          }
+        }
+        
+        throw new Error(`No chart data available for ${symbol} for the current time period. This might be due to market hours, weekends, or data filtering.${errorDetails} Try selecting a different time range.`);
+      }
+      
+      calculatePriceChanges(processedData);
       setData(processedData);
-    } catch (err: any) {
-      console.error('Error fetching chart data:', err);
-      setError(err.message || 'Failed to fetch chart data');
+      
+    } catch (error) {
+      console.error('Error fetching chart data:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load chart data');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const formatDateForInterval = (date: Date, interval: string): string => {
-    const selectedConfig = TIME_INTERVALS.find(t => t.key === selectedInterval);
-    
-    // Special handling for specific intervals
-    if (selectedInterval === '1D') {
-      // 1D: Only show time (no date)
-      return date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-      });
-    } else if (selectedInterval === '1W') {
-      // 1W: Only show date (no time) 
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric'
-      });
-    } else if (interval.includes('min') || interval.includes('hour')) {
-      // Other intraday: show date + time
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric',
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-      });
-    } else {
-      // For daily and longer periods: include year for periods > 3 months
-      const shouldIncludeYear = selectedConfig && selectedConfig.days > 90;
-      
-      if (shouldIncludeYear) {
-        return date.toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric',
-          year: 'numeric'
-        });
-      } else {
-        return date.toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric' 
-        });
-      }
     }
   };
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
-      const date = new Date(data.date);
+      const localDate = data.localDate;
       
-      // Create a comprehensive date string for the tooltip
-      let tooltipDate = '';
-      const selectedConfig = TIME_INTERVALS.find(t => t.key === selectedInterval);
-      
-      if (selectedConfig?.interval.includes('min') || selectedConfig?.interval.includes('hour')) {
-        // Intraday: Full date + time
-        tooltipDate = date.toLocaleDateString('en-US', { 
-          weekday: 'short',
-          month: 'short', 
-          day: 'numeric',
-          year: 'numeric',
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: true 
-        });
+      // Format tooltip based on interval - for 1D and 1W, show full time + timezone + date
+      let tooltipDate: string;
+      if (selectedInterval === '1D' || selectedInterval === '1W') {
+        // For 1D and 1W: "9:30 AM PDT, June 23" - full format with time and timezone
+        tooltipDate = formatChartDate(localDate, '5min', true);
       } else {
-        // Daily: Full date with weekday
-        tooltipDate = date.toLocaleDateString('en-US', { 
-          weekday: 'long',
-          month: 'long', 
-          day: 'numeric',
-          year: 'numeric'
-        });
+        // For other intervals, use existing logic
+        tooltipDate = data.formattedDate;
       }
       
       return (
-        <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg min-w-[200px]">
-          <p className="text-sm font-medium text-foreground mb-1">{tooltipDate}</p>
-          <p className="text-lg font-semibold text-foreground">
+        <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg px-2 py-1.5 shadow-lg">
+          <p className="text-xs font-medium text-foreground mb-0.5">{tooltipDate}</p>
+          <p className="text-sm font-semibold text-foreground">
             {formatCurrency(payload[0].value)}
           </p>
         </div>
@@ -302,10 +631,7 @@ export default function StockChart({ symbol }: StockChartProps) {
                 axisLine={false}
                 tickLine={false}
                 tick={false}
-                interval={Math.max(1, Math.floor((data.length - 1) / 6))}
-                tickFormatter={(value, index) => {
-                  return value;
-                }}
+                interval={0}
               />
               
               <YAxis 

@@ -2,6 +2,24 @@
 
 Clera is a financial AI platform leveraging advanced language models and agent-based architecture to provide financial analysis, portfolio management, brokerage services, and conversational capabilities. This monorepo contains all the code pertaining to building Clera, simplifying CI/CD pipelines, testing, and onboarding.
 
+## TL;DR
+Open 3 terminals (T1, T2, T3)
+In T1 run: 
+```bash
+cd backend && python -m venv venv && source venv/bin/activate &&
+&& pip install -r requirements.txt && python -m portfolio_realtime.websocket_server
+```
+
+In T2 run: 
+```bash
+source activate.sh && python api_server.py
+```
+
+In T3 run: 
+```bash
+cd frontend-app && npm install && npm run dev
+```
+
 ## Project Structure
 
 The monorepo is organized into the following main directories:
@@ -27,6 +45,18 @@ The backend powers Clera's core functionalities, built primarily with Python.
 *   **Chatbots (`clera_chatbots/`):** Various chatbot implementations (frontend-facing, RAG-enabled with Perplexity/Llama).
 *   **Conversational AI (`conversational_ai/`):** Integrates voice features using LiveKit, Deepgram (STT), and Cartesia (TTS).
 *   **Broker Integration (`utils/alpaca/`):** Handles Alpaca Broker API interactions for account creation, management, and ACH funding via Plaid or manual entry.
+
+### Market Data Management
+
+**Tradable Assets Cache (`backend/data/tradable_assets.json`):**
+*   **Auto-Updated:** This file is automatically refreshed every 24 hours from Alpaca's live market data API to ensure current tradable instruments are available to users.
+*   **Content:** Contains all active, tradable US equities available through Alpaca, including stocks, ETFs, and other securities.
+*   **Git Workflow:** When this file is modified by the automatic update process:
+    1. **Do NOT commit directly to main branch**
+    2. **Create a dedicated branch** for market data updates (e.g., `update/market-data-YYYY-MM-DD`)
+    3. **Review changes** to ensure they represent legitimate new tradable assets
+    4. **Merge via pull request** to maintain audit trail of market data changes
+*   **Why This Matters:** New assets are regularly added to Alpaca's platform, and this system ensures users have access to the latest investment opportunities without manual intervention.
 
 **Technologies:**
 

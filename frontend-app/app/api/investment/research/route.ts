@@ -7,6 +7,7 @@ interface InvestmentTheme {
   title: string;
   summary: string;
   report: string;
+  relevant_tickers: string[];
 }
 
 interface StockPick {
@@ -118,8 +119,15 @@ function createDebugLog(data: any, filename: string) {
   }
 }
 
+const current_date = new Date().toISOString().split('T')[0];
+
 // System prompt for Perplexity's Sonar Deep Research
-const INVESTMENT_SYSTEM_PROMPT = `You are the world's most accomplished CFP (Certified Financial Planner) and CFA (Chartered Financial Analyst) with decades of experience at Goldman Sachs, BlackRock, and Berkshire Hathaway. You combine the fundamental analysis expertise of Warren Buffett, the growth investing principles of Peter Lynch, and the activist value approach of Bill Ackman. Your research is backed by the most current Wall Street analysis and market intelligence.
+const INVESTMENT_SYSTEM_PROMPT = `You are the world's most accomplished CFP (Certified Financial Planner) and CFA (Chartered Financial Analyst) with 
+decades of experience at Goldman Sachs, BlackRock, and Berkshire Hathaway. 
+You combine the fundamental analysis expertise of Warren Buffett, the growth investing principles of Peter Lynch, and the activist value approach of Bill Ackman. 
+Your research is backed by the most current Wall Street analysis and market intelligence.
+
+Today's date is ${current_date}. You MUST use the most recent and current information available.
 
 ## User Context
 You will receive detailed information about a client including:
@@ -128,6 +136,7 @@ You will receive detailed information about a client including:
 - Risk tolerance and preferences
 - Personal interests and values
 - Financial situation and objectives
+- Financial literacy level
 
 ## Your Mission
 Conduct exhaustive research across hundreds of financial sources and generate a comprehensive investment analysis report containing exactly two deliverables:
@@ -142,6 +151,7 @@ Create four investment themes personalized to the user's portfolio, situation, i
    - Current market environment supporting this theme (cite specific Wall Street research)
    - Why this theme aligns with the user's portfolio and goals
    - Key catalysts and growth drivers
+4. **Relevant Tickers**: Provide EXACTLY 3-5 stock ticker symbols that represent the best investment opportunities within this theme. These should be different from your main stock picks and provide additional exposure to the theme.
 
 ### Task 2: Stock Recommendations (EXACTLY 6)
 Select six individual stocks based on fundamental analysis and current market conditions. For each stock:
@@ -184,7 +194,8 @@ You MUST respond in valid JSON format matching this exact schema. Do not include
     {
       "title": "2-4 word compelling theme title",
       "summary": "Single attention-grabbing sentence",
-      "report": "Detailed 200-300 word analysis of the investment theme"
+      "report": "Detailed 200-300 word analysis of the investment theme",
+      "relevant_tickers": ["TICKER1", "TICKER2", "TICKER3"]
     }
   ],
   "stock_picks": [
@@ -222,9 +233,18 @@ const INVESTMENT_SCHEMA = {
           report: {
             type: "string",
             description: "Detailed 200-300 word analysis of the investment theme"
+          },
+          relevant_tickers: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            description: "Array of 3-5 stock ticker symbols relevant to this theme",
+            minItems: 3,
+            maxItems: 5
           }
         },
-        required: ["title", "summary", "report"],
+        required: ["title", "summary", "report", "relevant_tickers"],
         additionalProperties: false
       },
       minItems: 4,
@@ -278,7 +298,7 @@ export async function GET(request: NextRequest) {
   try {
     console.log("GET request - returning cached investment research data");
     
-    // Always return cached data for GET requests
+    // First, try to return cached data for GET requests
     const cachedData = readCachedData();
     
     if (cachedData) {
@@ -291,9 +311,29 @@ export async function GET(request: NextRequest) {
           user_profile_used: cachedData.user_profile_used
         }
       });
-    } else {
+    }
+
+    // If no cached data available, temporarily serve static test data with relevant tickers
+    console.log("No cached data found, serving static test data with relevant tickers for beta testing");
+    
+    try {
+      const staticDataPath = path.join(process.cwd(), 'app', 'api', 'investment', 'research', 'static-test-data.json');
+      const staticData = JSON.parse(fs.readFileSync(staticDataPath, 'utf-8'));
+      
       return NextResponse.json({
-        error: "No cached investment research data available. Use POST to generate new data."
+        success: true,
+        data: staticData,
+        metadata: {
+          generated_at: new Date().toISOString(),
+          cached: false,
+          source: "static_test_data",
+          user_profile_used: "beta_test_profile"
+        }
+      });
+    } catch (staticError) {
+      console.error('Error reading static test data:', staticError);
+      return NextResponse.json({
+        error: "No cached investment research data available and static test data not found. Use POST to generate new data."
       }, { status: 404 });
     }
   } catch (error) {

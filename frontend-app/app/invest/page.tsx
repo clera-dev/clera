@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
+import { useSidebarCollapse } from "@/components/ClientLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal, Search, AlertCircle, X } from "lucide-react";
@@ -46,6 +47,9 @@ export default function InvestPage() {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [isLoadingAccountId, setIsLoadingAccountId] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  
+  // Get sidebar collapse function
+  const { autoCollapseSidebar } = useSidebarCollapse();
 
   // Use effect to cleanup any dev tools or floating elements
   useEffect(() => {
@@ -169,6 +173,8 @@ export default function InvestPage() {
   }, [accountId, isLoadingAccountId]);
 
   const handleStockSelect = (symbol: string) => {
+    // Auto-collapse sidebar when stock dialog opens
+    autoCollapseSidebar();
     setSelectedSymbol(symbol);
     // Open modal instead of scrolling
   };
@@ -273,6 +279,7 @@ export default function InvestPage() {
         <InvestmentResearch 
           onStockSelect={handleStockSelect}
           isChatOpen={isChatOpen}
+          onThemeSelect={autoCollapseSidebar}
         />
 
         <div className="pb-24">
@@ -282,7 +289,7 @@ export default function InvestPage() {
 
       {/* Stock Information Dialog */}
       <Dialog open={!!selectedSymbol} onOpenChange={(open) => !open && setSelectedSymbol(null)}>
-        <DialogContent className="sm:max-w-[85vw] lg:max-w-[70vw] xl:max-w-[60vw] p-0 max-h-[90vh] overflow-auto border-0 shadow-xl rounded-lg left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2">
+        <DialogContent className="sm:max-w-[85vw] lg:max-w-[70vw] xl:max-w-[60vw] p-0 max-h-[90vh] overflow-auto border-0 shadow-xl rounded-lg left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-[100]">
           <DialogHeader className="bg-slate-950 p-4 flex flex-row items-center justify-between sticky top-0 z-10 border-b border-slate-800">
             <DialogTitle className="text-white text-xl font-semibold">{selectedSymbol}</DialogTitle>
             <DialogClose className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded-full p-1">

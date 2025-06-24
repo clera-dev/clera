@@ -553,3 +553,86 @@ To provide real-time updates for portfolio values, the frontend establishes a We
 *   The base WebSocket URL (`wss://ws.askclera.com`) should ideally be configurable via an environment variable in the frontend's `.env.local` or deployment settings, for example:
     `NEXT_PUBLIC_WEBSOCKET_BASE_URL=wss://ws.askclera.com`
     This allows for easier changes between development, staging, and production environments.
+
+## Company Profile Data Usage Patterns
+
+### Overview
+
+The frontend uses a hybrid approach for company profile data, balancing performance (cached data) with accuracy (live data) depending on the user interaction context.
+
+### Data Sources
+
+1. **Supabase Cache** (`/api/companies/profiles/[symbol]/route.ts`):
+   - Cached company profiles from Financial Modeling Prep API
+   - Updated periodically by backend scripts
+   - Used for **display-only purposes** (logos, basic info)
+
+2. **Live FMP API** (`/api/fmp/profile/[symbol]/route.ts`):
+   - Direct API calls to Financial Modeling Prep
+   - Always returns current data (pricing, metrics, etc.)
+   - Used when **users interact** with securities
+
+### Usage Patterns by Component
+
+#### **Display/Search Components (Cached Data Only)**
+
+These components use cached data via `useCompanyProfile` hook for **logos and basic display**:
+
+- **`StockSearchBar`**: Shows cached logos in search results
+- **`StockPickCard`**: Shows cached logos in "Clera's Stock Picks"  
+- **`RelevantStocks`**: Shows cached logos in investment theme relevant stocks
+- **Portfolio displays**: Uses cached logos for position listings
+
+**Data Used**: Only `image` (logo URL) and `companyName` for display
+**Benefits**: Fast loading, reduced API calls, better UX
+
+#### **Interaction Components (Live Data)**
+
+When users **click on securities**, these components fetch **live data**:
+
+- **`StockInfoCard`**: Fetches complete live profile via `/api/fmp/profile/[symbol]`
+- **Security detail modals**: All data including current pricing and metrics
+- **Trade execution flows**: Uses live data for accurate pricing
+
+**Data Used**: Complete profile including current price, market cap, financial metrics
+**Benefits**: Accurate, up-to-date information for investment decisions
+
+### Error Handling
+
+The system gracefully handles symbols that aren't available:
+
+1. **Pattern Detection**: Automatically detects likely unavailable symbols:
+   - Canadian securities (`.TO`, `.V`)
+   - Warrants (`.WS`, `.WT`)
+   - Units (`.U`)
+   - Rights (`.RT`)
+   - Very long symbols (>5 characters)
+
+2. **Caching Strategy**:
+   - Caches successful profiles for fast access
+   - Caches 404s to avoid repeated failed requests
+   - Falls back to letter avatars when logos unavailable
+
+3. **User Experience**:
+   - No console errors for known unavailable symbols
+   - Graceful fallbacks for missing data
+   - Fast search with minimal API calls
+
+### Implementation Details
+
+```typescript
+// Cached data usage (display only)
+const { logoUrl, displayName } = useCompanyProfile(symbol);
+
+// Live data usage (user interactions)
+const response = await fetch(`/api/fmp/profile/${symbol}`);
+```
+
+### Benefits of This Approach
+
+1. **Performance**: Search and list views load quickly with cached logos
+2. **Accuracy**: User actions get current data for investment decisions  
+3. **Cost Efficiency**: Reduces API calls while maintaining data freshness
+4. **User Experience**: Fast UI with accurate data when it matters
+
+This pattern ensures users see attractive, fast-loading interfaces while getting accurate data for actual investment decisions.

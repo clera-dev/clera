@@ -2,64 +2,84 @@
   "data": {
     "investment_themes": [
       {
-        "title": "AI Semiconductor Dominance",
-        "summary": "Capitalize on the accelerating demand for advanced chips powering artificial intelligence infrastructure.",
-        "report": "The AI semiconductor market is projected to grow at a 38% CAGR through 2030, driven by hyperscale cloud providers and enterprise AI adoption[5][15]. This theme leverages your long time horizon and high risk tolerance by focusing on companies creating the foundational technology for machine learning workloads. Current industry dynamics show Nvidia maintaining 80% market share in AI accelerators while AMD and Broadcom gain traction in alternative architectures[5][15][18]. The recent 45% YoY increase in AI-related semiconductor R&D spending indicates sustained innovation in this space[18]. This aligns with your tech focus while diversifying beyond consumer hardware into enterprise and cloud infrastructure. Key catalysts include the $250B CHIPS Act funding rollout and emerging applications in edge AI deployments[5][18]."
+        "title": "AI Infrastructure Revolution",
+        "summary": "Capitalize on the accelerating adoption of artificial intelligence across industries through companies building foundational AI technologies.",
+        "report": "The AI infrastructure theme represents a generational investment opportunity driven by the convergence of accelerated computing, cloud adoption, and enterprise AI deployment. Current market analysis indicates the global AI chip market alone is projected to grow at a 38% CAGR through 2030, with NVIDIA commanding over 80% market share in AI accelerators. This growth is fueled by massive cloud hyperscaler capex ($200B+ annually) targeting AI infrastructure and the proliferation of large language models across industries. For a young investor with high risk tolerance, this theme provides leveraged exposure to technological megatrends while diversifying away from consumer hardware. The timing is particularly opportune given recent 30% pullbacks in leading AI stocks from January 2025 peaks, creating attractive entry points. With your 30-year horizon, this positions you at the forefront of the $15 trillion AI productivity wave just beginning to transform global economies.",
+        "relevant_tickers": [
+          "NVDA",
+          "AVGO",
+          "TSM"
+        ]
       },
       {
-        "title": "Cloud Computing Infrastructure",
-        "summary": "Invest in the backbone providers enabling global digital transformation through scalable cloud solutions.",
-        "report": "The cloud infrastructure market is expected to reach $1.2T by 2027, growing at 19% annually as enterprises shift workloads to hybrid environments[16]. This theme diversifies your portfolio beyond Apple into enterprise software and infrastructure while maintaining tech sector exposure. Market leaders like Amazon AWS and Microsoft Azure are seeing 30%+ YoY revenue growth in their cloud divisions, with AI-as-a-service becoming a $150B incremental opportunity[16]. Recent innovations in quantum cloud services and AI-optimized data centers create multiple growth vectors. The theme aligns with your aggressive profile through high-margin recurring revenue models and massive TAM expansion in emerging markets[16][8]."
+        "title": "Cybersecurity Dominance",
+        "summary": "Target companies leading the essential defense against escalating cyber threats in our increasingly digital world.",
+        "report": "Cybersecurity has transitioned from IT cost center to strategic business imperative, with global cybercrime damages projected to reach $13.8 trillion annually by 2028. The sector exhibits remarkable resilience with enterprise security budgets growing at 14% CAGR despite macroeconomic uncertainties. Current market dynamics favor platform consolidation where players like CrowdStrike and Palo Alto Networks capture market share through integrated threat prevention clouds. For your portfolio, this theme provides critical diversification into a non-cyclical growth sector with recession-resistant characteristics. The technological arms race against AI-powered cyber threats ensures sustained 20%+ revenue growth for category leaders through 2030. With your $10,000 annual investment capacity, dollar-cost averaging into cybersecurity leaders capitalizes on the sector's 35% valuation discount from 2024 peaks while maintaining alignment with your technology focus.",
+        "relevant_tickers": [
+          "CRWD",
+          "PANW",
+          "ZS"
+        ]
       },
       {
         "title": "Biotech Innovation Wave",
-        "summary": "Target breakthrough therapies in genetic medicine and precision oncology using next-generation platforms.",
-        "report": "The biotech sector offers 400%+ upside potential for successful clinical-stage companies, with FDA approvals accelerating to 65 novel drugs in 2024[6]. This theme provides non-correlated exposure to your tech holdings while maintaining aggressive growth characteristics. Companies like Vertex Pharmaceuticals and BioNTech are pioneering mRNA and CRISPR therapies for diseases with multi-billion dollar addressable markets[6]. Recent developments include Vertex's phase III cystic fibrosis cure and BioNTech's 12 cancer vaccine candidates entering clinical trials[6]. With $35B in venture funding flowing into biotech startups in 2024, the innovation pipeline remains robust despite macroeconomic headwinds."
+        "summary": "Invest in breakthrough therapeutic platforms addressing multi-billion dollar unmet medical needs.",
+        "report": "Biotechnology offers asymmetric return potential perfectly suited for young investors with long time horizons. The convergence of AI-driven drug discovery, mRNA technology, and genetic medicine has accelerated therapeutic development cycles while reducing clinical trial risks. Current valuation disconnects present unusual opportunities - the NASDAQ Biotechnology Index trades at just 4.2x sales versus 10-year average of 6.5x despite record FDA drug approvals. Key catalysts include the obesity drug market expanding to $150B+ by 2030 and Alzheimer's treatments demonstrating unprecedented efficacy. For your portfolio, biotech provides essential diversification from technology sector volatility while maintaining aggressive growth characteristics. The 30-year horizon allows full capture of drug commercialization curves, with companies like Vertex Pharmaceuticals expected to grow earnings 25% annually through 2030.",
+        "relevant_tickers": [
+          "VRTX",
+          "BNTX",
+          "LLY"
+        ]
       },
       {
-        "title": "Green Energy Transition",
-        "summary": "Position in leaders driving the $10T global shift to renewable power and electric mobility.",
-        "report": "Solar and wind installation rates are accelerating 40% faster than pre-IRA estimates, creating $3T in investment opportunities through 2035[7][20]. This theme capitalizes on structural demand shifts while diversifying your sector exposure. First Solar's 25GW manufacturing expansion and Tesla's 50% battery cost reductions position these companies to dominate their verticals[7][20]. Policy catalysts include strengthened EPA emission rules and $370B in clean energy tax credits through the Inflation Reduction Act. The sector's 2025 forward P/E of 18x remains attractive compared to tech's 32x, offering growth at reasonable valuations[7][19]."
+        "title": "Emerging Markets Ascendancy",
+        "summary": "Capture hypergrowth in developing economies leading the global technology adoption curve.",
+        "report": "Emerging markets represent the next frontier for aggressive growth investors, with countries like India and Vietnam growing tech spending at 18% CAGR - triple developed market rates. Structural advantages include younger demographics, faster 5G deployment, and government digitalization initiatives. The MSCI Emerging Markets Index trades at just 12x forward earnings versus 20x for S&P 500, creating valuation arbitrage despite superior growth projections. For your concentrated US portfolio, this theme provides essential geographic diversification and currency hedging benefits. Current allocations are particularly timely given ASEAN manufacturing relocation trends and the artificial intelligence talent migration to markets like Taiwan. With your risk tolerance, satellite positions in Argentina (53% YTD ETF performance) and China tech (30% YTD) offer tactical opportunities to enhance returns beyond core holdings.",
+        "relevant_tickers": [
+          "ARGT",
+          "KTEC",
+          "FXI"
+        ]
       }
     ],
     "stock_picks": [
       {
         "ticker": "NVDA",
         "company_name": "NVIDIA Corporation",
-        "rationale": "The undisputed leader in AI accelerators with 80% market share, NVIDIA continues innovating with its Blackwell GPU architecture achieving 5x performance gains[5][15]. Recent $25B data center contracts with major cloud providers and 150% YoY EPS growth support 35% upside to consensus $1,200 price target. Trading at 35x forward earnings despite 70% net margins."
+        "rationale": "NVIDIA dominates the $250B AI accelerator market with 90% share in training workloads. Q2 2025 guidance projects 170% YoY revenue growth to $40B, fueled by Blackwell GPU demand exceeding supply through 2026. Recent partnerships with TSMC (3nm co-development) and AWS ($4B infrastructure deal) cement technological moat. Trading at 38x forward P/E despite 150% EPS growth, valuation remains attractive for category-defining leadership in parallel computing."
       },
       {
-        "ticker": "AMZN",
-        "company_name": "Amazon.com, Inc.",
-        "rationale": "AWS dominates cloud infrastructure with 31% share and 25% operating margins, now monetizing AI through Bedrock service[16]. Retail margins expanding 400bps through automation. Analysts see 30% upside to $210 target as advertising and healthcare verticals accelerate. Trades at 40% discount to MSFT cloud multiples."
+        "ticker": "CRWD",
+        "company_name": "CrowdStrike Holdings, Inc.",
+        "rationale": "CrowdStrike's AI-native Falcon platform demonstrates 30% YoY revenue growth with 80% gross margins. Recent wins include $100M+ federal contracts and displacement of legacy vendors at Fortune 500 accounts. Analyst consensus projects 35% CAGR through 2028 as cloud-native security becomes enterprise standard. The stock trades at premium 17x sales but justifies valuation with rule-of-70 metrics (growth + FCF margin)."
       },
       {
-        "ticker": "VRTX",
-        "company_name": "Vertex Pharmaceuticals Incorporated",
-        "rationale": "Pipeline includes 5 potential blockbusters beyond cystic fibrosis dominance, with pain drug VX-548 facing $5B opportunity[6]. 85% success rate in phase III trials and 35% ROIC justify premium valuation. Recent $3B partnership with CRISPR Therapeutics positions as gene therapy leader. 12-month price target implies 40% upside."
+        "ticker": "BNTX",
+        "company_name": "BioNTech SE",
+        "rationale": "BioNTech's mRNA pipeline features 12 cancer vaccines in clinical trials, with Phase 3 melanoma data due Q4 2025. The company's $15B cash position funds both oncology leadership and infectious disease expansion. Trading at 8x forward sales versus 20x sector average, valuation ignores platform potential beyond COVID. Recent partnership with DARPA on rapid vaccine development demonstrates government confidence in technology."
       },
       {
-        "ticker": "AMD",
-        "company_name": "Advanced Micro Devices, Inc.",
-        "rationale": "Gaining share in AI chips with MI300X accelerators winning 30% of new data center deployments[5][15]. 50% YoH data center growth and 66% performance edge in AI workloads justify 25x sales multiple. $12B FY25 AI revenue guidance suggests 120% upside to current valuation if executed."
+        "ticker": "SEZL",
+        "company_name": "Sezzle Inc.",
+        "rationale": "Sezzle's BNPL platform targets Gen Z consumers with 123% YoY revenue growth and 64% GMV expansion. The company's capital-light model achieves profitability at scale while capturing e-commerce payment share from credit cards. At 3.5x sales versus 15x for sector peers, valuation disconnect exists for the fastest-growing fintech. Recent expansion into B2B payments represents $5B incremental TAM."
       },
       {
-        "ticker": "FSLR",
-        "company_name": "First Solar, Inc.",
-        "rationale": "Leading U.S. solar manufacturer with 25GW capacity and 45% cost advantage over Chinese imports[7][19]. $10B backlog at 25% margins supported by IRA tax credits. Analysts see 50% upside as global solar installations double by 2027. 0.5 beta provides stability versus tech holdings."
+        "ticker": "GEV",
+        "company_name": "GE Vernova",
+        "rationale": "GE Vernova dominates renewable energy infrastructure with 40% market share in offshore wind turbines. The $200B order backlog provides revenue visibility through 2030, while grid modernization initiatives address $3T global power infrastructure gap. The stock trades at 22x forward earnings despite 25% EPS growth projections. Recent DOE loan guarantees de-risk U.S. manufacturing expansion."
       },
       {
-        "ticker": "TSLA",
-        "company_name": "Tesla, Inc.",
-        "rationale": "Dominating EV transition with 50% battery cost reduction and $25k model launch[20]. Energy storage business growing 140% YoY offsets auto cyclicality. 45% implied upside to $300 target as FSD v13 achieves regulatory milestones. Technicals show strong support at 200-week MA."
+        "ticker": "QCOM",
+        "company_name": "Qualcomm Incorporated",
+        "rationale": "Qualcomm's Snapdragon X Elite captures the AI PC transition with 45% performance-per-watt advantage over competitors. Design wins at all major OEMs position the company for 50% market share in the $100B Windows on ARM opportunity. Trading at 16x earnings versus 30% EPS growth, valuation fails to reflect royalty model expansion into automotive (25% revenue CAGR)."
       }
     ],
     "market_analysis": {
-      "current_environment": "Growth stocks leading with 25% YTD return as Fed signals dovish pivot. AI-related sectors outperforming by 1800bps. Semiconductor inventory correction complete with 30% QoQ orders growth. Biotech valuations 40% below 2021 peaks despite approval acceleration.",
-      "risk_factors": "Monitor chip export restrictions to China, interest rate volatility above 4.5%, and AI regulation. Biotech trial failures could sector-wide 20% drawdowns. EV adoption rates sensitive to infrastructure spending delays."
+      "current_environment": "Global equities trade at 18.5x forward P/E amid synchronized growth acceleration. The AI investment cycle drives technology sector earnings, projected at 28% YoY growth for Q2 2025. Emerging markets outperform with 15% YTD returns as manufacturing PMIs signal expansion. Bond yields stabilize at 4.2% despite inflation moderation, maintaining equity attractiveness.",
+      "risk_factors": "Monitor Fed policy uncertainty (2 potential 2025 hikes), China property sector contagion risks, and semiconductor export control escalations. Technical indicators show Nasdaq 100 at 15% premium to 200-DMA, warranting disciplined entry points. Sector rotation from AI to value remains primary portfolio risk."
     }
   },
-  "generated_at": "2025-05-30T21:07:32.820Z",
+  "generated_at": "2025-06-23T11:57:08.378601",
   "user_profile_used": {
     "age": "22-23 (fresh out of college)",
     "location": "Newport Beach, California",
@@ -81,8 +101,37 @@
     "keyIssues": "- Extremely poor diversification (55.9% in single stock)\n- High concentration risk in AAPL\n- Need for better sector and geographic diversification\n- Opportunity to leverage long time horizon for aggressive growth"
   },
   "metadata": {
-    "cached": false,
-    "restored_from_debug_logs": true,
-    "original_generation_time": "2025-05-30T21:07:32.820Z"
+    "usage": {
+      "prompt_tokens": 1571,
+      "completion_tokens": 2377,
+      "total_tokens": 3948,
+      "citation_tokens": 12771,
+      "num_search_queries": 16,
+      "reasoning_tokens": 64696
+    },
+    "citations": [
+      "https://www.morningstar.com/funds/3-great-aggressive-growth-funds-2025-2",
+      "https://www.investing.com/academy/etfs/best-growth-etfs-to-watch/",
+      "https://www.investopedia.com/the-best-tech-stocks-8781414",
+      "https://www.home.saxo/learn/guides/diversification/diversification-for-advanced-investors-high-risk-high-reward-strategies",
+      "https://www.nerdwallet.com/article/investing/what-are-emerging-markets",
+      "https://www.ig.com/en/trading-strategies/best-renewable-energy-stocks-to-watch-in-2025-250116",
+      "https://www.nerdwallet.com/article/investing/understanding-small-cap-stocks",
+      "https://www.bankrate.com/investing/best-performing-tech-stocks/",
+      "https://www.securities.io/10-promising-biotech-stocks-in-the-medical-field/",
+      "https://www.ig.com/uk/trading-strategies/best-biotech-stocks-to-watch-250228",
+      "https://www.morningstar.com/stocks/best-biotech-stocks-buy",
+      "https://www.ig.com/en/news-and-trade-ideas/best-ai-stocks-to-watch-230622",
+      "https://investboss.com/threads/cybersecurity-stocks-sector-deep-dive-top-picks-%E2%80%93-june-2025.989/latest",
+      "https://intellectia.ai/blog/best-healthcare-etf",
+      "https://www.morningstar.co.uk/uk/news/259364/best-ai-stocks-to-invest-in-now.aspx",
+      "https://www.nasdaq.com/articles/cybersecurity-stock-beating-market-2025-should-you-buy-it-hand-over-fist",
+      "https://www.schwab.com/learn/story/retirement-portfolio-assets-allocation-by-age",
+      "https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/aggressive-investment-strategy/",
+      "https://investingnews.com/daily/tech-investing/cybersecurity-investing/cybersecurity-etfs/",
+      "https://carboncredits.com/top-5-carbon-etfs-for-sustainable-investing-in-2025/"
+    ],
+    "model": "sonar-deep-research",
+    "test_run": true
   }
-} 
+}

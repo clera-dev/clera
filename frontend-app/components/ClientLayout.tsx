@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, createContext, useContext } from "react";
 import { usePathname } from "next/navigation";
 import { ThemeProvider } from "next-themes";
 import MainSidebar from "@/components/MainSidebar";
@@ -8,10 +8,27 @@ import { createClient } from "@/utils/supabase/client";
 import SideBySideLayout from "./SideBySideLayout";
 import FooterComponent from "@/components/FooterComponent";
 import { CleraAssistProvider } from "@/components/ui/clera-assist-provider";
+import { Button } from "@/components/ui/button";
+import { Menu, ChevronLeft } from "lucide-react";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
 }
+
+// Create a context for sidebar collapse functionality
+interface SidebarContextType {
+  autoCollapseSidebar: () => void;
+}
+
+const SidebarContext = createContext<SidebarContextType | null>(null);
+
+export const useSidebarCollapse = () => {
+  const context = useContext(SidebarContext);
+  if (!context) {
+    return { autoCollapseSidebar: () => {} }; // No-op if context not available
+  }
+  return context;
+};
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -88,6 +105,21 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       setIsSideChatOpen(false);
     }
   }, [pathname]);
+
+  // Close mobile sidebar when screen becomes desktop size
+  useEffect(() => {
+    const handleResize = () => {
+      // Close mobile sidebar on desktop breakpoint (1024px+)
+      if (window.innerWidth >= 1024 && isMobileSidebarOpen) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
+  }, [isMobileSidebarOpen]);
 
   useEffect(() => {
     const checkAuthAndOnboarding = async () => {
@@ -166,21 +198,66 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   // Check if current path supports side chat
   const canShowSideChat = sideChatEnabledPaths.includes(pathname || '');
 
+  // Auto-collapse sidebar function for dialogs
+  const autoCollapseSidebar = () => {
+    // Close mobile sidebar if open
+    if (isMobileSidebarOpen) {
+      setIsMobileSidebarOpen(false);
+    }
+    // Collapse desktop sidebar if not already collapsed
+    if (!isSidebarCollapsed) {
+      console.log('ClientLayout: Auto-collapsing sidebar, dispatching sidebarCollapsedChange event');
+      setIsSidebarCollapsed(true);
+      localStorage.setItem('sidebarCollapsed', 'true');
+      
+      // Dispatch event to notify other components with a small delay to ensure state propagation
+      if (typeof window !== 'undefined') {
+        setTimeout(() => {
+          window.dispatchEvent(new Event('sidebarCollapsedChange'));
+        }, 0);
+      }
+    }
+  };
+
   return (
-    <ThemeProvider
-      attribute="class"
-      defaultTheme="system"
-      enableSystem
-      disableTransitionOnChange
-    >
-      <CleraAssistProvider
-        onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
-        sideChatVisible={isSideChatOpen}
+    <SidebarContext.Provider value={{ autoCollapseSidebar }}>
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="system"
+        enableSystem
+        disableTransitionOnChange
       >
-        <div className="flex h-screen">
-        {/* Hidden spacer div that takes up space but doesn't show content */}
+        <CleraAssistProvider
+          onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
+          sideChatVisible={isSideChatOpen}
+        >
+        <div className="flex h-screen relative">
+          {/* Mobile hamburger button - OUTSIDE sidebar container so it's always visible */}
+          {shouldShowSidebar && !isMobileSidebarOpen && (
+            <div className="lg:hidden fixed left-4 top-4 z-40 pointer-events-auto">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+                className="bg-background/80 backdrop-blur-sm border border-border/50 shadow-md hover:bg-background/90"
+              >
+                <Menu size={24} />
+              </Button>
+            </div>
+          )}
+          
+          {/* Mobile sidebar overlay/backdrop */}
+          {shouldShowSidebar && isMobileSidebarOpen && (
+            <div 
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 lg:hidden"
+              onClick={() => setIsMobileSidebarOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+          
+          {/* Hidden spacer div that takes up space but doesn't show content - only on desktop */}
         {shouldShowSidebar && (
-          <div className={`h-full transition-all duration-300 ease-in-out invisible ${isSidebarCollapsed ? 'w-20' : 'w-64'}`} />
+            <div className={`h-full transition-all duration-300 ease-in-out invisible hidden lg:block ${isSidebarCollapsed ? 'w-20' : 'w-64'}`} />
         )}
         
         {/* Main content area - adjusted to account for sidebar width */}
@@ -202,19 +279,39 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           {!isAuthenticated && !isLoading && <FooterComponent />}
         </main>
         
-        {/* Actual sidebar component - now with fixed positioning */}
+          {/* Actual sidebar component - improved positioning */}
         {shouldShowSidebar && (
-          <div className={`fixed left-0 top-0 bottom-0 transition-all duration-300 ease-in-out z-55 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`}>
+            <div className={`
+              fixed left-0 top-0 bottom-0 transition-all duration-300 ease-in-out z-55
+              ${isSidebarCollapsed ? 'w-20' : 'w-64'}
+              ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
+            `}>
             <MainSidebar 
               isMobileSidebarOpen={isMobileSidebarOpen} 
               setIsMobileSidebarOpen={setIsMobileSidebarOpen}
               onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
               sideChatVisible={isSideChatOpen}
             />
+              
+              {/* Mobile close handle - attached to sidebar, sticks out to the right */}
+              {isMobileSidebarOpen && (
+                <div className="lg:hidden absolute top-1/2 -translate-y-1/2 -right-8 z-10">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsMobileSidebarOpen(false)}
+                    className="h-12 w-8 rounded-l-none rounded-r-lg bg-background/90 backdrop-blur-sm border border-l-0 border-border/50 shadow-lg hover:bg-background/95 flex items-center justify-center"
+                    aria-label="Close sidebar"
+                  >
+                    <ChevronLeft size={20} className="text-muted-foreground" />
+                  </Button>
+                </div>
+              )}
           </div>
         )}
         </div>
       </CleraAssistProvider>
     </ThemeProvider>
+    </SidebarContext.Provider>
   );
 } 
