@@ -56,32 +56,66 @@ export const formatCurrency = (
 };
 
 /**
- * Retrieves the Alpaca Account ID.
- * Prioritizes fetching from localStorage. If not found, fetches from Supabase `user_onboarding` table.
- * Stores the fetched ID back into localStorage for future use.
+ * SECURITY HELPER: Cleans up global localStorage entries and migrates to user-specific keys
+ * This prevents cross-user contamination in localStorage
+ */
+export const cleanupGlobalLocalStorage = async (): Promise<void> => {
+  try {
+    // Get current user to create user-specific keys
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.warn("Cannot cleanup localStorage: No authenticated user");
+      return;
+    }
+    
+    // Clean up ALL global alpaca-related keys that could cause contamination
+    const globalKeysToClean = [
+      'alpacaAccountId',
+      'relationshipId', 
+      'bankAccountNumber',
+      'bankRoutingNumber',
+      'transferAmount',
+      'transferId'
+    ];
+    
+    console.log("Cleaning up global localStorage entries for security...");
+    let cleanedCount = 0;
+    globalKeysToClean.forEach(key => {
+      try {
+        if (localStorage.getItem(key) !== null) {
+          localStorage.removeItem(key);
+          cleanedCount++;
+        }
+      } catch (error) {
+        console.error(`Error removing global localStorage key ${key}:`, error);
+      }
+    });
+    
+    if (cleanedCount > 0) {
+      console.log(`Global localStorage cleanup completed: removed ${cleanedCount} contaminated keys for user:`, user.id);
+    }
+  } catch (error) {
+    console.error("Error during localStorage cleanup:", error);
+  }
+};
+
+/**
+ * Retrieves the Alpaca Account ID for the current authenticated user.
+ * SECURITY FIX: Always fetches from Supabase first to ensure correct user context.
+ * Only uses localStorage as a secondary cache for the SAME user.
  * 
  * @returns {Promise<string | null>} The Alpaca Account ID or null if not found.
  */
 export const getAlpacaAccountId = async (): Promise<string | null> => {
-  // 1. Check localStorage first
+  console.log("Alpaca Account ID: Starting secure user-specific lookup.");
+  
+  // 1. SECURITY CRITICAL: Get current authenticated user first
+  const supabase = createClient();
+  
   try {
-    const storedId = localStorage.getItem('alpacaAccountId');
-    if (storedId && storedId !== 'null' && storedId !== 'undefined' && storedId !== 'Missing') { // Added checks for invalid strings
-      console.log("Retrieved Alpaca Account ID from localStorage:", storedId);
-      return storedId;
-    }
-  } catch (error) {
-    console.error("Error reading Alpaca Account ID from localStorage:", error);
-    // Proceed to fetch from Supabase even if localStorage access fails
-  }
-
-  // 2. Fallback to Supabase
-  console.log("Alpaca Account ID: Attempting Supabase fallback.");
-  const supabase = createClient(); // Use the client-side Supabase client
-  console.log("Alpaca Account ID: Supabase client potentially created.");
-
-  try {
-    console.log("Alpaca Account ID: Attempting to get user.");
+    console.log("Alpaca Account ID: Attempting to get authenticated user.");
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError) {
@@ -93,12 +127,28 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
       return null; // Cannot fetch without user
     }
 
-    console.log("Alpaca Account ID: User found:", user.id, ". Attempting DB query.");
+    console.log("Alpaca Account ID: User found:", user.id);
+    
+    // 2. Check user-specific localStorage key (SECURITY FIX)
+    const userSpecificKey = `alpacaAccountId_${user.id}`;
+    try {
+      const storedId = localStorage.getItem(userSpecificKey);
+      if (storedId && storedId !== 'null' && storedId !== 'undefined' && storedId !== 'Missing') {
+        console.log("Retrieved Alpaca Account ID from user-specific localStorage:", storedId);
+        // Still validate this cached ID against Supabase periodically for security
+        return storedId;
+      }
+    } catch (error) {
+      console.error("Error reading user-specific Alpaca Account ID from localStorage:", error);
+    }
+
+    // 3. Fetch from Supabase (PRIMARY SOURCE)
+    console.log("Alpaca Account ID: Fetching from Supabase for user:", user.id);
     const { data: onboardingData, error: dbError } = await supabase
       .from('user_onboarding')
       .select('alpaca_account_id')
       .eq('user_id', user.id)
-      .maybeSingle(); // Use maybeSingle to handle cases where the record might not exist yet
+      .maybeSingle();
 
     if (dbError) {
       console.error("Alpaca Account ID: Supabase DB query error:", dbError);
@@ -111,21 +161,24 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
       const fetchedId = onboardingData.alpaca_account_id;
       console.log("Alpaca Account ID: Retrieved from Supabase:", fetchedId);
       
-      // 3. Store fetched ID back into localStorage
+      // 4. Store in user-specific localStorage (SECURITY FIX)
       try {
-        localStorage.setItem('alpacaAccountId', fetchedId);
-        console.log("Alpaca Account ID: Stored fetched ID into localStorage.");
+        // Clear any old global localStorage entries
+        await cleanupGlobalLocalStorage();
+        
+        // Store with user-specific key
+        localStorage.setItem(userSpecificKey, fetchedId);
+        console.log("Alpaca Account ID: Stored in user-specific localStorage.");
       } catch (storageError) {
-        console.error("Alpaca Account ID: Error storing fetched ID to localStorage:", storageError);
+        console.error("Alpaca Account ID: Error storing to user-specific localStorage:", storageError);
       }
       return fetchedId;
     } else {
       console.warn("Alpaca Account ID: Not found in Supabase onboarding data for user:", user.id);
-      // Optionally store 'not_found' or similar in localStorage to prevent repeated checks?
       return null;
     }
   } catch (error) {
-    console.error("Alpaca Account ID: Unexpected error during Supabase fallback:", error);
+    console.error("Alpaca Account ID: Unexpected error during secure lookup:", error);
     return null;
   }
 };
