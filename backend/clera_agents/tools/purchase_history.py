@@ -204,36 +204,44 @@ def find_first_purchase_dates(config: RunnableConfig = None) -> Dict[str, dateti
     Returns:
         Dict[str, datetime]: Mapping of symbol to first purchase date
     """
-    account_id = get_account_id(config=config)
-    
-    # Get longer history to find first purchases (365 days) - only returns 1 date per symbol
-    end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=365)
-    
-    # Get all trade activities
-    trade_activities = get_account_activities(
-        account_id=account_id,
-        activity_types=['FILL'],
-        date_start=start_date,
-        date_end=end_date,
-        page_size=100  # Max page size is 100
-    )
-    
-    # Find first purchase for each symbol
-    first_purchases = {}
-    for activity in trade_activities:
-        if activity.symbol and activity.side:
-            # Check if it's a buy transaction (handle both string and enum formats)
-            side_str = str(activity.side).lower()
-            if 'buy' in side_str:
-                if activity.symbol not in first_purchases:
-                    first_purchases[activity.symbol] = activity.transaction_time
-                else:
-                    # Keep the earliest date
-                    if activity.transaction_time < first_purchases[activity.symbol]:
+    try:
+        account_id = get_account_id(config=config)
+        
+        # Get longer history to find first purchases (365 days) - only returns 1 date per symbol
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=365)
+        
+        # Get all trade activities
+        trade_activities = get_account_activities(
+            account_id=account_id,
+            activity_types=['FILL'],
+            date_start=start_date,
+            date_end=end_date,
+            page_size=100  # Max page size is 100
+        )
+        
+        # Find first purchase for each symbol
+        first_purchases = {}
+        for activity in trade_activities:
+            if activity.symbol and activity.side:
+                # Check if it's a buy transaction (handle both string and enum formats)
+                side_str = str(activity.side).lower()
+                if 'buy' in side_str:
+                    if activity.symbol not in first_purchases:
                         first_purchases[activity.symbol] = activity.transaction_time
-    
-    return first_purchases
+                    else:
+                        # Keep the earliest date
+                        if activity.transaction_time < first_purchases[activity.symbol]:
+                            first_purchases[activity.symbol] = activity.transaction_time
+        
+        return first_purchases
+        
+    except ValueError as e:
+        logger.error(f"[Purchase History] Account identification failed: {e}")
+        return {}
+    except Exception as e:
+        logger.error(f"[Purchase History] Error finding first purchase dates: {e}", exc_info=True)
+        return {}
 
 
 def get_comprehensive_account_activities(account_id: str = None, days_back: int = 60, config: RunnableConfig = None) -> str:
@@ -261,8 +269,7 @@ def get_comprehensive_account_activities(account_id: str = None, days_back: int 
         if not account_id:
             account_id = get_account_id(config=config)
         
-        if not account_id:
-            return "❌ **Error**: Could not retrieve account information. Please check your account setup."
+        logger.info(f"[Account Activities] Using account ID: {account_id}")
         
         # Calculate date range
         end_date = datetime.now(timezone.utc)

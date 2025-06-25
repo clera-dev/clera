@@ -78,14 +78,20 @@ def retrieve_portfolio_positions(state=None, config=None) -> List:
         position.cost_basis = '1917.76'
         position.avg_entry_price = '239.72'
     """
-    account_id = get_account_id(config=config)
     try:
+        account_id = get_account_id(config=config)
+        logger.info(f"[Portfolio Agent] Retrieving positions for account: {account_id}")
+        
         all_positions = broker_client.get_all_positions_for_account(account_id=account_id)
+        logger.info(f"[Portfolio Agent] Successfully retrieved {len(all_positions)} positions")
         return all_positions
+        
+    except ValueError as e:
+        logger.error(f"[Portfolio Agent] Account identification failed: {e}")
+        return []
     except Exception as e:
-        logger.error(f"[Portfolio Agent] Failed to retrieve positions for account {account_id}: {e}", exc_info=True)
-        # Return empty list or raise specific exception?
-        return [] 
+        logger.error(f"[Portfolio Agent] Failed to retrieve positions: {e}", exc_info=True)
+        return []
 
     
 #@tool("rebalance_portfolio")
@@ -258,6 +264,7 @@ def get_portfolio_summary(state=None, config=None) -> str:
              - Key portfolio statistics and insights
     """
     try:
+        # Validate user context first
         account_id = get_account_id(config=config)
         logger.info(f"[Portfolio Agent] Generating portfolio summary for account: {account_id}")
         
@@ -387,6 +394,23 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         logger.info(f"[Portfolio Agent] Successfully generated portfolio summary with {len(position_details)} positions")
         return summary
         
+    except ValueError as e:
+        logger.error(f"[Portfolio Agent] Account identification error: {e}")
+        return f"""📊 **Portfolio Summary**
+
+🚫 **Authentication Error**
+
+Could not securely identify your account. This is a security protection to prevent unauthorized access.
+
+**Error Details:** {str(e)}
+
+💡 **Next Steps:**
+• Please log out and log back in
+• Ensure you have completed account setup
+• Contact support if the issue persists
+
+**Security Note:** This error prevents unauthorized access to financial data."""
+        
     except Exception as e:
         logger.error(f"[Portfolio Agent] Error generating portfolio summary: {e}", exc_info=True)
         return f"❌ **Error:** Could not generate portfolio summary. Please try again later.\n\nError details: {str(e)}"
@@ -492,6 +516,21 @@ def get_account_activities_tool(state=None, config=None) -> str:
         activities_report = get_comprehensive_account_activities(days_back=60, config=config)
         
         return activities_report
+        
+    except ValueError as e:
+        logger.error(f"[Portfolio Agent] Account identification error: {e}")
+        return f"""📋 **Account Activities**
+
+🚫 **Authentication Error**
+
+Could not securely identify your account. This is a security protection to prevent unauthorized access.
+
+**Error Details:** {str(e)}
+
+💡 **Next Steps:**
+• Please log out and log back in  
+• Ensure you have completed account setup
+• Contact support if the issue persists"""
         
     except Exception as e:
         logger.error(f"[Portfolio Agent] Error retrieving account activities: {str(e)}")
