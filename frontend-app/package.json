@@ -25,6 +25,7 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
+    "@tailwindcss/line-clamp": "^0.4.4",
     "@types/cheerio": "^0.22.35",
     "@types/sentiment": "^5.0.4",
     "@upstash/redis": "^1.34.9",

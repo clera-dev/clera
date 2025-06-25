@@ -96,25 +96,25 @@ function StockPickCard({ stock, onStockSelect }: { stock: StockPick; onStockSele
 
   return (
     <Card 
-      className="border hover:shadow-md transition-shadow cursor-pointer group"
+      className="border hover:shadow-md transition-shadow cursor-pointer group h-[140px] flex flex-col"
       onClick={() => onStockSelect(stock.ticker)}
     >
-      <CardContent className="p-4">
-        <div className="flex flex-col space-y-2">
-          <div className="flex items-center gap-2 mb-1">
+      <CardContent className="p-3 flex flex-col h-full">
+        <div className="flex flex-col space-y-2 h-full">
+          <div className="flex items-center gap-2 mb-1 min-h-[24px]">
             <CompanyLogo
               symbol={stock.ticker}
               companyName={stock.company_name}
               imageUrl={logoUrl || undefined}
               size="sm"
             />
-            <div className="text-lg font-bold">{stock.ticker}</div>
+            <div className="text-sm font-bold truncate flex-1">{stock.ticker}</div>
           </div>
-          <div className="text-xs text-muted-foreground line-clamp-2">
+          <div className="text-xs text-muted-foreground line-clamp-2 min-h-[28px] flex-1">
             {stock.company_name}
           </div>
-          <div className="text-xs text-blue-600 dark:text-blue-400 line-clamp-3 group-hover:text-blue-800 dark:group-hover:text-blue-300">
-            {stock.rationale.substring(0, 80)}...
+          <div className="text-xs text-blue-600 dark:text-blue-400 line-clamp-2 group-hover:text-blue-800 dark:group-hover:text-blue-300 flex-1">
+            {stock.rationale.substring(0, 60)}...
           </div>
         </div>
       </CardContent>
@@ -322,7 +322,7 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false, 
           <div className="flex items-center gap-2 mb-3">
             <h2 className="text-xl font-semibold">Stock Picks From Clera</h2>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
             {researchData.stock_picks.map((stock, index) => (
               <StockPickCard 
                 key={stock.ticker}
@@ -342,19 +342,20 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false, 
             {researchData.investment_themes.map((theme, index) => (
               <Card 
                 key={index}
-                className="border hover:shadow-md transition-shadow cursor-pointer overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800"
+                className="border hover:shadow-md transition-shadow cursor-pointer overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 h-40 flex flex-col"
                 onClick={() => {
                   // Auto-collapse sidebar when investment theme dialog opens
                   onThemeSelect?.();
                   setSelectedTheme(theme);
                 }}
               >
-                <CardContent className="p-4 sm:p-5 flex flex-col justify-between h-32 sm:h-36 relative">
-                  <div>
-                    <div className="font-bold text-base sm:text-lg mb-1 sm:mb-2 relative z-10">{theme.title}</div>
-                    <div className="text-xs sm:text-sm text-muted-foreground relative z-10 line-clamp-3">
+                <CardContent className="p-4 sm:p-5 flex flex-col h-full relative">
+                  <div className="flex flex-col h-full space-y-2">
+                    <div className="font-bold text-base sm:text-lg relative z-10 truncate">{theme.title}</div>
+                    <div className="text-xs sm:text-sm text-muted-foreground relative z-10 line-clamp-4 flex-1">
                       {cleanInlineCitations(theme.summary)}
                     </div>
+                    <div className="h-3 flex-shrink-0"></div> {/* Consistent bottom spacing */}
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center opacity-10">
                     <TrendingUp className="h-16 w-16 sm:h-20 sm:w-20 text-slate-400" />
@@ -506,26 +507,26 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false, 
           <div className="flex items-center gap-2 mb-3">
             <h2 className="text-xl font-semibold">Stock Picks From Clera</h2>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
             {topStockPicks.map((stock) => (
               <Card 
                 key={stock.symbol}
-                className="border hover:shadow-md transition-shadow cursor-pointer"
+                className="border hover:shadow-md transition-shadow cursor-pointer h-[140px] flex flex-col"
                 onClick={() => onStockSelect(stock.symbol)}
               >
-                <CardContent className="p-4">
-                  <div className="flex flex-col space-y-1">
-                    <div className="flex justify-between items-center">
+                <CardContent className="p-3 flex flex-col h-full">
+                  <div className="flex flex-col space-y-1 h-full">
+                    <div className="flex justify-between items-center mb-1">
                       <div className="bg-gray-800 dark:bg-gray-700 text-white w-6 h-6 rounded flex items-center justify-center text-xs font-medium">
                         {stock.symbol.charAt(0)}
                       </div>
-                      <div className="text-sm font-bold">{stock.symbol}</div>
+                      <div className="text-sm font-bold truncate">{stock.symbol}</div>
                     </div>
                     <div className="text-xs text-muted-foreground">YTD Return:</div>
                     <div className={`text-sm font-semibold ${parseFloat(stock.ytdReturn) > 0 ? 'text-green-600 dark:text-green-500' : 'text-red-600 dark:text-red-500'}`}>
                       {stock.ytdReturn}
                     </div>
-                    <div className="text-xs text-muted-foreground">Buy Rating:</div>
+                    <div className="text-xs text-muted-foreground mt-auto">Buy Rating:</div>
                     <div className="text-sm font-semibold">{stock.buyRating}</div>
                   </div>
                 </CardContent>
@@ -543,12 +544,13 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false, 
             {investmentIdeas.map((idea, index) => (
               <Card 
                 key={index}
-                className={`border hover:shadow-md transition-shadow cursor-pointer overflow-hidden ${idea.color}`}
+                className={`border hover:shadow-md transition-shadow cursor-pointer overflow-hidden ${idea.color} h-40 flex flex-col`}
               >
-                <CardContent className="p-4 sm:p-5 flex flex-col justify-between h-32 sm:h-36 relative">
-                  <div>
-                    <div className="font-bold text-base sm:text-lg mb-1 sm:mb-2 relative z-10">{idea.title}</div>
-                    <div className="text-xs sm:text-sm text-muted-foreground relative z-10 line-clamp-3">{idea.description}</div>
+                <CardContent className="p-4 sm:p-5 flex flex-col h-full relative">
+                  <div className="flex flex-col h-full space-y-2">
+                    <div className="font-bold text-base sm:text-lg relative z-10 truncate">{idea.title}</div>
+                    <div className="text-xs sm:text-sm text-muted-foreground relative z-10 line-clamp-4 flex-1">{idea.description}</div>
+                    <div className="h-3 flex-shrink-0"></div> {/* Consistent bottom spacing */}
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center opacity-10">
                     <TrendingUp className="h-16 w-16 sm:h-20 sm:w-20 text-slate-400" />

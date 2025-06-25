@@ -104,9 +104,9 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
     const finalProjectedValue = projectionData[projectionData.length - 1]?.value ?? initialInvestment;
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+        <div className="grid grid-cols-1 2xl:grid-cols-3 gap-4 items-start">
             {/* Inputs Column */}
-            <div className="md:col-span-1 space-y-6">
+            <div className="2xl:col-span-1 space-y-4">
                 <div>
                     <Label htmlFor="initialInvestment" className="text-sm font-medium">
                         Initial Investment ({formatCurrency(initialInvestment)})
@@ -118,9 +118,9 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                         step={100}
                         value={[initialInvestment]}
                         onValueChange={(value: number[]) => setInitialInvestment(value[0])}
-                        className="mt-2"
+                        className="mt-1"
                     />
-                    <p className="text-xs text-muted-foreground mt-1">Defaults to current portfolio value.</p>
+                    <p className="text-xs text-muted-foreground">Defaults to current portfolio value.</p>
                 </div>
 
                 <div>
@@ -134,19 +134,19 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                         step={25}
                         value={[monthlyInvestment]}
                         onValueChange={(value: number[]) => setMonthlyInvestment(value[0])}
-                        className="mt-2"
+                        className="mt-1"
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="text-xs text-muted-foreground">
                         Annual: {formatCurrency(monthlyInvestment * 12)}
                     </p>
                 </div>
 
                 <div>
                     <Label className="text-sm font-medium">Investment Strategy (Expected Return)</Label>
-                    <div className="flex gap-2 mt-2">
+                    <div className="flex gap-1 mt-1">
                         <button
                             onClick={() => setInvestmentStrategy('conservative')}
-                            className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                            className={`flex-1 px-2 py-1.5 text-xs rounded-md border transition-colors ${
                                 investmentStrategy === 'conservative'
                                     ? 'bg-primary text-primary-foreground border-primary'
                                     : 'bg-background hover:bg-accent border-border'
@@ -159,7 +159,7 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                         </button>
                         <button
                             onClick={() => setInvestmentStrategy('moderate')}
-                            className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                            className={`flex-1 px-2 py-1.5 text-xs rounded-md border transition-colors ${
                                 investmentStrategy === 'moderate'
                                     ? 'bg-primary text-primary-foreground border-primary'
                                     : 'bg-background hover:bg-accent border-border'
@@ -172,7 +172,7 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                         </button>
                         <button
                             onClick={() => setInvestmentStrategy('aggressive')}
-                            className={`flex-1 px-3 py-2 text-sm rounded-md border transition-colors ${
+                            className={`flex-1 px-2 py-1.5 text-xs rounded-md border transition-colors ${
                                 investmentStrategy === 'aggressive'
                                     ? 'bg-primary text-primary-foreground border-primary'
                                     : 'bg-background hover:bg-accent border-border'
@@ -195,32 +195,28 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                         step={1}
                         value={[timeHorizon]}
                         onValueChange={(value: number[]) => setTimeHorizon(value[0])}
-                        className="mt-2"
+                        className="mt-1"
                     />
                 </div>
-
-                <p className="text-xs text-muted-foreground pt-4 border-t border-border">
-                    Note: This is a hypothetical projection based on assumed returns and does not guarantee future results. Actual returns may vary.
-                </p>
             </div>
 
             {/* Chart & Result Column */}
-            <div className="md:col-span-2">
+            <div className="2xl:col-span-2 space-y-4">
                  <Card className="bg-muted/50 border-dashed border-border">
-                    <CardContent className="p-4 text-center">
-                         <p className="text-sm text-muted-foreground mb-1">Projected Value in {timeHorizon} Years</p>
-                         <p className="text-3xl font-bold text-primary">{formatCurrency(finalProjectedValue)}</p>
+                    <CardContent className="p-3 text-center">
+                         <p className="text-xs text-muted-foreground mb-1">Projected Value in {timeHorizon} Years</p>
+                         <p className="text-2xl font-bold text-primary">{formatCurrency(finalProjectedValue)}</p>
                     </CardContent>
                  </Card>
 
-                 <div style={{ width: '100%', height: 250 }} className="mt-6">
+                 <div style={{ width: '100%', height: 200 }} className="">
                      <ResponsiveContainer>
                          <LineChart data={projectionData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" vertical={false} />
                              <XAxis
                                  dataKey="year"
                                  stroke="hsl(var(--muted-foreground))"
-                                 tick={{ fontSize: 10 }}
+                                 tick={{ fontSize: 9 }}
                                  tickLine={false}
                                  axisLine={false}
                                  dy={5}
@@ -228,12 +224,12 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                              <YAxis
                                  orientation="right"
                                  stroke="hsl(var(--muted-foreground))"
-                                 tick={{ fontSize: 10 }}
+                                 tick={{ fontSize: 9 }}
                                  tickLine={false}
                                  axisLine={false}
                                  tickFormatter={(value: number) => `$${(value / 1000).toFixed(0)}k`}
                                  domain={['auto', 'auto']}
-                                 width={40}
+                                 width={35}
                              />
                              <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'hsl(var(--foreground))', strokeWidth: 1, strokeDasharray: '3 3' }} />
                              <Line
@@ -246,6 +242,10 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                          </LineChart>
                      </ResponsiveContainer>
                  </div>
+                 
+                 <p className="text-xs text-muted-foreground">
+                    Note: This is a hypothetical projection based on assumed returns and does not guarantee future results. Actual returns may vary.
+                 </p>
             </div>
         </div>
     );
