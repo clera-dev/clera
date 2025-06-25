@@ -944,11 +944,15 @@ async def chat_stream(
         # If it expects the full history, fetch it here. Let's assume it needs the new message only for now.
         run_input = {"messages": [HumanMessage(content=user_input).model_dump()]} 
         
-        # Add account_id and user_id if the graph needs them in the input state
-        run_input["account_id"] = account_id
-        run_input["user_id"] = user_id 
-        
-        run_config = {"recursion_limit": 10} # Or appropriate limit
+        # CRITICAL FIX: Put user context in config.configurable, NOT in input data
+        # This ensures get_account_id() can access the user context properly
+        run_config = {
+            "recursion_limit": 10,
+            "configurable": {
+                "account_id": account_id,
+                "user_id": user_id
+            }
+        }
 
         # --- Define Generator for Streaming Response --- 
         async def event_generator():
