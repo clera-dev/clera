@@ -155,6 +155,7 @@ embeddings.py
 notes.md
 todo.md
 test_prompts/
+docs/llm-scratchpad.md
 
 # langgraph
 .langgraph_api/
@@ -174,3 +175,4 @@ setup-aws-secrets.sh
 
 # Test files
 backend/tests/
+

@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import UserDashboard from "@/components/dashboard/UserDashboard";
+import BankAccountDetails from "@/components/dashboard/BankAccountDetails";
 import BankConnectionsCard from "@/components/dashboard/BankConnectionsCard";
+import DangerZone from "@/components/account/DangerZone";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
@@ -149,18 +151,18 @@ export default function DashboardPage() {
                 latestTransferStatus = transferData.status;
                 console.log("Dashboard: Transfer details found:", { latestTransferAmount, latestTransferStatus });
             } else {
-                console.log("Dashboard: No transfer data found in database");
-                
-                // Try to get from localStorage as fallback
-                try {
-                  const storedAmount = localStorage.getItem('transferAmount');
-                  if (storedAmount) {
-                    latestTransferAmount = parseFloat(storedAmount);
-                    latestTransferStatus = "PENDING"; // Default status for localStorage data
-                  }
-                } catch (e) {
-                  console.error("Error reading transfer data from localStorage:", e);
-                }
+                 console.log("Dashboard: No transfer data found in database");
+                 
+                 // Try to get from localStorage as fallback
+                 try {
+                   const storedAmount = localStorage.getItem('transferAmount');
+                   if (storedAmount) {
+                     latestTransferAmount = parseFloat(storedAmount);
+                     latestTransferStatus = "PENDING"; // Default status for localStorage data
+                   }
+                 } catch (e) {
+                   console.error("Error reading transfer data from localStorage:", e);
+                 }
             }
         } catch (err) {
             console.error("Error fetching transfer details:", err);
@@ -256,14 +258,31 @@ export default function DashboardPage() {
       
       <UserDashboard 
         firstName={userData.firstName}
+        lastName={userData.lastName}
+        email={userEmail || ""}
         accountDetails={accountDetails || {}}
       />
       
-      {/* Bank Connections Card with Add Funds Button */}
+      {/* Bank Account Details */}
+      <div className="mt-6">
+        <BankAccountDetails 
+          accountDetails={accountDetails || {}}
+        />
+      </div>
+      
+      {/* Add Funds Button */}
       <div className="mt-6">
         <BankConnectionsCard 
           alpacaAccountId={alpacaAccountId || undefined}
           email={userEmail || undefined}
+          userName={userData.firstName}
+        />
+      </div>
+      
+      {/* Danger Zone - Account Closure */}
+      <div className="mt-6">
+        <DangerZone 
+          accountId={alpacaAccountId || ""}
           userName={userData.firstName}
         />
       </div>
