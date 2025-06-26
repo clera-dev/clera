@@ -23,6 +23,14 @@ from .transfers import (
     get_account_details
 )
 
+from .account_closure import (
+    AccountClosureManager,
+    ClosureStep,
+    check_account_closure_readiness,
+    initiate_account_closure,
+    get_closure_progress
+)
+
 __all__ = [
     'get_broker_client',
     'create_alpaca_account',
@@ -37,4 +45,9 @@ __all__ = [
     'create_ach_transfer',
     'get_transfers_for_account',
     'get_account_details',
+    'AccountClosureManager',
+    'ClosureStep',
+    'check_account_closure_readiness',
+    'initiate_account_closure',
+    'get_closure_progress',
 ] 

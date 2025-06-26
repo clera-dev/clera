@@ -34,6 +34,14 @@ from langgraph.errors import GraphInterrupt
 from langgraph.graph.message import add_messages
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, FunctionMessage
 
+# Add these imports at the top with other imports
+from utils.alpaca.account_closure import (
+    AccountClosureManager,
+    ClosureStep,
+    check_account_closure_readiness,
+    initiate_account_closure,
+    get_closure_progress
+)
 
 # Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
@@ -2513,6 +2521,229 @@ logger = logging.getLogger(__name__) # Or use existing logger from the file
 
 # If `app` is not defined here, this code should be placed where `app` (FastAPI instance) is accessible.
 # For example, inside a function that creates the app, or in a file that defines routes for a specific module.
+
+# Add these endpoints before the final app.run() call
+
+# Account Closure Endpoints
+@app.get("/account-closure/check-readiness/{account_id}")
+async def check_account_closure_readiness_endpoint(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Check if account is ready for closure process.
+    
+    This endpoint verifies all preconditions for account closure:
+    - Account status is ACTIVE
+    - No PDT restrictions (or sufficient equity)
+    - Has ACH relationship for fund withdrawal
+    """
+    try:
+        logger.info(f"Checking closure readiness for account {account_id}")
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        result = check_account_closure_readiness(account_id, sandbox=sandbox)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking closure readiness for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error checking account closure readiness: {str(e)}")
+
+@app.post("/account-closure/initiate/{account_id}")
+async def initiate_account_closure_endpoint(
+    account_id: str,
+    request_data: dict,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Initiate the account closure process.
+    
+    This starts the multi-step closure process:
+    1. Cancel all open orders
+    2. Liquidate all positions
+    3. (Settlement and withdrawal handled in separate calls)
+    
+    Body should contain:
+    {
+        "ach_relationship_id": "string",
+        "confirm_liquidation": true,
+        "confirm_irreversible": true
+    }
+    """
+    try:
+        logger.info(f"Initiating closure for account {account_id}")
+        
+        # Validate request data
+        ach_relationship_id = request_data.get("ach_relationship_id")
+        confirm_liquidation = request_data.get("confirm_liquidation", False)
+        confirm_irreversible = request_data.get("confirm_irreversible", False)
+        
+        if not ach_relationship_id:
+            raise HTTPException(status_code=400, detail="ACH relationship ID is required")
+        
+        if not confirm_liquidation or not confirm_irreversible:
+            raise HTTPException(
+                status_code=400, 
+                detail="Both liquidation and irreversible action confirmations are required"
+            )
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        result = initiate_account_closure(account_id, ach_relationship_id, sandbox=sandbox)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error initiating closure for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error initiating account closure: {str(e)}")
+
+@app.get("/account-closure/status/{account_id}")
+async def get_account_closure_status_endpoint(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get current status of account closure process.
+    
+    Returns detailed information about which step is currently active
+    and whether the account is ready to proceed to the next step.
+    """
+    try:
+        logger.info(f"Getting closure status for account {account_id}")
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        result = get_closure_progress(account_id, sandbox=sandbox)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting closure status for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting closure status: {str(e)}")
+
+@app.post("/account-closure/withdraw-funds/{account_id}")
+async def withdraw_funds_for_closure_endpoint(
+    account_id: str,
+    request_data: dict,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Withdraw all funds as part of account closure process.
+    
+    Body should contain:
+    {
+        "ach_relationship_id": "string"
+    }
+    """
+    try:
+        logger.info(f"Withdrawing funds for closure of account {account_id}")
+        
+        ach_relationship_id = request_data.get("ach_relationship_id")
+        if not ach_relationship_id:
+            raise HTTPException(status_code=400, detail="ACH relationship ID is required")
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        manager = AccountClosureManager(sandbox=sandbox)
+        
+        result = manager.withdraw_all_funds(account_id, ach_relationship_id)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error withdrawing funds for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error withdrawing funds: {str(e)}")
+
+@app.get("/account-closure/settlement-status/{account_id}")
+async def check_settlement_status_endpoint(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Check if positions have settled and funds are available for withdrawal.
+    """
+    try:
+        logger.info(f"Checking settlement status for account {account_id}")
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        manager = AccountClosureManager(sandbox=sandbox)
+        
+        result = manager.check_settlement_status(account_id)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking settlement status for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error checking settlement status: {str(e)}")
+
+@app.get("/account-closure/withdrawal-status/{account_id}/{transfer_id}")
+async def check_withdrawal_status_endpoint(
+    account_id: str,
+    transfer_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Check status of ACH withdrawal transfer.
+    """
+    try:
+        logger.info(f"Checking withdrawal status for account {account_id}, transfer {transfer_id}")
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        manager = AccountClosureManager(sandbox=sandbox)
+        
+        result = manager.check_withdrawal_status(account_id, transfer_id)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking withdrawal status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error checking withdrawal status: {str(e)}")
+
+@app.post("/account-closure/close-account/{account_id}")
+async def close_account_final_endpoint(
+    account_id: str,
+    request_data: dict,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Final step: Close the account after all funds have been withdrawn.
+    
+    Body should contain:
+    {
+        "final_confirmation": true
+    }
+    """
+    try:
+        logger.info(f"Final account closure for account {account_id}")
+        
+        final_confirmation = request_data.get("final_confirmation", False)
+        if not final_confirmation:
+            raise HTTPException(
+                status_code=400, 
+                detail="Final confirmation is required to close the account"
+            )
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        manager = AccountClosureManager(sandbox=sandbox)
+        
+        result = manager.close_account(account_id)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error closing account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error closing account: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

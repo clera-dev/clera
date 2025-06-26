@@ -64,6 +64,7 @@ export default function DashboardPage() {
   const [userData, setUserData] = useState<{ 
     firstName: string; 
     lastName: string;
+    email: string;
   } | null>(null);
   const [accountDetails, setAccountDetails] = useState<AccountSummaryDetails | null>(null);
 
@@ -90,12 +91,12 @@ export default function DashboardPage() {
 
         if (profileError) {
           console.error("Error fetching profile:", profileError);
-          setUserData({ firstName: 'User', lastName: '' }); // Fallback
+          setUserData({ firstName: 'User', lastName: '', email: user.email || '' }); // Fallback
         } else if (profile) {
-          setUserData({ firstName: profile.first_name || 'User', lastName: profile.last_name || '' });
+          setUserData({ firstName: profile.first_name || 'User', lastName: profile.last_name || '', email: user.email || '' });
         } else {
            console.warn("No profile found for user:", user.id);
-           setUserData({ firstName: 'User', lastName: '' }); // Fallback
+           setUserData({ firstName: 'User', lastName: '', email: user.email || '' }); // Fallback
         }
 
         // --- Step 2: Get Alpaca Account ID ---
@@ -119,7 +120,7 @@ export default function DashboardPage() {
         console.error("Error during dashboard data fetching sequence:", error);
         setErrorMessage("An unexpected error occurred while loading dashboard data.");
         // Ensure states reflect error
-        if (!userData) setUserData({ firstName: 'Error', lastName: '' }); 
+        if (!userData) setUserData({ firstName: 'Error', lastName: '', email: '' }); 
         setAccountDetails(null);
       } finally {
         setLoading(false);
@@ -162,6 +163,8 @@ export default function DashboardPage() {
        )}
       <UserDashboard 
         firstName={userData.firstName}
+        lastName={userData.lastName}
+        email={userData.email}
         // Pass accountDetails directly, let the component handle null/undefined fields
         accountDetails={accountDetails || {}} 
       />
