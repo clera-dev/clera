@@ -1,8 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { CheckCircle, Calendar, Mail, Phone, FileText, AlertTriangle } from "lucide-react";
+import { CheckCircle, Calendar, Mail, FileText, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface AccountClosureSuccessProps {
@@ -11,8 +10,6 @@ interface AccountClosureSuccessProps {
   estimatedCompletion: string;
   confirmationNumber: string;
   contactEmail?: string;
-  contactPhone?: string;
-  onNavigateHome: () => void;
 }
 
 export default function AccountClosureSuccess({
@@ -20,9 +17,7 @@ export default function AccountClosureSuccess({
   completionTimestamp,
   estimatedCompletion,
   confirmationNumber,
-  contactEmail = "support@clera.com",
-  contactPhone = "1-800-CLERA-01",
-  onNavigateHome
+  contactEmail = "support@askclera.com"
 }: AccountClosureSuccessProps) {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
@@ -107,22 +102,22 @@ export default function AccountClosureSuccess({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-gray-900 p-4 rounded-lg border border-gray-700">
             <div>
-              <p className="font-medium text-gray-700">Confirmation Number</p>
-              <p className="font-mono bg-gray-100 px-2 py-1 rounded">{confirmationNumber}</p>
+              <p className="font-medium text-gray-300">Confirmation Number</p>
+              <p className="font-mono text-white bg-black/30 px-2 py-1 rounded border border-gray-600">{confirmationNumber}</p>
             </div>
             <div>
-              <p className="font-medium text-gray-700">Request Date</p>
-              <p>{formatDate(completionTimestamp)}</p>
+              <p className="font-medium text-gray-300">Request Date</p>
+              <p className="text-white">{formatDate(completionTimestamp)}</p>
             </div>
             <div>
-              <p className="font-medium text-gray-700">Account ID</p>
-              <p className="font-mono bg-gray-100 px-2 py-1 rounded">{accountId}</p>
+              <p className="font-medium text-gray-300">Account ID</p>
+              <p className="font-mono text-white bg-black/30 px-2 py-1 rounded border border-gray-600">{accountId}</p>
             </div>
             <div>
-              <p className="font-medium text-gray-700">Estimated Completion</p>
-              <p>{estimatedCompletion}</p>
+              <p className="font-medium text-gray-300">Estimated Completion</p>
+              <p className="text-white">{estimatedCompletion}</p>
             </div>
           </div>
         </CardContent>
@@ -144,25 +139,8 @@ export default function AccountClosureSuccess({
               <p className="text-sm text-gray-600">{contactEmail}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Phone className="h-5 w-5 text-gray-500" />
-            <div>
-              <p className="font-medium">Phone Support</p>
-              <p className="text-sm text-gray-600">{contactPhone}</p>
-            </div>
-          </div>
         </CardContent>
       </Card>
-
-      {/* Navigation */}
-      <div className="flex justify-center pt-4">
-        <Button 
-          onClick={onNavigateHome}
-          className="w-full md:w-auto px-8"
-        >
-          Return to Dashboard
-        </Button>
-      </div>
     </div>
   );
 } 

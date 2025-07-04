@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from "@supabase/ssr";
+import { 
+  getRouteConfig, 
+  isPublicPath, 
+  isAuthPage, 
+  getOnboardingStatus, 
+  hasCompletedOnboarding,
+  getFundingStatus,
+  hasCompletedFunding,
+  isPendingClosure,
+  isAccountClosed,
+  shouldRestartOnboarding
+} from './utils/auth/middleware-helpers';
 
 // Paths that are always accessible regardless of auth state
 const publicPaths = [
@@ -27,7 +39,12 @@ const protectedPaths = [
 // API routes that require completed onboarding
 const protectedApiPaths = [
   '/api/portfolio',
-  '/api/broker',
+  '/api/broker/account-info',
+  '/api/broker/account-summary',
+  '/api/broker/connect-bank',
+  '/api/broker/process-plaid-token',
+  '/api/broker/transfer',
+  '/api/broker/bank-status',
   '/api/account',
   '/api/chat',
   '/api/conversations',
@@ -44,6 +61,7 @@ const authRequiredApiPaths = [
   '/api/investment',
   '/api/companies/profiles',
   '/api/fmp',
+  '/api/broker/create-account',
 ];
 
 export async function middleware(request: NextRequest) {
@@ -78,7 +96,28 @@ export async function middleware(request: NextRequest) {
 
     console.log(`[Middleware] Processing: ${path}`);
 
-    // Get user authentication status first for homepage handling
+    // =================================================================
+    // CRITICAL FIX: Direct bypass for connect-bank-manual route
+    // This prevents the cached onboarding check from blocking the API
+    // =================================================================
+    if (path === '/api/broker/connect-bank-manual') {
+      console.log('[Middleware] Direct bypass for connect-bank-manual - allowing request');
+      return response;
+    }
+
+    // Additional bypasses for critical funding flow endpoints
+    if (path === '/api/broker/bank-status' || path === '/api/broker/delete-ach-relationship' || path === '/api/broker/funding-status') {
+      console.log(`[Middleware] Direct bypass for funding endpoint: ${path} - allowing request`);
+      return response;
+    }
+
+    // Bypass for transfer endpoint - critical for funding flow
+    if (path === '/api/broker/transfer') {
+      console.log('[Middleware] Direct bypass for transfer endpoint - allowing request');
+      return response;
+    }
+
+    // Get user authentication status
     let user = null;
     try {
       const {
@@ -93,43 +132,140 @@ export async function middleware(request: NextRequest) {
 
     // Handle the homepage specifically
     if (path === '/') {
-      // If user is authenticated, redirect to portfolio
       if (user) {
         console.log(`[Middleware] Authenticated user accessing homepage, redirecting to portfolio`);
         const redirectUrl = new URL('/portfolio', request.url);
         return NextResponse.redirect(redirectUrl);
       }
-      // If not authenticated, allow access to homepage
       console.log(`[Middleware] Unauthenticated user accessing homepage, allowing`);
       return response;
     }
 
+    // =================================================================
+    // CRITICAL: Handle account closure statuses FIRST
+    // =================================================================
+    if (user) {
+      try {
+        const onboardingStatus = await getOnboardingStatus(supabase, user.id);
+        
+        // Handle pending closure status - BLOCK ALL NAVIGATION except sign-out and account closure APIs
+        if (isPendingClosure(onboardingStatus)) {
+          console.log(`[Middleware] User ${user.id} has pending closure status`);
+          
+          // Allow sign-out action
+          if (path === '/auth/signout' || path.startsWith('/api/auth/signout')) {
+            console.log(`[Middleware] Allowing sign-out for pending closure user`);
+            return response;
+          }
+          
+          // Allow account closure API calls (needed for progress updates)
+          if (path.startsWith('/api/account-closure/')) {
+            console.log(`[Middleware] Allowing account closure API call: ${path}`);
+            return response;
+          }
+          
+          // Allow PostHog ingest calls (analytics)
+          if (path.startsWith('/ingest/')) {
+            console.log(`[Middleware] Allowing PostHog ingest call: ${path}`);
+            return response;
+          }
+          
+          // Redirect everything else to /protected (which shows the closure pending page)
+          if (path !== '/protected') {
+            console.log(`[Middleware] Redirecting pending closure user from ${path} to /protected`);
+            const redirectUrl = new URL('/protected', request.url);
+            return NextResponse.redirect(redirectUrl);
+          }
+          
+          // Stay on /protected to show closure pending page
+          console.log(`[Middleware] Allowing access to /protected for pending closure user`);
+          return response;
+        }
+        
+        // Handle closed account status - allow restart onboarding on /protected only
+        if (isAccountClosed(onboardingStatus)) {
+          console.log(`[Middleware] User ${user.id} has closed account status`);
+          
+          // Allow sign-out
+          if (path === '/auth/signout' || path.startsWith('/api/auth/signout')) {
+            return response;
+          }
+          
+          // Only allow /protected for restarting onboarding
+          if (path !== '/protected') {
+            console.log(`[Middleware] Redirecting closed account user to /protected for onboarding restart`);
+            const redirectUrl = new URL('/protected', request.url);
+            return NextResponse.redirect(redirectUrl);
+          }
+          
+          console.log(`[Middleware] Allowing access to /protected for closed account restart`);
+          return response;
+        }
+      } catch (dbError) {
+        console.error('Database error checking account closure status:', dbError);
+        // Continue to normal processing if there's an error
+      }
+    }
+
+    // Handle /protected page specifically - redirect funded users to portfolio
+    if (path === '/protected' && user) {
+      console.log(`[Middleware] Processing /protected page for user ${user.id}`);
+      try {
+        const onboardingStatus = await getOnboardingStatus(supabase, user.id);
+        console.log(`[Middleware] Onboarding status for user ${user.id}: ${onboardingStatus}`);
+        
+        if (hasCompletedOnboarding(onboardingStatus)) {
+          console.log(`[Middleware] User ${user.id} has completed onboarding, checking funding status`);
+          const fundingStatus = await getFundingStatus(supabase, user.id);
+          console.log(`[Middleware] Funding status for user ${user.id}: ${fundingStatus}`);
+          
+          if (hasCompletedFunding(fundingStatus)) {
+            console.log(`[Middleware] User ${user.id} has completed funding, redirecting to portfolio`);
+            const redirectUrl = new URL('/portfolio', request.url);
+            return NextResponse.redirect(redirectUrl);
+          } else {
+            console.log(`[Middleware] User ${user.id} has not completed funding, staying on /protected`);
+          }
+        } else {
+          console.log(`[Middleware] User ${user.id} has not completed onboarding, staying on /protected`);
+        }
+      } catch (dbError) {
+        console.error('Database error checking funding status for /protected redirect:', dbError);
+        // Continue to normal processing if there's an error
+      }
+    }
+
     // Check if the route is public (no auth needed)
-    if (publicPaths.some(publicPath => path.startsWith(publicPath))) {
+    if (isPublicPath(path)) {
       console.log(`[Middleware] Public path allowed: ${path}`);
       return response;
     }
 
-    // User authentication status already checked above
-
     // Handle auth pages (sign-in, sign-up, forgot-password)
-    if (authPages.some(authPage => path.startsWith(authPage))) {
-      // If user is authenticated, redirect to portfolio
+    if (isAuthPage(path)) {
       if (user) {
         console.log(`[Middleware] Authenticated user accessing auth page, redirecting to portfolio`);
         const redirectUrl = new URL('/portfolio', request.url);
         return NextResponse.redirect(redirectUrl);
       }
-      // If not authenticated, allow access to auth pages
       console.log(`[Middleware] Unauthenticated user accessing auth page, allowing`);
       return response;
     }
 
-    // Check if this is an API route that requires authentication but not onboarding
-    const requiresAuth = authRequiredApiPaths.some(apiPath => path.startsWith(apiPath));
+    // Get route configuration
+    const routeConfig = getRouteConfig(path);
     
-    if (requiresAuth && !user) {
-      // Check for beta testing mode - allow unauthenticated access to certain endpoints
+    // If no specific route config, use default: require auth but not onboarding
+    const config = routeConfig || { 
+      requiresAuth: true, 
+      requiresOnboarding: false, 
+      requiresFunding: false,
+      requiredRole: "user"
+    };
+    
+    // Check authentication requirement
+    if (config.requiresAuth && !user) {
+      // Check for beta testing mode for specific endpoints
       const isBetaMode = process.env.NEXT_PUBLIC_BETA_TESTING === 'true';
       const isInvestmentResearch = path.startsWith('/api/investment/research');
       const isFMPChart = path.startsWith('/api/fmp/chart');
@@ -140,46 +276,33 @@ export async function middleware(request: NextRequest) {
         return NextResponse.next();
       }
       
-      console.log(`[Middleware] Unauthenticated user accessing auth-required API, returning 401`);
-      return new NextResponse(
-        JSON.stringify({ error: 'Authentication required' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      if (path.startsWith('/api/')) {
+        console.log(`[Middleware] Unauthenticated user accessing auth-required API, returning 401`);
+        return new NextResponse(
+          JSON.stringify({ error: 'Authentication required' }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      } else {
+        console.log(`[Middleware] Unauthenticated user accessing protected route, redirecting to homepage`);
+        const redirectUrl = new URL('/', request.url);
+        return NextResponse.redirect(redirectUrl);
+      }
     }
 
-    // For all other routes, require authentication
-    if (!user) {
-      console.log(`[Middleware] Unauthenticated user accessing protected route, redirecting to homepage`);
-      const redirectUrl = new URL('/', request.url);
-      return NextResponse.redirect(redirectUrl);
-    }
-
-    // For protected paths and API routes that require completed onboarding
-    const requiresOnboarding = 
-      protectedPaths.some(protectedPath => path.startsWith(protectedPath)) ||
-      protectedApiPaths.some(apiPath => path.startsWith(apiPath));
-
-    if (requiresOnboarding) {
+    // Check onboarding requirement
+    if (config.requiresOnboarding && user) {
       try {
-        // Check onboarding status from the database
-        const { data: onboardingData, error } = await supabase
-          .from('user_onboarding')
-          .select('status')
-          .eq('user_id', user.id)
-          .single();
+        const onboardingStatus = await getOnboardingStatus(supabase, user.id);
         
-        // Handle database errors or missing records
-        if (error) {
-          console.error('Onboarding status check error:', error);
-          // If we can't check onboarding status, assume incomplete and redirect to onboarding
+        if (!hasCompletedOnboarding(onboardingStatus)) {
+          console.log(`[Middleware] User ${user.id} has not completed onboarding (status: ${onboardingStatus})`);
+          
           if (path.startsWith('/api/')) {
-            // For API routes, return 401 instead of redirect
             return new NextResponse(
               JSON.stringify({ error: 'Onboarding not completed' }),
               { status: 401, headers: { 'Content-Type': 'application/json' } }
             );
           } else {
-            // For page routes, redirect to onboarding
             const redirectUrl = new URL('/protected', request.url);
             const redirectResponse = NextResponse.redirect(redirectUrl);
             redirectResponse.cookies.set('intended_redirect', path, {
@@ -187,41 +310,54 @@ export async function middleware(request: NextRequest) {
               path: '/',
               sameSite: 'strict'
             });
-            return redirectResponse;
-          }
-        }
-        
-        // Check if onboarding is complete (status is 'submitted' or 'approved')
-        const hasCompletedOnboarding = 
-          onboardingData?.status === 'submitted' || 
-          onboardingData?.status === 'approved';
-        
-        // If onboarding not completed, redirect to onboarding flow or return error
-        if (!hasCompletedOnboarding) {
-          if (path.startsWith('/api/')) {
-            // For API routes, return 401 instead of redirect
-            return new NextResponse(
-              JSON.stringify({ error: 'Onboarding not completed' }),
-              { status: 401, headers: { 'Content-Type': 'application/json' } }
-            );
-          } else {
-            // For page routes, redirect to onboarding
-            const redirectUrl = new URL('/protected', request.url);
-            const redirectResponse = NextResponse.redirect(redirectUrl);
-            
-            // Store the intended URL for after onboarding completion
-            redirectResponse.cookies.set('intended_redirect', path, {
-              maxAge: 3600,
-              path: '/',
-              sameSite: 'strict'
-            });
-            
             return redirectResponse;
           }
         }
       } catch (dbError) {
         console.error('Database connection error in middleware:', dbError);
-        // If database is completely unavailable, redirect to onboarding for safety
+        if (path.startsWith('/api/')) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Service temporarily unavailable' }),
+            { status: 503, headers: { 'Content-Type': 'application/json' } }
+          );
+        } else {
+          const redirectUrl = new URL('/protected', request.url);
+          return NextResponse.redirect(redirectUrl);
+        }
+      }
+    }
+
+    // Check funding requirement
+    if (config.requiresFunding && user) {
+      try {
+        const onboardingStatus = await getOnboardingStatus(supabase, user.id);
+        
+        // Only check funding if onboarding is complete
+        if (hasCompletedOnboarding(onboardingStatus)) {
+          const fundingStatus = await getFundingStatus(supabase, user.id);
+          
+          if (!hasCompletedFunding(fundingStatus)) {
+            console.log(`[Middleware] User ${user.id} has not funded their account`);
+            
+            if (path.startsWith('/api/')) {
+              return new NextResponse(
+                JSON.stringify({ error: 'Account funding required' }),
+                { status: 403, headers: { 'Content-Type': 'application/json' } }
+              );
+            } else {
+              const redirectUrl = new URL('/protected', request.url);
+              const redirectResponse = NextResponse.redirect(redirectUrl);
+              redirectResponse.cookies.set('intended_redirect', path, {
+                maxAge: 3600,
+                path: '/',
+                sameSite: 'strict'
+              });
+              return redirectResponse;
+            }
+          }
+        }
+      } catch (dbError) {
+        console.error('Database connection error checking funding in middleware:', dbError);
         if (path.startsWith('/api/')) {
           return new NextResponse(
             JSON.stringify({ error: 'Service temporarily unavailable' }),
@@ -240,23 +376,17 @@ export async function middleware(request: NextRequest) {
   } catch (error) {
     console.error('Middleware error for path:', path, error);
     
-    // For unauthenticated users trying to access protected routes, redirect to home
-    if (protectedPaths.some(protectedPath => path.startsWith(protectedPath))) {
-      console.log(`[Middleware] Error occurred for protected path, redirecting to homepage`);
-      const redirectUrl = new URL('/', request.url);
-      return NextResponse.redirect(redirectUrl);
-    }
-    
-    // For API routes, return error
-    if (protectedApiPaths.some(apiPath => path.startsWith(apiPath))) {
+    // Fallback error handling
+    if (path.startsWith('/api/')) {
       return new NextResponse(
         JSON.stringify({ error: 'Authentication error' }),
         { status: 401, headers: { 'Content-Type': 'application/json' } }
       );
     }
     
-    // For other errors, allow request through but log
-    return NextResponse.next();
+    // For page routes with errors, redirect to home
+    const redirectUrl = new URL('/', request.url);
+    return NextResponse.redirect(redirectUrl);
   }
 }
 

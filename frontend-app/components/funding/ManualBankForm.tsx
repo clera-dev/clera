@@ -5,107 +5,224 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Check, Info } from "lucide-react";
 import TransferForm from "./TransferForm";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
 
 interface ManualBankFormProps {
   alpacaAccountId: string;
   userName: string;
-  onTransferComplete?: () => void; // Add callback for dialog usage
-  onBack?: () => void; // Add back button handler
+  onTransferComplete?: (amount: string, bankLast4?: string) => void;
+  onBack?: () => void;
 }
+
+interface ExistingConnection {
+  id: string;
+  last_4: string;
+  bank_account_type: string;
+  relationship_id: string;
+}
+
+type FormStep = 'checking' | 'existing-found' | 'new-connection' | 'replace-warning' | 'transfer';
 
 export default function ManualBankForm({ 
   alpacaAccountId,
   userName,
   onTransferComplete,
-  onBack // Add back handler
+  onBack
 }: ManualBankFormProps) {
   const router = useRouter();
+  const [formStep, setFormStep] = useState<FormStep>('checking');
+  const [existingConnection, setExistingConnection] = useState<ExistingConnection | null>(null);
   const [bankAccountType, setBankAccountType] = useState<"CHECKING" | "SAVINGS">("CHECKING");
   const [bankAccountNumber, setBankAccountNumber] = useState("");
-  const [bankRoutingNumber, setBankRoutingNumber] = useState("121000358"); // Valid test routing number for Alpaca
+  const [bankRoutingNumber, setBankRoutingNumber] = useState("121000358");
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [bankConnected, setBankConnected] = useState(false);
   const [relationshipId, setRelationshipId] = useState<string | null>(null);
-  const [isChecking, setIsChecking] = useState(true);
 
-  // Add container ref for Select portal
-  const selectContainerRef = useRef<HTMLDivElement>(null);
-
-  // Check if user already has an ACH relationship
-  const checkExistingRelationship = async () => {
+  // Check for existing bank connections
+  const checkExistingConnections = async () => {
     try {
-      setIsChecking(true);
+      setFormStep('checking');
+
+      // Always check Alpaca directly for the most up-to-date status
+      // Supabase might have stale data if relationships were cancelled
+      const bankStatusResponse = await fetch(`/api/broker/bank-status?accountId=${alpacaAccountId}`);
       
-      const response = await fetch(`/api/broker/bank-status?accountId=${alpacaAccountId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
+      if (bankStatusResponse.ok) {
+        const data = await bankStatusResponse.json();
         
         if (data.relationships && data.relationships.length > 0) {
+          // Filter out cancelled or pending cancellation relationships
           const activeRelationship = data.relationships.find(
-            (rel: any) => rel.status === 'APPROVED' || rel.status === 'ACTIVE'
+            (rel: any) => {
+              const status = rel.status?.toUpperCase();
+              return status === 'APPROVED' || 
+                     status === 'ACTIVE' || 
+                     status === 'QUEUED' || 
+                     status === 'SUBMITTED';
+            }
           );
           
+          // Log all relationships for debugging
+          console.log('[ManualBankForm] Found relationships:', data.relationships.map((rel: any) => ({
+            id: rel.id,
+            status: rel.status
+          })));
+          
           if (activeRelationship) {
-            console.log("Found active relationship:", activeRelationship.id);
+            console.log('[ManualBankForm] Using active relationship:', activeRelationship.id, 'with status:', activeRelationship.status);
             
-            // Store data in localStorage
-            localStorage.setItem('alpacaAccountId', alpacaAccountId);
-            localStorage.setItem('relationshipId', activeRelationship.id);
-            localStorage.setItem('bankAccountNumber', `xxxx-xxxx-${activeRelationship.bank_account_last4 || '0000'}`);
-            localStorage.setItem('bankRoutingNumber', "121000358");
+            // Get detailed connection info from Supabase since Alpaca doesn't provide last_4
+            const supabase = createClient();
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
             
-            // If we're in a dialog, use the relationship directly
-            if (onTransferComplete) {
-              setBankConnected(true);
-              setRelationshipId(activeRelationship.id);
-              return true;
-            } else {
-              // Otherwise redirect to dashboard
-              router.replace('/dashboard');
-              return true;
+            if (userError) {
+              console.error('[ManualBankForm] Error getting user:', userError);
             }
+            
+            if (user) {
+              console.log('[ManualBankForm] Querying Supabase for relationship:', activeRelationship.id, 'user:', user.id);
+              
+              const { data: connections, error: connectionError } = await supabase
+                .from('user_bank_connections')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('relationship_id', activeRelationship.id);
+              
+              if (connectionError) {
+                console.error('[ManualBankForm] Error querying Supabase connections:', connectionError);
+              }
+              
+              console.log('[ManualBankForm] Supabase query result:', connections);
+              
+              if (connections && connections.length > 0) {
+                const connection = connections[0];
+                console.log('[ManualBankForm] Found detailed connection info in Supabase:', connection.last_4);
+                setExistingConnection({
+                  id: connection.id,
+                  last_4: connection.last_4,
+                  bank_account_type: connection.bank_account_type,
+                  relationship_id: activeRelationship.id
+                });
+              } else {
+                console.log('[ManualBankForm] No Supabase record found for relationship, using defaults');
+                setExistingConnection({
+                  id: activeRelationship.id,
+                  last_4: '0000', // Fallback when no Supabase record
+                  bank_account_type: 'CHECKING',
+                  relationship_id: activeRelationship.id
+                });
+              }
+            } else {
+              console.log('[ManualBankForm] No user authentication found, using defaults');
+              setExistingConnection({
+                id: activeRelationship.id,
+                last_4: '0000',
+                bank_account_type: 'CHECKING',
+                relationship_id: activeRelationship.id
+              });
+            }
+            
+            setFormStep('existing-found');
+            return;
+          } else {
+            console.log('[ManualBankForm] No active relationships found - all are cancelled/pending cancellation');
           }
         }
       }
       
-      return false;
+
+      
+      // No existing connections found
+      setFormStep('new-connection');
+      
     } catch (error) {
-      console.error('Error checking bank status:', error);
-      return false;
-    } finally {
-      setIsChecking(false);
+      console.error('Error checking existing connections:', error);
+      setFormStep('new-connection');
     }
   };
 
-  // Call the check on component mount
   useEffect(() => {
-    checkExistingRelationship();
-  }, [alpacaAccountId, onTransferComplete]);
+    checkExistingConnections();
+  }, [alpacaAccountId]);
+
+  const handleContinueWithExisting = () => {
+    if (existingConnection) {
+      setRelationshipId(existingConnection.relationship_id);
+      setFormStep('transfer');
+    }
+  };
+
+  const handleChangeAccount = () => {
+    setFormStep('replace-warning');
+  };
+
+  const handleAddNewAccount = async () => {
+    console.log('[ManualBankForm] User confirmed bank replacement - deleting existing ACH relationship');
+    
+    if (existingConnection) {
+      try {
+        // Delete the existing ACH relationship BEFORE showing the new connection form
+        const deleteResponse = await fetch('/api/broker/delete-ach-relationship', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountId: alpacaAccountId,
+            achRelationshipId: existingConnection.relationship_id,
+          }),
+        });
+
+        const deleteResponseData = await deleteResponse.json();
+        
+        if (!deleteResponse.ok) {
+          // Check if the error is because the relationship is already cancelled
+          const errorMessage = deleteResponseData.error || JSON.stringify(deleteResponseData);
+          
+          if (errorMessage.includes('already canceled') || errorMessage.includes('pending cancelation')) {
+            console.log('[ManualBankForm] ACH relationship already cancelled - proceeding with new connection');
+            // Clear existing connection state and continue
+            setExistingConnection(null);
+            setFormStep('new-connection');
+            return;
+          }
+          
+          console.error('[ManualBankForm] Failed to delete ACH relationship:', errorMessage);
+          setConnectionError(errorMessage || 'Failed to delete existing bank connection');
+          return;
+        }
+        
+        console.log('[ManualBankForm] Successfully deleted ACH relationship');
+        
+        // Clear existing connection state
+        setExistingConnection(null);
+      } catch (error) {
+        console.error('[ManualBankForm] Error deleting ACH relationship:', error);
+        setConnectionError('Failed to delete existing bank connection');
+        return;
+      }
+    }
+    
+    setFormStep('new-connection');
+  };
+
+  const handleBackToExisting = () => {
+    setFormStep('existing-found');
+  };
 
   const isFormValid = () => {
     return (
       bankAccountType &&
       bankAccountNumber.trim().length >= 9 &&
-      bankRoutingNumber === "121000358" // Only allow the valid test routing number
+      bankRoutingNumber === "121000358"
     );
   };
 
   const handleConnectBank = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Skip validation for existing relationships
-    if (!bankConnected) {
-      // Validate form fields
       if (!isFormValid()) {
         setConnectionError("Please fill out all fields correctly. Use routing number 121000358 for testing.");
         return;
@@ -114,12 +231,13 @@ export default function ManualBankForm({
       if (bankAccountNumber.trim().length < 9) {
         setConnectionError("Bank account number must be at least 9 characters long");
         return;
-      }
     }
     
     try {
       setIsConnecting(true);
       setConnectionError(null);
+      
+      // Note: ACH relationship deletion now happens in handleAddNewAccount when user confirms
       
       const response = await fetch('/api/broker/connect-bank-manual', {
         method: 'POST',
@@ -138,47 +256,12 @@ export default function ManualBankForm({
       const responseData = await response.json();
       
       if (!response.ok) {
-        if (responseData.message && responseData.message.includes("Using existing ACH relationship")) {
-          // If we're using an existing relationship
-          console.log("Using existing relationship:", responseData.id);
-          
-          localStorage.setItem('alpacaAccountId', alpacaAccountId);
-          localStorage.setItem('relationshipId', responseData.id);
-          localStorage.setItem('bankAccountNumber', bankAccountNumber);
-          localStorage.setItem('bankRoutingNumber', bankRoutingNumber);
-          
-          // When in dialog mode with onTransferComplete callback, don't show transfer form
-          // but notify the parent we've finished adding the bank
-          if (onTransferComplete) {
-            console.log("Notifying parent that bank connection is complete");
-            onTransferComplete();
-            return;
-          } else {
-            // Otherwise redirect to dashboard
-            router.replace('/dashboard');
-            return;
-          }
-        }
-        
         throw new Error(responseData.error || JSON.stringify(responseData));
       }
       
-      // If successful, update the state
-      console.log("Bank connected successfully with relationshipId:", responseData.id);
-      localStorage.setItem('alpacaAccountId', alpacaAccountId);
-      localStorage.setItem('relationshipId', responseData.id);
-      
-      // When in dialog mode with onTransferComplete callback, don't show transfer form
-      // but notify the parent we've finished adding the bank
-      if (onTransferComplete) {
-        console.log("Notifying parent that bank connection is complete");
-        onTransferComplete();
-        return;
-      }
-      
-      // Only set these states if we're not using the callback
-      setBankConnected(true);
+      // Successfully connected bank
       setRelationshipId(responseData.id);
+      setFormStep('transfer');
       
     } catch (error) {
       console.error('Error connecting bank:', error);
@@ -188,29 +271,29 @@ export default function ManualBankForm({
     }
   };
 
-  // Handle transfer completion
   const handleTransferComplete = (amount: string) => {
     if (onTransferComplete) {
-      onTransferComplete();
+      onTransferComplete(amount, existingConnection?.last_4);
     } else {
       router.replace('/dashboard');
     }
   };
 
-  // Handle back from transfer form
   const handleBackFromTransfer = () => {
-    setBankConnected(false);
+    // Clear the relationship ID first
     setRelationshipId(null);
+    
+    // Always re-check for connections since user might have just created one
+    checkExistingConnections();
   };
 
-  // Only show transfer form when not in dialog mode 
-  // (when onTransferComplete is not provided)
-  if (bankConnected && relationshipId && !onTransferComplete) {
+  // Transfer form step
+  if (formStep === 'transfer' && relationshipId) {
     return (
       <TransferForm 
         alpacaAccountId={alpacaAccountId}
         relationshipId={relationshipId}
-        bankAccountNumber={bankAccountNumber}
+        bankAccountNumber={bankAccountNumber || `****${existingConnection?.last_4 || '0000'}`}
         bankRoutingNumber={bankRoutingNumber}
         onTransferComplete={handleTransferComplete}
         onBack={handleBackFromTransfer}
@@ -218,7 +301,8 @@ export default function ManualBankForm({
     );
   }
 
-  if (isChecking) {
+  // Loading step
+  if (formStep === 'checking') {
     return (
       <div className="w-full max-w-md mx-auto text-center">
         <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
@@ -227,14 +311,132 @@ export default function ManualBankForm({
     );
   }
 
+  // Existing connection found step
+  if (formStep === 'existing-found' && existingConnection) {
   return (
     <div className="w-full max-w-md mx-auto">
-      {/* Add back button */}
       {onBack && (
         <Button
           type="button"
           variant="ghost"
           onClick={onBack}
+            className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+        )}
+        
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 bg-blue-50 dark:bg-blue-950/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Check className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2 text-foreground">Bank Account Found</h2>
+          <p className="text-foreground/80 text-base leading-relaxed">
+            Your account has an existing bank connection.
+          </p>
+        </div>
+
+        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-blue-800 dark:text-blue-200 font-medium text-sm">
+                Connected Bank Account
+              </p>
+              <p className="text-blue-700 dark:text-blue-300 text-sm mt-1">
+                {existingConnection.bank_account_type} account ending in {existingConnection.last_4}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <Button 
+            onClick={handleContinueWithExisting}
+            className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-medium h-12 rounded-lg transition-all duration-200 hover:shadow-lg shadow-blue-500/20 shadow-md"
+          >
+            Continue with This Account
+          </Button>
+          
+          <Button 
+            onClick={handleChangeAccount}
+            variant="outline"
+            className="w-full h-12 border-border hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            Change Account
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Replace warning step
+  if (formStep === 'replace-warning') {
+    return (
+      <div className="w-full max-w-md mx-auto">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleBackToExisting}
+          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+        
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2 text-foreground">Replace Bank Account</h2>
+          <p className="text-foreground/80 text-base leading-relaxed">
+            Only one bank connection is allowed per account.
+          </p>
+        </div>
+
+        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-amber-800 dark:text-amber-200 font-medium text-sm">
+                Warning
+              </p>
+              <p className="text-amber-700 dark:text-amber-300 text-sm mt-1">
+                By continuing, your existing bank connection will be removed. Then you will be able to connect a new account.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <Button 
+            onClick={handleAddNewAccount}
+            className="w-full bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-medium h-12 rounded-lg transition-all duration-200 hover:shadow-lg shadow-amber-500/20 shadow-md"
+          >
+            Add New Account
+          </Button>
+          
+          <Button 
+            onClick={handleBackToExisting}
+            variant="outline"
+            className="w-full h-12 border-border hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // New connection form step
+  return (
+    <div className="w-full max-w-md mx-auto">
+      {(onBack || formStep !== 'new-connection') && (
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onBack || handleBackToExisting}
           className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -250,8 +452,14 @@ export default function ManualBankForm({
       </div>
       
       {connectionError && (
-        <div className="p-4 mb-6 border border-red-200 rounded-lg bg-red-50">
-          <p className="text-red-700">{connectionError}</p>
+        <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-red-800 dark:text-red-200 font-medium text-sm mb-1">Connection Error</h4>
+            <p className="text-red-700 dark:text-red-300 text-sm">{connectionError}</p>
+            </div>
+          </div>
         </div>
       )}
       

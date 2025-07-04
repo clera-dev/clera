@@ -40,7 +40,8 @@ from utils.alpaca.account_closure import (
     ClosureStep,
     check_account_closure_readiness,
     initiate_account_closure,
-    get_closure_progress
+    get_closure_progress,
+    resume_account_closure
 )
 
 # Configure logging (ensure this is done early)
@@ -1367,7 +1368,7 @@ async def delete_ach_relationship(
         # Delete the ACH relationship
         client.delete_ach_relationship_for_account(
             account_id=request.accountId,
-            relationship_id=request.achRelationshipId
+            ach_relationship_id=request.achRelationshipId
         )
         
         # Return success
@@ -1470,8 +1471,8 @@ async def get_ach_relationships_for_account(
         # Get a broker client instance
         client = get_broker_client()
         
-        # Get the ACH relationships
-        relationships = get_ach_relationships(account_id, broker_client=client)
+        # Get the ACH relationships  
+        relationships = client.get_ach_relationships_for_account(account_id)
         
         # Return the relationships
         return {
@@ -1511,6 +1512,184 @@ async def get_account_balance(account_id: str):
         # Consider checking for specific Alpaca API errors if possible
         # For now, return a generic error
         raise HTTPException(status_code=500, detail=f"Failed to fetch account balance.")
+
+@app.get("/api/account/{account_id}/funding-status")
+async def get_account_funding_status(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Check if an account has been funded by examining:
+    1. Account balance (cash > 0)
+    2. Transfer history (any completed incoming transfers)
+    3. Overall funding status
+    """
+    try:
+        logger.info(f"Checking funding status for account: {account_id}")
+        
+        # Ensure broker client is initialized
+        if not broker_client:
+            logger.error("Broker client is not initialized.")
+            raise HTTPException(status_code=500, detail="Server configuration error: Broker client not available.")
+        
+        # Get account details
+        account_info = broker_client.get_trade_account_by_id(account_id)
+        
+        # Get account balance
+        cash_balance = float(account_info.cash) if account_info.cash else 0.0
+        portfolio_value = float(account_info.portfolio_value) if account_info.portfolio_value else 0.0
+        
+        # Get transfer history
+        transfers = broker_client.get_transfers_for_account(account_id)
+        
+        # Check for completed incoming transfers
+        completed_incoming_transfers = []
+        total_funded_amount = 0.0
+        
+        for transfer in transfers:
+            if hasattr(transfer, 'direction') and hasattr(transfer, 'status'):
+                # Check for incoming transfers (funding the account)
+                if str(transfer.direction).upper() == 'INCOMING':
+                    transfer_status = str(transfer.status).upper()
+                    transfer_amount = float(transfer.amount) if hasattr(transfer, 'amount') and transfer.amount else 0.0
+                    
+                    transfer_info = {
+                        "id": str(transfer.id) if hasattr(transfer, 'id') else None,
+                        "amount": transfer_amount,
+                        "status": transfer_status,
+                        "created_at": str(transfer.created_at) if hasattr(transfer, 'created_at') else None,
+                        "updated_at": str(transfer.updated_at) if hasattr(transfer, 'updated_at') else None
+                    }
+                    
+                    # Count transfers that indicate successful funding (including pending/processing)
+                    # QUEUED: Transfer is queued for processing
+                    # SUBMITTED: Transfer has been submitted to bank
+                    # COMPLETED: Transfer has completed successfully  
+                    # SETTLED: Transfer has fully settled
+                    if transfer_status in ['QUEUED', 'SUBMITTED', 'COMPLETED', 'SETTLED']:
+                        completed_incoming_transfers.append(transfer_info)
+                        total_funded_amount += transfer_amount
+        
+        # Determine funding status
+        has_cash_balance = cash_balance > 0
+        has_portfolio_value = portfolio_value > 0
+        has_completed_transfers = len(completed_incoming_transfers) > 0
+        
+        # Account is considered funded if:
+        # 1. Has cash balance > 0, OR
+        # 2. Has portfolio value > 0 (invested funds), OR  
+        # 3. Has completed incoming transfers
+        is_funded = has_cash_balance or has_portfolio_value or has_completed_transfers
+        
+        funding_status = {
+            "account_id": account_id,
+            "is_funded": is_funded,
+            "cash_balance": cash_balance,
+            "portfolio_value": portfolio_value,
+            "total_funded_amount": total_funded_amount,
+            "completed_transfers_count": len(completed_incoming_transfers),
+            "funding_sources": {
+                "has_cash_balance": has_cash_balance,
+                "has_portfolio_value": has_portfolio_value,
+                "has_completed_transfers": has_completed_transfers
+            },
+            "recent_transfers": completed_incoming_transfers[-5:] if completed_incoming_transfers else []  # Last 5 transfers
+        }
+        
+        logger.info(f"Funding status for account {account_id}: is_funded={is_funded}, cash=${cash_balance}, portfolio=${portfolio_value}, transfers={len(completed_incoming_transfers)}")
+        
+        return {"success": True, "data": funding_status}
+        
+    except Exception as e:
+        logger.error(f"Error checking funding status for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to check funding status: {str(e)}")
+
+@app.get("/api/account/{account_id}/transfers")
+async def get_account_transfers(
+    account_id: str,
+    limit: Optional[int] = 50,
+    direction: Optional[str] = None,  # 'INCOMING', 'OUTGOING', or None for all
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get comprehensive transfer history for an account using Alpaca's get_transfers_for_account.
+    
+    Args:
+        account_id: Alpaca account ID
+        limit: Maximum number of transfers to return (default: 50)
+        direction: Filter by transfer direction ('INCOMING', 'OUTGOING', or None for all)
+    
+    Returns:
+        Formatted transfer history with real-time status
+    """
+    try:
+        logger.info(f"Getting transfer history for account: {account_id}")
+        
+        # Ensure broker client is initialized
+        if not broker_client:
+            logger.error("Broker client is not initialized.")
+            raise HTTPException(status_code=500, detail="Server configuration error: Broker client not available.")
+        
+        # Import the request filter class
+        from alpaca.broker.requests import GetTransfersRequest
+        from alpaca.broker.enums import TransferDirection
+        
+        # Build the filter request
+        filter_params = {}
+        if direction:
+            if direction.upper() == 'INCOMING':
+                filter_params['direction'] = TransferDirection.INCOMING
+            elif direction.upper() == 'OUTGOING':
+                filter_params['direction'] = TransferDirection.OUTGOING
+        
+        # Create the request filter
+        transfers_filter = GetTransfersRequest(**filter_params) if filter_params else None
+        
+        # Get transfers from Alpaca
+        transfers = broker_client.get_transfers_for_account(
+            account_id=account_id,
+            transfers_filter=transfers_filter,
+            max_items_limit=limit
+        )
+        
+        # Format transfers for frontend
+        formatted_transfers = []
+        for transfer in transfers:
+            try:
+                # Convert transfer object to dictionary format
+                transfer_data = {
+                    "id": str(transfer.id) if hasattr(transfer, 'id') else None,
+                    "amount": float(transfer.amount) if hasattr(transfer, 'amount') and transfer.amount else 0.0,
+                    "status": transfer.status.value if hasattr(transfer, 'status') and hasattr(transfer.status, 'value') else 'UNKNOWN',
+                    "direction": transfer.direction.value if hasattr(transfer, 'direction') and hasattr(transfer.direction, 'value') else 'UNKNOWN',
+                    "created_at": transfer.created_at.isoformat() if hasattr(transfer, 'created_at') and transfer.created_at else None,
+                    "updated_at": transfer.updated_at.isoformat() if hasattr(transfer, 'updated_at') and transfer.updated_at else None,
+                    "type": transfer.type.value if hasattr(transfer, 'type') and hasattr(transfer.type, 'value') else 'UNKNOWN',
+                    "relationship_id": str(transfer.relationship_id) if hasattr(transfer, 'relationship_id') else None,
+                    "fee": float(transfer.fee) if hasattr(transfer, 'fee') and transfer.fee else 0.0,
+                    "requested_amount": float(transfer.requested_amount) if hasattr(transfer, 'requested_amount') and transfer.requested_amount else 0.0,
+                    "expires_at": transfer.expires_at.isoformat() if hasattr(transfer, 'expires_at') and transfer.expires_at else None
+                }
+                formatted_transfers.append(transfer_data)
+            except Exception as format_error:
+                logger.warning(f"Error formatting transfer {getattr(transfer, 'id', 'unknown')}: {format_error}")
+                continue
+        
+        # Sort by created_at (most recent first)
+        formatted_transfers.sort(key=lambda x: x['created_at'] or '', reverse=True)
+        
+        logger.info(f"Successfully retrieved {len(formatted_transfers)} transfers for account {account_id}")
+        
+        return {
+            "success": True,
+            "transfers": formatted_transfers,
+            "total_count": len(formatted_transfers),
+            "account_id": account_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving transfer history for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve transfer history: {str(e)}")
 
 # --- Endpoint for Tradable Assets (with Caching) ---
 async def _fetch_and_cache_assets():
@@ -2606,24 +2785,76 @@ async def get_account_closure_status_endpoint(
     account_id: str,
     api_key: str = Depends(verify_api_key)
 ):
-    """
-    Get current status of account closure process.
-    
-    Returns detailed information about which step is currently active
-    and whether the account is ready to proceed to the next step.
-    """
+    """Get current status of account closure process."""
     try:
-        logger.info(f"Getting closure status for account {account_id}")
+        from utils.alpaca.account_closure import get_closure_progress
         
-        # Use sandbox mode based on environment
-        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
-        result = get_closure_progress(account_id, sandbox=sandbox)
+        # Get closure status from manager
+        status = get_closure_progress(account_id, sandbox=True)
         
-        return result
+        logger.info(f"Account closure status for {account_id}: {status}")
+        
+        return {
+            "account_id": account_id,
+            "status": status,
+            "timestamp": datetime.utcnow().isoformat()
+        }
         
     except Exception as e:
-        logger.error(f"Error getting closure status for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error getting closure status: {str(e)}")
+        logger.error(f"Error getting account closure status for {account_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get closure status: {str(e)}")
+
+@app.get("/api/account-closure/progress/{account_id}")
+async def get_account_closure_progress_endpoint(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """Get real-time progress of account closure process for frontend polling."""
+    try:
+        from utils.alpaca.account_closure import get_closure_progress
+        
+        # Get current closure progress
+        progress = get_closure_progress(account_id, sandbox=True)
+        
+        logger.info(f"Account closure progress for {account_id}: {progress}")
+        
+        # Map backend steps to frontend step numbers
+        step_mapping = {
+            'initiated': 0,
+            'liquidating_positions': 1,  # Combined: cancel orders + liquidate
+            'waiting_settlement': 2,
+            'withdrawing_funds': 3,
+            'closing_account': 4,
+            'completed': 5,
+            'failed': -1
+        }
+        
+        current_step = progress.get("current_step", "unknown")
+        steps_completed = step_mapping.get(current_step, 0)
+        
+        # Calculate total steps (excluding failed)
+        total_steps = 5
+        
+        # Format response for frontend consumption
+        return {
+            "account_id": account_id,
+            "current_step": current_step,
+            "steps_completed": steps_completed,
+            "total_steps": total_steps,
+            "status_details": {
+                "account_status": progress.get("account_status"),
+                "cash_balance": progress.get("cash_balance"),
+                "open_positions": progress.get("open_positions", 0),
+                "open_orders": progress.get("open_orders", 0),
+                "ready_for_next_step": progress.get("ready_for_next_step", False)
+            },
+            "estimated_completion": progress.get("estimated_completion"),
+            "last_updated": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting account closure progress for {account_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get closure progress: {str(e)}")
 
 @app.post("/account-closure/withdraw-funds/{account_id}")
 async def withdraw_funds_for_closure_endpoint(
@@ -2744,6 +2975,48 @@ async def close_account_final_endpoint(
     except Exception as e:
         logger.error(f"Error closing account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error closing account: {str(e)}")
+
+@app.post("/api/account-closure/resume/{account_id}")
+async def resume_account_closure_endpoint(
+    account_id: str,
+    request_data: dict,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Resume account closure process from where it left off.
+    
+    This endpoint intelligently determines the current state and continues the process,
+    making it perfect for handling failed states, page refreshes, and retry scenarios.
+    
+    Body can contain:
+    {
+        "ach_relationship_id": "string (optional - will auto-find if not provided)"
+    }
+    """
+    try:
+        logger.info(f"🔄 Resuming account closure process for account {account_id}")
+        
+        # Get optional ACH relationship ID from request
+        ach_relationship_id = request_data.get("ach_relationship_id")
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        
+        # Import the resume function
+        from utils.alpaca.account_closure import resume_account_closure
+        
+        # Resume the closure process with intelligent retry logic
+        result = resume_account_closure(account_id, ach_relationship_id, sandbox=sandbox)
+        
+        logger.info(f"✅ Resume operation completed for {account_id}: {result.get('action_taken', 'status_check')}")
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error resuming account closure for {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error resuming account closure: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

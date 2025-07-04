@@ -32,6 +32,11 @@ export const updateSession = async (request: NextRequest) => {
             );
           },
         },
+        global: {
+          fetch: (url: any, options = {}) => {
+            return fetch(url, { ...options, cache: 'no-store' });
+          }
+        }
       },
     );
 

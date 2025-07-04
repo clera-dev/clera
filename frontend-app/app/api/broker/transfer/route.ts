@@ -19,6 +19,29 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // --- PRODUCTION-READY ONBOARDING CHECK ---
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('status')
+      .eq('user_id', user.id)
+      .single();
+
+    if (onboardingError || !onboardingData) {
+      console.error('Transfer API Onboarding Check: Error fetching status for user:', user.id, onboardingError);
+      return NextResponse.json({ error: 'Could not verify onboarding status' }, { status: 500 });
+    }
+
+    const isOnboardingComplete = onboardingData.status === 'submitted' || onboardingData.status === 'approved';
+
+    if (!isOnboardingComplete) {
+      console.error(`Transfer API Onboarding Check: User ${user.id} has not completed onboarding. Status: ${onboardingData.status}`);
+      return NextResponse.json(
+        { error: 'Onboarding not completed' },
+        { status: 401 }
+      );
+    }
+    // --- END CHECK ---
+    
     // Get request body
     const reqBody = await request.json();
     const {

@@ -38,6 +38,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [hasCompletedFunding, setHasCompletedFunding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Paths that don't need the sidebar
@@ -144,16 +145,46 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           const status = onboardingData?.status;
           const completed = status === 'submitted' || status === 'approved';
           
+          // Check if account is in closure process - these users should have NO sidebar access
+          const isPendingClosure = status === 'pending_closure';
+          const isClosed = status === 'closed';
+          
+          // Check funding status (but not for closure accounts)
+          let funded = false;
+          if (completed && !isPendingClosure && !isClosed) {
+            const { data: transfers } = await supabase
+              .from('user_transfers')
+              .select('amount, status')
+              .eq('user_id', user.id)
+              .gte('amount', 1);
+            
+            funded = !!(transfers && transfers.length > 0 && 
+              transfers.some((transfer: any) => 
+                transfer.status === 'QUEUED' ||
+                transfer.status === 'SUBMITTED' ||
+                transfer.status === 'COMPLETED' || 
+                transfer.status === 'SETTLED'
+              ));
+          }
+          
           // Store in localStorage for quicker access in future
           localStorage.setItem("userId", user.id);
           localStorage.setItem("onboardingStatus", status || 'not_started');
+          localStorage.setItem("fundingStatus", funded ? 'funded' : 'not_funded');
+          localStorage.setItem("isPendingClosure", isPendingClosure.toString());
+          localStorage.setItem("isClosed", isClosed.toString());
           
           setHasCompletedOnboarding(completed);
+          setHasCompletedFunding(funded);
         } else {
           // Clear localStorage if not logged in
           localStorage.removeItem("userId");
           localStorage.removeItem("onboardingStatus");
+          localStorage.removeItem("fundingStatus");
+          localStorage.removeItem("isPendingClosure");
+          localStorage.removeItem("isClosed");
           setHasCompletedOnboarding(false);
+          setHasCompletedFunding(false);
         }
       } catch (error) {
         console.error("Error checking auth/onboarding status:", error);
@@ -167,6 +198,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           setHasCompletedOnboarding(
             onboardingStatus === 'submitted' || onboardingStatus === 'approved'
           );
+          
+          const fundingStatus = localStorage.getItem("fundingStatus");
+          setHasCompletedFunding(fundingStatus === 'funded');
         } catch (storageError) {
           console.error("Error accessing localStorage:", storageError);
         }
@@ -184,8 +218,13 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     }
   };
 
-  // Don't show sidebar during onboarding or while loading
+  // Don't show sidebar during onboarding, if not funded, or if account is closing/closed
   const isOnboardingPage = pathname === '/protected' && !hasCompletedOnboarding;
+  const isFundingPage = pathname === '/protected' && hasCompletedOnboarding && !hasCompletedFunding;
+  
+  // Check for account closure statuses from localStorage (safe for SSR)
+  const isPendingClosure = typeof window !== 'undefined' && localStorage.getItem("isPendingClosure") === 'true';
+  const isClosed = typeof window !== 'undefined' && localStorage.getItem("isClosed") === 'true';
   
   const shouldShowSidebar = 
     isClient && 
@@ -193,7 +232,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     isAuthenticated && 
     pathname !== null && 
     !nonSidebarPaths.includes(pathname) && 
-    !isOnboardingPage;
+    !isOnboardingPage &&
+    !isFundingPage &&
+    !isPendingClosure && // CRITICAL: No sidebar for pending closure
+    !isClosed && // CRITICAL: No sidebar for closed accounts  
+    hasCompletedFunding; // Must be funded to see sidebar
 
   // Check if current path supports side chat
   const canShowSideChat = sideChatEnabledPaths.includes(pathname || '');

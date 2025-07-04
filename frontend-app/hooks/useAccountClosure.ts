@@ -30,15 +30,9 @@ const initialSteps: ClosureStep[] = [
     status: 'pending'
   },
   {
-    id: 'cancel-orders',
-    title: 'Cancelling Open Orders',
-    description: 'Cancelling all pending orders',
-    status: 'pending'
-  },
-  {
-    id: 'liquidate-positions',
-    title: 'Liquidating Positions',
-    description: 'Selling all holdings at market price',
+    id: 'initiate-closure',
+    title: 'Initiating Account Closure',
+    description: 'Cancelling orders and liquidating positions',
     status: 'pending'
   },
   {
@@ -92,10 +86,6 @@ const calculateEstimatedCompletion = (): string => {
 
 export const useAccountClosure = (accountId: string) => {
   const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false);
-  const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
-  const [isFinalModalOpen, setIsFinalModalOpen] = useState(false);
-  const [showSuccessPage, setShowSuccessPage] = useState(false);
-  
   const [closureState, setClosureState] = useState<ClosureState>({
     isProcessing: false,
     currentStep: 0,
@@ -105,193 +95,79 @@ export const useAccountClosure = (accountId: string) => {
     canCancel: true
   });
 
-  const updateStepStatus = useCallback((stepId: string, status: ClosureStep['status'], error?: string) => {
+  const updateStepStatus = (stepId: string, status: 'pending' | 'in-progress' | 'completed' | 'failed', error?: string) => {
     setClosureState(prev => ({
       ...prev,
       steps: prev.steps.map(step => 
         step.id === stepId 
-          ? { ...step, status, error }
+          ? { ...step, status, ...(error && { error }) }
           : step
       )
     }));
-  }, []);
+  };
 
-  const moveToNextStep = useCallback(() => {
+  const moveToNextStep = () => {
     setClosureState(prev => ({
       ...prev,
       currentStep: Math.min(prev.currentStep + 1, prev.steps.length - 1)
     }));
-  }, []);
-
-  const checkAccountReadiness = async () => {
-    try {
-      updateStepStatus('check-readiness', 'in-progress');
-      
-      const response = await fetch(`/api/account-closure/check-readiness/${accountId}`);
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.detail || 'Failed to check account readiness');
-      }
-      
-      if (!result.ready) {
-        throw new Error(result.reason || 'Account is not ready for closure');
-      }
-      
-      updateStepStatus('check-readiness', 'completed');
-      moveToNextStep();
-      return true;
-    } catch (error) {
-      updateStepStatus('check-readiness', 'failed', error instanceof Error ? error.message : 'Unknown error');
-      throw error;
-    }
   };
 
-  const executeClosureStep = async (stepId: string, endpoint: string) => {
+  const initiateClosure = useCallback(async (achRelationshipId: string) => {
     try {
-      updateStepStatus(stepId, 'in-progress');
-      
-      const response = await fetch(`/api/account-closure/${endpoint}/${accountId}`, {
-        method: 'POST'
+      // IMMEDIATE: Update user status to pending_closure in Supabase
+      const confirmationNumber = generateConfirmationNumber();
+      const statusResponse = await fetch('/api/account-closure/update-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: 'pending_closure',
+          confirmationNumber: confirmationNumber
+        })
       });
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.detail || `Failed to execute ${stepId}`);
+
+      if (!statusResponse.ok) {
+        throw new Error('Failed to update user status');
       }
-      
-      updateStepStatus(stepId, 'completed');
-      moveToNextStep();
-      return result;
-    } catch (error) {
-      updateStepStatus(stepId, 'failed', error instanceof Error ? error.message : 'Unknown error');
-      throw error;
-    }
-  };
 
-  const initiateClosure = useCallback(async () => {
-    setClosureState(prev => ({
-      ...prev,
-      isProcessing: true,
-      error: null,
-      currentStep: 0,
-      steps: prev.steps.map(step => ({ ...step, status: 'pending', error: undefined }))
-    }));
-
-    try {
-      // Step 1: Check readiness
-      await checkAccountReadiness();
+      // Close modal immediately  
+      setIsConfirmationModalOpen(false);
       
-      // Step 2: Cancel orders
-      await executeClosureStep('cancel-orders', 'cancel-orders');
+      // REDIRECT IMMEDIATELY to /protected which will show AccountClosurePending
+      window.location.href = '/protected';
       
-      // Step 3: Liquidate positions
-      await executeClosureStep('liquidate-positions', 'liquidate-positions');
-      
-      // After liquidation, we need to wait for settlement and user final confirmation
-      setClosureState(prev => ({ 
-        ...prev, 
-        canCancel: true, // User can still cancel before final step
-        isProcessing: false 
-      }));
+      // Start background processing (fire and forget)
+      fetch(`/api/account-closure/initiate/${accountId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ach_relationship_id: achRelationshipId,
+          confirm_liquidation: true,
+          confirm_irreversible: true
+        })
+      }).catch(error => {
+        console.error('Background closure process error:', error);
+        // Don't update UI - user is already redirected
+      });
       
     } catch (error) {
       setClosureState(prev => ({
         ...prev,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        error: error instanceof Error ? error.message : 'Failed to initiate closure process',
         isProcessing: false,
         canCancel: true
       }));
     }
   }, [accountId]);
 
-  const finalConfirmClosure = useCallback(async () => {
-    setClosureState(prev => ({
-      ...prev,
-      isProcessing: true,
-      canCancel: false
-    }));
-
-    try {
-      // Step 4: Wait for settlement
-      await executeClosureStep('settlement', 'check-settlement');
-      
-      // Step 5: Withdraw funds
-      await executeClosureStep('withdraw-funds', 'withdraw-funds');
-      
-      // Step 6: Close account
-      await executeClosureStep('close-account', 'close-account');
-      
-      const confirmationNumber = generateConfirmationNumber();
-      const completionTimestamp = new Date().toISOString();
-      const estimatedCompletion = calculateEstimatedCompletion();
-      
-      setClosureState(prev => ({
-        ...prev,
-        isComplete: true,
-        isProcessing: false,
-        confirmationNumber,
-        completionTimestamp,
-        estimatedCompletion
-      }));
-      
-      // Close modals and show success page
-      setIsProcessModalOpen(false);
-      setIsFinalModalOpen(false);
-      setShowSuccessPage(true);
-      
-    } catch (error) {
-      setClosureState(prev => ({
-        ...prev,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-        isProcessing: false,
-        canCancel: false // Once we start final steps, we can't cancel
-      }));
-    }
-  }, [accountId]);
-
-  const cancelClosure = useCallback(() => {
-    setClosureState({
-      isProcessing: false,
-      currentStep: 0,
-      steps: [...initialSteps],
-      error: null,
-      isComplete: false,
-      canCancel: true
-    });
-    
-    setIsConfirmationModalOpen(false);
-    setIsProcessModalOpen(false);
-    setIsFinalModalOpen(false);
-    setShowSuccessPage(false);
-  }, []);
-
-  const navigateHome = useCallback(() => {
-    setShowSuccessPage(false);
-    // Reset closure state
-    setClosureState({
-      isProcessing: false,
-      currentStep: 0,
-      steps: [...initialSteps],
-      error: null,
-      isComplete: false,
-      canCancel: true
-    });
-  }, []);
-
   return {
     isConfirmationModalOpen,
     setIsConfirmationModalOpen,
-    isProcessModalOpen,
-    setIsProcessModalOpen,
-    isFinalModalOpen,
-    setIsFinalModalOpen,
-    showSuccessPage,
-    setShowSuccessPage,
     closureState,
-    initiateClosure,
-    finalConfirmClosure,
-    cancelClosure,
-    navigateHome
+    initiateClosure
   };
 }; 

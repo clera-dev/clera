@@ -1601,3 +1601,323 @@ except ValidationError as e:
 5. **Test Incrementally**: Fix one parameter at a time and test after each fix
 
 This debugging approach—testing functions directly, checking Pydantic validation, and updating system prompts—will resolve 95% of LangChain tool calling issues.
+
+## Account Closure System (Latest Update - July 2025)
+
+### Overview
+
+The backend implements a production-ready account closure system that handles the complete lifecycle of brokerage account closure with 2025 Alpaca API compliance, comprehensive logging, automated email notifications, and real-time monitoring capabilities.
+
+### Core Implementation Files
+
+#### Primary Account Closure Logic
+- **`utils/alpaca/account_closure.py`**: Complete account closure management
+- **`utils/alpaca/account_closure_logger.py`**: Enhanced logging system
+- **`utils/alpaca/automated_account_closure.py`**: Background automation
+- **`monitor_account_closure.py`**: Real-time monitoring script
+
+#### Email System
+- **`utils/email/email_service.py`**: Professional email notifications
+- **Email templates**: Branded initiation and completion emails
+
+### Account Closure Flow
+
+The system implements a secure, step-by-step closure process:
+
+```python
+class ClosureStep(Enum):
+    INITIATED = "initiated"
+    CANCELING_ORDERS = "canceling_orders"  # Combined with liquidation in 2025 API
+    LIQUIDATING_POSITIONS = "liquidating_positions"
+    WAITING_SETTLEMENT = "waiting_settlement"
+    WITHDRAWING_FUNDS = "withdrawing_funds"
+    CLOSING_ACCOUNT = "closing_account"
+    COMPLETED = "completed"
+    FAILED = "failed"
+```
+
+#### Step 1: Readiness Check (`check_account_closure_readiness`)
+```python
+def check_account_closure_readiness(account_id: str, sandbox: bool = False) -> dict:
+    """Comprehensive account closure eligibility validation."""
+    # Validates:
+    # - Account status (must be ACTIVE)
+    # - PDT restrictions (account must have >$25k equity or no day trading history)
+    # - Open positions and orders
+    # - ACH relationships for fund withdrawal
+    return {'ready': bool, 'reason': str, 'details': dict}
+```
+
+#### Step 2: Initiate Closure (`initiate_account_closure`)
+```python
+def initiate_account_closure(account_id: str, ach_relationship_id: str, sandbox: bool = False) -> dict:
+    """Start closure process with combined order cancellation and position liquidation."""
+    # Uses 2025 Alpaca API: close_all_positions_for_account(cancel_orders=True)
+    # - Cancels all open orders
+    # - Liquidates all positions  
+    # - Sends initiation email
+    # - Updates Supabase status to 'pending_closure'
+    return {'success': bool, 'step': str, 'message': str}
+```
+
+#### Step 3: Settlement Monitoring (`check_settlement_status`)
+```python
+def check_settlement_status(account_id: str, sandbox: bool = False) -> dict:
+    """Monitor T+1 settlement for trade completion."""
+    # Checks for:
+    # - Zero open positions
+    # - All orders in terminal states
+    # - Settlement date compliance
+    return {'settled': bool, 'details': dict}
+```
+
+#### Step 4: Fund Withdrawal (`withdraw_all_funds`)
+```python
+def withdraw_all_funds(account_id: str, ach_relationship_id: str, sandbox: bool = False) -> dict:
+    """Withdraw all available cash via ACH transfer."""
+    # Uses: create_ach_transfer_for_account with proper UUID validation
+    # - Validates ACH relationship
+    # - Creates outbound transfer
+    # - Handles minimum balance requirements
+    return {'success': bool, 'transfer_id': str, 'amount': float}
+```
+
+#### Step 5: Final Closure (`close_account`)
+```python
+def close_account(account_id: str, sandbox: bool = False) -> dict:
+    """Permanently close the brokerage account."""
+    # Final validations:
+    # - Cash balance ≤ $1.00
+    # - No open positions or orders
+    # - All transfers completed
+    # - Updates Supabase status to 'closed'
+    # - Sends completion email
+    return {'success': bool, 'message': str}
+```
+
+### 2025 Alpaca API Compliance
+
+The system uses current, non-deprecated Alpaca API methods:
+
+#### Current API Usage
+```python
+# ✅ CURRENT: Combined order cancellation and liquidation
+broker_client.close_all_positions_for_account(
+    account_id=account_id,
+    cancel_orders=True
+)
+
+# ✅ CURRENT: Account closure
+broker_client.close_account(account_id)
+
+# ✅ CURRENT: ACH transfers with proper request objects
+broker_client.create_ach_transfer_for_account(
+    account_id,
+    CreateACHTransferRequest(
+        relationship_id=relationship_id,
+        transfer_type=TransferType.ACH,
+        direction=TransferDirection.OUTGOING,
+        amount=amount
+    )
+)
+```
+
+### Enhanced Logging System (`AccountClosureLogger`)
+
+#### Features
+- **Individual Log Files**: One file per closure with timestamps
+- **Real-Time Console Output**: Color-coded messages  
+- **Comprehensive Data Logging**: Every API call and safety check
+- **Email Tracking**: Complete email notification audit trail
+
+#### Log File Structure
+```
+logs/account_closures/closure_{account_id}_{timestamp}.log
+```
+
+#### Logging Methods
+```python
+logger = AccountClosureLogger(account_id)
+
+# Step tracking
+logger.log_step_start("ACCOUNT_CLOSURE_INITIATION", {"account_id": account_id})
+logger.log_step_completion("PRECONDITION_CHECKS", result)
+
+# API data logging
+logger.log_alpaca_data("ACCOUNT_DATA", account_data)
+logger.log_alpaca_data("POSITIONS_DATA", positions)
+
+# Safety validations
+logger.log_safety_check("ACCOUNT_READINESS", "✅ PASSED", details)
+logger.log_safety_check("LIQUIDATION_SUCCESS", "❌ FAILED", error_details)
+
+# Email tracking
+logger.log_email_attempt("INITIATION_EMAIL", recipient, success, details)
+
+# Performance monitoring
+logger.log_timing("LIQUIDATION_OPERATION", duration_seconds)
+```
+
+### Professional Email System
+
+#### Branded Email Templates
+- **Company Name**: "Clera" (updated from "Clera Investment Services")
+- **Logo**: Transparent Clera logo (`https://askclera.com/clera-logo.png`)
+- **Support Contact**: `support@askclera.com`
+- **Phone References**: Removed (email-only support)
+
+#### Email Types
+
+**Initiation Email** (`send_account_closure_initiation_email`):
+```python
+def send_account_closure_initiation_email(account_data: dict, confirmation_code: str) -> bool:
+    """Send professional closure initiation notification."""
+    # Triggered after successful /initiate call
+    # Includes closure timeline and confirmation code
+    # Professional HTML + plain text versions
+```
+
+**Completion Email** (`send_account_closure_completion_email`):
+```python  
+def send_account_closure_completion_email(account_data: dict, confirmation_code: str) -> bool:
+    """Send closure completion confirmation."""
+    # Triggered after successful /close-account call
+    # Confirms account fully closed
+    # Includes final confirmation code
+```
+
+#### Email Logging Integration
+```python
+# Email tracking in closure process
+try:
+    email_success = send_account_closure_initiation_email(account_data, confirmation_code)
+    logger.log_email_attempt("INITIATION_EMAIL", recipient, email_success, {
+        "user": f"{first_name} {last_name}",
+        "confirmation": confirmation_code
+    })
+except Exception as e:
+    logger.log_email_attempt("INITIATION_EMAIL", recipient, False, {"error": str(e)})
+```
+
+### Automated Background Processing
+
+#### `automated_account_closure.py`
+- **Complete Automation**: Handles entire process after user confirmation
+- **T+1 Settlement Monitoring**: Automatic checks for trade settlement
+- **Fund Withdrawal**: Automated ACH transfer initiation
+- **Status Tracking**: Real-time Supabase status updates
+- **Error Handling**: Comprehensive error recovery and logging
+
+#### Background Process Flow
+```python
+def automated_closure_process(account_id: str, ach_relationship_id: str):
+    """Complete automated closure after user initiation."""
+    # 1. Wait for T+1 settlement
+    # 2. Automatically withdraw funds when settled  
+    # 3. Monitor withdrawal completion
+    # 4. Close account when funds transferred
+    # 5. Update Supabase status throughout
+    # 6. Send completion email
+```
+
+### Real-Time Monitoring (`monitor_account_closure.py`)
+
+#### Monitor Features
+```bash
+# Monitor specific account
+python monitor_account_closure.py --account ACCOUNT123
+
+# Monitor all active closures  
+python monitor_account_closure.py --all
+
+# Follow logs in real-time
+python monitor_account_closure.py --account ACCOUNT123 --follow
+```
+
+#### Color-Coded Output
+- 🔍 **Blue**: General information
+- ✅ **Green**: Success operations  
+- ⚠️ **Yellow**: Warnings and retries
+- ❌ **Red**: Errors and failures
+- 📧 **Cyan**: Email notifications
+- ⏱️ **Magenta**: Timing information
+
+### API Endpoints
+
+#### Account Closure REST API
+```python
+# FastAPI endpoints in api_server.py
+
+@app.get("/account-closure/check-readiness/{account_id}")
+async def check_readiness_endpoint(account_id: str) -> dict:
+    """Check if account is ready for closure."""
+
+@app.post("/account-closure/initiate/{account_id}")  
+async def initiate_closure_endpoint(account_id: str, request: InitiateClosureRequest) -> dict:
+    """Start the account closure process."""
+
+@app.get("/account-closure/settlement-status/{account_id}")
+async def settlement_status_endpoint(account_id: str) -> dict:
+    """Check T+1 settlement status."""
+
+@app.post("/account-closure/withdraw-funds/{account_id}")
+async def withdraw_funds_endpoint(account_id: str, request: WithdrawFundsRequest) -> dict:
+    """Withdraw all available funds."""
+
+@app.post("/account-closure/close-account/{account_id}")
+async def close_account_endpoint(account_id: str, request: CloseAccountRequest) -> dict:
+    """Permanently close the account."""
+```
+
+### Database Integration
+
+#### Supabase Status Tracking
+```sql
+-- Enhanced onboarding status enum
+CREATE TYPE onboarding_status AS ENUM (
+    'not_started',
+    'in_progress', 
+    'submitted',
+    'approved',
+    'pending_closure',  -- NEW: Closure in progress
+    'closed'           -- NEW: Account permanently closed
+);
+
+-- Account closure tracking fields
+ALTER TABLE user_onboarding ADD COLUMN closure_initiated_at TIMESTAMPTZ;
+ALTER TABLE user_onboarding ADD COLUMN closure_completed_at TIMESTAMPTZ;
+ALTER TABLE user_onboarding ADD COLUMN closure_confirmation_code TEXT;
+```
+
+#### Status Update Functions
+```python
+def update_closure_status(user_id: str, status: str, details: dict = None):
+    """Update user closure status in Supabase."""
+    # Updates:
+    # - onboarding status
+    # - closure timestamps  
+    # - confirmation codes
+    # - closure details (JSON)
+```
+
+### Security and Safety Features
+
+#### Multi-Layer Validation
+1. **Account Status Checks**: Only ACTIVE accounts
+2. **Financial Validations**: PDT restrictions, minimum balances
+3. **Settlement Verification**: T+1 compliance
+4. **Final Safety Checks**: Zero positions before closure
+
+#### Production Safety Measures
+```python
+# Critical safety validations before final closure
+if float(account.cash) > 1.00:
+    raise ValueError(f"Cannot close account with cash balance > $1.00: ${account.cash}")
+
+if positions and len(positions) > 0:
+    raise ValueError(f"Cannot close account with {len(positions)} open positions")
+
+if orders and len([o for o in orders if o.status not in ['filled', 'canceled', 'expired']]) > 0:
+    raise ValueError("Cannot close account with pending orders")
+```
+

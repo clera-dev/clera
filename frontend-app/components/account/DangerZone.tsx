@@ -1,14 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import AccountClosureButton from "./AccountClosureButton";
 import ClosureConfirmationModal from "./ClosureConfirmationModal";
-import ClosureProcessModal from "./ClosureProcessModal";
-import FinalConfirmationModal from "./FinalConfirmationModal";
-import AccountClosureSuccess from "./AccountClosureSuccess";
 import { useAccountClosure } from "@/hooks/useAccountClosure";
 
 interface DangerZoneProps {
@@ -17,33 +14,32 @@ interface DangerZoneProps {
 }
 
 export default function DangerZone({ accountId, userName }: DangerZoneProps) {
+  const [achRelationshipId, setAchRelationshipId] = useState<string>('');
+  
   const {
     isConfirmationModalOpen,
     setIsConfirmationModalOpen,
-    isProcessModalOpen,
-    setIsProcessModalOpen,
-    isFinalModalOpen,
-    setIsFinalModalOpen,
-    showSuccessPage,
     closureState,
-    initiateClosure,
-    cancelClosure,
-    finalConfirmClosure,
-    navigateHome
+    initiateClosure
   } = useAccountClosure(accountId);
 
-  // Show success page if closure is complete
-  if (showSuccessPage && closureState.isComplete) {
-    return (
-      <AccountClosureSuccess
-        accountId={accountId}
-        completionTimestamp={closureState.completionTimestamp || new Date().toISOString()}
-        estimatedCompletion={closureState.estimatedCompletion || "Within 3-5 business days"}
-        confirmationNumber={closureState.confirmationNumber || "CLA-ERROR-000"}
-        onNavigateHome={navigateHome}
-      />
-    );
-  }
+  // Fetch ACH relationship ID when component mounts
+  useEffect(() => {
+    const fetchAchRelationshipId = async () => {
+      try {
+        const response = await fetch(`/api/broker/bank-status?accountId=${accountId}`);
+        const data = await response.json();
+        if (data.relationships && data.relationships.length > 0) {
+          setAchRelationshipId(data.relationships[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to fetch ACH relationship ID:', error);
+      }
+    };
+    fetchAchRelationshipId();
+  }, [accountId]);
+
+  // NOTE: No success page logic here - user redirects to /protected immediately
 
   return (
     <>
@@ -110,42 +106,15 @@ export default function DangerZone({ accountId, userName }: DangerZoneProps) {
         </CardContent>
       </Card>
 
-      {/* Modals */}
+      {/* Only the initial confirmation modal - user redirects immediately after */}
       <ClosureConfirmationModal
         isOpen={isConfirmationModalOpen}
         onClose={() => setIsConfirmationModalOpen(false)}
         onConfirm={() => {
           setIsConfirmationModalOpen(false);
-          setIsProcessModalOpen(true);
-          initiateClosure();
+          initiateClosure(achRelationshipId);
         }}
         userName={userName}
-      />
-
-      <ClosureProcessModal
-        isOpen={isProcessModalOpen}
-        onClose={() => setIsProcessModalOpen(false)}
-        onContinue={() => {
-          setIsProcessModalOpen(false);
-          setIsFinalModalOpen(true);
-        }}
-        onCancel={() => {
-          setIsProcessModalOpen(false);
-          cancelClosure();
-        }}
-        closureState={closureState}
-      />
-
-      <FinalConfirmationModal
-        isOpen={isFinalModalOpen}
-        onClose={() => setIsFinalModalOpen(false)}
-        onConfirm={finalConfirmClosure}
-        onCancel={() => {
-          setIsFinalModalOpen(false);
-          cancelClosure();
-        }}
-        userName={userName}
-        closureState={closureState}
       />
     </>
   );

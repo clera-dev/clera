@@ -37,7 +37,7 @@ export default function ManualBankEntry({
       onClick={() => setShowForm(true)}
       className="flex items-center gap-2 w-full"
     >
-      Enter Bank Account Details Manually
+      Enter Bank Account Details
     </Button>
   );
 } 

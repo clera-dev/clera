@@ -8,6 +8,7 @@ import AccountInfoCard from "@/components/dashboard/AccountInfoCard";
 import TransfersCard from "@/components/dashboard/TransfersCard";
 import ManualBankEntry from "@/components/funding/ManualBankEntry";
 import OnboardingStatusSetter from "@/components/onboarding/OnboardingStatusSetter";
+import AccountClosurePending from "@/components/account/AccountClosurePending";
 
 export default async function ProtectedPage() {
   const supabase = await createClient();
@@ -22,7 +23,37 @@ export default async function ProtectedPage() {
 
   // Check if user has already completed onboarding
   const { data: onboardingData } = await getOnboardingDataAction(user.id);
-  const hasCompletedOnboarding = onboardingData?.status === 'submitted' || onboardingData?.status === 'approved';
+  const userStatus = onboardingData?.status;
+  const hasCompletedOnboarding = userStatus === 'submitted' || userStatus === 'approved';
+  
+  // Handle account closure statuses
+  if (userStatus === 'pending_closure') {
+    // Show account closure pending page with NO sidebar access
+    return <AccountClosurePending userId={user.id} />;
+  }
+  
+  if (userStatus === 'closed') {
+    // Allow user to restart onboarding process
+    return (
+      <div className="flex-1 w-full flex flex-col p-2 sm:p-4 min-h-screen">
+        <OnboardingStatusSetter status="not_started" />
+        <div className="flex-grow pb-16">
+          <div className="max-w-2xl mx-auto py-8">
+            <div className="bg-card border border-border rounded-lg p-8 text-center">
+              <h1 className="text-2xl font-bold mb-4">Welcome Back to Clera</h1>
+              <p className="text-muted-foreground mb-6">
+                Your previous account has been closed. You can create a new account to start trading again.
+              </p>
+                             <OnboardingFlow 
+                 userId={user.id} 
+                 initialData={undefined}
+               />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
   // Get user profile data
   const { data: profile } = await supabase
@@ -31,7 +62,7 @@ export default async function ProtectedPage() {
     .eq('id', user.id)
     .single();
   
-  // Get user transfers
+  // Get user transfers to check if account is funded
   const { data: transfers } = await supabase
     .from('user_transfers')
     .select('*')
@@ -53,7 +84,7 @@ export default async function ProtectedPage() {
     );
   }
 
-  // If onboarding is complete, show regular protected content
+  // If onboarding is complete but account not funded, show funding page
   return (
     <div className="flex-1 w-full flex flex-col gap-4 p-2 sm:p-4">
       <OnboardingStatusSetter status={onboardingData?.status || 'incomplete'} />
@@ -68,29 +99,15 @@ export default async function ProtectedPage() {
         </div>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Account Information */}
-        <AccountInfoCard 
-          alpacaAccountNumber={onboardingData?.alpaca_account_number} 
-          alpacaAccountStatus={onboardingData?.alpaca_account_status}
-          created={onboardingData?.created_at}
+      {/* Fund your account section */}
+      <div className="flex flex-col gap-2 items-start mt-4">
+        <h2 className="font-bold text-xl mb-4">Fund your account</h2>
+        <p className="mb-4">Let's get your account funded to start trading.</p>
+        <ManualBankEntry 
+          userName={`${profile?.first_name || ''} ${profile?.last_name || ''}`.trim()}
+          alpacaAccountId={onboardingData?.alpaca_account_id}
         />
       </div>
-      
-      {/* Recent Transfers */}
-      <TransfersCard transfers={transfers || []} />
-      
-      {/* Show manual bank entry form if no transfers yet */}
-      {(!transfers || transfers.length === 0) && (
-        <div className="flex flex-col gap-2 items-start mt-4">
-          <h2 className="font-bold text-xl mb-4">Fund your account</h2>
-          <p className="mb-4">Let's get your account funded to start trading.</p>
-          <ManualBankEntry 
-            userName={`${profile?.first_name || ''} ${profile?.last_name || ''}`.trim()}
-            alpacaAccountId={onboardingData?.alpaca_account_id}
-          />
-        </div>
-      )}
     </div>
   );
 }

@@ -21,6 +21,29 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    // --- PRODUCTION-READY ONBOARDING CHECK ---
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('status')
+      .eq('user_id', user.id)
+      .single();
+
+    if (onboardingError || !onboardingData) {
+      console.error('API Onboarding Check: Error fetching status for user:', user.id, onboardingError);
+      return NextResponse.json({ error: 'Could not verify onboarding status' }, { status: 500 });
+    }
+
+    const isOnboardingComplete = onboardingData.status === 'submitted' || onboardingData.status === 'approved';
+
+    if (!isOnboardingComplete) {
+      console.error(`API Onboarding Check: User ${user.id} has not completed onboarding. Status: ${onboardingData.status}`);
+      return NextResponse.json(
+        { error: 'Onboarding not completed' },
+        { status: 401 }
+      );
+    }
+    // --- END CHECK ---
     
     // Get request body
     const reqBody = await request.json();
@@ -83,7 +106,23 @@ export async function POST(request: NextRequest) {
           const existingRelationship = relationshipsData.relationships[0];
           console.log(`Found existing relationship with ID: ${existingRelationship.id}. Attempting to delete it first.`);
           
-          // Delete the existing relationship - using the correct endpoint
+          // Delete from Supabase first (safer to delete local record before remote)
+          try {
+            const { error: supabaseDeleteError } = await supabase
+              .from('user_bank_connections')
+              .delete()
+              .eq('relationship_id', existingRelationship.id);
+            
+            if (supabaseDeleteError) {
+              console.warn(`Warning: Failed to delete bank connection from Supabase: ${supabaseDeleteError.message}`);
+            } else {
+              console.log(`Successfully deleted bank connection from Supabase for relationship: ${existingRelationship.id}`);
+            }
+          } catch (supabaseError) {
+            console.warn(`Warning: Exception deleting from Supabase: ${supabaseError}`);
+          }
+          
+          // Delete the existing relationship from Alpaca
           const deleteResponse = await fetch(`${apiUrl}/delete-ach-relationship`, {
             method: 'POST',
             headers: {
@@ -97,14 +136,14 @@ export async function POST(request: NextRequest) {
           });
           
           if (!deleteResponse.ok) {
-            console.warn(`Failed to delete existing relationship: ${deleteResponse.status}`);
+            console.warn(`Failed to delete existing relationship from Alpaca: ${deleteResponse.status}`);
             if (deleteResponse.status !== 404) {
               // Only show warning for errors other than "not found"
               console.warn(`Error details: ${await deleteResponse.text()}`);
             }
             // Continue anyway, as we'll try to create the new one
           } else {
-            console.log(`Successfully deleted existing relationship: ${existingRelationship.id}`);
+            console.log(`Successfully deleted existing relationship from Alpaca: ${existingRelationship.id}`);
           }
         }
       }

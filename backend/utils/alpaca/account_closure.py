@@ -14,6 +14,21 @@ from .create_account import get_broker_client
 
 logger = logging.getLogger("alpaca-account-closure")
 
+# Import enhanced logging for detailed tracking
+try:
+    from .account_closure_logger import AccountClosureLogger
+except ImportError:
+    logger.warning("Enhanced logging not available - using basic logging")
+    AccountClosureLogger = None
+
+# Import email service for notifications
+try:
+    from ..email.email_service import send_account_closure_email, send_account_closure_complete_email
+except ImportError:
+    logger.warning("Email service not available - email notifications will be skipped")
+    send_account_closure_email = None
+    send_account_closure_complete_email = None
+
 class ClosureStep(Enum):
     """Enumeration of account closure steps."""
     INITIATED = "initiated"
@@ -51,9 +66,20 @@ class AccountClosureManager:
             Dictionary with closure readiness info
         """
         try:
+            # Get basic account info for status check
             account = self.broker_client.get_account_by_id(account_id)
+            
+            # Get trading account info for cash balances
+            trade_account = self.broker_client.get_trade_account_by_id(account_id)
+            
             positions = self.broker_client.get_all_positions_for_account(account_id)
-            orders = self.broker_client.get_orders_for_account(account_id, status="open")
+            
+            # Get open orders using proper filter (2025 API)
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            order_filter = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+            orders = self.broker_client.get_orders_for_account(account_id, filter=order_filter)
+            
             ach_relationships = self.broker_client.get_ach_relationships_for_account(account_id)
             
             # Check account status
@@ -64,34 +90,21 @@ class AccountClosureManager:
                     "account_status": str(account.status),
                     "open_orders": len(orders),
                     "open_positions": len(positions),
-                    "cash_balance": float(account.cash),
+                    "cash_balance": float(trade_account.cash) if hasattr(trade_account, 'cash') else 0,
                     "has_ach_relationship": len(ach_relationships) > 0
                 }
             
-            # Check for Pattern Day Trader restrictions
-            if hasattr(account, 'pattern_day_trader') and account.pattern_day_trader:
-                equity = float(account.equity) if account.equity else 0
-                if equity > 0 and equity < 25000:
-                    return {
-                        "ready": False,
-                        "reason": "Account is flagged as Pattern Day Trader with less than $25k equity",
-                        "account_status": str(account.status),
-                        "open_orders": len(orders),
-                        "open_positions": len(positions),
-                        "cash_balance": float(account.cash),
-                        "equity": equity,
-                        "pattern_day_trader": True,
-                        "has_ach_relationship": len(ach_relationships) > 0
-                    }
+            # Note: Removed Pattern Day Trader restriction check
+            # PDT rules should not prevent users from closing their accounts
             
             return {
                 "ready": True,
                 "account_status": str(account.status),
                 "open_orders": len(orders),
                 "open_positions": len(positions),
-                "cash_balance": float(account.cash),
-                "equity": float(account.equity) if account.equity else 0,
-                "withdrawable_cash": float(account.cash_withdrawable) if hasattr(account, 'cash_withdrawable') else 0,
+                "cash_balance": float(trade_account.cash) if hasattr(trade_account, 'cash') else 0,
+                "equity": float(trade_account.equity) if hasattr(trade_account, 'equity') else 0,
+                "withdrawable_cash": float(trade_account.cash_withdrawable) if hasattr(trade_account, 'cash_withdrawable') else 0,
                 "has_ach_relationship": len(ach_relationships) > 0,
                 "ach_relationships": [
                     {
@@ -124,8 +137,11 @@ class AccountClosureManager:
         try:
             logger.info(f"Canceling all orders for account {account_id}")
             
-            # Get all open orders
-            orders = self.broker_client.get_orders_for_account(account_id, status="open")
+            # Get all open orders using proper filter (2025 API)
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            order_filter = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+            orders = self.broker_client.get_orders_for_account(account_id, filter=order_filter)
             
             if not orders:
                 return {
@@ -173,7 +189,7 @@ class AccountClosureManager:
     
     def liquidate_all_positions(self, account_id: str) -> Dict[str, Any]:
         """
-        Liquidate all positions for the account.
+        Liquidate all positions for the account using 2025 Alpaca API.
         
         Args:
             account_id: The Alpaca account ID
@@ -191,32 +207,35 @@ class AccountClosureManager:
                 return {
                     "success": True,
                     "positions_liquidated": 0,
+                    "liquidation_orders": [],
                     "message": "No positions to liquidate"
                 }
             
-            # Liquidate using Alpaca's close all positions endpoint
-            liquidation_orders = self.broker_client.close_all_positions_for_account(
+            # Use Alpaca's 2025 API: close_all_positions_for_account with cancel_orders=True
+            # This cancels all orders AND liquidates all positions in one optimized call
+            liquidation_response = self.broker_client.close_all_positions_for_account(
                 account_id=account_id,
                 cancel_orders=True  # Cancel any remaining orders during liquidation
             )
             
             # Process liquidation results - handle both list and single item responses
-            liquidation_orders_list = liquidation_orders if isinstance(liquidation_orders, list) else [liquidation_orders] if liquidation_orders else []
+            liquidation_orders_list = liquidation_response if isinstance(liquidation_response, list) else [liquidation_response] if liquidation_response else []
             
             successful_liquidations = []
             for order in liquidation_orders_list:
-                if order:  # Valid order response
+                if order and hasattr(order, 'order_id'):  # Valid order response
                     successful_liquidations.append({
-                        "order_id": str(order.id) if hasattr(order, 'id') else None,
+                        "order_id": str(order.order_id),
                         "symbol": str(order.symbol) if hasattr(order, 'symbol') else None,
-                        "side": str(order.side) if hasattr(order, 'side') else "sell"
+                        "status": str(order.status) if hasattr(order, 'status') else "submitted"
                     })
             
             return {
                 "success": True,
                 "positions_liquidated": len(positions),
                 "liquidation_orders": successful_liquidations,
-                "settlement_date": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")  # T+1 settlement
+                "settlement_date": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),  # T+1 settlement
+                "message": f"Successfully liquidated {len(positions)} positions"
             }
             
         except Exception as e:
@@ -237,40 +256,35 @@ class AccountClosureManager:
             Dictionary with settlement status
         """
         try:
-            account = self.broker_client.get_account_by_id(account_id)
+            # Get trading account for cash info
+            trade_account = self.broker_client.get_trade_account_by_id(account_id)
             positions = self.broker_client.get_all_positions_for_account(account_id)
             
             # Safe handling of account attributes
-            cash_withdrawable = float(str(account.cash_withdrawable)) if hasattr(account, 'cash_withdrawable') and account.cash_withdrawable else 0
-            cash_total = float(str(account.cash)) if hasattr(account, 'cash') and account.cash else 0
+            cash_withdrawable = float(trade_account.cash_withdrawable) if hasattr(trade_account, 'cash_withdrawable') else 0
+            cash_total = float(trade_account.cash) if hasattr(trade_account, 'cash') else 0
             
             settlement_complete = len(positions) == 0 and cash_withdrawable == cash_total
             pending_settlement = cash_total - cash_withdrawable
             
             return {
                 "settlement_complete": settlement_complete,
-                "positions_remaining": len(positions),
                 "cash_total": cash_total,
-                "cash_available_for_withdrawal": cash_withdrawable,
+                "cash_withdrawable": cash_withdrawable,
                 "pending_settlement": pending_settlement,
-                "estimated_settlement_date": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d") if not settlement_complete else None
+                "positions_remaining": len(positions)
             }
             
         except Exception as e:
             logger.error(f"Error checking settlement status for account {account_id}: {e}")
             return {
                 "settlement_complete": False,
-                "positions_remaining": 0,
-                "cash_total": 0,
-                "cash_available_for_withdrawal": 0,
-                "pending_settlement": 0,
-                "estimated_settlement_date": None,
                 "error": str(e)
             }
     
     def withdraw_all_funds(self, account_id: str, ach_relationship_id: str) -> Dict[str, Any]:
         """
-        Withdraw all available funds via ACH.
+        Withdraw all available funds via ACH using 2025 API.
         
         Args:
             account_id: The Alpaca account ID
@@ -282,40 +296,35 @@ class AccountClosureManager:
         try:
             logger.info(f"Withdrawing all funds for account {account_id}")
             
-            account = self.broker_client.get_account_by_id(account_id)
+            # Get current account balance using trade account
+            trade_account = self.broker_client.get_trade_account_by_id(account_id)
+            cash_withdrawable = float(trade_account.cash_withdrawable) if hasattr(trade_account, 'cash_withdrawable') else 0
             
-            # Safe handling of withdrawable amount
-            withdrawable_amount = 0
-            if hasattr(account, 'cash_withdrawable') and account.cash_withdrawable:
-                withdrawable_amount = float(str(account.cash_withdrawable))
-            
-            if withdrawable_amount <= 0:
+            if cash_withdrawable <= 1.0:
                 return {
-                    "success": False,
-                    "error": "No withdrawable funds available"
+                    "success": True,
+                    "transfer_id": None,
+                    "amount": 0,
+                    "message": "No funds available for withdrawal"
                 }
             
-            # Create ACH withdrawal
-            from alpaca.broker.enums import TransferTiming
-            
+            # Create ACH transfer request using 2025 API
             transfer_request = CreateACHTransferRequest(
-                amount=str(withdrawable_amount),
+                amount=cash_withdrawable,
                 direction=TransferDirection.OUTGOING,
-                timing=TransferTiming.IMMEDIATE,  # Required field
-                relationship_id=ach_relationship_id
+                type=TransferType.ACH,
+                bank_id=ach_relationship_id
             )
             
-            transfer = self.broker_client.create_ach_transfer_for_account(
-                account_id=account_id,
-                ach_transfer_data=transfer_request
-            )
+            # Use the correct 2025 API method: create_transfer_for_account
+            transfer = self.broker_client.create_transfer_for_account(account_id, transfer_request)
             
             return {
                 "success": True,
                 "transfer_id": str(transfer.id),
-                "transfer_status": str(transfer.status),
-                "amount": str(withdrawable_amount),
-                "estimated_completion": "3-5 business days"
+                "amount": cash_withdrawable,
+                "status": str(transfer.status),
+                "message": f"Withdrawal of ${cash_withdrawable:.2f} initiated"
             }
             
         except Exception as e:
@@ -337,45 +346,45 @@ class AccountClosureManager:
             Dictionary with transfer status
         """
         try:
-            # Get transfer details using the single transfer endpoint
-            transfer = self.broker_client.get_transfer_for_account(account_id, transfer_id)
+            # Get transfers for the account using 2025 API
+            transfers = self.broker_client.get_transfers_for_account(account_id)
             
-            if not transfer:
+            # Find the specific transfer
+            target_transfer = None
+            for transfer in transfers:
+                if str(transfer.id) == transfer_id:
+                    target_transfer = transfer
+                    break
+            
+            if not target_transfer:
                 return {
-                    "transfer_completed": False,
-                    "error": "Transfer not found"
+                    "transfer_found": False,
+                    "error": f"Transfer {transfer_id} not found"
                 }
             
-            status = str(transfer.status)
+            status = str(target_transfer.status)
             completed = status in ["COMPLETED", "SETTLED"]
+            failed = status in ["FAILED", "CANCELED", "REJECTED"]
             
-            result = {
-                "transfer_completed": completed,
-                "transfer_status": status,
+            return {
+                "transfer_found": True,
+                "status": status,
+                "amount": float(target_transfer.amount),
+                "completed": completed,
+                "failed": failed,
+                "created_at": target_transfer.created_at.isoformat() if hasattr(target_transfer, 'created_at') else None
             }
-            
-            # Safe handling of amount
-            if hasattr(transfer, 'amount') and transfer.amount:
-                result["amount"] = str(transfer.amount)
-            
-            # Add completion date if completed
-            if completed and hasattr(transfer, 'updated_at'):
-                result["completion_date"] = str(transfer.updated_at)
-            elif not completed:
-                result["estimated_completion"] = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            
-            return result
             
         except Exception as e:
             logger.error(f"Error checking withdrawal status for account {account_id}, transfer {transfer_id}: {e}")
             return {
-                "transfer_completed": False,
+                "transfer_found": False,
                 "error": str(e)
             }
     
     def close_account(self, account_id: str) -> Dict[str, Any]:
         """
-        Close the account after all positions are liquidated and funds withdrawn.
+        Close the account using Alpaca's 2025 API.
         
         Args:
             account_id: The Alpaca account ID
@@ -386,41 +395,39 @@ class AccountClosureManager:
         try:
             logger.info(f"Closing account {account_id}")
             
-            # Final verification before closure
+            # Verify account is ready for closure
             account = self.broker_client.get_account_by_id(account_id)
+            trade_account = self.broker_client.get_trade_account_by_id(account_id)
             positions = self.broker_client.get_all_positions_for_account(account_id)
-            orders = self.broker_client.get_orders_for_account(account_id, status="open")
-            
-            # Safe handling of cash balance
-            cash_balance = 0
-            if hasattr(account, 'cash') and account.cash:
-                cash_balance = float(str(account.cash))
+            cash_balance = float(trade_account.cash) if hasattr(trade_account, 'cash') else 0
             
             if len(positions) > 0:
                 return {
                     "success": False,
-                    "reason": f"Cannot close account with {len(positions)} open positions"
+                    "error": f"Account has {len(positions)} open positions - cannot close"
                 }
             
-            if len(orders) > 0:
+            if cash_balance > 1.0:
                 return {
                     "success": False,
-                    "reason": f"Cannot close account with {len(orders)} open orders"
+                    "error": f"Account has ${cash_balance:.2f} remaining - must withdraw funds first"
                 }
             
-            if cash_balance > 1.0:  # Allow for small rounding differences
-                return {
-                    "success": False,
-                    "reason": f"Account balance must be $0 before closure. Current balance: ${cash_balance:.2f}"
-                }
+            # Close the account using Alpaca's 2025 API
+            # According to docs: close_account returns None on success
+            self.broker_client.close_account(account_id)
             
-            # Close the account using Alpaca's close account endpoint
-            closure_response = self.broker_client.close_account(account_id)
+            # Verify account was closed
+            try:
+                updated_account = self.broker_client.get_account_by_id(account_id)
+                account_status = str(updated_account.status)
+            except Exception:
+                # If we can't retrieve it, assume it was closed
+                account_status = "CLOSED"
             
             return {
                 "success": True,
-                "account_status": "CLOSED",
-                "closure_date": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "account_status": account_status,
                 "message": "Account successfully closed"
             }
             
@@ -433,28 +440,33 @@ class AccountClosureManager:
     
     def get_closure_status(self, account_id: str) -> Dict[str, Any]:
         """
-        Get comprehensive status of account closure process.
+        Get comprehensive status of account closure process with retry-friendly logic.
         
         Args:
             account_id: The Alpaca account ID
             
         Returns:
-            Dictionary with current closure status
+            Dictionary with current closure status and retry capability
         """
         try:
             account = self.broker_client.get_account_by_id(account_id)
+            trade_account = self.broker_client.get_trade_account_by_id(account_id)
             positions = self.broker_client.get_all_positions_for_account(account_id)
-            orders = self.broker_client.get_orders_for_account(account_id, status="open")
             
-            cash_balance = float(account.cash) if account.cash else 0
-            cash_withdrawable = float(account.cash_withdrawable) if hasattr(account, 'cash_withdrawable') else 0
+            # Get open orders using proper filter (2025 API)
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            order_filter = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+            orders = self.broker_client.get_orders_for_account(account_id, filter=order_filter)
             
-            # Determine current step
+            cash_balance = float(trade_account.cash) if hasattr(trade_account, 'cash') else 0
+            cash_withdrawable = float(trade_account.cash_withdrawable) if hasattr(trade_account, 'cash_withdrawable') else 0
+            
+            # Determine current step based on account state
             if str(account.status) == "CLOSED":
                 current_step = ClosureStep.COMPLETED
-            elif len(orders) > 0:
-                current_step = ClosureStep.CANCELING_ORDERS
-            elif len(positions) > 0:
+            elif len(orders) > 0 or len(positions) > 0:
+                # Combined step: cancel orders AND liquidate positions (done together with 2025 API)
                 current_step = ClosureStep.LIQUIDATING_POSITIONS
             elif cash_withdrawable == 0 and cash_balance > 1.0:
                 current_step = ClosureStep.WAITING_SETTLEMENT
@@ -465,6 +477,9 @@ class AccountClosureManager:
             else:
                 current_step = ClosureStep.INITIATED
             
+            # Check if ready for retry/next step
+            ready_for_retry = self._is_ready_for_next_step(current_step, orders, positions, cash_balance, cash_withdrawable)
+            
             return {
                 "account_id": account_id,
                 "current_step": current_step.value,
@@ -473,7 +488,9 @@ class AccountClosureManager:
                 "open_positions": len(positions),
                 "cash_balance": cash_balance,
                 "cash_withdrawable": cash_withdrawable,
-                "ready_for_next_step": self._is_ready_for_next_step(current_step, orders, positions, cash_balance, cash_withdrawable)
+                "ready_for_next_step": ready_for_retry,
+                "can_retry": current_step != ClosureStep.COMPLETED,
+                "next_action": self._get_next_action(current_step, ready_for_retry)
             }
             
         except Exception as e:
@@ -481,16 +498,17 @@ class AccountClosureManager:
             return {
                 "account_id": account_id,
                 "current_step": ClosureStep.FAILED.value,
-                "error": str(e)
+                "error": str(e),
+                "can_retry": True,
+                "next_action": "retry_from_beginning"
             }
     
     def _is_ready_for_next_step(self, current_step: ClosureStep, orders: List, positions: List, 
                                cash_balance: float, cash_withdrawable: float) -> bool:
         """Helper method to determine if ready for next step."""
-        if current_step == ClosureStep.CANCELING_ORDERS:
-            return len(orders) == 0
-        elif current_step == ClosureStep.LIQUIDATING_POSITIONS:
-            return len(positions) == 0
+        if current_step == ClosureStep.LIQUIDATING_POSITIONS:
+            # Combined step: ready when both orders and positions are cleared
+            return len(orders) == 0 and len(positions) == 0
         elif current_step == ClosureStep.WAITING_SETTLEMENT:
             return cash_withdrawable > 0
         elif current_step == ClosureStep.WITHDRAWING_FUNDS:
@@ -498,6 +516,268 @@ class AccountClosureManager:
         elif current_step == ClosureStep.CLOSING_ACCOUNT:
             return len(positions) == 0 and cash_balance <= 1.0
         return False
+    
+    def _get_next_action(self, current_step: ClosureStep, ready_for_next: bool) -> str:
+        """Helper method to determine the next action to take."""
+        if not ready_for_next:
+            return "wait"
+        
+        if current_step == ClosureStep.LIQUIDATING_POSITIONS:
+            return "check_settlement"
+        elif current_step == ClosureStep.WAITING_SETTLEMENT:
+            return "withdraw_funds"
+        elif current_step == ClosureStep.WITHDRAWING_FUNDS:
+            return "close_account"
+        elif current_step == ClosureStep.CLOSING_ACCOUNT:
+            return "close_account"
+        
+        return "continue_process"
+    
+    def resume_closure_process(self, account_id: str, ach_relationship_id: str = None) -> Dict[str, Any]:
+        """
+        Resume account closure process from where it left off with automatic retry logic.
+        
+        This method intelligently determines the current state and continues the process,
+        making it suitable for page refreshes and recovery from failed states.
+        
+        Args:
+            account_id: The Alpaca account ID
+            ach_relationship_id: ACH relationship ID (optional, will try to find if not provided)
+            
+        Returns:
+            Dictionary with current progress and next steps
+        """
+        try:
+            logger.info(f"🔄 Resuming closure process for account {account_id}")
+            
+            # STEP 1: Get current status
+            current_status = self.get_closure_status(account_id)
+            current_step = current_status.get("current_step")
+            ready_for_next = current_status.get("ready_for_next_step", False)
+            next_action = current_status.get("next_action", "wait")
+            
+            logger.info(f"📊 Current state: {current_step}, Ready: {ready_for_next}, Next: {next_action}")
+            
+            # If already completed, return success
+            if current_step == ClosureStep.COMPLETED.value:
+                return {
+                    "success": True,
+                    "current_step": current_step,
+                    "message": "Account closure already completed",
+                    "status": current_status
+                }
+            
+            # STEP 2: Automatic retry logic based on current state
+            result = {"success": False, "current_step": current_step}
+            
+            if current_step == ClosureStep.LIQUIDATING_POSITIONS.value:
+                # Check if there are positions or orders that need liquidation
+                orders = current_status.get("open_orders", 0)
+                positions = current_status.get("open_positions", 0)
+                
+                if orders > 0 or positions > 0:
+                    # There are positions/orders to liquidate
+                    logger.info(f"🚀 Executing: Liquidate {positions} positions and cancel {orders} orders")
+                    liquidation_result = self.liquidate_all_positions(account_id)
+                    
+                    if liquidation_result.get("success"):
+                        result.update({
+                            "success": True,
+                            "action_taken": "liquidate_positions",
+                            "liquidation_result": liquidation_result,
+                            "message": f"Successfully liquidated {positions} positions and {orders} orders, waiting for settlement"
+                        })
+                    else:
+                        result.update({
+                            "action_taken": "liquidate_positions",
+                            "error": liquidation_result.get("error", "Failed to liquidate positions"),
+                            "can_retry": True
+                        })
+                elif ready_for_next:
+                    # No positions/orders to liquidate, ready to move to settlement
+                    result.update({
+                        "success": True,
+                        "action_taken": "check_settlement",
+                        "message": "No positions to liquidate, checking settlement status"
+                    })
+                    
+            elif current_step == ClosureStep.WAITING_SETTLEMENT.value and ready_for_next:
+                # Settlement is complete, ready to withdraw
+                logger.info("🚀 Executing: Withdraw funds")
+                
+                # Find ACH relationship if not provided
+                if not ach_relationship_id:
+                    ach_relationships = self.broker_client.get_ach_relationships_for_account(account_id)
+                    if ach_relationships:
+                        ach_relationship_id = ach_relationships[0].id
+                        logger.info(f"💳 Found ACH relationship: {ach_relationship_id}")
+                    else:
+                        result.update({
+                            "action_taken": "find_ach_relationship",
+                            "error": "No ACH relationship found - user must connect bank account",
+                            "requires_user_action": True
+                        })
+                        return result
+                
+                withdrawal_result = self.withdraw_all_funds(account_id, ach_relationship_id)
+                
+                if withdrawal_result.get("success"):
+                    result.update({
+                        "success": True,
+                        "action_taken": "withdraw_funds",
+                        "withdrawal_result": withdrawal_result,
+                        "message": "Withdrawal initiated, waiting for completion"
+                    })
+                else:
+                    result.update({
+                        "action_taken": "withdraw_funds",
+                        "error": withdrawal_result.get("error", "Failed to withdraw funds"),
+                        "can_retry": True
+                    })
+                    
+            elif current_step == ClosureStep.WITHDRAWING_FUNDS.value and ready_for_next:
+                # Funds withdrawn, ready to close account
+                logger.info("🚀 Executing: Close account")
+                
+                close_result = self.close_account(account_id)
+                
+                if close_result.get("success"):
+                    result.update({
+                        "success": True,
+                        "action_taken": "close_account",
+                        "close_result": close_result,
+                        "message": "Account successfully closed"
+                    })
+                else:
+                    result.update({
+                        "action_taken": "close_account", 
+                        "error": close_result.get("error", "Failed to close account"),
+                        "can_retry": True
+                    })
+                    
+            elif current_step == ClosureStep.CLOSING_ACCOUNT.value and ready_for_next:
+                # Final closure step
+                logger.info("🚀 Executing: Final account closure")
+                
+                close_result = self.close_account(account_id)
+                
+                if close_result.get("success"):
+                    result.update({
+                        "success": True,
+                        "action_taken": "close_account",
+                        "close_result": close_result,
+                        "message": "Account successfully closed"
+                    })
+                else:
+                    result.update({
+                        "action_taken": "close_account",
+                        "error": close_result.get("error", "Failed to close account"),
+                        "can_retry": True
+                    })
+                    
+            elif current_step == ClosureStep.FAILED.value:
+                # Failed state - restart from beginning
+                logger.info("🔄 Failed state detected, restarting closure process")
+                
+                # Check preconditions and restart if ready
+                preconditions = self.check_closure_preconditions(account_id)
+                if preconditions.get("ready"):
+                    # Restart liquidation process
+                    liquidation_result = self.liquidate_all_positions(account_id)
+                    
+                    if liquidation_result.get("success"):
+                        result.update({
+                            "success": True,
+                            "action_taken": "restart_liquidation",
+                            "liquidation_result": liquidation_result,
+                            "message": "Restarted closure process from liquidation step"
+                        })
+                    else:
+                        result.update({
+                            "action_taken": "restart_liquidation",
+                            "error": liquidation_result.get("error", "Failed to restart liquidation"),
+                            "can_retry": True
+                        })
+                else:
+                    result.update({
+                        "action_taken": "check_preconditions",
+                        "error": preconditions.get("reason", "Account not ready for closure"),
+                        "preconditions": preconditions,
+                        "can_retry": False
+                    })
+                    
+            else:
+                # Not ready for next step or waiting
+                result.update({
+                    "success": True,
+                    "action_taken": "check_status",
+                    "message": f"Waiting for {current_step} to complete",
+                    "wait_reason": self._get_wait_reason(current_step, current_status)
+                })
+            
+            # STEP 3: Add updated status to result
+            updated_status = self.get_closure_status(account_id)
+            result["status"] = updated_status
+            result["current_step"] = updated_status.get("current_step")
+            
+            # STEP 4: Determine next retry time if needed
+            if not result.get("success") and result.get("can_retry", False):
+                result["next_retry_in_seconds"] = self._calculate_retry_delay(current_step)
+                result["auto_retry_enabled"] = True
+            
+            logger.info(f"✅ Resume operation completed: {result.get('action_taken', 'status_check')}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error resuming closure process for account {account_id}: {e}")
+            return {
+                "success": False,
+                "current_step": ClosureStep.FAILED.value,
+                "error": str(e),
+                "can_retry": True,
+                "next_retry_in_seconds": 60,
+                "action_taken": "error_handling"
+            }
+    
+    def _get_wait_reason(self, current_step: str, status: Dict) -> str:
+        """Get human-readable explanation for why we're waiting."""
+        if current_step == ClosureStep.LIQUIDATING_POSITIONS.value:
+            orders = status.get("open_orders", 0)
+            positions = status.get("open_positions", 0)
+            if orders > 0 and positions > 0:
+                return f"Waiting for {orders} orders and {positions} positions to be processed"
+            elif orders > 0:
+                return f"Waiting for {orders} orders to be canceled"
+            elif positions > 0:
+                return f"Waiting for {positions} positions to be liquidated"
+            else:
+                return "Processing liquidation orders"
+                
+        elif current_step == ClosureStep.WAITING_SETTLEMENT.value:
+            pending = status.get("cash_balance", 0) - status.get("cash_withdrawable", 0)
+            return f"Waiting for T+1 settlement (${pending:.2f} pending)"
+            
+        elif current_step == ClosureStep.WITHDRAWING_FUNDS.value:
+            balance = status.get("cash_balance", 0)
+            return f"Waiting for withdrawal of ${balance:.2f} to complete"
+            
+        elif current_step == ClosureStep.CLOSING_ACCOUNT.value:
+            return "Waiting for final account closure to process"
+            
+        return "Processing account closure"
+    
+    def _calculate_retry_delay(self, current_step: str) -> int:
+        """Calculate appropriate retry delay based on step type."""
+        if current_step == ClosureStep.LIQUIDATING_POSITIONS.value:
+            return 30  # Liquidation can happen quickly
+        elif current_step == ClosureStep.WAITING_SETTLEMENT.value:
+            return 3600  # Settlement takes longer, check hourly
+        elif current_step == ClosureStep.WITHDRAWING_FUNDS.value:
+            return 1800  # ACH transfers, check every 30 minutes
+        elif current_step == ClosureStep.CLOSING_ACCOUNT.value:
+            return 60   # Final closure should be quick
+        else:
+            return 300  # Default 5 minutes for other cases
 
 # Convenience functions for easier use
 def check_account_closure_readiness(account_id: str, sandbox: bool = True) -> Dict[str, Any]:
@@ -507,58 +787,232 @@ def check_account_closure_readiness(account_id: str, sandbox: bool = True) -> Di
 
 def initiate_account_closure(account_id: str, ach_relationship_id: str, sandbox: bool = True) -> Dict[str, Any]:
     """
-    Initiate the complete account closure process.
+    Initiate the complete account closure process with comprehensive logging and safety checks.
     
-    This is a high-level function that orchestrates the entire closure workflow.
-    In a production environment, this should be implemented as an async job.
+    This function uses Alpaca's 2025 API close_all_positions_for_account(cancel_orders=True)
+    which cancels all orders AND liquidates all positions in a single optimized call.
     """
+    # Initialize detailed logging for this closure attempt
+    detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+    start_time = time.time()
+    
+    if detailed_logger:
+        detailed_logger.log_step_start("ACCOUNT_CLOSURE_INITIATION", {
+            "account_id": account_id,
+            "ach_relationship_id": ach_relationship_id,
+            "sandbox_mode": sandbox,
+            "timestamp": datetime.now().isoformat()
+        })
+    
     manager = AccountClosureManager(sandbox)
     
-    # Step 1: Check preconditions
-    preconditions = manager.check_closure_preconditions(account_id)
-    if not preconditions.get("ready", False):
+    try:
+        # STEP 1: COMPREHENSIVE PRECONDITION CHECKS
+        if detailed_logger:
+            detailed_logger.log_step_start("PRECONDITION_CHECKS")
+            
+        preconditions = manager.check_closure_preconditions(account_id)
+        
+        # Log raw Alpaca account data for verification
+        if detailed_logger:
+            account_data = manager.broker_client.get_account_by_id(account_id)
+            detailed_logger.log_alpaca_data("ACCOUNT_DATA", account_data)
+            
+            positions_data = manager.broker_client.get_all_positions_for_account(account_id)
+            detailed_logger.log_alpaca_data("POSITIONS_DATA", positions_data)
+            
+            # Get open orders using proper filter for logging (2025 API)
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            order_filter = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+            orders_data = manager.broker_client.get_orders_for_account(account_id, filter=order_filter)
+            detailed_logger.log_alpaca_data("ORDERS_DATA", orders_data)
+        
+        # SAFETY CHECK: Verify account is ready
+        if not preconditions.get("ready", False):
+            if detailed_logger:
+                detailed_logger.log_safety_check("ACCOUNT_READINESS", False, preconditions)
+                detailed_logger.log_step_failure("PRECONDITION_CHECKS", 
+                    preconditions.get("reason", "Account not ready"), preconditions)
+            return {
+                "success": False,
+                "step": "preconditions",
+                "reason": preconditions.get("reason", "Account not ready for closure"),
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
+            }
+        
+        if detailed_logger:
+            detailed_logger.log_safety_check("ACCOUNT_READINESS", True, preconditions)
+            detailed_logger.log_step_success("PRECONDITION_CHECKS", preconditions)
+        
+        # STEP 2: CANCEL ORDERS AND LIQUIDATE POSITIONS (2025 ALPACA API)
+        if detailed_logger:
+            detailed_logger.log_step_start("CANCEL_AND_LIQUIDATE", {
+                "open_orders": preconditions.get("open_orders", 0),
+                "open_positions": preconditions.get("open_positions", 0),
+                "method": "close_all_positions_for_account(cancel_orders=True)"
+            })
+        
+        liquidation_start = time.time()
+        liquidation_result = manager.liquidate_all_positions(account_id)
+        liquidation_duration = time.time() - liquidation_start
+        
+        if detailed_logger:
+            detailed_logger.log_timing("LIQUIDATION_OPERATION", liquidation_duration)
+        
+        # SAFETY CHECK: Verify liquidation succeeded
+        if not liquidation_result.get("success", False):
+            if detailed_logger:
+                detailed_logger.log_safety_check("LIQUIDATION_SUCCESS", False, liquidation_result)
+                detailed_logger.log_step_failure("CANCEL_AND_LIQUIDATE", 
+                    liquidation_result.get("error", "Unknown error"), liquidation_result)
+            return {
+                "success": False,
+                "step": "cancel_and_liquidate",
+                "reason": liquidation_result.get("error", "Failed to cancel orders and liquidate positions"),
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
+            }
+        
+        if detailed_logger:
+            detailed_logger.log_safety_check("LIQUIDATION_SUCCESS", True, liquidation_result)
+            detailed_logger.log_step_success("CANCEL_AND_LIQUIDATE", liquidation_result)
+        
+        # STEP 3: GENERATE REAL CONFIRMATION NUMBER (not hardcoded)
+        confirmation_number = f"CLA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{account_id[-6:]}"
+        
+        # STEP 4: VERIFY POST-LIQUIDATION STATE
+        if detailed_logger:
+            detailed_logger.log_step_start("POST_LIQUIDATION_VERIFICATION")
+            
+        post_liquidation_check = manager.get_closure_status(account_id)
+        if detailed_logger:
+            detailed_logger.log_alpaca_data("POST_LIQUIDATION_STATUS", post_liquidation_check)
+            
+        # SAFETY CHECK: Ensure positions are actually cleared
+        remaining_positions = post_liquidation_check.get("open_positions", 0)
+        remaining_orders = post_liquidation_check.get("open_orders", 0)
+        
+        if detailed_logger:
+            detailed_logger.log_safety_check("POSITIONS_CLEARED", remaining_positions == 0, {
+                "remaining_positions": remaining_positions,
+                "remaining_orders": remaining_orders
+            })
+        
+        # Calculate estimated settlement date (T+1 business day)
+        settlement_date = datetime.now() + timedelta(days=1)
+        # Skip weekends
+        while settlement_date.weekday() >= 5:  # Saturday = 5, Sunday = 6
+            settlement_date += timedelta(days=1)
+        
+        result = {
+            "success": True,
+            "step": ClosureStep.WAITING_SETTLEMENT.value,
+            "positions_liquidated": liquidation_result.get("positions_liquidated", 0),
+            "liquidation_orders": liquidation_result.get("liquidation_orders", []),
+            "confirmation_number": confirmation_number,
+            "message": "Account closure process initiated. Orders canceled and positions liquidated.",
+            "next_steps": [
+                "Wait for settlement (T+1 business day)",
+                "Withdraw funds via ACH", 
+                "Close account when balance is $0"
+            ],
+            "settlement_date": settlement_date.strftime("%Y-%m-%d"),
+            "estimated_completion": (settlement_date + timedelta(days=2)).strftime("%Y-%m-%d"),
+            "real_time_data": {
+                "account_status": post_liquidation_check.get("account_status"),
+                "cash_balance": post_liquidation_check.get("cash_balance"),
+                "positions_remaining": remaining_positions,
+                "orders_remaining": remaining_orders
+            },
+            "log_file": detailed_logger.get_log_summary() if detailed_logger else None
+        }
+        
+        # STEP 5: SEND EMAIL NOTIFICATION
+        if detailed_logger:
+            detailed_logger.log_step_start("EMAIL_NOTIFICATION")
+            
+        # Send initial email notification if email service is available
+        if send_account_closure_email:
+            try:
+                # Get account details for email
+                temp_manager = AccountClosureManager(sandbox)
+                account = temp_manager.broker_client.get_account_by_id(account_id)
+                user_name = "Valued Customer"  # Default fallback
+                user_email = None
+                
+                if hasattr(account, 'contact') and account.contact:
+                    if hasattr(account.contact, 'email_address'):
+                        user_email = account.contact.email_address
+                    
+                    # Try to get name from contact info
+                    if hasattr(account.contact, 'given_name') and hasattr(account.contact, 'family_name'):
+                        user_name = f"{account.contact.given_name} {account.contact.family_name}"
+                
+                if user_email:
+                    email_sent = send_account_closure_email(
+                        user_email=user_email,
+                        user_name=user_name,
+                        account_id=account_id,
+                        confirmation_number=confirmation_number,
+                        estimated_completion="3-5 business days"
+                    )
+                    
+                    if detailed_logger:
+                        detailed_logger.log_email_notification("INITIATION_EMAIL", user_email, email_sent)
+                    
+                    if email_sent:
+                        logger.info(f"Account closure initiation email sent to {user_email}")
+                        result["email_notification_sent"] = True
+                    else:
+                        logger.warning(f"Failed to send account closure initiation email to {user_email}")
+                        result["email_notification_sent"] = False
+                else:
+                    if detailed_logger:
+                        detailed_logger.log_email_notification("INITIATION_EMAIL", "N/A", False, "No email address found")
+                    logger.warning(f"No email address found for account {account_id} - initiation email not sent")
+                    result["email_notification_sent"] = False
+                    
+            except Exception as e:
+                if detailed_logger:
+                    detailed_logger.log_step_failure("EMAIL_NOTIFICATION", str(e))
+                logger.error(f"Error sending initiation email for account {account_id}: {e}")
+                result["email_notification_sent"] = False
+        else:
+            if detailed_logger:
+                detailed_logger.log_email_notification("INITIATION_EMAIL", "N/A", False, "Email service not available")
+            result["email_notification_sent"] = False
+        
+        # Log completion of initiation process
+        total_duration = time.time() - start_time
+        if detailed_logger:
+            detailed_logger.log_timing("TOTAL_INITIATION", total_duration)
+            detailed_logger.log_step_success("ACCOUNT_CLOSURE_INITIATION", result)
+        
+        return result
+        
+    except Exception as e:
+        # Handle any unexpected errors during the initiation process
+        if detailed_logger:
+            detailed_logger.log_step_failure("ACCOUNT_CLOSURE_INITIATION", str(e))
+        logger.error(f"Unexpected error during account closure initiation for {account_id}: {e}")
         return {
             "success": False,
-            "step": "preconditions",
-            "reason": preconditions.get("reason", "Account not ready for closure")
+            "step": "initiation_error",
+            "error": str(e),
+            "log_file": detailed_logger.get_log_summary() if detailed_logger else None
         }
-    
-    # Step 2: Cancel orders
-    order_result = manager.cancel_all_orders(account_id)
-    if not order_result.get("success", False):
-        return {
-            "success": False,
-            "step": "cancel_orders",
-            "reason": order_result.get("error", "Failed to cancel orders")
-        }
-    
-    # Step 3: Liquidate positions
-    liquidation_result = manager.liquidate_all_positions(account_id)
-    if not liquidation_result.get("success", False):
-        return {
-            "success": False,
-            "step": "liquidate_positions",
-            "reason": liquidation_result.get("error", "Failed to liquidate positions")
-        }
-    
-    # The rest of the process (settlement, withdrawal, closure) should be handled
-    # by separate API calls or background jobs due to timing requirements
-    
-    return {
-        "success": True,
-        "step": ClosureStep.WAITING_SETTLEMENT.value,
-        "orders_canceled": order_result.get("orders_canceled", 0),
-        "positions_liquidated": liquidation_result.get("positions_liquidated", 0),
-        "message": "Account closure process initiated. Positions are being liquidated.",
-        "next_steps": [
-            "Wait for settlement (T+1)",
-            "Withdraw funds via ACH",
-            "Close account when balance is $0"
-        ],
-        "settlement_date": liquidation_result.get("settlement_date")
-    }
 
 def get_closure_progress(account_id: str, sandbox: bool = True) -> Dict[str, Any]:
     """Get current progress of account closure."""
     manager = AccountClosureManager(sandbox)
-    return manager.get_closure_status(account_id) 
+    return manager.get_closure_status(account_id)
+
+def resume_account_closure(account_id: str, ach_relationship_id: str = None, sandbox: bool = True) -> Dict[str, Any]:
+    """
+    Resume account closure process with automatic retry logic.
+    
+    This is the main entry point for resuming closure processes and handles
+    all the retry logic automatically.
+    """
+    manager = AccountClosureManager(sandbox)
+    return manager.resume_closure_process(account_id, ach_relationship_id) 

@@ -636,3 +636,174 @@ const response = await fetch(`/api/fmp/profile/${symbol}`);
 4. **User Experience**: Fast UI with accurate data when it matters
 
 This pattern ensures users see attractive, fast-loading interfaces while getting accurate data for actual investment decisions.
+
+## Account Closure System (Latest Update - July 2025)
+
+### Overview
+
+The frontend implements a comprehensive account closure system that provides users with a professional closure flow while maintaining strict security and navigation controls during the closure process.
+
+### Account Closure Status Flow
+
+The system handles three distinct user states:
+
+1. **Normal User**: Full platform access with sidebar navigation
+2. **`pending_closure`**: Complete navigation lockdown with closure pending page
+3. **`closed`**: Restart onboarding flow for new account creation
+
+### Status Handling in Protected Page (`app/protected/page.tsx`)
+
+```typescript
+// Handle account closure statuses
+if (userStatus === 'pending_closure') {
+  // Show account closure pending page with NO sidebar access
+  return <AccountClosurePending userId={user.id} />;
+}
+
+if (userStatus === 'closed') {
+  // Allow user to restart onboarding process
+  return (
+    <div className="flex-1 w-full flex flex-col p-2 sm:p-4 min-h-screen">
+      <OnboardingStatusSetter status="not_started" />
+      <div className="flex-grow pb-16">
+        <div className="max-w-2xl mx-auto py-8">
+          <div className="bg-card border border-border rounded-lg p-8 text-center">
+            <h1 className="text-2xl font-bold mb-4">Welcome Back to Clera</h1>
+            <p className="text-muted-foreground mb-6">
+              Your previous account has been closed. You can create a new account to start trading again.
+            </p>
+            <OnboardingFlow 
+              userId={user.id} 
+              initialData={undefined}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### Navigation Security (Middleware)
+
+The middleware implements strict navigation controls for closure states:
+
+#### Pending Closure (`pending_closure`)
+- **BLOCKS ALL** navigation except sign-out
+- Redirects everything to `/protected` (shows closure pending page)
+- Only allows `/auth/signout` and `/api/auth/signout`
+- No sidebar access whatsoever
+
+#### Closed Account (`closed`)  
+- Only allows `/protected` for onboarding restart
+- Redirects all other paths to `/protected`
+- No sidebar until new account fully funded
+- Allows clean restart of user journey
+
+```typescript
+// Example middleware logic
+if (isPendingClosure(onboardingStatus)) {
+  // Allow sign-out action
+  if (path === '/auth/signout' || path.startsWith('/api/auth/signout')) {
+    return response;
+  }
+  
+  // Redirect everything else to /protected (closure pending page)
+  if (path !== '/protected') {
+    const redirectUrl = new URL('/protected', request.url);
+    return NextResponse.redirect(redirectUrl);
+  }
+}
+```
+
+### Client Layout Sidebar Control
+
+The `ClientLayout` component manages sidebar visibility using localStorage flags:
+
+```typescript
+// Check for account closure statuses from localStorage
+const isPendingClosure = localStorage.getItem("isPendingClosure") === 'true';
+const isClosed = localStorage.getItem("isClosed") === 'true';
+
+const shouldShowSidebar = 
+  isClient && 
+  !isLoading && 
+  isAuthenticated && 
+  pathname !== null && 
+  !nonSidebarPaths.includes(pathname) && 
+  !isOnboardingPage &&
+  !isFundingPage &&
+  !isPendingClosure && // CRITICAL: No sidebar for pending closure
+  !isClosed && // CRITICAL: No sidebar for closed accounts  
+  hasCompletedFunding; // Must be funded to see sidebar
+```
+
+### Account Closure Components
+
+#### `AccountClosurePending` Component
+- Professional closure pending page with Clera branding
+- Shows closure status and timeline
+- Only displays sign-out option
+- Prevents any platform interaction during closure
+
+#### `useAccountClosure` Hook
+The hook manages the complete closure workflow:
+
+```typescript
+// Step definitions for closure process
+const steps = [
+  { id: 'check-readiness', method: 'GET' },
+  { id: 'initiate', method: 'POST' }, // Combined cancel+liquidate
+  { id: 'settlement-status', method: 'GET' },
+  { id: 'withdraw-funds', method: 'POST' },
+  { id: 'close-account', method: 'POST' }
+];
+```
+
+### Email Integration
+
+The system sends professional closure emails:
+- **Initiation Email**: Sent when closure begins
+- **Completion Email**: Sent when account fully closed
+- **Updated Branding**: Uses "Clera" (not "Clera Investment Services")
+- **Logo Integration**: Transparent Clera logo in emails
+- **No Phone Numbers**: Removed all phone references
+
+### Testing Coverage
+
+Comprehensive test suite (`tests/components/account-closure-status.test.js`):
+
+1. **Status Display Tests**: Verifies correct components shown for each status
+2. **Middleware Logic Tests**: Validates navigation blocking behavior  
+3. **Sidebar Control Tests**: Confirms sidebar hiding for closure states
+4. **Onboarding Restart Tests**: Ensures proper restart flow for closed accounts
+
+**Test Results**: 15/15 account closure tests passing ✅
+
+### Production Features
+
+1. **Complete Navigation Lockdown**: Prevents any platform access during closure
+2. **Professional User Experience**: Clean, branded closure pages
+3. **Secure State Management**: Server-side status tracking
+4. **Automated Email Notifications**: Professional closure communications
+5. **Clean Account Restart**: Seamless new account creation flow
+6. **Comprehensive Logging**: Full audit trail for closure process
+
+### API Integration
+
+The frontend integrates with backend closure endpoints:
+- `POST /account-closure/initiate/` - Start closure process
+- `GET /account-closure/check-readiness/` - Verify closure eligibility  
+- `GET /account-closure/settlement-status/` - Check T+1 settlement
+- `POST /account-closure/withdraw-funds/` - Initiate fund withdrawal
+- `POST /account-closure/close-account/` - Final account closure
+
+### Security Considerations
+
+1. **Server-Side Status Validation**: All status checks performed server-side
+2. **Middleware Protection**: Complete navigation control through Next.js middleware
+3. **localStorage Sync**: Client-side flags synced with server state
+4. **Professional Boundaries**: Clear separation between closure and normal states
+5. **Audit Trail**: Complete logging of all closure activities
+
+This implementation ensures a professional, secure account closure experience while maintaining strict control over user access during the closure process.

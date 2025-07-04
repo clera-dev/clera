@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { OnboardingData } from "@/components/onboarding/OnboardingTypes";
 
-export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected';
+export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected' | 'pending_closure' | 'closed';
 
 export const signUpAction = async (formData: FormData) => {
   const email = formData.get("email")?.toString();
@@ -52,6 +52,9 @@ export const signUpAction = async (formData: FormData) => {
       return encodedRedirect("error", "/sign-in", "Signup was successful, but automatic login failed. Please sign in manually.");
     }
     
+    // Small delay to ensure auth state consistency
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
     // Get the user to check their onboarding and funding status
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -63,9 +66,17 @@ export const signUpAction = async (formData: FormData) => {
         .eq('user_id', user.id)
         .single();
       
+      const userStatus = onboardingData?.status;
+      
+      // Handle account closure statuses
+      if (userStatus === 'pending_closure' || userStatus === 'closed') {
+        // Redirect to protected page to handle closure status
+        return redirect("/protected");
+      }
+      
       const hasCompletedOnboarding = 
-        onboardingData?.status === 'submitted' || 
-        onboardingData?.status === 'approved';
+        userStatus === 'submitted' || 
+        userStatus === 'approved';
       
       if (hasCompletedOnboarding) {
         // Check if user has funded their account (has transfers)
@@ -101,6 +112,9 @@ export const signInAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-in", error.message);
   }
 
+  // Small delay to ensure auth state consistency
+  await new Promise(resolve => setTimeout(resolve, 50));
+
   // Get the user to check their onboarding and funding status
   const { data: { user } } = await supabase.auth.getUser();
   
@@ -112,9 +126,17 @@ export const signInAction = async (formData: FormData) => {
       .eq('user_id', user.id)
       .single();
     
+    const userStatus = onboardingData?.status;
+    
+    // Handle account closure statuses
+    if (userStatus === 'pending_closure' || userStatus === 'closed') {
+      // Redirect to protected page to handle closure status
+      return redirect("/protected");
+    }
+    
     const hasCompletedOnboarding = 
-      onboardingData?.status === 'submitted' || 
-      onboardingData?.status === 'approved';
+      userStatus === 'submitted' || 
+      userStatus === 'approved';
     
     if (hasCompletedOnboarding) {
       // Check if user has funded their account (has transfers)

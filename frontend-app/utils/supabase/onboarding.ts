@@ -1,7 +1,7 @@
 import { createClient } from './server';
 import { OnboardingData } from '@/components/onboarding/OnboardingTypes';
 
-export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected';
+export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected' | 'pending_closure' | 'closed';
 
 export type UserOnboardingRecord = {
   id?: string;

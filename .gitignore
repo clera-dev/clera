@@ -173,6 +173,9 @@ setup-aws-secrets.sh
 # Watchfiles
 .watchfiles.env
 
-# Test files
-backend/tests/
+# Email previews for debugging
+backend/email_previews/
 
+# Debug page
+frontend-app/app/debug/
+frontend-app/app/api/debug/
