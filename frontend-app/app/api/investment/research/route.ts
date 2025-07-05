@@ -99,25 +99,7 @@ function extractValidJson(response: any): InvestmentReport {
   }
 }
 
-// Function to create debug log file
-function createDebugLog(data: any, filename: string) {
-  try {
-    const debugDir = path.join(process.cwd(), 'tmp');
-    if (!fs.existsSync(debugDir)) {
-      fs.mkdirSync(debugDir, { recursive: true });
-    }
-    
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const debugFile = path.join(debugDir, `${filename}_${timestamp}.json`);
-    
-    fs.writeFileSync(debugFile, JSON.stringify(data, null, 2));
-    console.log(`Debug log saved to: ${debugFile}`);
-    return debugFile;
-  } catch (error) {
-    console.error('Failed to create debug log:', error);
-    return null;
-  }
-}
+// Debug logging removed for production
 
 const current_date = new Date().toISOString().split('T')[0];
 
@@ -442,8 +424,7 @@ Based on this profile, please provide investment themes and stock recommendation
       max_tokens: 8000
     };
 
-    // Log request for debugging
-    createDebugLog(perplexityPayload, 'perplexity_request');
+    // Request logging removed for production
 
     console.log("Sending request to Perplexity API...");
     
@@ -460,7 +441,7 @@ Based on this profile, please provide investment themes and stock recommendation
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Perplexity API Error:', errorText);
-      createDebugLog({ status: response.status, error: errorText }, 'perplexity_error');
+      // Error logging removed for production
       return NextResponse.json(
         { error: `Perplexity API error: ${response.status} - ${errorText}` },
         { status: 500 }
@@ -469,8 +450,7 @@ Based on this profile, please provide investment themes and stock recommendation
 
     const perplexityResponse = await response.json();
     
-    // Log full response for debugging
-    createDebugLog(perplexityResponse, 'perplexity_full_response');
+    // Response logging removed for production
     
     console.log("Received response from Perplexity API, parsing...");
     
@@ -478,8 +458,7 @@ Based on this profile, please provide investment themes and stock recommendation
       // Extract structured data from response
       const investmentReport = extractValidJson(perplexityResponse);
       
-      // Log parsed result for debugging
-      createDebugLog(investmentReport, 'parsed_investment_report');
+          // Parsed result logging removed for production
       
       console.log("Successfully parsed investment report");
       
@@ -530,7 +509,7 @@ Based on this profile, please provide investment themes and stock recommendation
 
     } catch (parseError) {
       console.error('Failed to parse Perplexity response:', parseError);
-      createDebugLog({ error: parseError, rawResponse: perplexityResponse }, 'parse_error');
+      // Parse error logging removed for production
       
       // If we have cached data, return it as fallback
       if (cachedData) {
@@ -555,7 +534,7 @@ Based on this profile, please provide investment themes and stock recommendation
 
   } catch (error) {
     console.error('Investment research generation error:', error);
-    createDebugLog({ error: error instanceof Error ? error.message : 'Unknown error' }, 'general_error');
+    // General error logging removed for production
     
     // If we have cached data, return it as fallback
     const cachedData = readCachedData();

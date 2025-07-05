@@ -146,13 +146,13 @@ export default function StockChart({ symbol }: StockChartProps) {
             // If markets are closed, use the most recent trading day
             const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
             
-            // For 1D after hours, we want ALL data from the most recent trading day
-            // Set fromDate to start of the trading day, toDate to end of the trading day
+            // FIXED: Show ONLY the most recent trading day for proper 1D calculation
+            // This ensures 1D performance represents that single trading day's open-to-close movement
             fromDate = new Date(mostRecentTradingDay);
-            fromDate.setDate(fromDate.getDate() - 1); // Go back one day to ensure we capture all data
+            fromDate.setHours(0, 0, 0, 0); // Start of the trading day
             
             toDate = new Date(mostRecentTradingDay);
-            toDate.setHours(23, 59, 59, 999); // End of the trading day
+            toDate.setHours(23, 59, 59, 999); // End of the same trading day
           } else {
             // 1D CHART: ONLY TODAY'S DATA
             // Get start of today in user's timezone
@@ -232,83 +232,12 @@ export default function StockChart({ symbol }: StockChartProps) {
                 return null; // Will be filtered out
               }
               
-              // FIXED: Simplified filtering logic that doesn't over-filter valid data
-              // For 1D charts, only filter if we're specifically looking for intraday data
-              // and the data is clearly from a different trading session
-              if (selectedInterval === '1D' && useIntraday) {
-                // Get current time in Eastern timezone for market hours check
-                const easternFormatter = new Intl.DateTimeFormat('en-US', {
-                  timeZone: 'America/New_York',
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: false
-                });
-                
-                const easternParts = easternFormatter.formatToParts(now);
-                const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
-                const easternDayOfWeek = new Date().getDay();
-                
-                const isAfterHours = easternHour >= 16 || easternHour < 9;
-                const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
-                const isMarketClosed = isAfterHours || isWeekend;
-                
-                if (isMarketClosed) {
-                  // If markets are closed, show data from the most recent trading day
-                  // Get Eastern time representation of both current time and data point
-                  const year = easternParts.find(part => part.type === 'year')?.value;
-                  const month = easternParts.find(part => part.type === 'month')?.value;
-                  const day = easternParts.find(part => part.type === 'day')?.value;
-                  
-                  if (!year || !month || !day) {
-                    console.error('[Date Construction Error] Missing date components:', { year, month, day });
-                    return null; // Skip this data point if we can't determine the trading day
-                  }
-                  
-                  const easternToday = new Date(`${year}-${month}-${day}`);
-                  
-                  // Validate the constructed date before using it
-                  if (isNaN(easternToday.getTime())) {
-                    console.error('[Date Construction Error] Invalid date created:', `${year}-${month}-${day}`);
-                    return null; // Skip this data point
-                  }
-                  
-                  const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
-                  
-                  // Convert data point to Eastern time for comparison
-                  const dataEasternFormatter = new Intl.DateTimeFormat('en-CA', {
-                    timeZone: 'America/New_York',
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit'
-                  });
-                  
-                  const dataEasternDate = dataEasternFormatter.format(utcDate);
-                  const tradingDayStr = mostRecentTradingDay.toISOString().split('T')[0];
-                  
-                  // Only filter out if the data is NOT from the most recent trading day
-                  if (dataEasternDate !== tradingDayStr) {
-                    if (process.env.NODE_ENV === 'development') {
-                      console.log(`[Trading Day Filter] Removing data from ${dataEasternDate}, keeping only ${tradingDayStr}`);
-                    }
-                    return null;
-                  }
-                } else {
-                  // Markets are open - be more lenient and allow recent data
-                  // Only filter out data that's clearly from previous days
-                  const dataAge = now.getTime() - utcDate.getTime();
-                  const oneDayMs = 24 * 60 * 60 * 1000;
-                  
-                  // Only filter if data is more than 24 hours old
-                  if (dataAge > oneDayMs) {
-                    if (process.env.NODE_ENV === 'development') {
-                      console.log(`[Age Filter] Removing old data point: ${fmpTimestamp} (${Math.round(dataAge / oneDayMs)} days old)`);
-                    }
-                    return null;
-                  }
-                }
+              // SIMPLIFIED: Only do basic filtering to prevent over-filtering
+              // Remove the complex trading day logic that was causing all data to be filtered
+              
+              // For development debugging - log what data we're keeping
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`[Data Processing] Keeping data point: ${fmpTimestamp} -> ${formatChartDate(utcDate, '5min', true)}`);
               }
               
           const price = item.price !== undefined ? item.price : item.close || 0;
