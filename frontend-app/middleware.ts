@@ -37,6 +37,7 @@ const protectedApiPaths = [
   '/api/assets',
   '/api/user',
   '/api/ws/portfolio',
+  '/api/watchlist',
 ];
 
 // API routes that require authentication but not necessarily completed onboarding
@@ -76,8 +77,6 @@ export async function middleware(request: NextRequest) {
       }
     );
 
-    console.log(`[Middleware] Processing: ${path}`);
-
     // Get user authentication status first for homepage handling
     let user = null;
     try {
@@ -85,9 +84,8 @@ export async function middleware(request: NextRequest) {
         data: { user: authUser },
       } = await supabase.auth.getUser();
       user = authUser;
-      console.log(`[Middleware] User auth status: ${user ? 'authenticated' : 'unauthenticated'}`);
     } catch (authError) {
-      console.log(`[Middleware] Auth error: ${authError instanceof Error ? authError.message : 'Unknown auth error'}`);
+      // Auth errors handled silently in production
       user = null;
     }
 
@@ -95,19 +93,16 @@ export async function middleware(request: NextRequest) {
     if (path === '/') {
       // If user is authenticated, redirect to portfolio
       if (user) {
-        console.log(`[Middleware] Authenticated user accessing homepage, redirecting to portfolio`);
-        const redirectUrl = new URL('/portfolio', request.url);
-        return NextResponse.redirect(redirectUrl);
-      }
-      // If not authenticated, allow access to homepage
-      console.log(`[Middleware] Unauthenticated user accessing homepage, allowing`);
-      return response;
+              const redirectUrl = new URL('/portfolio', request.url);
+      return NextResponse.redirect(redirectUrl);
+    }
+    // If not authenticated, allow access to homepage
+    return response;
     }
 
     // Check if the route is public (no auth needed)
     if (publicPaths.some(publicPath => path.startsWith(publicPath))) {
-      console.log(`[Middleware] Public path allowed: ${path}`);
-      return response;
+          return response;
     }
 
     // User authentication status already checked above
@@ -129,18 +124,6 @@ export async function middleware(request: NextRequest) {
     const requiresAuth = authRequiredApiPaths.some(apiPath => path.startsWith(apiPath));
     
     if (requiresAuth && !user) {
-      // Check for beta testing mode - allow unauthenticated access to certain endpoints
-      const isBetaMode = process.env.NEXT_PUBLIC_BETA_TESTING === 'true';
-      const isInvestmentResearch = path.startsWith('/api/investment/research');
-      const isFMPChart = path.startsWith('/api/fmp/chart');
-      const isCompanyProfiles = path.startsWith('/api/companies/profiles');
-      
-      if (isBetaMode && (isInvestmentResearch || isFMPChart || isCompanyProfiles)) {
-        console.log(`[Middleware] Beta mode: allowing unauthenticated access to ${path}`);
-        return NextResponse.next();
-      }
-      
-      console.log(`[Middleware] Unauthenticated user accessing auth-required API, returning 401`);
       return new NextResponse(
         JSON.stringify({ error: 'Authentication required' }),
         { status: 401, headers: { 'Content-Type': 'application/json' } }

@@ -43,6 +43,17 @@ from utils.alpaca.account_closure import (
     get_closure_progress
 )
 
+# Watchlist imports
+from utils.alpaca.watchlist import (
+    get_watchlist_for_account,
+    get_or_create_default_watchlist,
+    add_symbol_to_watchlist,
+    remove_symbol_from_watchlist,
+    is_symbol_in_watchlist,
+    get_watchlist_symbols,
+    get_watchlist_details
+)
+
 # Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
 logger.setLevel(logging.INFO) # Changed to INFO for less verbose startup in prod
@@ -622,6 +633,23 @@ class UpdateThreadTitleRequest(BaseModel):
     thread_id: str = Field(..., description="The ID of the thread to update")
     title: str = Field(..., description="The new title for the thread")
 
+# === WATCHLIST MODELS ===
+class WatchlistResponse(BaseModel):
+    watchlist_id: str
+    name: str
+    symbols: List[str]
+    symbols_count: int
+
+class AddToWatchlistRequest(BaseModel):
+    symbol: str = Field(..., description="Stock symbol to add to watchlist")
+
+class RemoveFromWatchlistRequest(BaseModel):
+    symbol: str = Field(..., description="Stock symbol to remove from watchlist")
+
+class WatchlistSymbolCheckResponse(BaseModel):
+    symbol: str
+    in_watchlist: bool
+
 @app.post("/api/trade")
 async def execute_trade(request: TradeRequest):
     """Execute a market order trade."""
@@ -718,6 +746,62 @@ async def get_latest_trade_price(ticker: str):
     except Exception as e:
         logger.error(f"Error getting latest trade for {ticker}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error retrieving latest trade price: {str(e)}")
+
+@app.get("/api/market/quote/{ticker}")
+async def get_stock_quote_with_changes(ticker: str):
+    """Get stock quote with price changes and percentages using FMP API."""
+    try:
+        ticker = ticker.upper().strip()
+        logger.info(f"Received quote request for ticker: {ticker}")
+
+        # Import the function from market_data utility
+        from utils.market_data import get_stock_quote_full
+        
+        quote_data = get_stock_quote_full(ticker)
+        
+        if not quote_data or len(quote_data) == 0:
+            logger.warning(f"No quote data found for ticker: {ticker}")
+            raise HTTPException(status_code=404, detail=f"No quote data found for {ticker}")
+
+        # FMP quote API returns an array, get the first item
+        quote = quote_data[0] if isinstance(quote_data, list) else quote_data
+        
+        # Calculate 1D percentage correctly (current vs market open, not previous close)
+        current_price = quote.get('price', 0)
+        open_price = quote.get('open', 0)
+        
+        # Calculate 1D change and percentage (market open to current)
+        if open_price > 0:
+            day_change = current_price - open_price
+            day_change_percent = (day_change / open_price) * 100
+        else:
+            # Fallback to FMP's calculation if open price is not available
+            day_change = quote.get('change', 0)
+            day_change_percent = quote.get('changesPercentage', 0)
+        
+        response_data = {
+            'symbol': quote.get('symbol', ticker),
+            'price': current_price,
+            'change': day_change,
+            'changesPercentage': day_change_percent,
+            'open': open_price,
+            'previousClose': quote.get('previousClose', 0),
+            'dayHigh': quote.get('dayHigh', 0),
+            'dayLow': quote.get('dayLow', 0),
+            'volume': quote.get('volume', 0),
+            'timestamp': quote.get('timestamp', int(datetime.now().timestamp())),
+            # Include additional useful fields
+            'name': quote.get('name', ''),
+            'marketCap': quote.get('marketCap', 0),
+            'exchange': quote.get('exchange', '')
+        }
+        
+        logger.info(f"Returning quote data for {ticker}: price=${current_price:.2f}, 1D_change={day_change_percent:.2f}% (open=${open_price:.2f})")
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"Error fetching quote for {ticker}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching quote data: {str(e)}")
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
@@ -2744,6 +2828,181 @@ async def close_account_final_endpoint(
     except Exception as e:
         logger.error(f"Error closing account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error closing account: {str(e)}")
+
+
+# === WATCHLIST ENDPOINTS ===
+
+@app.get("/api/watchlist/{account_id}", response_model=WatchlistResponse)
+async def get_watchlist(
+    account_id: str,
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get the default watchlist for an account with all symbols.
+    Creates a default watchlist if none exists.
+    """
+    try:
+        logger.info(f"Getting watchlist for account {account_id}")
+        
+        # Get or create default watchlist
+        watchlist = get_or_create_default_watchlist(account_id, broker_client=broker_client)
+        
+        if not watchlist:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to get or create watchlist"
+            )
+        
+        # Get watchlist details
+        watchlist_details = get_watchlist_details(account_id, str(watchlist.id), broker_client=broker_client)
+        
+        if not watchlist_details:
+            # Fallback to basic info if details fetch fails
+            symbols = get_watchlist_symbols(account_id, str(watchlist.id), broker_client=broker_client)
+            watchlist_details = {
+                "watchlist_id": str(watchlist.id),
+                "name": watchlist.name or "My Watchlist",
+                "symbols": symbols,
+                "symbols_count": len(symbols)
+            }
+        
+        return WatchlistResponse(**watchlist_details)
+        
+    except Exception as e:
+        logger.error(f"Error getting watchlist for account {account_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get watchlist: {str(e)}"
+        )
+
+
+@app.post("/api/watchlist/{account_id}/add")
+async def add_symbol_to_watchlist_endpoint(
+    account_id: str,
+    request: AddToWatchlistRequest,
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Add a stock symbol to the account's default watchlist.
+    """
+    try:
+        symbol = request.symbol.upper().strip()
+        logger.info(f"Adding symbol {symbol} to watchlist for account {account_id}")
+        
+        # Check if symbol is already in watchlist
+        already_in_watchlist = is_symbol_in_watchlist(account_id, symbol, broker_client=broker_client)
+        
+        if already_in_watchlist:
+            return {
+                "success": True,
+                "message": f"Symbol {symbol} is already in watchlist",
+                "symbol": symbol,
+                "added": False
+            }
+        
+        # Add symbol to watchlist
+        success = add_symbol_to_watchlist(account_id, symbol, broker_client=broker_client)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Successfully added {symbol} to watchlist",
+                "symbol": symbol,
+                "added": True
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to add {symbol} to watchlist"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error adding symbol {request.symbol} to watchlist for account {account_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to add symbol to watchlist: {str(e)}"
+        )
+
+
+@app.delete("/api/watchlist/{account_id}/remove")
+async def remove_symbol_from_watchlist_endpoint(
+    account_id: str,
+    request: RemoveFromWatchlistRequest,
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Remove a stock symbol from the account's default watchlist.
+    """
+    try:
+        symbol = request.symbol.upper().strip()
+        logger.info(f"Removing symbol {symbol} from watchlist for account {account_id}")
+        
+        # Check if symbol is in watchlist
+        in_watchlist = is_symbol_in_watchlist(account_id, symbol, broker_client=broker_client)
+        
+        if not in_watchlist:
+            return {
+                "success": True,
+                "message": f"Symbol {symbol} is not in watchlist",
+                "symbol": symbol,
+                "removed": False
+            }
+        
+        # Remove symbol from watchlist
+        success = remove_symbol_from_watchlist(account_id, symbol, broker_client=broker_client)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Successfully removed {symbol} from watchlist",
+                "symbol": symbol,
+                "removed": True
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to remove {symbol} from watchlist"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error removing symbol {request.symbol} from watchlist for account {account_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to remove symbol from watchlist: {str(e)}"
+        )
+
+
+@app.get("/api/watchlist/{account_id}/check/{symbol}", response_model=WatchlistSymbolCheckResponse)
+async def check_symbol_in_watchlist(
+    account_id: str,
+    symbol: str,
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Check if a specific symbol is in the account's watchlist.
+    """
+    try:
+        symbol = symbol.upper().strip()
+        logger.info(f"Checking if symbol {symbol} is in watchlist for account {account_id}")
+        
+        in_watchlist = is_symbol_in_watchlist(account_id, symbol, broker_client=broker_client)
+        
+        return WatchlistSymbolCheckResponse(
+            symbol=symbol,
+            in_watchlist=in_watchlist
+        )
+        
+    except Exception as e:
+        logger.error(f"Error checking symbol {symbol} in watchlist for account {account_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to check symbol in watchlist: {str(e)}"
+        )
+
 
 if __name__ == "__main__":
     import uvicorn

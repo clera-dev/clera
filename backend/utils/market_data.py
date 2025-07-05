@@ -20,4 +20,9 @@ def get_jsonparsed_data(url):
 def get_stock_quote(symbol: str) -> dict:
     """Get the stock quote for a given symbol using the Financial Modeling Prep API."""
     url = (f"https://financialmodelingprep.com/api/v3/quote-short/{symbol}?apikey={fin_modeling_prep_api_key}")
+    return get_jsonparsed_data(url)
+
+def get_stock_quote_full(symbol: str) -> dict:
+    """Get the full stock quote with changes and percentages using the Financial Modeling Prep API."""
+    url = (f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={fin_modeling_prep_api_key}")
     return get_jsonparsed_data(url) 

@@ -11,13 +11,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Sparkles } from "lucide-react";
+import { Terminal, Sparkles, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatNumber } from "@/lib/utils";
+import { formatCurrency, formatNumber, cn } from "@/lib/utils";
 import StockChart from "./StockChart";
 
 interface StockInfoCardProps {
   symbol: string;
+  accountId?: string | null;
+  isInWatchlist?: boolean;
+  onWatchlistChange?: () => void;
+  onOptimisticAdd?: (symbol: string) => void;
+  onOptimisticRemove?: (symbol: string) => void;
 }
 
 interface CompanyProfile {
@@ -79,13 +84,18 @@ interface StockPick {
   rationale: string;
 }
 
-export default function StockInfoCard({ symbol }: StockInfoCardProps) {
+export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockInfoCardProps) {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [priceTarget, setPriceTarget] = useState<PriceTargetSummary | null>(null);
   const [cleraRecommendation, setCleraRecommendation] = useState<StockPick | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [localIsInWatchlist, setLocalIsInWatchlist] = useState(false);
+  const [isUpdatingWatchlist, setIsUpdatingWatchlist] = useState(false);
+
+  // Use prop isInWatchlist if provided, otherwise use local state
+  const currentIsInWatchlist = isInWatchlist !== undefined ? isInWatchlist : localIsInWatchlist;
   const DESCRIPTION_LIMIT = 150;
 
   // Load Clera's stock recommendations
@@ -109,6 +119,94 @@ export default function StockInfoCard({ symbol }: StockInfoCardProps) {
       setCleraRecommendation(null);
     }
   };
+
+  // Check if symbol is in watchlist (only if not provided via props)
+  const checkWatchlistStatus = async () => {
+    if (isInWatchlist !== undefined) return; // Skip if provided via props
+    
+    if (!accountId || !symbol) {
+      setLocalIsInWatchlist(false);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/watchlist/${accountId}/check/${symbol}`, {
+        headers: {
+          'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || ''
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        setLocalIsInWatchlist(result.in_watchlist);
+      }
+    } catch (err) {
+      console.warn('Failed to check watchlist status:', err);
+    }
+  };
+
+  // Toggle watchlist status
+  const toggleWatchlist = async () => {
+    if (!accountId || !symbol || isUpdatingWatchlist) return;
+    
+    setIsUpdatingWatchlist(true);
+    
+    // IMMEDIATE UI UPDATE: Use optimistic update for instant feedback
+    if (currentIsInWatchlist && onOptimisticRemove) {
+      onOptimisticRemove(symbol);
+    } else if (!currentIsInWatchlist && onOptimisticAdd) {
+      onOptimisticAdd(symbol);
+    }
+    
+    // Update local state if not using props (for internal state management)
+    if (isInWatchlist === undefined) {
+      setLocalIsInWatchlist(!currentIsInWatchlist);
+    }
+    
+    try {
+      const endpoint = currentIsInWatchlist ? 'remove' : 'add';
+      const method = currentIsInWatchlist ? 'DELETE' : 'POST';
+      
+      const response = await fetch(`/api/watchlist/${accountId}/${endpoint}`, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ symbol: symbol.toUpperCase() })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Failed to ${currentIsInWatchlist ? 'remove' : 'add'} ${symbol}`);
+      }
+
+      // Call parent refresh callback for data consistency
+      if (onWatchlistChange) {
+        onWatchlistChange();
+      }
+      
+    } catch (err) {
+      console.error('Error toggling watchlist:', err);
+      
+      // ROLLBACK: Revert optimistic update on error
+      if (currentIsInWatchlist && onOptimisticAdd) {
+        onOptimisticAdd(symbol); // Add back if remove failed
+      } else if (!currentIsInWatchlist && onOptimisticRemove) {
+        onOptimisticRemove(symbol); // Remove if add failed
+      }
+      
+      // Revert local state if not using props
+      if (isInWatchlist === undefined) {
+        setLocalIsInWatchlist(currentIsInWatchlist); // Revert to original state
+      }
+    } finally {
+      setIsUpdatingWatchlist(false);
+    }
+  };
+
+  useEffect(() => {
+    checkWatchlistStatus();
+  }, [accountId, symbol, isInWatchlist]);
 
   useEffect(() => {
     if (!symbol) return;
@@ -222,12 +320,37 @@ export default function StockInfoCard({ symbol }: StockInfoCardProps) {
   return (
     <div className="w-full bg-background">
       <div className="flex flex-row items-start justify-between space-y-0 pb-2 px-4 pt-4">
-        <div>
-          <h2 className="text-2xl font-bold">{profile.companyName} ({profile.symbol})</h2>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold">{profile.companyName} ({profile.symbol})</h2>
+            {accountId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "p-1 h-8 w-8 transition-all duration-200",
+                  currentIsInWatchlist 
+                    ? "text-yellow-500 hover:text-yellow-600 scale-110" 
+                    : "text-slate-400 hover:text-yellow-500 border border-yellow-500/30"
+                )}
+                onClick={toggleWatchlist}
+                disabled={isUpdatingWatchlist}
+              >
+                <Star 
+                  className={cn(
+                    "h-5 w-5 transition-all duration-200",
+                    currentIsInWatchlist 
+                      ? "fill-yellow-500 text-yellow-500" 
+                      : "fill-transparent"
+                  )}
+                />
+              </Button>
+            )}
+          </div>
           <p className="text-muted-foreground text-sm">{profile.exchangeShortName} | {profile.sector} | {profile.industry}</p>
         </div>
         {profile.image && 
-            <img src={profile.image} alt={`${profile.companyName} logo`} className="h-12 w-12 rounded-md object-contain bg-muted p-1" />
+            <img src={profile.image} alt={`${profile.companyName} logo`} className="h-12 w-12 rounded-md object-contain bg-muted p-1 flex-shrink-0" />
         }
       </div>
 
