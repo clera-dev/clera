@@ -86,12 +86,13 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
         // If markets are closed, use the most recent trading day (handles holidays properly)
         const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
         
-        // For 1D after hours/holidays, we want ALL data from the most recent trading day
+        // FIXED: Show ONLY the most recent trading day for proper 1D calculation
+        // This ensures 1D performance represents that single trading day's open-to-close movement
         fromDate = new Date(mostRecentTradingDay);
-        fromDate.setDate(fromDate.getDate() - 1); // Go back one day to ensure we capture all data
+        fromDate.setHours(0, 0, 0, 0); // Start of the trading day
         
         toDate = new Date(mostRecentTradingDay);
-        toDate.setHours(23, 59, 59, 999); // End of the trading day
+        toDate.setHours(23, 59, 59, 999); // End of the same trading day
       } else {
         // Markets are open - get current trading day data
         // Use the exact same logic as main chart
@@ -178,7 +179,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
             });
             
             const dataEasternDate = dataEasternFormatter.format(utcDate);
-            const tradingDayStr = mostRecentTradingDay.toISOString().split('T')[0];
+            const tradingDayStr = `${mostRecentTradingDay.getFullYear()}-${String(mostRecentTradingDay.getMonth() + 1).padStart(2, '0')}-${String(mostRecentTradingDay.getDate()).padStart(2, '0')}`;
             
             // Only keep data from the most recent trading day
             if (dataEasternDate !== tradingDayStr) {
