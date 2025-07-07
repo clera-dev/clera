@@ -23,45 +23,6 @@ load_dotenv()
 LANGGRAPH_API_URL = os.getenv("LANGGRAPH_API_URL")
 LANGGRAPH_API_KEY = os.getenv("LANGGRAPH_API_KEY")
 
-# Tool name to user-friendly message mapping
-TOOL_MESSAGE_MAPPING = {
-    # Stock and financial data tools
-    "get_stock_price": "Pulling current stock prices...",
-    "get_stock_data": "Retrieving stock data...",
-    "calculate_investment_performance": "Analyzing investment performance...",
-    "get_portfolio_summary": "Retrieving your current portfolio...",
-    "get_account_performance": "Analyzing your account performance...",
-    
-    # Web search and research tools
-    "web_search": "Searching the web...",
-    "perplexity_search": "Researching latest information...",
-    "search_news": "Searching for recent news...",
-    
-    # Company analysis tools
-    "get_company_info": "Retrieving company information...",
-    "analyze_company": "Analyzing company fundamentals...",
-    "get_company_news": "Fetching company news...",
-    "get_financials": "Analyzing financial statements...",
-    
-    # Portfolio management tools
-    "get_positions": "Checking your positions...",
-    "get_orders": "Retrieving order history...",
-    "check_buying_power": "Checking available funds...",
-    "analyze_portfolio_risk": "Assessing portfolio risk...",
-    
-    # Agent transfers
-    "transfer_to_financial_analyst_agent": "Consulting with financial analyst...",
-    "transfer_to_portfolio_management_agent": "Consulting with portfolio manager...",
-    "transfer_to_trade_execution_agent": "Preparing trade execution...",
-    
-    # Fallback for unknown tools
-    "_default": "Processing your request..."
-}
-
-def get_user_friendly_tool_message(tool_name: str) -> str:
-    """Convert tool name to user-friendly message."""
-    return TOOL_MESSAGE_MAPPING.get(tool_name, TOOL_MESSAGE_MAPPING["_default"])
-
 # --- Configure requests Session for robustness --- 
 
 def create_session_with_retries(
@@ -287,9 +248,7 @@ async def run_thread_stream(
     callback: Optional[callable] = None
 ):
     """
-    Stream events using /runs/stream. Now uses the official LangGraph approach
-    with custom streaming mode to capture tool progress from get_stream_writer().
-    
+    Stream events using /runs/stream. Handles initial and resume runs.
     Args: ...
     Yields: str: Raw SSE chunks...
     Raises: Exception: If fails...
@@ -300,7 +259,7 @@ async def run_thread_stream(
 
     payload = {
         "assistant_id": assistant_id,
-        "stream_mode": ["messages-tuple", "custom"]  # Focus on messages and custom events
+        "stream_mode": ["messages", "events"] # Requesting messages and events
     }
     
     if resume_command is not None:
@@ -340,27 +299,16 @@ async def run_thread_stream(
                  # Check for potential error events specifically
                  if clean_line.startswith("event: error"):
                      logger.error(f"Explicit error event received in stream for {thread_id}: {clean_line}")
-                 
-                 # Log custom events for debugging but let them pass through naturally
+                 # Check for data that might indicate an issue
                  if clean_line.startswith("data:"):
                      try:
+                         # Process based on the cleaned line
                          data_content = json.loads(clean_line[len("data:"):].strip())
-                         
-                         # With stream_mode=["messages-tuple", "custom"], data comes as tuples [mode, content]
-                         if isinstance(data_content, list) and len(data_content) == 2:
-                             mode, chunk = data_content
-                             
-                             # Log custom events for debugging
-                             if mode == "custom":
-                                 if isinstance(chunk, dict) and chunk.get("type") == "tool_update":
-                                     status = chunk.get("status", "Processing...")
-                                     tool_name = chunk.get("tool", "unknown")
-                                     logger.info(f"Tool progress in {thread_id}: {tool_name} - {status}")
-                                 else:
-                                     logger.info(f"Custom event in {thread_id}: {chunk}")
-                                 
+                         if isinstance(data_content, dict) and data_content.get("event") == "error":
+                            logger.error(f"Parsed error event data for {thread_id}: {data_content}")
                      except json.JSONDecodeError:
-                         pass # Continue with normal processing
+                         logger.warning(f"Failed to parse JSON data for line: {clean_line}", exc_info=True)
+                         pass # Ignore if data is not valid JSON
                          
                  # Format the line as a proper SSE chunk
                  sse_chunk = f"{line}\n\n"

@@ -6,6 +6,9 @@ import logging
 from dotenv import load_dotenv
 from langchain_core.tools import tool
 
+# CRITICAL ADDITION: Import stream writer for real-time updates
+from langgraph.config import get_stream_writer
+
 from urllib.request import urlopen
 import certifi
 import json
@@ -226,9 +229,33 @@ def rebalance_instructions(state=None, config=None) -> str:
              - Reasoning for each recommended change
              - Next steps for implementation
     """
+    # Get the stream writer for real-time updates
+    writer = get_stream_writer()
+    
+    writer({
+        "type": "tool_update",
+        "tool": "rebalance_instructions", 
+        "status": "starting",
+        "message": "⚖️ Analyzing portfolio balance..."
+    })
+    
     try:
+        writer({
+            "type": "tool_update",
+            "tool": "rebalance_instructions",
+            "status": "processing", 
+            "message": "📊 Retrieving current positions..."
+        })
+        
         # Get current positions
         positions = retrieve_portfolio_positions(state=state, config=config)
+        
+        writer({
+            "type": "tool_update",
+            "tool": "rebalance_instructions",
+            "status": "processing",
+            "message": "🎯 Calculating optimal allocation..."
+        })
         
         # Get user's investment strategy to determine target portfolio
         user_strategy = get_user_investment_strategy(state=state, config=config)
@@ -242,9 +269,22 @@ def rebalance_instructions(state=None, config=None) -> str:
             config=config
         )
         
+        writer({
+            "type": "tool_update",
+            "tool": "rebalance_instructions", 
+            "status": "completed",
+            "message": "✅ Rebalancing analysis complete"
+        })
+        
         return instructions
         
     except Exception as e:
+        writer({
+            "type": "tool_update",
+            "tool": "rebalance_instructions", 
+            "status": "error",
+            "message": "❌ Error generating rebalancing instructions"
+        })
         logger.error(f"[Portfolio Agent] Error in rebalance_instructions: {e}", exc_info=True)
         return f"❌ **Error:** Could not generate rebalancing instructions. Please try again later.\n\nError details: {str(e)}"
 
@@ -263,15 +303,38 @@ def get_portfolio_summary(state=None, config=None) -> str:
              - Asset allocation breakdown
              - Key portfolio statistics and insights
     """
+    # Get the stream writer for real-time updates
+    writer = get_stream_writer()
+    
+    writer({
+        "type": "tool_update",
+        "tool": "get_portfolio_summary", 
+        "status": "starting",
+        "message": "📊 Analyzing your portfolio..."
+    })
+    
     try:
         # Validate user context first
         account_id = get_account_id(config=config)
         logger.info(f"[Portfolio Agent] Generating portfolio summary for account: {account_id}")
         
+        writer({
+            "type": "tool_update",
+            "tool": "get_portfolio_summary",
+            "status": "processing", 
+            "message": "🔄 Retrieving current positions..."
+        })
+        
         # Get all positions
         positions = retrieve_portfolio_positions(state=state, config=config)
         
         if not positions:
+            writer({
+                "type": "tool_update", 
+                "tool": "get_portfolio_summary",
+                "status": "completed",
+                "message": "✅ Analysis complete"
+            })
             return """📊 **Portfolio Summary**
 
 ❌ **No Positions Found**
@@ -326,6 +389,13 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         
         # Sort positions by market value (largest first)
         position_details.sort(key=lambda x: x['market_value'], reverse=True)
+        
+        writer({
+            "type": "tool_update",
+            "tool": "get_portfolio_summary",
+            "status": "processing",
+            "message": "📈 Calculating performance metrics..."
+        })
         
         # Get first purchase dates for enhanced information
         first_purchases = find_first_purchase_dates(config=config)
@@ -391,10 +461,23 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
 • Need analysis? Ask about specific stock performance
 • Ready to trade? Use the trade execution agent"""
         
+        writer({
+            "type": "tool_update",
+            "tool": "get_portfolio_summary", 
+            "status": "completed",
+            "message": "✅ Portfolio analysis complete"
+        })
+        
         logger.info(f"[Portfolio Agent] Successfully generated portfolio summary with {len(position_details)} positions")
         return summary
         
     except ValueError as e:
+        writer({
+            "type": "tool_update", 
+            "tool": "get_portfolio_summary",
+            "status": "error",
+            "message": "❌ Account identification failed"
+        })
         logger.error(f"[Portfolio Agent] Account identification error: {e}")
         return f"""📊 **Portfolio Summary**
 
@@ -412,6 +495,12 @@ Could not securely identify your account. This is a security protection to preve
 **Security Note:** This error prevents unauthorized access to financial data."""
         
     except Exception as e:
+        writer({
+            "type": "tool_update",
+            "tool": "get_portfolio_summary", 
+            "status": "error",
+            "message": "❌ Error generating portfolio summary"
+        })
         logger.error(f"[Portfolio Agent] Error generating portfolio summary: {e}", exc_info=True)
         return f"❌ **Error:** Could not generate portfolio summary. Please try again later.\n\nError details: {str(e)}"
 
@@ -509,15 +598,45 @@ def get_account_activities_tool(state=None, config=None) -> str:
     Returns:
         str: Comprehensive formatted account activities report with trading history
     """
+    # Get the stream writer for real-time updates
+    writer = get_stream_writer()
+    
+    writer({
+        "type": "tool_update",
+        "tool": "get_account_activities_tool", 
+        "status": "starting",
+        "message": "📋 Retrieving account activities..."
+    })
+    
     try:
         logger.info("[Portfolio Agent] Retrieving comprehensive account activities")
+        
+        writer({
+            "type": "tool_update",
+            "tool": "get_account_activities_tool",
+            "status": "processing", 
+            "message": "📊 Analyzing transaction history..."
+        })
         
         # Get comprehensive activities (60 days by default)
         activities_report = get_comprehensive_account_activities(days_back=60, config=config)
         
+        writer({
+            "type": "tool_update",
+            "tool": "get_account_activities_tool", 
+            "status": "completed",
+            "message": "✅ Account activities retrieved"
+        })
+        
         return activities_report
         
     except ValueError as e:
+        writer({
+            "type": "tool_update", 
+            "tool": "get_account_activities_tool",
+            "status": "error",
+            "message": "❌ Account identification failed"
+        })
         logger.error(f"[Portfolio Agent] Account identification error: {e}")
         return f"""📋 **Account Activities**
 
@@ -533,6 +652,12 @@ Could not securely identify your account. This is a security protection to preve
 • Contact support if the issue persists"""
         
     except Exception as e:
+        writer({
+            "type": "tool_update",
+            "tool": "get_account_activities_tool", 
+            "status": "error",
+            "message": "❌ Error retrieving account activities"
+        })
         logger.error(f"[Portfolio Agent] Error retrieving account activities: {str(e)}")
         return f"""📋 **Account Activities**
 

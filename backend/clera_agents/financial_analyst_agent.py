@@ -17,7 +17,7 @@ import pandas as pd
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 
-# ADD THIS IMPORT FOR STREAMING
+# CRITICAL ADDITION: Import stream writer for real-time updates
 from langgraph.config import get_stream_writer
 
 # Make sure we load environment variables first
@@ -79,7 +79,7 @@ deep_research_perplexity = ChatPerplexity(
 
 @tool("web_search")
 def web_search(query: str) -> str:
-    """Simple one-step search tool for financial information.
+    """Simple one-step search tool for financial information with real-time updates.
     
     Args:
         query (str): The search query
@@ -87,15 +87,15 @@ def web_search(query: str) -> str:
     Returns:
         str: Search results
     """
-    # Get stream writer for progress updates
+    # Get the stream writer for real-time updates
     writer = get_stream_writer()
     
-    # Emit initial progress update with structured data
+    # Send custom update to frontend
     writer({
-        "type": "tool_update",
+        "type": "tool_update", 
         "tool": "web_search",
-        "status": "Analyzing your research query...",
-        "timestamp": datetime.now().isoformat()
+        "status": "starting",
+        "message": f"🔍 Searching for: {query}"
     })
     
     # Determine if in-depth research is requested
@@ -104,10 +104,10 @@ def web_search(query: str) -> str:
 
     if is_in_depth_query:
         writer({
-            "type": "tool_update", 
-            "tool": "web_search",
-            "status": "Preparing in-depth financial analysis...",
-            "timestamp": datetime.now().isoformat()
+            "type": "tool_update",
+            "tool": "web_search", 
+            "status": "processing",
+            "message": "📊 Conducting detailed research..."
         })
         research_prompt = f"""You are the world's BEST financial news analyst. 
         The user has asked for DETAILED/IN-DEPTH research. 
@@ -121,47 +121,47 @@ Query: {query}
     else:
         writer({
             "type": "tool_update",
-            "tool": "web_search", 
-            "status": "Gathering latest financial news...",
-            "timestamp": datetime.now().isoformat()
+            "tool": "web_search",
+            "status": "processing", 
+            "message": "🔍 Gathering financial information..."
         })
         research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
 
 Query: {query}
 """
 
-    writer({
-        "type": "tool_update",
-        "tool": "web_search",
-        "status": "Consulting financial news sources...",
-        "timestamp": datetime.now().isoformat()
-    })
     messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
     try:
-        # Use the standard perplexity model for efficiency unless deep research is needed?
-        # For now, standard model should handle prompt instructions.
+        writer({
+            "type": "tool_update",
+            "tool": "web_search",
+            "status": "processing",
+            "message": "🤖 Analyzing results with AI..."
+        })
+        
         response = chat_perplexity.invoke(messages)
         
         writer({
             "type": "tool_update",
-            "tool": "web_search",
-            "status": "Finalizing research analysis...",
-            "timestamp": datetime.now().isoformat()
+            "tool": "web_search", 
+            "status": "completed",
+            "message": "✅ Research completed"
         })
+        
         return response.content
     except Exception as e:
         writer({
             "type": "tool_update",
-            "tool": "web_search", 
-            "status": "Research encountered an error...",
-            "timestamp": datetime.now().isoformat()
+            "tool": "web_search",
+            "status": "error", 
+            "message": f"❌ Error: {str(e)}"
         })
         return f"Error searching for information: {e}"
 
 
 @tool("get_stock_price")
 def get_stock_price(ticker: str) -> str:
-    """Get the current price of a stock.
+    """Get the current price of a stock with real-time updates.
     
     Args:
         ticker (str): The stock symbol to get the price for
@@ -169,35 +169,43 @@ def get_stock_price(ticker: str) -> str:
     Returns:
         str: The current stock price information
     """
-    # Get stream writer for progress updates
     writer = get_stream_writer()
     
     writer({
         "type": "tool_update",
         "tool": "get_stock_price",
-        "status": f"Pulling current price for {ticker.upper()}...",
-        "timestamp": datetime.now().isoformat()
+        "status": "starting", 
+        "message": f"📈 Looking up current price for {ticker.upper()}"
     })
-    
+
     try:
+        writer({
+            "type": "tool_update",
+            "tool": "get_stock_price",
+            "status": "processing",
+            "message": "🔄 Fetching live market data..."
+        })
+        
         stock_quote = get_stock_quote(ticker)
         price = stock_quote[0]['price']
         
         writer({
-            "type": "tool_update",
+            "type": "tool_update", 
             "tool": "get_stock_price",
-            "status": "Price data retrieved successfully!",
-            "timestamp": datetime.now().isoformat()
+            "status": "completed",
+            "message": f"✅ Retrieved price: ${price}"
         })
+
         return f"The current price of {ticker} is {price}."
+    
     except Exception as e:
         writer({
             "type": "tool_update",
-            "tool": "get_stock_price",
-            "status": "Error retrieving stock price...",
-            "timestamp": datetime.now().isoformat()
+            "tool": "get_stock_price", 
+            "status": "error",
+            "message": f"❌ Error fetching price for {ticker}: {str(e)}"
         })
-        return f"Error getting stock price for {ticker}: {e}"
+        return f"Error getting stock price: {e}"
 
 ###############################################################################
 # Performance Analysis Functions (moved from portfolio_management_agent.py)
@@ -472,43 +480,27 @@ def calculate_investment_performance(
     end_date: str = "",
     compare_to_sp500: bool = True
 ) -> str:
-    """Calculate investment performance between two dates.
-    
-    This tool analyzes the price performance of any stock symbol over a specified
-    time period, with optional comparison to the S&P 500 (SPY) as a benchmark.
-    
-    Args:
-        symbol: Stock symbol (e.g., 'AAPL', 'MSFT', 'TSLA')
-        start_date: Start date in YYYY-MM-DD format
-        end_date: End date in YYYY-MM-DD format (defaults to today if not specified)
-        compare_to_sp500: Whether to include S&P 500 benchmark comparison (default: True)
-    
-    Returns:
-        str: Formatted performance analysis including:
-             - Price change (absolute and percentage)
-             - Annualized return calculation
-             - Optional S&P 500 benchmark comparison
-             - Key statistics and data quality metrics
-    
-    Examples:
-        - YTD performance: calculate_investment_performance('AAPL', '2024-01-01')
-        - Custom period: calculate_investment_performance('MSFT', '2023-06-15', '2024-06-15')
-        - No benchmark: calculate_investment_performance('TSLA', '2024-01-01', compare_to_sp500=False)
-    """
-    # Get stream writer for progress updates
+    """Calculate investment performance with detailed progress updates."""
     writer = get_stream_writer()
     
+    writer({
+        "type": "tool_update",
+        "tool": "calculate_investment_performance", 
+        "status": "starting",
+        "message": f"📊 Analyzing performance for {symbol.upper()}"
+    })
+    
     try:
-        writer({
-            "type": "tool_update",
-            "tool": "calculate_investment_performance",
-            "status": f"Analyzing performance for {symbol.upper()}...",
-            "timestamp": datetime.now().isoformat()
-        })
-        
         # Set default end date to today if not provided
         if not end_date or end_date == "":
             end_date = datetime.now().strftime('%Y-%m-%d')
+        
+        writer({
+            "type": "tool_update",
+            "tool": "calculate_investment_performance",
+            "status": "processing", 
+            "message": "🔍 Validating dates and symbol..."
+        })
         
         # Validate inputs
         validation = validate_symbol_and_dates(symbol.upper(), start_date, end_date)
@@ -516,8 +508,8 @@ def calculate_investment_performance(
             writer({
                 "type": "tool_update",
                 "tool": "calculate_investment_performance",
-                "status": "Validation error encountered...",
-                "timestamp": datetime.now().isoformat()
+                "status": "error",
+                "message": f"❌ Validation error: {validation['error']}"
             })
             return f"❌ **Error:** {validation['error']}"
         
@@ -525,24 +517,32 @@ def calculate_investment_performance(
         adjusted_start = adjust_for_market_days(start_date, "forward")
         adjusted_end = adjust_for_market_days(end_date, "backward")
         
-        logger.info(f"[Performance Analysis] Analyzing {symbol.upper()} from {start_date} to {end_date}")
-        
         writer({
             "type": "tool_update",
             "tool": "calculate_investment_performance",
-            "status": "Retrieving historical price data...",
-            "timestamp": datetime.now().isoformat()
+            "status": "processing",
+            "message": f"📈 Fetching historical data for {symbol.upper()}..."
         })
+        
+        logger.info(f"[Performance Analysis] Analyzing {symbol.upper()} from {start_date} to {end_date}")
         
         # Get performance data for the target symbol
         try:
             performance_data = get_historical_prices(symbol.upper(), adjusted_start, adjusted_end)
+            
+            writer({
+                "type": "tool_update", 
+                "tool": "calculate_investment_performance",
+                "status": "processing",
+                "message": f"✅ Retrieved {performance_data['data_points']} data points"
+            })
+            
         except ValueError as ve:
             writer({
                 "type": "tool_update",
-                "tool": "calculate_investment_performance",
-                "status": "Data retrieval failed...",
-                "timestamp": datetime.now().isoformat()
+                "tool": "calculate_investment_performance", 
+                "status": "error",
+                "message": f"❌ Data error: {str(ve)}"
             })
             return f"❌ **Data Error:** {str(ve)}\n\nPlease verify the symbol exists and has trading data for the specified period."
         except Exception as e:
@@ -550,8 +550,8 @@ def calculate_investment_performance(
             writer({
                 "type": "tool_update",
                 "tool": "calculate_investment_performance",
-                "status": "API error encountered...",
-                "timestamp": datetime.now().isoformat()
+                "status": "error", 
+                "message": f"❌ API error: {str(e)}"
             })
             return f"❌ **API Error:** Could not retrieve data for {symbol.upper()}. This might be due to:\n• Invalid symbol\n• Market data service unavailable\n• Network connectivity issues\n\nPlease try again later or verify the symbol."
         
@@ -561,29 +561,57 @@ def calculate_investment_performance(
             try:
                 writer({
                     "type": "tool_update",
-                    "tool": "calculate_investment_performance",
-                    "status": "Comparing against S&P 500 benchmark...",
-                    "timestamp": datetime.now().isoformat()
+                    "tool": "calculate_investment_performance", 
+                    "status": "processing",
+                    "message": "📊 Fetching S&P 500 benchmark data..."
                 })
+                
                 logger.info(f"[Performance Analysis] Fetching S&P 500 benchmark data")
                 benchmark_data = get_historical_prices('SPY', adjusted_start, adjusted_end)
+                
+                writer({
+                    "type": "tool_update",
+                    "tool": "calculate_investment_performance",
+                    "status": "processing", 
+                    "message": "✅ Benchmark data retrieved"
+                })
+                
             except Exception as e:
+                writer({
+                    "type": "tool_update", 
+                    "tool": "calculate_investment_performance",
+                    "status": "warning",
+                    "message": f"⚠️ Could not fetch benchmark data: {str(e)}"
+                })
                 logger.warning(f"[Performance Analysis] Could not fetch SPY benchmark data: {e}")
                 # Continue without benchmark rather than failing
         
         writer({
             "type": "tool_update",
             "tool": "calculate_investment_performance",
-            "status": "Calculating returns and finalizing analysis...",
-            "timestamp": datetime.now().isoformat()
+            "status": "processing",
+            "message": "📋 Generating performance report..."
         })
         
         # Format and return the analysis
         analysis = format_performance_analysis(performance_data, benchmark_data)
+        
+        writer({
+            "type": "tool_update",
+            "tool": "calculate_investment_performance", 
+            "status": "completed",
+            "message": "✅ Performance analysis completed"
+        })
         
         logger.info(f"[Performance Analysis] Successfully completed analysis for {symbol.upper()}")
         return analysis
         
     except Exception as e:
         logger.error(f"[Performance Analysis] Unexpected error in calculate_investment_performance: {e}", exc_info=True)
+        writer({
+            "type": "tool_update",
+            "tool": "calculate_investment_performance",
+            "status": "error", 
+            "message": f"❌ Unexpected error: {str(e)}"
+        })
         return f"❌ **Unexpected Error:** An error occurred while analyzing {symbol}. Please try again later.\n\nError details: {str(e)}"
