@@ -12,7 +12,7 @@
 
 ### Frontend (Next.js)
 - **Path**: `frontend-app/`
-- **Tech Stack**: Next.js 14 + TypeScript + TailwindCSS + Supabase Auth
+- **Tech Stack**: Next.js 15.3 + TypeScript + TailwindCSS + Supabase Auth
 - **Deployment**: Vercel (Production: `app.clera.ai`)
 
 ### Backend (Python)
@@ -63,7 +63,7 @@ clera/
   - `backend/utils/alpaca/` (Alpaca integration)
 
 ### 3. Bank Account Connection & Funding
-- **Methods**: Plaid OAuth or Manual entry
+- **Methods**: Manual entry
 - **Flow**: Connect bank → Create ACH relationship → Transfer funds
 - **Key Components**:
   - `frontend-app/components/dashboard/BankConnectionButton.tsx`

@@ -100,7 +100,9 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
     if (!data || !data.timestamp || !data.equity || data.timestamp.length === 0) {
       // Create two points for a good looking line - one at start of range, one at end
       const now = Date.now() / 1000;
-      const pastDate = now - (timeRange === '1M' ? 30 * 86400 : 
+      const pastDate = now - (timeRange === '1D' ? 1 * 86400 : 
+                             timeRange === '1W' ? 7 * 86400 :
+                             timeRange === '1M' ? 30 * 86400 : 
                              timeRange === '6M' ? 180 * 86400 : 365 * 86400);
       
       return [
@@ -177,7 +179,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
   
   const gradientId = `colorGradient-${isPositiveGrowth ? 'positive' : 'negative'}`;
 
-  const timeRanges = ['1M', '6M', '1Y'];
+  const timeRanges = ['1D', '1W', '1M', '6M', '1Y'];
 
   // Current value (most recent data point)
   const currentValue = useMemo(() => {
