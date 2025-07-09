@@ -62,9 +62,35 @@ class AutomatedAccountClosureProcessor:
         detailed_logger = AccountClosureLogger(account_id)
         
         try:
-            # STEP 1: Update Supabase to pending_closure immediately
-            confirmation_number = f"CLA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{account_id[-6:]}"
+            # STEP 1: Get existing confirmation number from Supabase (don't generate new one)
+            confirmation_number = None
+            try:
+                result = self.supabase.table("user_onboarding").select(
+                    "account_closure_confirmation_number"
+                ).eq("user_id", user_id).execute()
+                
+                if result.data and result.data[0].get("account_closure_confirmation_number"):
+                    confirmation_number = result.data[0]["account_closure_confirmation_number"]
+                    detailed_logger.log_step_success("CONFIRMATION_NUMBER_RETRIEVED", {
+                        "confirmation_number": confirmation_number,
+                        "source": "supabase"
+                    })
+                else:
+                    # Fallback: generate new confirmation number if none exists
+                    confirmation_number = f"CLA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{account_id[-6:]}"
+                    detailed_logger.log_step_warning("CONFIRMATION_NUMBER_GENERATED", {
+                        "confirmation_number": confirmation_number,
+                        "reason": "No existing confirmation number found in Supabase"
+                    })
+            except Exception as e:
+                # Fallback: generate new confirmation number if Supabase lookup fails
+                confirmation_number = f"CLA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{account_id[-6:]}"
+                detailed_logger.log_step_warning("CONFIRMATION_NUMBER_GENERATED", {
+                    "confirmation_number": confirmation_number,
+                    "reason": f"Supabase lookup failed: {str(e)}"
+                })
             
+            # STEP 2: Update Supabase to pending_closure immediately (if not already done)
             if self.supabase:
                 self._update_supabase_status(user_id, "pending_closure", {
                     "confirmation_number": confirmation_number,
@@ -75,12 +101,12 @@ class AutomatedAccountClosureProcessor:
                     "confirmation_number": confirmation_number
                 })
             
-            # STEP 2: Start background process (non-blocking)
+            # STEP 3: Start background process (non-blocking)
             asyncio.create_task(self._run_automated_closure_process(
                 user_id, account_id, ach_relationship_id, confirmation_number, detailed_logger
             ))
             
-            # STEP 3: Return immediate response to frontend
+            # STEP 4: Return immediate response to frontend
             return {
                 "success": True,
                 "message": "Account closure process initiated successfully",

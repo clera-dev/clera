@@ -11,7 +11,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from enum import Enum, auto
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 import requests
 from decimal import Decimal
@@ -2617,7 +2617,7 @@ async def get_sector_allocation(request: Request, account_id: str = Query(..., d
             return {
             'sectors': [],
             'total_portfolio_value': 0,
-            'last_data_update_timestamp': redis_client.get('sector_data_last_updated') or datetime.utcnow().isoformat()
+            'last_data_update_timestamp': redis_client.get('sector_data_last_updated') or datetime.now(timezone.utc).isoformat()
         }
 
         # 2. Get global sector data
@@ -2695,7 +2695,6 @@ async def get_sector_allocation(request: Request, account_id: str = Query(..., d
 # Add logging import if not present
 import logging
 import os # ensure os is imported for get_redis_client
-from datetime import datetime # ensure datetime is imported for fallback timestamp
 logger = logging.getLogger(__name__) # Or use existing logger from the file
 
 # If `app` is not defined here, this code should be placed where `app` (FastAPI instance) is accessible.
@@ -2797,7 +2796,7 @@ async def get_account_closure_status_endpoint(
         return {
             "account_id": account_id,
             "status": status,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
@@ -2835,6 +2834,27 @@ async def get_account_closure_progress_endpoint(
         # Calculate total steps (excluding failed)
         total_steps = 5
         
+        # Get Supabase data for confirmation number and initiation date
+        supabase_data = {}
+        try:
+            from utils.supabase.db_client import get_supabase_client
+            supabase = get_supabase_client()
+            
+            # Find user by account_id
+            result = supabase.table("user_onboarding").select(
+                "account_closure_confirmation_number, account_closure_initiated_at, onboarding_data"
+            ).eq("alpaca_account_id", account_id).execute()
+            
+            if result.data:
+                user_data = result.data[0]
+                supabase_data = {
+                    "confirmation_number": user_data.get("account_closure_confirmation_number"),
+                    "initiated_at": user_data.get("account_closure_initiated_at"),
+                    "closure_details": user_data.get("onboarding_data", {}).get("account_closure", {})
+                }
+        except Exception as e:
+            logger.warning(f"Could not fetch Supabase data for account {account_id}: {e}")
+        
         # Format response for frontend consumption
         return {
             "account_id": account_id,
@@ -2849,7 +2869,11 @@ async def get_account_closure_progress_endpoint(
                 "ready_for_next_step": progress.get("ready_for_next_step", False)
             },
             "estimated_completion": progress.get("estimated_completion"),
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            # Include Supabase data
+            "confirmation_number": supabase_data.get("confirmation_number"),
+            "initiated_at": supabase_data.get("initiated_at"),
+            "closure_details": supabase_data.get("closure_details", {})
         }
         
     except Exception as e:

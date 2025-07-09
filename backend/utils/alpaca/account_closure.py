@@ -134,6 +134,15 @@ class AccountClosureManager:
         Returns:
             Dictionary with cancellation results
         """
+        # Initialize detailed logging for order cancellation
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        
+        if detailed_logger:
+            detailed_logger.log_step_start("CANCEL_ALL_ORDERS", {
+                "account_id": account_id,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         try:
             logger.info(f"Canceling all orders for account {account_id}")
             
@@ -143,12 +152,26 @@ class AccountClosureManager:
             order_filter = GetOrdersRequest(status=QueryOrderStatus.OPEN)
             orders = self.broker_client.get_orders_for_account(account_id, filter=order_filter)
             
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("CANCEL_ORDERS_OPEN_ORDERS", orders)
+            
             if not orders:
+                if detailed_logger:
+                    detailed_logger.log_step_success("CANCEL_ALL_ORDERS", {
+                        "success": True,
+                        "orders_canceled": 0,
+                        "message": "No open orders to cancel"
+                    })
                 return {
                     "success": True,
                     "orders_canceled": 0,
                     "message": "No open orders to cancel"
                 }
+            
+            if detailed_logger:
+                detailed_logger.log_step_start("EXECUTE_ORDER_CANCELLATIONS", {
+                    "orders_count": len(orders)
+                })
             
             # Cancel each order individually to track results
             canceled_orders = []
@@ -172,7 +195,7 @@ class AccountClosureManager:
                     })
                     logger.error(f"Failed to cancel order {order.id}: {e}")
             
-            return {
+            result = {
                 "success": len(failed_orders) == 0,
                 "orders_canceled": len(canceled_orders),
                 "orders_failed": len(failed_orders),
@@ -180,11 +203,19 @@ class AccountClosureManager:
                 "failed_orders": failed_orders
             }
             
+            if detailed_logger:
+                detailed_logger.log_step_success("CANCEL_ALL_ORDERS", result)
+            
+            return result
+            
         except Exception as e:
+            if detailed_logger:
+                detailed_logger.log_step_failure("CANCEL_ALL_ORDERS", str(e))
             logger.error(f"Error canceling orders for account {account_id}: {e}")
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
             }
     
     def liquidate_all_positions(self, account_id: str) -> Dict[str, Any]:
@@ -197,13 +228,32 @@ class AccountClosureManager:
         Returns:
             Dictionary with liquidation results
         """
+        # Initialize detailed logging for liquidation
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        
+        if detailed_logger:
+            detailed_logger.log_step_start("LIQUIDATE_ALL_POSITIONS", {
+                "account_id": account_id,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         try:
             logger.info(f"Liquidating all positions for account {account_id}")
             
             # Get all positions
             positions = self.broker_client.get_all_positions_for_account(account_id)
             
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("LIQUIDATION_POSITIONS", positions)
+            
             if not positions:
+                if detailed_logger:
+                    detailed_logger.log_step_success("LIQUIDATE_ALL_POSITIONS", {
+                        "success": True,
+                        "positions_liquidated": 0,
+                        "liquidation_orders": [],
+                        "message": "No positions to liquidate"
+                    })
                 return {
                     "success": True,
                     "positions_liquidated": 0,
@@ -211,12 +261,21 @@ class AccountClosureManager:
                     "message": "No positions to liquidate"
                 }
             
+            if detailed_logger:
+                detailed_logger.log_step_start("EXECUTE_LIQUIDATION", {
+                    "positions_count": len(positions),
+                    "method": "close_all_positions_for_account(cancel_orders=True)"
+                })
+            
             # Use Alpaca's 2025 API: close_all_positions_for_account with cancel_orders=True
             # This cancels all orders AND liquidates all positions in one optimized call
             liquidation_response = self.broker_client.close_all_positions_for_account(
                 account_id=account_id,
                 cancel_orders=True  # Cancel any remaining orders during liquidation
             )
+            
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("LIQUIDATION_RESPONSE", liquidation_response)
             
             # Process liquidation results - handle both list and single item responses
             liquidation_orders_list = liquidation_response if isinstance(liquidation_response, list) else [liquidation_response] if liquidation_response else []
@@ -230,7 +289,7 @@ class AccountClosureManager:
                         "status": str(order.status) if hasattr(order, 'status') else "submitted"
                     })
             
-            return {
+            result = {
                 "success": True,
                 "positions_liquidated": len(positions),
                 "liquidation_orders": successful_liquidations,
@@ -238,11 +297,19 @@ class AccountClosureManager:
                 "message": f"Successfully liquidated {len(positions)} positions"
             }
             
+            if detailed_logger:
+                detailed_logger.log_step_success("LIQUIDATE_ALL_POSITIONS", result)
+            
+            return result
+            
         except Exception as e:
+            if detailed_logger:
+                detailed_logger.log_step_failure("LIQUIDATE_ALL_POSITIONS", str(e))
             logger.error(f"Error liquidating positions for account {account_id}: {e}")
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
             }
     
     def check_settlement_status(self, account_id: str) -> Dict[str, Any]:
@@ -255,10 +322,23 @@ class AccountClosureManager:
         Returns:
             Dictionary with settlement status
         """
+        # Initialize detailed logging for settlement check
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        
+        if detailed_logger:
+            detailed_logger.log_step_start("CHECK_SETTLEMENT_STATUS", {
+                "account_id": account_id,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         try:
             # Get trading account for cash info
             trade_account = self.broker_client.get_trade_account_by_id(account_id)
             positions = self.broker_client.get_all_positions_for_account(account_id)
+            
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("SETTLEMENT_CHECK_TRADE_ACCOUNT", trade_account)
+                detailed_logger.log_alpaca_data("SETTLEMENT_CHECK_POSITIONS", positions)
             
             # Safe handling of account attributes
             cash_withdrawable = float(trade_account.cash_withdrawable) if hasattr(trade_account, 'cash_withdrawable') else 0
@@ -267,7 +347,7 @@ class AccountClosureManager:
             settlement_complete = len(positions) == 0 and cash_withdrawable == cash_total
             pending_settlement = cash_total - cash_withdrawable
             
-            return {
+            result = {
                 "settlement_complete": settlement_complete,
                 "cash_total": cash_total,
                 "cash_withdrawable": cash_withdrawable,
@@ -275,11 +355,19 @@ class AccountClosureManager:
                 "positions_remaining": len(positions)
             }
             
+            if detailed_logger:
+                detailed_logger.log_step_success("CHECK_SETTLEMENT_STATUS", result)
+            
+            return result
+            
         except Exception as e:
+            if detailed_logger:
+                detailed_logger.log_step_failure("CHECK_SETTLEMENT_STATUS", str(e))
             logger.error(f"Error checking settlement status for account {account_id}: {e}")
             return {
                 "settlement_complete": False,
-                "error": str(e)
+                "error": str(e),
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
             }
     
     def withdraw_all_funds(self, account_id: str, ach_relationship_id: str) -> Dict[str, Any]:
@@ -293,6 +381,16 @@ class AccountClosureManager:
         Returns:
             Dictionary with withdrawal results
         """
+        # Initialize detailed logging for withdrawal
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        
+        if detailed_logger:
+            detailed_logger.log_step_start("WITHDRAW_ALL_FUNDS", {
+                "account_id": account_id,
+                "ach_relationship_id": ach_relationship_id,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         try:
             logger.info(f"Withdrawing all funds for account {account_id}")
             
@@ -300,7 +398,21 @@ class AccountClosureManager:
             trade_account = self.broker_client.get_trade_account_by_id(account_id)
             cash_withdrawable = float(trade_account.cash_withdrawable) if hasattr(trade_account, 'cash_withdrawable') else 0
             
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("WITHDRAWAL_TRADE_ACCOUNT", trade_account)
+                detailed_logger.log_alpaca_data("WITHDRAWAL_CASH_AMOUNT", {
+                    "cash_withdrawable": cash_withdrawable,
+                    "cash_balance": float(trade_account.cash) if hasattr(trade_account, 'cash') else 0
+                })
+            
             if cash_withdrawable <= 1.0:
+                if detailed_logger:
+                    detailed_logger.log_step_success("WITHDRAW_ALL_FUNDS", {
+                        "success": True,
+                        "transfer_id": None,
+                        "amount": 0,
+                        "message": "No funds available for withdrawal"
+                    })
                 return {
                     "success": True,
                     "transfer_id": None,
@@ -316,10 +428,21 @@ class AccountClosureManager:
                 bank_id=ach_relationship_id
             )
             
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("WITHDRAWAL_TRANSFER_REQUEST", {
+                    "amount": cash_withdrawable,
+                    "direction": "OUTGOING",
+                    "type": "ACH",
+                    "bank_id": ach_relationship_id
+                })
+            
             # Use the correct 2025 API method: create_transfer_for_account
             transfer = self.broker_client.create_transfer_for_account(account_id, transfer_request)
             
-            return {
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("WITHDRAWAL_TRANSFER_RESULT", transfer)
+            
+            result = {
                 "success": True,
                 "transfer_id": str(transfer.id),
                 "amount": cash_withdrawable,
@@ -327,11 +450,19 @@ class AccountClosureManager:
                 "message": f"Withdrawal of ${cash_withdrawable:.2f} initiated"
             }
             
+            if detailed_logger:
+                detailed_logger.log_step_success("WITHDRAW_ALL_FUNDS", result)
+            
+            return result
+            
         except Exception as e:
+            if detailed_logger:
+                detailed_logger.log_step_failure("WITHDRAW_ALL_FUNDS", str(e))
             logger.error(f"Error withdrawing funds for account {account_id}: {e}")
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
             }
     
     def check_withdrawal_status(self, account_id: str, transfer_id: str) -> Dict[str, Any]:
@@ -345,9 +476,22 @@ class AccountClosureManager:
         Returns:
             Dictionary with transfer status
         """
+        # Initialize detailed logging for withdrawal status check
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        
+        if detailed_logger:
+            detailed_logger.log_step_start("CHECK_WITHDRAWAL_STATUS", {
+                "account_id": account_id,
+                "transfer_id": transfer_id,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         try:
             # Get transfers for the account using 2025 API
             transfers = self.broker_client.get_transfers_for_account(account_id)
+            
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("WITHDRAWAL_STATUS_TRANSFERS", transfers)
             
             # Find the specific transfer
             target_transfer = None
@@ -357,16 +501,23 @@ class AccountClosureManager:
                     break
             
             if not target_transfer:
+                if detailed_logger:
+                    detailed_logger.log_step_failure("CHECK_WITHDRAWAL_STATUS", 
+                        f"Transfer {transfer_id} not found")
                 return {
                     "transfer_found": False,
-                    "error": f"Transfer {transfer_id} not found"
+                    "error": f"Transfer {transfer_id} not found",
+                    "log_file": detailed_logger.get_log_summary() if detailed_logger else None
                 }
+            
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("WITHDRAWAL_STATUS_TARGET_TRANSFER", target_transfer)
             
             status = str(target_transfer.status)
             completed = status in ["COMPLETED", "SETTLED"]
             failed = status in ["FAILED", "CANCELED", "REJECTED"]
             
-            return {
+            result = {
                 "transfer_found": True,
                 "status": status,
                 "amount": float(target_transfer.amount),
@@ -375,11 +526,19 @@ class AccountClosureManager:
                 "created_at": target_transfer.created_at.isoformat() if hasattr(target_transfer, 'created_at') else None
             }
             
+            if detailed_logger:
+                detailed_logger.log_step_success("CHECK_WITHDRAWAL_STATUS", result)
+            
+            return result
+            
         except Exception as e:
+            if detailed_logger:
+                detailed_logger.log_step_failure("CHECK_WITHDRAWAL_STATUS", str(e))
             logger.error(f"Error checking withdrawal status for account {account_id}, transfer {transfer_id}: {e}")
             return {
                 "transfer_found": False,
-                "error": str(e)
+                "error": str(e),
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
             }
     
     def close_account(self, account_id: str) -> Dict[str, Any]:
@@ -392,6 +551,15 @@ class AccountClosureManager:
         Returns:
             Dictionary with closure results
         """
+        # Initialize detailed logging for account closure
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        
+        if detailed_logger:
+            detailed_logger.log_step_start("CLOSE_ACCOUNT", {
+                "account_id": account_id,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         try:
             logger.info(f"Closing account {account_id}")
             
@@ -401,41 +569,80 @@ class AccountClosureManager:
             positions = self.broker_client.get_all_positions_for_account(account_id)
             cash_balance = float(trade_account.cash) if hasattr(trade_account, 'cash') else 0
             
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("CLOSE_ACCOUNT_VERIFICATION", {
+                    "account": account,
+                    "trade_account": trade_account,
+                    "positions": positions,
+                    "cash_balance": cash_balance
+                })
+            
             if len(positions) > 0:
+                if detailed_logger:
+                    detailed_logger.log_step_failure("CLOSE_ACCOUNT", 
+                        f"Account has {len(positions)} open positions - cannot close")
                 return {
                     "success": False,
-                    "error": f"Account has {len(positions)} open positions - cannot close"
+                    "error": f"Account has {len(positions)} open positions - cannot close",
+                    "log_file": detailed_logger.get_log_summary() if detailed_logger else None
                 }
             
             if cash_balance > 1.0:
+                if detailed_logger:
+                    detailed_logger.log_step_failure("CLOSE_ACCOUNT", 
+                        f"Account has ${cash_balance:.2f} remaining - must withdraw funds first")
                 return {
                     "success": False,
-                    "error": f"Account has ${cash_balance:.2f} remaining - must withdraw funds first"
+                    "error": f"Account has ${cash_balance:.2f} remaining - must withdraw funds first",
+                    "log_file": detailed_logger.get_log_summary() if detailed_logger else None
                 }
+            
+            if detailed_logger:
+                detailed_logger.log_step_start("EXECUTE_ACCOUNT_CLOSURE")
             
             # Close the account using Alpaca's 2025 API
             # According to docs: close_account returns None on success
             self.broker_client.close_account(account_id)
             
+            if detailed_logger:
+                detailed_logger.log_step_success("EXECUTE_ACCOUNT_CLOSURE", {
+                    "message": "Account closure API call completed successfully"
+                })
+            
             # Verify account was closed
             try:
                 updated_account = self.broker_client.get_account_by_id(account_id)
                 account_status = str(updated_account.status)
+                if detailed_logger:
+                    detailed_logger.log_alpaca_data("CLOSE_ACCOUNT_VERIFICATION_RESULT", updated_account)
             except Exception:
                 # If we can't retrieve it, assume it was closed
                 account_status = "CLOSED"
+                if detailed_logger:
+                    detailed_logger.log_alpaca_data("CLOSE_ACCOUNT_VERIFICATION_RESULT", {
+                        "status": "CLOSED",
+                        "note": "Could not retrieve account - assuming closed"
+                    })
             
-            return {
+            result = {
                 "success": True,
                 "account_status": account_status,
                 "message": "Account successfully closed"
             }
             
+            if detailed_logger:
+                detailed_logger.log_step_success("CLOSE_ACCOUNT", result)
+            
+            return result
+            
         except Exception as e:
+            if detailed_logger:
+                detailed_logger.log_step_failure("CLOSE_ACCOUNT", str(e))
             logger.error(f"Error closing account {account_id}: {e}")
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
             }
     
     def get_closure_status(self, account_id: str) -> Dict[str, Any]:
@@ -448,6 +655,15 @@ class AccountClosureManager:
         Returns:
             Dictionary with current closure status and retry capability
         """
+        # Initialize detailed logging for status check
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        
+        if detailed_logger:
+            detailed_logger.log_step_start("GET_CLOSURE_STATUS", {
+                "account_id": account_id,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         try:
             account = self.broker_client.get_account_by_id(account_id)
             trade_account = self.broker_client.get_trade_account_by_id(account_id)
@@ -461,6 +677,13 @@ class AccountClosureManager:
             
             cash_balance = float(trade_account.cash) if hasattr(trade_account, 'cash') else 0
             cash_withdrawable = float(trade_account.cash_withdrawable) if hasattr(trade_account, 'cash_withdrawable') else 0
+            
+            # Log raw account data for verification
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("STATUS_CHECK_ACCOUNT", account)
+                detailed_logger.log_alpaca_data("STATUS_CHECK_TRADE_ACCOUNT", trade_account)
+                detailed_logger.log_alpaca_data("STATUS_CHECK_POSITIONS", positions)
+                detailed_logger.log_alpaca_data("STATUS_CHECK_ORDERS", orders)
             
             # Determine current step based on account state
             if str(account.status) == "CLOSED":
@@ -480,7 +703,7 @@ class AccountClosureManager:
             # Check if ready for retry/next step
             ready_for_retry = self._is_ready_for_next_step(current_step, orders, positions, cash_balance, cash_withdrawable)
             
-            return {
+            status_result = {
                 "account_id": account_id,
                 "current_step": current_step.value,
                 "account_status": str(account.status),
@@ -493,14 +716,22 @@ class AccountClosureManager:
                 "next_action": self._get_next_action(current_step, ready_for_retry)
             }
             
+            if detailed_logger:
+                detailed_logger.log_step_success("GET_CLOSURE_STATUS", status_result)
+            
+            return status_result
+            
         except Exception as e:
+            if detailed_logger:
+                detailed_logger.log_step_failure("GET_CLOSURE_STATUS", str(e))
             logger.error(f"Error getting closure status for account {account_id}: {e}")
             return {
                 "account_id": account_id,
                 "current_step": ClosureStep.FAILED.value,
                 "error": str(e),
                 "can_retry": True,
-                "next_action": "retry_from_beginning"
+                "next_action": "retry_from_beginning",
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
             }
     
     def _is_ready_for_next_step(self, current_step: ClosureStep, orders: List, positions: List, 
@@ -547,7 +778,21 @@ class AccountClosureManager:
         Returns:
             Dictionary with current progress and next steps
         """
+        # Initialize detailed logging for this resume attempt
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        start_time = time.time()
+        
+        if detailed_logger:
+            detailed_logger.log_step_start("ACCOUNT_CLOSURE_RESUME", {
+                "account_id": account_id,
+                "ach_relationship_id": ach_relationship_id,
+                "timestamp": datetime.now().isoformat()
+            })
+        
         try:
+            if detailed_logger:
+                detailed_logger.log_step_start("GET_CURRENT_STATUS")
+            
             logger.info(f"🔄 Resuming closure process for account {account_id}")
             
             # STEP 1: Get current status
@@ -556,10 +801,23 @@ class AccountClosureManager:
             ready_for_next = current_status.get("ready_for_next_step", False)
             next_action = current_status.get("next_action", "wait")
             
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("CURRENT_STATUS", current_status)
+                detailed_logger.log_step_success("GET_CURRENT_STATUS", {
+                    "current_step": current_step,
+                    "ready_for_next": ready_for_next,
+                    "next_action": next_action
+                })
+            
             logger.info(f"📊 Current state: {current_step}, Ready: {ready_for_next}, Next: {next_action}")
             
             # If already completed, return success
             if current_step == ClosureStep.COMPLETED.value:
+                if detailed_logger:
+                    detailed_logger.log_step_success("ACCOUNT_CLOSURE_RESUME", {
+                        "message": "Account closure already completed",
+                        "current_step": current_step
+                    })
                 return {
                     "success": True,
                     "current_step": current_step,
@@ -571,6 +829,12 @@ class AccountClosureManager:
             result = {"success": False, "current_step": current_step}
             
             if current_step == ClosureStep.LIQUIDATING_POSITIONS.value:
+                if detailed_logger:
+                    detailed_logger.log_step_start("RESUME_LIQUIDATION", {
+                        "orders": current_status.get("open_orders", 0),
+                        "positions": current_status.get("open_positions", 0)
+                    })
+                
                 # Check if there are positions or orders that need liquidation
                 orders = current_status.get("open_orders", 0)
                 positions = current_status.get("open_positions", 0)
@@ -580,7 +844,12 @@ class AccountClosureManager:
                     logger.info(f"🚀 Executing: Liquidate {positions} positions and cancel {orders} orders")
                     liquidation_result = self.liquidate_all_positions(account_id)
                     
+                    if detailed_logger:
+                        detailed_logger.log_alpaca_data("LIQUIDATION_RESULT", liquidation_result)
+                    
                     if liquidation_result.get("success"):
+                        if detailed_logger:
+                            detailed_logger.log_step_success("RESUME_LIQUIDATION", liquidation_result)
                         result.update({
                             "success": True,
                             "action_taken": "liquidate_positions",
@@ -588,6 +857,9 @@ class AccountClosureManager:
                             "message": f"Successfully liquidated {positions} positions and {orders} orders, waiting for settlement"
                         })
                     else:
+                        if detailed_logger:
+                            detailed_logger.log_step_failure("RESUME_LIQUIDATION", 
+                                liquidation_result.get("error", "Failed to liquidate positions"), liquidation_result)
                         result.update({
                             "action_taken": "liquidate_positions",
                             "error": liquidation_result.get("error", "Failed to liquidate positions"),
@@ -595,6 +867,10 @@ class AccountClosureManager:
                         })
                 elif ready_for_next:
                     # No positions/orders to liquidate, ready to move to settlement
+                    if detailed_logger:
+                        detailed_logger.log_step_success("RESUME_LIQUIDATION", {
+                            "message": "No positions to liquidate, checking settlement status"
+                        })
                     result.update({
                         "success": True,
                         "action_taken": "check_settlement",
@@ -602,6 +878,12 @@ class AccountClosureManager:
                     })
                     
             elif current_step == ClosureStep.WAITING_SETTLEMENT.value and ready_for_next:
+                if detailed_logger:
+                    detailed_logger.log_step_start("RESUME_WITHDRAWAL", {
+                        "cash_balance": current_status.get("cash_balance"),
+                        "cash_withdrawable": current_status.get("cash_withdrawable")
+                    })
+                
                 # Settlement is complete, ready to withdraw
                 logger.info("🚀 Executing: Withdraw funds")
                 
@@ -611,7 +893,15 @@ class AccountClosureManager:
                     if ach_relationships:
                         ach_relationship_id = ach_relationships[0].id
                         logger.info(f"💳 Found ACH relationship: {ach_relationship_id}")
+                        if detailed_logger:
+                            detailed_logger.log_alpaca_data("ACH_RELATIONSHIP_FOUND", {
+                                "ach_relationship_id": ach_relationship_id,
+                                "total_relationships": len(ach_relationships)
+                            })
                     else:
+                        if detailed_logger:
+                            detailed_logger.log_step_failure("RESUME_WITHDRAWAL", 
+                                "No ACH relationship found - user must connect bank account")
                         result.update({
                             "action_taken": "find_ach_relationship",
                             "error": "No ACH relationship found - user must connect bank account",
@@ -621,7 +911,12 @@ class AccountClosureManager:
                 
                 withdrawal_result = self.withdraw_all_funds(account_id, ach_relationship_id)
                 
+                if detailed_logger:
+                    detailed_logger.log_alpaca_data("WITHDRAWAL_RESULT", withdrawal_result)
+                
                 if withdrawal_result.get("success"):
+                    if detailed_logger:
+                        detailed_logger.log_step_success("RESUME_WITHDRAWAL", withdrawal_result)
                     result.update({
                         "success": True,
                         "action_taken": "withdraw_funds",
@@ -629,6 +924,9 @@ class AccountClosureManager:
                         "message": "Withdrawal initiated, waiting for completion"
                     })
                 else:
+                    if detailed_logger:
+                        detailed_logger.log_step_failure("RESUME_WITHDRAWAL", 
+                            withdrawal_result.get("error", "Failed to withdraw funds"), withdrawal_result)
                     result.update({
                         "action_taken": "withdraw_funds",
                         "error": withdrawal_result.get("error", "Failed to withdraw funds"),
@@ -636,12 +934,22 @@ class AccountClosureManager:
                     })
                     
             elif current_step == ClosureStep.WITHDRAWING_FUNDS.value and ready_for_next:
+                if detailed_logger:
+                    detailed_logger.log_step_start("RESUME_ACCOUNT_CLOSURE", {
+                        "cash_balance": current_status.get("cash_balance")
+                    })
+                
                 # Funds withdrawn, ready to close account
                 logger.info("🚀 Executing: Close account")
                 
                 close_result = self.close_account(account_id)
                 
+                if detailed_logger:
+                    detailed_logger.log_alpaca_data("CLOSE_RESULT", close_result)
+                
                 if close_result.get("success"):
+                    if detailed_logger:
+                        detailed_logger.log_step_success("RESUME_ACCOUNT_CLOSURE", close_result)
                     result.update({
                         "success": True,
                         "action_taken": "close_account",
@@ -649,6 +957,9 @@ class AccountClosureManager:
                         "message": "Account successfully closed"
                     })
                 else:
+                    if detailed_logger:
+                        detailed_logger.log_step_failure("RESUME_ACCOUNT_CLOSURE", 
+                            close_result.get("error", "Failed to close account"), close_result)
                     result.update({
                         "action_taken": "close_account", 
                         "error": close_result.get("error", "Failed to close account"),
@@ -656,12 +967,20 @@ class AccountClosureManager:
                     })
                     
             elif current_step == ClosureStep.CLOSING_ACCOUNT.value and ready_for_next:
+                if detailed_logger:
+                    detailed_logger.log_step_start("RESUME_FINAL_CLOSURE")
+                
                 # Final closure step
                 logger.info("🚀 Executing: Final account closure")
                 
                 close_result = self.close_account(account_id)
                 
+                if detailed_logger:
+                    detailed_logger.log_alpaca_data("FINAL_CLOSE_RESULT", close_result)
+                
                 if close_result.get("success"):
+                    if detailed_logger:
+                        detailed_logger.log_step_success("RESUME_FINAL_CLOSURE", close_result)
                     result.update({
                         "success": True,
                         "action_taken": "close_account",
@@ -669,6 +988,9 @@ class AccountClosureManager:
                         "message": "Account successfully closed"
                     })
                 else:
+                    if detailed_logger:
+                        detailed_logger.log_step_failure("RESUME_FINAL_CLOSURE", 
+                            close_result.get("error", "Failed to close account"), close_result)
                     result.update({
                         "action_taken": "close_account",
                         "error": close_result.get("error", "Failed to close account"),
@@ -676,16 +998,27 @@ class AccountClosureManager:
                     })
                     
             elif current_step == ClosureStep.FAILED.value:
+                if detailed_logger:
+                    detailed_logger.log_step_start("RESUME_FAILED_STATE")
+                
                 # Failed state - restart from beginning
                 logger.info("🔄 Failed state detected, restarting closure process")
                 
                 # Check preconditions and restart if ready
                 preconditions = self.check_closure_preconditions(account_id)
+                if detailed_logger:
+                    detailed_logger.log_alpaca_data("FAILED_STATE_PRECONDITIONS", preconditions)
+                
                 if preconditions.get("ready"):
                     # Restart liquidation process
                     liquidation_result = self.liquidate_all_positions(account_id)
                     
+                    if detailed_logger:
+                        detailed_logger.log_alpaca_data("RESTART_LIQUIDATION_RESULT", liquidation_result)
+                    
                     if liquidation_result.get("success"):
+                        if detailed_logger:
+                            detailed_logger.log_step_success("RESUME_FAILED_STATE", liquidation_result)
                         result.update({
                             "success": True,
                             "action_taken": "restart_liquidation",
@@ -693,12 +1026,18 @@ class AccountClosureManager:
                             "message": "Restarted closure process from liquidation step"
                         })
                     else:
+                        if detailed_logger:
+                            detailed_logger.log_step_failure("RESUME_FAILED_STATE", 
+                                liquidation_result.get("error", "Failed to restart liquidation"), liquidation_result)
                         result.update({
                             "action_taken": "restart_liquidation",
                             "error": liquidation_result.get("error", "Failed to restart liquidation"),
                             "can_retry": True
                         })
                 else:
+                    if detailed_logger:
+                        detailed_logger.log_step_failure("RESUME_FAILED_STATE", 
+                            preconditions.get("reason", "Account not ready for closure"), preconditions)
                     result.update({
                         "action_taken": "check_preconditions",
                         "error": preconditions.get("reason", "Account not ready for closure"),
@@ -708,11 +1047,18 @@ class AccountClosureManager:
                     
             else:
                 # Not ready for next step or waiting
+                wait_reason = self._get_wait_reason(current_step, current_status)
+                if detailed_logger:
+                    detailed_logger.log_step_start("RESUME_WAITING", {
+                        "current_step": current_step,
+                        "wait_reason": wait_reason
+                    })
+                
                 result.update({
                     "success": True,
                     "action_taken": "check_status",
                     "message": f"Waiting for {current_step} to complete",
-                    "wait_reason": self._get_wait_reason(current_step, current_status)
+                    "wait_reason": wait_reason
                 })
             
             # STEP 3: Add updated status to result
@@ -720,23 +1066,35 @@ class AccountClosureManager:
             result["status"] = updated_status
             result["current_step"] = updated_status.get("current_step")
             
+            if detailed_logger:
+                detailed_logger.log_alpaca_data("UPDATED_STATUS", updated_status)
+            
             # STEP 4: Determine next retry time if needed
             if not result.get("success") and result.get("can_retry", False):
                 result["next_retry_in_seconds"] = self._calculate_retry_delay(current_step)
                 result["auto_retry_enabled"] = True
+                if detailed_logger:
+                    detailed_logger.log_timing("NEXT_RETRY_DELAY", result["next_retry_in_seconds"])
+            
+            # Log completion of resume process
+            total_duration = time.time() - start_time
+            if detailed_logger:
+                detailed_logger.log_timing("TOTAL_RESUME", total_duration)
+                detailed_logger.log_step_success("ACCOUNT_CLOSURE_RESUME", result)
             
             logger.info(f"✅ Resume operation completed: {result.get('action_taken', 'status_check')}")
             return result
             
         except Exception as e:
+            if detailed_logger:
+                detailed_logger.log_step_failure("ACCOUNT_CLOSURE_RESUME", str(e))
             logger.error(f"❌ Error resuming closure process for account {account_id}: {e}")
             return {
                 "success": False,
                 "current_step": ClosureStep.FAILED.value,
                 "error": str(e),
                 "can_retry": True,
-                "next_retry_in_seconds": 60,
-                "action_taken": "error_handling"
+                "log_file": detailed_logger.get_log_summary() if detailed_logger else None
             }
     
     def _get_wait_reason(self, current_step: str, status: Dict) -> str:
@@ -877,8 +1235,28 @@ def initiate_account_closure(account_id: str, ach_relationship_id: str, sandbox:
             detailed_logger.log_safety_check("LIQUIDATION_SUCCESS", True, liquidation_result)
             detailed_logger.log_step_success("CANCEL_AND_LIQUIDATE", liquidation_result)
         
-        # STEP 3: GENERATE REAL CONFIRMATION NUMBER (not hardcoded)
-        confirmation_number = f"CLA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{account_id[-6:]}"
+        # STEP 3: GET CONFIRMATION NUMBER FROM SUPABASE (don't generate new one)
+        confirmation_number = None
+        try:
+            from utils.supabase.db_client import get_supabase_client
+            supabase = get_supabase_client()
+            
+            # Find user by account_id and get existing confirmation number
+            result = supabase.table("user_onboarding").select(
+                "account_closure_confirmation_number, user_id"
+            ).eq("alpaca_account_id", account_id).execute()
+            
+            if result.data and result.data[0].get("account_closure_confirmation_number"):
+                confirmation_number = result.data[0]["account_closure_confirmation_number"]
+                logger.info(f"Using existing confirmation number from Supabase: {confirmation_number}")
+            else:
+                # Fallback: generate new confirmation number if none exists
+                confirmation_number = f"CLA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{account_id[-6:]}"
+                logger.warning(f"No confirmation number found in Supabase, generated new one: {confirmation_number}")
+        except Exception as e:
+            # Fallback: generate new confirmation number if Supabase lookup fails
+            confirmation_number = f"CLA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{account_id[-6:]}"
+            logger.warning(f"Failed to get confirmation number from Supabase: {e}, generated new one: {confirmation_number}")
         
         # STEP 4: VERIFY POST-LIQUIDATION STATE
         if detailed_logger:

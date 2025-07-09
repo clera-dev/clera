@@ -97,6 +97,16 @@ export default function AccountClosurePending({ userId }: AccountClosurePendingP
         console.log('[AccountClosure] ✅ Progress data received:', progressData);
         console.log('[AccountClosure] 📋 Status details:', progressData.status_details);
         
+        // Update closure data with immutable values from progress response
+        if (progressData.confirmation_number && !closureData?.confirmationNumber) {
+          console.log('[AccountClosure] 🔄 Updating confirmation number from progress:', progressData.confirmation_number);
+          setClosureData(prev => ({
+            ...prev,
+            confirmationNumber: progressData.confirmation_number,
+            initiatedAt: progressData.initiated_at || prev?.initiatedAt
+          }));
+        }
+        
         // Update steps based on backend progress
         setClosureSteps(prevSteps => {
           console.log('[AccountClosure] 🔄 Updating steps from:', prevSteps);
@@ -291,17 +301,31 @@ export default function AccountClosurePending({ userId }: AccountClosurePendingP
         setLoading(true);
         console.log('[AccountClosure] 📥 Starting closure data fetch...');
         
-        // Mock closure data for now - in production this would come from backend
-        setClosureData({
-          confirmationNumber: 'CLA-2024-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
-          initiatedAt: new Date().toISOString(),
-          estimatedCompletion: '3-5 business days',
-          nextSteps: [
-            'Positions are being liquidated',
-            'Funds will be transferred to your connected bank account',
-            'You will receive email confirmations throughout the process'
-          ]
-        });
+        // Fetch real closure data from Supabase via API
+        const response = await fetch('/api/account-closure/data');
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('[AccountClosure] ✅ Closure data received:', result.data);
+          
+          if (result.success && result.data) {
+            setClosureData({
+              confirmationNumber: result.data.confirmationNumber,
+              initiatedAt: result.data.initiatedAt,
+              estimatedCompletion: result.data.estimatedCompletion,
+              nextSteps: result.data.nextSteps
+            });
+          } else {
+            console.error('[AccountClosure] ❌ No closure data in response');
+            setClosureData(null);
+          }
+        } else {
+          console.error('[AccountClosure] ❌ Failed to fetch closure data:', response.status);
+          setClosureData(null);
+        }
+      } catch (error) {
+        console.error('[AccountClosure] 💥 Error fetching closure data:', error);
+        setClosureData(null);
       } finally {
         setLoading(false);
         console.log('[AccountClosure] 📥 Closure data fetch completed');

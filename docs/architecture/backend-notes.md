@@ -1921,3 +1921,112 @@ if orders and len([o for o in orders if o.status not in ['filled', 'canceled', '
     raise ValueError("Cannot close account with pending orders")
 ```
 
+## Account Closure Process
+
+### Overview
+The account closure process is a 5-step automated workflow that safely closes user accounts:
+
+1. **Cancel all orders** - Cancels any pending trades
+2. **Liquidate all positions** - Sells all holdings
+3. **Wait for settlement** - T+1 settlement period
+4. **Withdraw all funds** - ACH transfer to user's bank
+5. **Close account** - Permanently close the account
+
+### Process Flow
+```
+User initiates closure → Cancel orders → Liquidate positions → 
+Wait T+1 settlement → Withdraw funds → Close account → Send completion email
+```
+
+### API Endpoints
+
+#### Check Progress
+```bash
+# Get current closure status
+curl -X GET "http://localhost:8000/api/account-closure/progress/{account_id}" \
+  -H "x-api-key: clera-is-the-goat-tok8s825nvjdk0482mc6"
+```
+
+#### Resume Process
+```bash
+# Resume/retry closure process
+curl -X POST "http://localhost:8000/api/account-closure/resume/{account_id}" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: clera-is-the-goat-tok8s825nvjdk0482mc6" \
+  -d '{}'
+```
+
+#### Check Settlement Status
+```bash
+# Check if funds have settled (T+1)
+curl -X GET "http://localhost:8000/api/account-closure/settlement-status/{account_id}" \
+  -H "x-api-key: clera-is-the-goat-tok8s825nvjdk0482mc6"
+```
+
+#### Check Withdrawal Status
+```bash
+# Check withdrawal transfer status
+curl -X GET "http://localhost:8000/api/account-closure/withdrawal-status/{account_id}/{transfer_id}" \
+  -H "x-api-key: clera-is-the-goat-tok8s825nvjdk0482mc6"
+```
+
+### Monitoring Account Closure
+
+#### Real-Time Log Monitoring
+```bash
+# Monitor specific account closure
+cd backend
+python monitor_account_closure.py {account_id}
+
+# Monitor with real-time updates
+python monitor_account_closure.py {account_id} --follow
+
+# Check recent logs only
+python monitor_account_closure.py {account_id} --recent
+```
+
+#### Log File Location
+```
+backend/logs/account_closures/closure_{account_id}_{timestamp}.log
+```
+
+#### Log Contents
+Each log file contains:
+- **Step-by-step progress** with timestamps
+- **API responses** from Alpaca
+- **Account data** (cash, positions, orders)
+- **Safety validations** and error details
+- **Email notifications** sent
+- **Performance metrics** (operation timing)
+
+#### Example Log Output
+```
+[2025-07-09 10:33:07] 🔄 RESUME_CLOSURE_PROCESS STARTED
+[2025-07-09 10:33:07] 📊 Account Status: ACTIVE
+[2025-07-09 10:33:07] 💰 Cash Balance: $98,013.88
+[2025-07-09 10:33:07] 📈 Open Positions: 0
+[2025-07-09 10:33:07] 📋 Current Step: withdrawing_funds
+[2025-07-09 10:33:07] ✅ WITHDRAW_ALL_FUNDS STARTED
+[2025-07-09 10:33:08] 📧 Email sent: withdrawal_initiated@example.com
+```
+
+### Production Monitoring
+
+#### Key Metrics to Watch
+- **Step completion times** - Should be < 30 seconds per step
+- **API error rates** - Should be < 1%
+- **Settlement delays** - Monitor T+1 compliance
+- **Withdrawal success rate** - Should be > 99%
+- **Email delivery rate** - Should be > 95%
+
+#### Common Issues & Solutions
+- **Settlement delays**: Normal T+1 wait, no action needed
+- **API rate limits**: Automatic retry with exponential backoff
+- **ACH transfer failures**: Manual intervention may be required
+- **Email delivery failures**: Logged but don't block process
+
+#### Emergency Contacts
+- **Support**: support@askclera.com
+- **Logs**: `backend/logs/account_closures/`
+- **Monitor Script**: `backend/monitor_account_closure.py`
+
