@@ -76,41 +76,5 @@ def test_api_return_calculation():
         
         try:
             health_response = requests.get("http://localhost:8000/")
-            print(f"   Root endpoint: {health_response.status_code}")
-        except Exception as e:
-            print(f"   Root endpoint error: {e}")
-            
-        try:
-            # Test with a different endpoint if available
-            accounts_response = requests.get("http://localhost:8000/api/accounts")
-            print(f"   Accounts endpoint: {accounts_response.status_code}")
-        except Exception as e:
-            print(f"   Accounts endpoint: {e}")
-        
-        # SOLUTION RECOMMENDATION
-        print(f"\n5️⃣ SOLUTION RECOMMENDATION:")
-        print("-" * 50)
-        
-        print(f"   🎯 ROOT CAUSE: API validation is too strict")
-        print(f"   📊 The 6.91% return is being rejected as 'suspicious'")
-        print(f"   🔧 FIXES NEEDED:")
-        print(f"      1. Adjust validation thresholds (5% → 15%)")
-        print(f"      2. Return reasonable estimate instead of 0")
-        print(f"      3. Add better logging for rejected returns")
-        print(f"      4. Handle stale last_equity properly")
-        
-        print(f"\n   💡 IMMEDIATE FIX:")
-        print(f"      - Change validation from 5% to 15% threshold")
-        print(f"      - When rejecting, return conservative estimate (1-2%)")
-        print(f"      - Log warnings but don't zero out returns")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error in API test: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-if __name__ == "__main__":
+            print(f"   Root endpoint: {health_response.status_code}")if __name__ == "__main__":
     test_api_return_calculation() 

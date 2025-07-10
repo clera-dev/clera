@@ -110,13 +110,5 @@ def test_debug_return_calculation():
             else:
                 print("   ✅ Return seems reasonable")
                 
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error in debug test: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-if __name__ == "__main__":
+        return Trueif __name__ == "__main__":
     test_debug_return_calculation() 

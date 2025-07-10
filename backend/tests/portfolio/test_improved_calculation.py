@@ -112,13 +112,5 @@ def test_improved_calculation():
             print(f"   ⚠️  Still need to resolve broker connection")
             print(f"   💡 But validation logic is improved")
             
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error in improved calculation test: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-if __name__ == "__main__":
+        return Trueif __name__ == "__main__":
     test_improved_calculation() 

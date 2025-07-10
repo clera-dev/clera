@@ -13,8 +13,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`Funding Status API: Checking funding status for account: ${accountId}`);
-
     // Get the user from Supabase
     const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -26,6 +24,30 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    console.log(`Funding Status API: Checking funding status for account: ${accountId}, user: ${user.id}`);
+
+    // =================================================================
+    // CRITICAL SECURITY FIX: Verify account ownership before querying
+    // =================================================================
+    
+    // Verify that the authenticated user owns the accountId
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('alpaca_account_id')
+      .eq('user_id', user.id)
+      .eq('alpaca_account_id', accountId)
+      .single();
+    
+    if (onboardingError || !onboardingData) {
+      console.error(`Funding Status API: User ${user.id} does not own account ${accountId}`);
+      return NextResponse.json(
+        { error: 'Account not found or access denied' },
+        { status: 403 }
+      );
+    }
+    
+    console.log(`Funding Status API: Ownership verified. User ${user.id} owns account ${accountId}`);
 
     // Call the backend funding status endpoint
     const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';

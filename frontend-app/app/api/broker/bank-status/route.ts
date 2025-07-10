@@ -25,7 +25,29 @@ export async function GET(request: Request) {
       );
     }
     
-    console.log(`Checking bank status for account: ${accountId}`);
+    console.log(`Bank Status API: Checking bank status for account: ${accountId}, user: ${user.id}`);
+
+    // =================================================================
+    // CRITICAL SECURITY FIX: Verify account ownership before querying
+    // =================================================================
+    
+    // Verify that the authenticated user owns the accountId
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('alpaca_account_id')
+      .eq('user_id', user.id)
+      .eq('alpaca_account_id', accountId)
+      .single();
+    
+    if (onboardingError || !onboardingData) {
+      console.error(`Bank Status API: User ${user.id} does not own account ${accountId}`);
+      return NextResponse.json(
+        { error: 'Account not found or access denied' },
+        { status: 403 }
+      );
+    }
+    
+    console.log(`Bank Status API: Ownership verified. User ${user.id} owns account ${accountId}`);
     
     // Call the backend to get ACH relationships
     const backendUrl = `${process.env.BACKEND_API_URL}/get-ach-relationships`;

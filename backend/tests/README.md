@@ -1,60 +1,158 @@
-# Backend Test Directory Structure
+# Clera Backend Tests
 
-This directory contains all automated tests for the backend codebase, organized by test type and subject area for clarity and maintainability.
+This directory contains the test suite for the Clera backend, following proper architectural patterns and separation of concerns.
 
-## Directory Overview
+## Test Architecture
 
-- **account_closure/**  
-  Tests related to account closure workflows, compliance, and API endpoints.
+### ✅ Proper Test Configuration
 
-- **agents/**  
-  Tests for AI agents, agent coverage, and agent-related logic.
+Tests are configured using:
+- `pytest.ini` - Main pytest configuration
+- `conftest.py` - Shared fixtures and path configuration
+- `setup.py` - Package configuration for proper imports
 
-- **integration/**  
-  Integration tests, comprehensive validation, and end-to-end scenarios that span multiple modules or systems.
+### ❌ Anti-Patterns Avoided
 
-- **market_data/**  
-  Tests for market data ingestion, symbol collection, and related utilities.
+- **No `sys.path.append()` in test files** - This creates tight coupling and violates separation of concerns
+- **No direct modification of Python path in individual tests** - Use proper package structure instead
+- **No hard dependencies on external services** - All external dependencies are mocked
 
-- **performance/**  
-  Performance and load tests, including those that measure speed, resource usage, or stress scenarios.
+## Running Tests
 
-- **portfolio/**  
-  Tests for portfolio calculations, returns, risk scores, rebalancing, and related analytics.
+### Option 1: Install Package in Editable Mode (Recommended)
 
-- **purchase_history/**  
-  Tests for purchase history logic, edge cases, and comprehensive scenarios.
+```bash
+# From the backend directory
+pip install -e .
 
-- **unit/**  
-  Small, isolated unit tests for individual functions or classes. Use this for logic that does not require integration with other modules.
+# Run tests
+pytest tests/
+```
 
-- **utils/**  
-  Utility and helper test scripts, coverage reports, and miscellaneous test tools.
+### Option 2: Use pytest Configuration
 
-- **websocket/**  
-  Tests for WebSocket and real-time data handling, including server and client connection logic.
+```bash
+# From the backend directory
+pytest tests/
+```
 
-## Root-Level Files
+The `conftest.py` file handles path configuration automatically.
 
-- `run_tests.py` — Script to run all or specific test suites.
-- `final_test_summary.py`, `final_validation_demo.py` — Test orchestration, reporting, or demo scripts.
-- `__init__.py` — Marks this directory as a Python package.
+### Option 3: Run Individual Test Files
 
-## Conventions & Best Practices
+```bash
+# Run specific test file
+pytest tests/unit/test_realistic_approach.py
 
-- Place new tests in the most specific subdirectory that matches their subject area.
-- For new categories, create a new directory and update this README.
-- Use descriptive filenames (e.g., `test_portfolio_calculator.py`, `test_account_closure_api_endpoints.py`).
-- Prefer integration tests for workflows spanning multiple modules; use unit tests for isolated logic.
-- Keep test data and fixtures close to the tests that use them, or in a dedicated `fixtures/` directory if shared.
+# Run with verbose output
+pytest tests/unit/test_realistic_approach.py -v
+```
 
-## Example
+## Test Structure
 
-- To add a test for a new portfolio risk calculation:
-  - Place it in `portfolio/` as `test_new_risk_calculation.py`.
-- To add a test for a new WebSocket event:
-  - Place it in `websocket/` as `test_new_event.py`.
+### Unit Tests (`tests/unit/`)
+- Test individual functions and classes in isolation
+- Use mocking for all external dependencies
+- Focus on business logic validation
 
----
+### Integration Tests (`tests/integration/`)
+- Test interactions between components
+- May use real external services in controlled environments
+- Validate end-to-end workflows
 
-For questions or to propose changes to this structure, please contact the backend maintainers. 
+### Performance Tests (`tests/performance/`)
+- Test system performance and scalability
+- Measure response times and resource usage
+
+## Best Practices
+
+### 1. Use Dependency Injection
+```python
+# ✅ Good: Use mocking and dependency injection
+with patch('module.ExternalService') as mock_service:
+    mock_service.return_value.method.return_value = expected_result
+    result = function_under_test()
+    assert result == expected_result
+```
+
+### 2. Mock External Dependencies
+```python
+# ✅ Good: Mock all external services
+@pytest.fixture
+def mock_broker_client():
+    mock_client = Mock()
+    mock_client.get_account.return_value = mock_account
+    return mock_client
+```
+
+### 3. Use Proper Test Classes
+```python
+# ✅ Good: Use unittest.TestCase or pytest classes
+class TestPortfolioCalculator(unittest.TestCase):
+    def setUp(self):
+        self.calculator = PortfolioCalculator()
+    
+    def test_calculation(self):
+        result = self.calculator.calculate()
+        self.assertEqual(result, expected_value)
+```
+
+### 4. Avoid Direct Path Modification
+```python
+# ❌ Bad: Don't modify sys.path in test files
+import sys
+sys.path.append('.')  # This violates separation of concerns
+
+# ✅ Good: Use proper package structure
+from portfolio_realtime.portfolio_calculator import PortfolioCalculator
+```
+
+## Fixtures
+
+Common fixtures are defined in `conftest.py`:
+
+- `mock_broker_client` - Mocked broker API client
+- `mock_redis_client` - Mocked Redis client
+- `sample_account_id` - Sample account ID for testing
+- `sample_portfolio_data` - Sample portfolio data
+
+## Continuous Integration
+
+Tests are configured to run in CI environments without requiring:
+- Real API keys
+- External service connections
+- Manual path configuration
+
+All tests use mocked dependencies and can run in isolation.
+
+## Troubleshooting
+
+### Import Errors
+If you encounter import errors:
+
+1. **Install the package in editable mode:**
+   ```bash
+   pip install -e .
+   ```
+
+2. **Check pytest configuration:**
+   ```bash
+   pytest --collect-only
+   ```
+
+3. **Verify conftest.py is loaded:**
+   ```bash
+   pytest --setup-show
+   ```
+
+### Test Failures
+- Ensure all external dependencies are properly mocked
+- Check that test data matches expected formats
+- Verify that assertions use appropriate tolerances for floating-point comparisons
+
+## Architecture Compliance
+
+This test suite follows the architectural rule:
+> "Directly modifying sys.path in test code introduces tight coupling between test and application code, violating separation of concerns and maintainable module boundaries."
+
+By using proper package structure, pytest configuration, and dependency injection, we maintain clean separation between test and application code while ensuring tests are reliable and maintainable. 

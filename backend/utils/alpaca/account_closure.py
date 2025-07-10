@@ -691,9 +691,11 @@ class AccountClosureManager:
             elif len(orders) > 0 or len(positions) > 0:
                 # Combined step: cancel orders AND liquidate positions (done together with 2025 API)
                 current_step = ClosureStep.LIQUIDATING_POSITIONS
-            elif cash_withdrawable == 0 and cash_balance > 1.0:
+            elif cash_withdrawable < cash_balance and cash_balance > 1.0:
+                # Still waiting for settlement - cash_withdrawable < cash_balance means funds are settling
                 current_step = ClosureStep.WAITING_SETTLEMENT
-            elif cash_balance > 1.0:
+            elif cash_withdrawable == cash_balance and cash_balance > 1.0:
+                # Settlement complete - ready to withdraw funds
                 current_step = ClosureStep.WITHDRAWING_FUNDS
             elif cash_balance <= 1.0:
                 current_step = ClosureStep.CLOSING_ACCOUNT
@@ -741,8 +743,10 @@ class AccountClosureManager:
             # Combined step: ready when both orders and positions are cleared
             return len(orders) == 0 and len(positions) == 0
         elif current_step == ClosureStep.WAITING_SETTLEMENT:
-            return cash_withdrawable > 0
+            # Ready when settlement is complete (cash_withdrawable equals cash_balance)
+            return cash_withdrawable == cash_balance and cash_withdrawable > 0
         elif current_step == ClosureStep.WITHDRAWING_FUNDS:
+            # Ready when funds have been withdrawn (cash_balance <= $1.00)
             return cash_balance <= 1.0
         elif current_step == ClosureStep.CLOSING_ACCOUNT:
             return len(positions) == 0 and cash_balance <= 1.0
@@ -1143,6 +1147,22 @@ def check_account_closure_readiness(account_id: str, sandbox: bool = True) -> Di
     manager = AccountClosureManager(sandbox)
     return manager.check_closure_preconditions(account_id)
 
+def _redact_account_data(account_data):
+    """Redact PII from account data before logging."""
+    if not account_data:
+        return {}
+    # Only log non-sensitive fields
+    redacted = {}
+    # Always include status and id
+    for field in ["id", "status", "type", "created_at", "updated_at"]:
+        if hasattr(account_data, field):
+            redacted[field] = getattr(account_data, field)
+        elif isinstance(account_data, dict) and field in account_data:
+            redacted[field] = account_data[field]
+    # Optionally include other non-PII fields
+    # Add more fields as needed, but never include names, emails, bank info, etc.
+    return redacted
+
 def initiate_account_closure(account_id: str, ach_relationship_id: str, sandbox: bool = True) -> Dict[str, Any]:
     """
     Initiate the complete account closure process with comprehensive logging and safety checks.
@@ -1171,10 +1191,10 @@ def initiate_account_closure(account_id: str, ach_relationship_id: str, sandbox:
             
         preconditions = manager.check_closure_preconditions(account_id)
         
-        # Log raw Alpaca account data for verification
+        # Log redacted Alpaca account data for verification
         if detailed_logger:
             account_data = manager.broker_client.get_account_by_id(account_id)
-            detailed_logger.log_alpaca_data("ACCOUNT_DATA", account_data)
+            detailed_logger.log_alpaca_data("ACCOUNT_DATA", _redact_account_data(account_data))
             
             positions_data = manager.broker_client.get_all_positions_for_account(account_id)
             detailed_logger.log_alpaca_data("POSITIONS_DATA", positions_data)

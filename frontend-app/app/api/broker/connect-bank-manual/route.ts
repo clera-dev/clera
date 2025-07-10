@@ -106,20 +106,62 @@ export async function POST(request: NextRequest) {
           const existingRelationship = relationshipsData.relationships[0];
           console.log(`Found existing relationship with ID: ${existingRelationship.id}. Attempting to delete it first.`);
           
+          // =================================================================
+          // CRITICAL SECURITY FIX: Verify ownership before deletion
+          // =================================================================
+          
+          // Verify the user owns this ACH relationship before deleting
+          const { data: existingBankConnection, error: ownershipError } = await supabase
+            .from('user_bank_connections')
+            .select('id, relationship_id, alpaca_account_id')
+            .eq('user_id', user.id)
+            .eq('relationship_id', existingRelationship.id)
+            .eq('alpaca_account_id', accountId)
+            .single();
+          
+          if (ownershipError || !existingBankConnection) {
+            console.error(`Connect Bank API: User ${user.id} does not own ACH relationship ${existingRelationship.id} for account ${accountId}`);
+            return NextResponse.json(
+              { error: 'ACH relationship not found or access denied' },
+              { status: 403 }
+            );
+          }
+          
+          console.log(`Connect Bank API: Ownership verified. User ${user.id} owns ACH relationship ${existingRelationship.id}`);
+          
           // Delete from Supabase first (safer to delete local record before remote)
           try {
-            const { error: supabaseDeleteError } = await supabase
+            const { error: supabaseDeleteError, count } = await supabase
               .from('user_bank_connections')
               .delete()
-              .eq('relationship_id', existingRelationship.id);
+              .eq('relationship_id', existingRelationship.id)
+              .eq('user_id', user.id)
+              .eq('alpaca_account_id', accountId);
             
             if (supabaseDeleteError) {
-              console.warn(`Warning: Failed to delete bank connection from Supabase: ${supabaseDeleteError.message}`);
-            } else {
-              console.log(`Successfully deleted bank connection from Supabase for relationship: ${existingRelationship.id}`);
+              console.error(`Connect Bank API: Failed to delete bank connection from Supabase: ${supabaseDeleteError.message}`);
+              return NextResponse.json(
+                { error: 'Failed to delete local bank connection' },
+                { status: 500 }
+              );
             }
+            
+            if (count === 0) {
+              console.error(`Connect Bank API: No rows deleted from Supabase for relationship ${existingRelationship.id}`);
+              return NextResponse.json(
+                { error: 'ACH relationship not found' },
+                { status: 404 }
+              );
+            }
+            
+            console.log(`Connect Bank API: Successfully deleted bank connection from Supabase for relationship: ${existingRelationship.id}`);
+            
           } catch (supabaseError) {
-            console.warn(`Warning: Exception deleting from Supabase: ${supabaseError}`);
+            console.error(`Connect Bank API: Exception deleting from Supabase: ${supabaseError}`);
+            return NextResponse.json(
+              { error: 'Failed to delete local bank connection' },
+              { status: 500 }
+            );
           }
           
           // Delete the existing relationship from Alpaca

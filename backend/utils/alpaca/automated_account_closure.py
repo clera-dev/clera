@@ -117,8 +117,8 @@ class AutomatedAccountClosureProcessor:
                     "Positions are being liquidated",
                     "Funds will be transferred to your bank account ending in " + ach_relationship_id[-4:],
                     "You will receive email confirmations throughout the process"
-                ],
-                "log_file": detailed_logger.get_log_summary()
+                ]
+                # log_file removed for security
             }
             
         except Exception as e:

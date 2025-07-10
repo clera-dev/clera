@@ -1944,7 +1944,7 @@ Wait T+1 settlement → Withdraw funds → Close account → Send completion ema
 ```bash
 # Get current closure status
 curl -X GET "http://localhost:8000/api/account-closure/progress/{account_id}" \
-  -H "x-api-key: clera-is-the-goat-tok8s825nvjdk0482mc6"
+  -H "x-api-key: <YOUR_API_KEY>"
 ```
 
 #### Resume Process
@@ -1952,7 +1952,7 @@ curl -X GET "http://localhost:8000/api/account-closure/progress/{account_id}" \
 # Resume/retry closure process
 curl -X POST "http://localhost:8000/api/account-closure/resume/{account_id}" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: clera-is-the-goat-tok8s825nvjdk0482mc6" \
+  -H "x-api-key: <YOUR_API_KEY>" \
   -d '{}'
 ```
 
@@ -1960,14 +1960,14 @@ curl -X POST "http://localhost:8000/api/account-closure/resume/{account_id}" \
 ```bash
 # Check if funds have settled (T+1)
 curl -X GET "http://localhost:8000/api/account-closure/settlement-status/{account_id}" \
-  -H "x-api-key: clera-is-the-goat-tok8s825nvjdk0482mc6"
+  -H "x-api-key: <YOUR_API_KEY>"
 ```
 
 #### Check Withdrawal Status
 ```bash
 # Check withdrawal transfer status
 curl -X GET "http://localhost:8000/api/account-closure/withdrawal-status/{account_id}/{transfer_id}" \
-  -H "x-api-key: clera-is-the-goat-tok8s825nvjdk0482mc6"
+  -H "x-api-key: <YOUR_API_KEY>"
 ```
 
 ### Monitoring Account Closure
@@ -1987,6 +1987,11 @@ python monitor_account_closure.py --user <user_id> --summary
 
 # Example
 python monitor_account_closure.py 72e0443c-3b81-4ad3-be9c-fa7bd5fb14b8 --recent --lines 10
+
+
+# Test API endpoints
+curl -X GET "http://localhost:8000/account-closure/status/72e0443c-3b81-4ad3-be9c-fa7bd5fb14b8" \
+  -H "X-API-Key: ${BACKEND_API_KEY}"
 ```
 
 #### Log File Location

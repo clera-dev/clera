@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Sync Transfer Status API: Unexpected error', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'An unknown error occurred' },
+      { error: 'An internal server error occurred' },
       { status: 500 }
     );
   }

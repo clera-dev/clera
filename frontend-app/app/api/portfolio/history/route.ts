@@ -1,41 +1,78 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const accountId = searchParams.get('accountId');
-  const period = searchParams.get('period'); // e.g., 1D, 1W, 1M, 1Y, MAX
-  // Optional params: timeframe, date_end, extended_hours
-  const timeframe = searchParams.get('timeframe');
-  const date_end = searchParams.get('date_end');
-  const extended_hours = searchParams.get('extended_hours');
-
-  if (!accountId) {
-    return NextResponse.json({ detail: 'Account ID is required' }, { status: 400 });
-  }
-  if (!period) {
-      return NextResponse.json({ detail: 'Period is required' }, { status: 400 });
-  }
-
-  // --- Fetch from actual backend ---
-  const backendUrl = process.env.BACKEND_API_URL;
-  const backendApiKey = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    console.error("Portfolio History API Route Error: Backend URL not configured.");
-    return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
-  }
-
-  // Construct the target URL with query parameters
-  const targetUrl = new URL(`${backendUrl}/api/portfolio/${accountId}/history`);
-  targetUrl.searchParams.append('period', period);
-  if (timeframe) targetUrl.searchParams.append('timeframe', timeframe);
-  if (date_end) targetUrl.searchParams.append('date_end', date_end);
-  if (extended_hours !== null) targetUrl.searchParams.append('extended_hours', extended_hours); // Pass boolean as string
-
-  console.log(`Proxying request to: ${targetUrl.toString()}`);
-
   try {
+    // Authenticate user
+    const supabase = await createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      console.error('Portfolio History API: User authentication failed:', userError);
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const accountId = searchParams.get('accountId');
+    const period = searchParams.get('period'); // e.g., 1D, 1W, 1M, 1Y, MAX
+    // Optional params: timeframe, date_end, extended_hours
+    const timeframe = searchParams.get('timeframe');
+    const date_end = searchParams.get('date_end');
+    const extended_hours = searchParams.get('extended_hours');
+
+    if (!accountId) {
+      return NextResponse.json({ detail: 'Account ID is required' }, { status: 400 });
+    }
+    if (!period) {
+        return NextResponse.json({ detail: 'Period is required' }, { status: 400 });
+    }
+
+    console.log(`Portfolio History API: Checking history for account: ${accountId}, user: ${user.id}`);
+
+    // =================================================================
+    // CRITICAL SECURITY FIX: Verify account ownership before querying
+    // =================================================================
+    
+    // Verify that the authenticated user owns the accountId
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('alpaca_account_id')
+      .eq('user_id', user.id)
+      .eq('alpaca_account_id', accountId)
+      .single();
+    
+    if (onboardingError || !onboardingData) {
+      console.error(`Portfolio History API: User ${user.id} does not own account ${accountId}`);
+      return NextResponse.json(
+        { error: 'Account not found or access denied' },
+        { status: 403 }
+      );
+    }
+    
+    console.log(`Portfolio History API: Ownership verified. User ${user.id} owns account ${accountId}`);
+
+    // --- Fetch from actual backend ---
+    const backendUrl = process.env.BACKEND_API_URL;
+    const backendApiKey = process.env.BACKEND_API_KEY;
+
+    if (!backendUrl) {
+      console.error("Portfolio History API Route Error: Backend URL not configured.");
+      return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
+    }
+
+    // Construct the target URL with query parameters
+    const targetUrl = new URL(`${backendUrl}/api/portfolio/${accountId}/history`);
+    targetUrl.searchParams.append('period', period);
+    if (timeframe) targetUrl.searchParams.append('timeframe', timeframe);
+    if (date_end) targetUrl.searchParams.append('date_end', date_end);
+    if (extended_hours !== null) targetUrl.searchParams.append('extended_hours', extended_hours); // Pass boolean as string
+
+    console.log(`Proxying request to: ${targetUrl.toString()}`);
+
     // Prepare headers
     const headers: HeadersInit = {
       'Accept': 'application/json'

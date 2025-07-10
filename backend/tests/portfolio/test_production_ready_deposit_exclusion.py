@@ -403,21 +403,6 @@ def run_all_tests():
         try:
             test_instance.setup_method()  # Reset for each test
             test()
-            passed += 1
-        except Exception as e:
-            print(f"❌ {test.__name__} FAILED: {e}")
-            failed += 1
-    
-    print("\n" + "=" * 70)
-    print(f"📊 Test Results: {passed} passed, {failed} failed")
-    
-    if failed == 0:
-        print("🎉 ALL TESTS PASSED! The deposit exclusion fix is production-ready.")
-        return True
-    else:
-        print("⚠️  Some tests failed. Review and fix before production deployment.")
-        return False
-
-if __name__ == "__main__":
+            passed += 1if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1) 

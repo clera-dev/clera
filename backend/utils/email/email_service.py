@@ -24,7 +24,7 @@ class EmailService:
         # AWS SES SMTP Configuration
         self.smtp_server = "email-smtp.us-west-2.amazonaws.com"
         self.smtp_port = 587
-        self.smtp_username = os.getenv("AWS_SES_SMTP_USERNAME", "AKIAQSOI4I5BLVBHW2HP")
+        self.smtp_username = os.getenv("AWS_SES_SMTP_USERNAME")
         self.smtp_password = os.getenv("AWS_SES_SMTP_PASSWORD")
         
         # From email configuration
@@ -35,8 +35,14 @@ class EmailService:
         self.support_email = "support@askclera.com"
         
         # Validate required configuration
+        if not self.smtp_username:
+            logger.error("AWS_SES_SMTP_USERNAME environment variable not set")
         if not self.smtp_password:
-            logger.warning("AWS_SES_SMTP_PASSWORD environment variable not set")
+            logger.error("AWS_SES_SMTP_PASSWORD environment variable not set")
+        
+        # Check if email service is properly configured
+        if not self.smtp_username or not self.smtp_password:
+            logger.warning("Email service not properly configured - emails will not be sent")
     
     def send_account_closure_notification(self, 
                                         user_email: str,
@@ -146,6 +152,11 @@ class EmailService:
         Returns:
             True if email sent successfully, False otherwise
         """
+        # Validate credentials before attempting to send
+        if not self.smtp_username or not self.smtp_password:
+            logger.error(f"Cannot send email to {to_email}: AWS SES credentials not configured")
+            return False
+            
         try:
             # Create message
             msg = MIMEMultipart('alternative')

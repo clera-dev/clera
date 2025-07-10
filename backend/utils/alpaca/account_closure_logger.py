@@ -19,7 +19,7 @@ import os
 
 # Import database logging functions
 try:
-    from ..supabase.db_client import save_account_closure_log
+    from ..supabase.account_closure_db import save_account_closure_log
     DATABASE_LOGGING_AVAILABLE = True
 except ImportError:
     save_account_closure_log = None

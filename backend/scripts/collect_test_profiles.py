@@ -250,13 +250,9 @@ class TestProfileCollector:
             logger.info("Database connection closed")
 
 async def main():
-    try:
-        collector = TestProfileCollector()
-        await collector.collect_test_profiles()
-        logger.info("Test collection completed successfully!")
-    except Exception as e:
-        logger.error(f"Test collection failed: {e}")
-        raise
+    collector = TestProfileCollector()
+    await collector.collect_test_profiles()
+    logger.info("Test collection completed successfully!")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

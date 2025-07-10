@@ -196,15 +196,6 @@ def test_real_account_verification():
         
         print(f"\n📁 Detailed output saved to: {output_file}")
         
-        return all_checks_passed
-        
-    except Exception as e:
-        print(f"❌ ERROR during real account verification: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-if __name__ == "__main__":
+        return all_checks_passedif __name__ == "__main__":
     success = test_real_account_verification()
     exit(0 if success else 1) 

@@ -28,6 +28,7 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/broker/create-account": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/broker/transfer": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/broker/funding-status": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/broker/delete-ach-relationship": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/portfolio/history": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/portfolio/positions": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
 };
@@ -171,7 +172,7 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
       const isFunded = responseData?.data?.is_funded || false;
       
       console.log(`[Middleware] Real-time funding status for ${userId} (account: ${alpacaAccountId}): ${isFunded}`);
-      console.log(`[Middleware] Funding details: cash=${responseData?.data?.cash_balance}, portfolio=${responseData?.data?.portfolio_value}, transfers=${responseData?.data?.completed_transfers_count}`);
+      // Sensitive funding details removed from logs for security
       
       return isFunded;
     } catch (apiError) {

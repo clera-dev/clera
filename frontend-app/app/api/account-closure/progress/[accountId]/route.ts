@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
 
 export async function GET(
   request: NextRequest,
@@ -11,6 +12,32 @@ export async function GET(
       return NextResponse.json(
         { error: 'Account ID is required' },
         { status: 400 }
+      );
+    }
+
+    // Authenticate user
+    const supabase = await createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error('Account Closure Progress API: User authentication failed:', userError);
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    // Verify that the authenticated user owns the accountId
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('alpaca_account_id')
+      .eq('user_id', user.id)
+      .eq('alpaca_account_id', accountId)
+      .single();
+    if (onboardingError || !onboardingData) {
+      console.error(`Account Closure Progress API: User ${user.id} does not own account ${accountId}`);
+      return NextResponse.json(
+        { error: 'Account not found or access denied' },
+        { status: 403 }
       );
     }
 

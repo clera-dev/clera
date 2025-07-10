@@ -84,15 +84,7 @@ def test_system_prompt_clarity():
         print("✅ SYSTEM PROMPT CLARITY TEST COMPLETED!")
         print("=" * 70)
         
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error testing system prompt clarity: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def test_tool_descriptions():
+        return Truedef test_tool_descriptions():
     """Test that tool descriptions are accurate and complete."""
     print("\n🔧 Testing Tool Descriptions")
     print("=" * 50)
@@ -119,13 +111,7 @@ def test_tool_descriptions():
             else:
                 print(f"   ⚠️  Missing: {element}")
         
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error testing tool descriptions: {str(e)}")
-        return False
-
-if __name__ == "__main__":
+        return Trueif __name__ == "__main__":
     success1 = test_system_prompt_clarity()
     success2 = test_tool_descriptions()
     

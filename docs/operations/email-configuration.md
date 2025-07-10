@@ -8,7 +8,7 @@ Your AWS SES setup is already configured for the us-west-2 (Oregon) region with 
 - **Region**: us-west-2 (Oregon)
 - **SMTP Server**: email-smtp.us-west-2.amazonaws.com
 - **SMTP Port**: 587 (STARTTLS)
-- **SMTP Username**: AKIAQSOI4I5BLVBHW2HP
+- **SMTP Username**: [YOUR_AWS_SES_SMTP_USERNAME]
 - **Daily Limit**: 50,000 messages per day
 - **Rate Limit**: 14 messages per second
 
@@ -19,8 +19,8 @@ Add these environment variables to your backend configuration:
 ### Production Environment Variables
 ```bash
 # AWS SES SMTP Configuration
-AWS_SES_SMTP_USERNAME=AKIAQSOI4I5BLVBHW2HP
-AWS_SES_SMTP_PASSWORD=BJOFAClu9ON78rYiuCy7wh1KU1H67t/nJLurp/WRV5dF
+AWS_SES_SMTP_USERNAME=[YOUR_AWS_SES_SMTP_USERNAME]
+AWS_SES_SMTP_PASSWORD=[YOUR_AWS_SES_SMTP_PASSWORD]
 
 # Email From Configuration
 FROM_EMAIL=noreply@askclera.com
@@ -36,8 +36,8 @@ For development, you can use the same credentials but with a different FROM_EMAI
 
 ```bash
 # AWS SES SMTP Configuration (same as production)
-AWS_SES_SMTP_USERNAME=AKIAQSOI4I5BLVBHW2HP
-AWS_SES_SMTP_PASSWORD=BJOFAClu9ON78rYiuCy7wh1KU1H67t/nJLurp/WRV5dF
+AWS_SES_SMTP_USERNAME=[YOUR_AWS_SES_SMTP_USERNAME]
+AWS_SES_SMTP_PASSWORD=[YOUR_AWS_SES_SMTP_PASSWORD]
 
 # Email From Configuration (use test domain or verified email)
 FROM_EMAIL=test@askclera.com
@@ -47,6 +47,21 @@ FROM_NAME=Clera Investment Services (Test)
 SUPPORT_EMAIL=support@askclera.com
 SUPPORT_PHONE=1-800-CLERA-01
 ```
+
+## Security Requirements
+
+### Critical Security Notes:
+- **NEVER commit AWS credentials to version control**
+- **NEVER include credentials in documentation**
+- **Use AWS IAM roles when possible** instead of hardcoded credentials
+- **Rotate credentials regularly** and immediately if exposed
+- **Use AWS Systems Manager Parameter Store** or **AWS Secrets Manager** for production
+
+### How to Get AWS SES SMTP Credentials:
+1. Go to AWS SES Console → SMTP Settings
+2. Create SMTP credentials for your IAM user
+3. Store credentials securely in your deployment environment
+4. Use environment variables or AWS Parameter Store
 
 ## Email Templates Generated
 
@@ -138,4 +153,32 @@ Users are instructed to reference their confirmation number when contacting supp
 3. **Test in Sandbox**: Test the complete flow in your sandbox environment
 4. **Production Deployment**: Deploy with confidence knowing emails will be sent
 
-The email system is now ready for production use with your AWS SES configuration! 
+The email system is now ready for production use with your AWS SES configuration!
+
+## Security Incident Response
+
+### If Credentials Are Exposed:
+1. **Immediately rotate AWS SES SMTP credentials** in AWS Console
+2. **Update environment variables** in all deployment environments
+3. **Review access logs** for any unauthorized usage
+4. **Monitor email sending patterns** for anomalies
+5. **Update this documentation** if credentials were committed
+
+### Security Best Practices:
+- **Use AWS IAM roles** instead of hardcoded credentials when possible
+- **Implement credential rotation** every 90 days
+- **Use AWS Secrets Manager** for production credential storage
+- **Enable AWS CloudTrail** for credential usage monitoring
+- **Implement least privilege access** for email sending permissions
+
+### Monitoring & Alerting:
+- **Set up CloudWatch alarms** for unusual email sending patterns
+- **Monitor SES reputation metrics** for deliverability issues
+- **Log all email sending attempts** for audit purposes
+- **Set up alerts for credential failures** or authentication errors
+
+### Compliance Considerations:
+- **Email content must comply** with financial services regulations
+- **Maintain audit trails** of all account closure communications
+- **Ensure data retention** policies are followed for email records
+- **Implement proper error handling** to prevent data leakage 

@@ -41,17 +41,17 @@ sys.path.append(backend_dir)
 
 # Import database functions
 try:
-    from utils.supabase.db_client import (
+    from utils.supabase.account_closure_db import (
         get_account_closure_logs,
         get_account_closure_summary,
         get_account_closure_statistics,
-        cleanup_old_account_closure_logs,
-        get_user_alpaca_account_id
+        cleanup_old_account_closure_logs
     )
+    from utils.supabase.db_client import get_user_alpaca_account_id
     DATABASE_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     DATABASE_AVAILABLE = False
-    print("⚠️ Database logging not available - using file-based monitoring only")
+    print(f"⚠️ Database logging not available: {e}")
 
 # Color codes for terminal output
 class Colors:

@@ -149,18 +149,12 @@ def test_monitoring_script():
         from monitor_account_closure import show_statistics, cleanup_logs
         
         # Test statistics (should not fail even if no data)
-        try:
-            show_statistics(1)  # Last 1 day
-            print("✅ Statistics function works")
-        except Exception as e:
-            print(f"⚠️ Statistics test failed: {e}")
+        show_statistics(1)  # Last 1 day
+        print("✅ Statistics function works")
         
         # Test cleanup (should not fail even if no data)
-        try:
-            cleanup_logs(1)  # Keep 1 day
-            print("✅ Cleanup function works")
-        except Exception as e:
-            print(f"⚠️ Cleanup test failed: {e}")
+        cleanup_logs(1)  # Keep 1 day
+        print("✅ Cleanup function works")
         
     except ImportError as e:
         print(f"❌ Failed to import monitoring script: {e}")

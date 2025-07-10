@@ -361,25 +361,6 @@ def run_all_tests():
         try:
             test_instance.setup_method()  # Reset for each test
             test()
-            passed += 1
-        except Exception as e:
-            print(f"❌ {test.__name__} FAILED: {e}")
-            import traceback
-            traceback.print_exc()
-            failed += 1
-    
-    print("\n" + "=" * 75)
-    print(f"📊 FINAL RESULTS: {passed} passed, {failed} failed")
-    
-    if failed == 0:
-        print("🎉 ALL TESTS PASSED! The deposit exclusion fix is PRODUCTION-READY.")
-        print("💰 Deposits will never affect daily return calculations.")
-        print("🔒 The system correctly excludes deposits from investment performance.")
-        return True
-    else:
-        print("⚠️  Some tests failed. Review and fix before production deployment.")
-        return False
-
-if __name__ == "__main__":
+            passed += 1if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1) 

@@ -101,7 +101,7 @@ export default function AccountClosurePending({ userId }: AccountClosurePendingP
         if (progressData.confirmation_number && !closureData?.confirmationNumber) {
           console.log('[AccountClosure] 🔄 Updating confirmation number from progress:', progressData.confirmation_number);
           setClosureData(prev => ({
-            ...prev,
+            ...(prev ?? {}),
             confirmationNumber: progressData.confirmation_number,
             initiatedAt: progressData.initiated_at || prev?.initiatedAt
           }));

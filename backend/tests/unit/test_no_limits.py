@@ -80,13 +80,5 @@ def test_no_limits():
         else:
             print(f"   ⚠️  Still getting zeros - likely due to other factors (Redis cache, position calc)")
         
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error in test: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-if __name__ == "__main__":
+        return Trueif __name__ == "__main__":
     test_no_limits() 

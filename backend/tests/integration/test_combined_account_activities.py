@@ -68,15 +68,13 @@ def test_combined_account_activities():
         print()
         print("🎯 FULL COMBINED TOOL OUTPUT:")
         print("=" * 60)
-        print(tool_result)
+        print("[REDACTED] Sensitive account activities output omitted in test logs")
         print("=" * 60)
         
         return True
         
     except Exception as e:
-        print(f"❌ Error testing combined account activities: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Test failed: {e}")
         return False
 
 if __name__ == "__main__":

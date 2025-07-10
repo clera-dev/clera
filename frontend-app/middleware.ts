@@ -96,27 +96,6 @@ export async function middleware(request: NextRequest) {
 
     console.log(`[Middleware] Processing: ${path}`);
 
-    // =================================================================
-    // CRITICAL FIX: Direct bypass for connect-bank-manual route
-    // This prevents the cached onboarding check from blocking the API
-    // =================================================================
-    if (path === '/api/broker/connect-bank-manual') {
-      console.log('[Middleware] Direct bypass for connect-bank-manual - allowing request');
-      return response;
-    }
-
-    // Additional bypasses for critical funding flow endpoints
-    if (path === '/api/broker/bank-status' || path === '/api/broker/delete-ach-relationship' || path === '/api/broker/funding-status') {
-      console.log(`[Middleware] Direct bypass for funding endpoint: ${path} - allowing request`);
-      return response;
-    }
-
-    // Bypass for transfer endpoint - critical for funding flow
-    if (path === '/api/broker/transfer') {
-      console.log('[Middleware] Direct bypass for transfer endpoint - allowing request');
-      return response;
-    }
-
     // Get user authentication status
     let user = null;
     try {

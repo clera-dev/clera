@@ -73,25 +73,7 @@ def test_cache_busting_parameters():
                         # This might still be OK, just different error handling
                 else:
                     print(f"   ❌ Unexpected status code: {response.status_code}")
-                    all_passed = False
-                    
-        except Exception as e:
-            print(f"   ❌ Request failed: {e}")
-            all_passed = False
-        
-        print()
-    
-    return all_passed
-
-def test_analytics_endpoint_fresh_data():
-    """Test that analytics endpoint returns consistent data structure."""
-    
-    api_key = os.getenv("BACKEND_API_KEY")
-    if not api_key:
-        print("❌ BACKEND_API_KEY not found in environment")
-        return False
-    
-    # Use a valid UUID format for testing
+                    all_passed = False    # Use a valid UUID format for testing
     test_uuid = "12345678-1234-5678-9012-123456789012"
     base_url = "http://localhost:8000"
     headers = {"X-API-Key": api_key}
@@ -116,13 +98,7 @@ def test_analytics_endpoint_fresh_data():
             return True
         else:
             print("   ❌ Cache buster parameter changed endpoint behavior")
-            return False
-            
-    except Exception as e:
-        print(f"   ❌ Test failed: {e}")
-        return False
-
-if __name__ == "__main__":
+            return Falseif __name__ == "__main__":
     print("🧪 Testing Cache-Busting Enhancement")
     print("=" * 50)
     
