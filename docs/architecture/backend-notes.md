@@ -1976,13 +1976,17 @@ curl -X GET "http://localhost:8000/api/account-closure/withdrawal-status/{accoun
 ```bash
 # Monitor specific account closure
 cd backend
-python monitor_account_closure.py {account_id}
+# Monitor a specific user's closure
+python monitor_account_closure.py --user <user_id>
 
-# Monitor with real-time updates
-python monitor_account_closure.py {account_id} --follow
+# Get user's recent logs
+python monitor_account_closure.py --user <user_id> --recent
 
-# Check recent logs only
-python monitor_account_closure.py {account_id} --recent
+# Check user's closure status
+python monitor_account_closure.py --user <user_id> --summary
+
+# Example
+python monitor_account_closure.py 72e0443c-3b81-4ad3-be9c-fa7bd5fb14b8 --recent --lines 10
 ```
 
 #### Log File Location
