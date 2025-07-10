@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, Loader2, AlertCircle, CheckCircle2, Clock, ArrowRight, RefreshCw } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from "@/components/ui/button";
@@ -212,27 +212,8 @@ export default function AccountClosurePending({ userId }: AccountClosurePendingP
     }
   };
 
-  // Auto-retry countdown effect
-  useEffect(() => {
-    if (autoRetryEnabled && nextRetryIn !== null && nextRetryIn > 0) {
-      const countdown = setInterval(() => {
-        setNextRetryIn(prev => {
-          if (prev === null || prev <= 1) {
-            setAutoRetryEnabled(false);
-            // Trigger automatic retry
-            handleRetryResume();
-            return null;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      
-      return () => clearInterval(countdown);
-    }
-  }, [autoRetryEnabled, nextRetryIn]);
-
   // Function to handle retry/resume
-  const handleRetryResume = async () => {
+  const handleRetryResume = useCallback(async () => {
     try {
       setIsRetrying(true);
       console.log('[AccountClosure] 🔄 Starting retry/resume process...');
@@ -292,7 +273,31 @@ export default function AccountClosurePending({ userId }: AccountClosurePendingP
     } finally {
       setIsRetrying(false);
     }
-  };
+  }, [userId, fetchClosureProgress]);
+
+  // Auto-retry countdown effect
+  useEffect(() => {
+    if (autoRetryEnabled && nextRetryIn !== null && nextRetryIn > 0) {
+      const countdown = setInterval(() => {
+        setNextRetryIn(prev => {
+          if (prev === null || prev <= 1) {
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      return () => clearInterval(countdown);
+    }
+  }, [autoRetryEnabled, nextRetryIn]);
+
+  // Separate effect to trigger retry when countdown reaches zero
+  useEffect(() => {
+    if (autoRetryEnabled && nextRetryIn === 0) {
+      setAutoRetryEnabled(false);
+      handleRetryResume();
+    }
+  }, [autoRetryEnabled, nextRetryIn, handleRetryResume]);
 
   // Main effect for initial load and polling
   useEffect(() => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 export interface ClosureStep {
   id: string;
@@ -85,6 +86,7 @@ const calculateEstimatedCompletion = (): string => {
 };
 
 export const useAccountClosure = (accountId: string) => {
+  const router = useRouter();
   const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false);
   const [closureState, setClosureState] = useState<ClosureState>({
     isProcessing: false,
@@ -135,9 +137,6 @@ export const useAccountClosure = (accountId: string) => {
       // Close modal immediately  
       setIsConfirmationModalOpen(false);
       
-      // REDIRECT IMMEDIATELY to /protected which will show AccountClosurePending
-      window.location.href = '/protected';
-      
       // Start background processing (fire and forget)
       fetch(`/api/account-closure/initiate/${accountId}`, {
         method: 'POST',
@@ -154,6 +153,9 @@ export const useAccountClosure = (accountId: string) => {
         // Don't update UI - user is already redirected
       });
       
+      // REDIRECT IMMEDIATELY to /protected which will show AccountClosurePending
+      router.push('/protected');
+      
     } catch (error) {
       setClosureState(prev => ({
         ...prev,
@@ -162,7 +164,7 @@ export const useAccountClosure = (accountId: string) => {
         canCancel: true
       }));
     }
-  }, [accountId]);
+  }, [accountId, router]);
 
   return {
     isConfirmationModalOpen,
