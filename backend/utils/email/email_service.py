@@ -9,7 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime
-from jinja2 import Template
+from jinja2 import Environment, select_autoescape
 
 logger = logging.getLogger("clera-email-service")
 
@@ -195,7 +195,8 @@ class EmailService:
                                    confirmation_number: str, estimated_completion: str) -> str:
         """Generate HTML email content for account closure notification."""
         
-        template = Template("""
+        env = Environment(autoescape=select_autoescape(['html', 'xml']))
+        template = env.from_string("""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -311,7 +312,8 @@ class EmailService:
                                    confirmation_number: str, estimated_completion: str) -> str:
         """Generate plain text email content for account closure notification."""
         
-        template = Template("""
+        env = Environment(autoescape=select_autoescape(['html', 'xml']))
+        template = env.from_string("""
 ACCOUNT CLOSURE CONFIRMATION
 {{ confirmation_number }}
 
@@ -366,7 +368,8 @@ This is an automated message. Please do not reply to this email.
                                             confirmation_number: str, final_transfer_amount: float) -> str:
         """Generate HTML email content for account closure completion notification."""
         
-        template = Template("""
+        env = Environment(autoescape=select_autoescape(['html', 'xml']))
+        template = env.from_string("""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -478,7 +481,8 @@ This is an automated message. Please do not reply to this email.
                                             confirmation_number: str, final_transfer_amount: float) -> str:
         """Generate plain text email content for account closure completion notification."""
         
-        template = Template("""
+        env = Environment(autoescape=select_autoescape(['html', 'xml']))
+        template = env.from_string("""
 ACCOUNT CLOSURE COMPLETE
 {{ confirmation_number }}
 

@@ -33,8 +33,10 @@ logger = logging.getLogger("websocket_test")
 # Load environment variables
 load_dotenv()
 
-# Default account ID for testing
-DEFAULT_ACCOUNT_ID = "60205bf6-1d3f-46a5-8a1c-7248ee9210c5"  # Replace with your test account ID
+# Default account ID for testing - Load from environment variable
+DEFAULT_ACCOUNT_ID = os.getenv("TEST_ALPACA_ACCOUNT_ID", "60205bf6-1d3f-46a5-8a1c-7248ee9210c5")
+if not DEFAULT_ACCOUNT_ID:
+    print("WARNING: TEST_ALPACA_ACCOUNT_ID environment variable not set. Using fallback account ID.")
 
 async def test_api_server_websocket(account_id):
     """Test WebSocket connection through API server proxy."""
@@ -54,7 +56,44 @@ async def test_api_server_websocket(account_id):
                     health_data = await response.json()
                     logger.info(f"API server WebSocket health check: {health_data}")
                 else:
-                    logger.warning(f"API server WebSocket health check failed: {response.status}")async def test_direct_websocket_connection(account_id):
+                    logger.warning(f"API server WebSocket health check failed: {response.status}")
+    except Exception as e:
+        logger.error(f"Error checking API server WebSocket health: {e}")
+    
+    try:
+        async with websockets.connect(ws_uri, ping_interval=30) as websocket:
+            logger.info("Successfully connected to API server WebSocket")
+            
+            # Send a heartbeat message
+            await websocket.send(json.dumps({
+                "type": "heartbeat",
+                "timestamp": int(datetime.now().timestamp() * 1000)
+            }))
+            logger.info("Sent heartbeat message")
+            
+            # Wait for a message, timeout after 10 seconds
+            try:
+                message = await asyncio.wait_for(websocket.recv(), timeout=10.0)
+                data = json.loads(message)
+                logger.info(f"Received message: {data}")
+                
+                # Check if it's a heartbeat acknowledgment or portfolio data
+                if data.get("type") == "heartbeat_ack":
+                    logger.info("✅ Received heartbeat acknowledgment")
+                elif data.get("account_id") == account_id:
+                    logger.info(f"✅ Received portfolio data: {data.get('total_value', 'N/A')}")
+                else:
+                    logger.warning(f"Received unexpected message type")
+                
+                return True
+            except asyncio.TimeoutError:
+                logger.error("Timed out waiting for WebSocket message")
+                return False
+    except Exception as e:
+        logger.error(f"Error connecting to API server WebSocket: {e}")
+        return False
+
+async def test_direct_websocket_connection(account_id):
     """Test direct WebSocket connection to WebSocket server."""
     ws_host = os.getenv("WEBSOCKET_HOST", "localhost")
     ws_port = os.getenv("WEBSOCKET_PORT", "8001")
@@ -72,7 +111,44 @@ async def test_api_server_websocket(account_id):
                     health_data = await response.json()
                     logger.info(f"WebSocket server health check: {health_data}")
                 else:
-                    logger.warning(f"WebSocket server health check failed: {response.status}")async def check_services_running():
+                    logger.warning(f"WebSocket server health check failed: {response.status}")
+    except Exception as e:
+        logger.error(f"Error checking WebSocket server health: {e}")
+    
+    try:
+        async with websockets.connect(ws_uri, ping_interval=30) as websocket:
+            logger.info("Successfully connected directly to WebSocket server")
+            
+            # Send a heartbeat message
+            await websocket.send(json.dumps({
+                "type": "heartbeat",
+                "timestamp": int(datetime.now().timestamp() * 1000)
+            }))
+            logger.info("Sent heartbeat message")
+            
+            # Wait for a message, timeout after 10 seconds
+            try:
+                message = await asyncio.wait_for(websocket.recv(), timeout=10.0)
+                data = json.loads(message)
+                logger.info(f"Received message: {data}")
+                
+                # Check if it's a heartbeat acknowledgment or portfolio data
+                if data.get("type") == "heartbeat_ack":
+                    logger.info("✅ Received heartbeat acknowledgment")
+                elif data.get("account_id") == account_id:
+                    logger.info(f"✅ Received portfolio data: {data.get('total_value', 'N/A')}")
+                else:
+                    logger.warning(f"Received unexpected message type")
+                
+                return True
+            except asyncio.TimeoutError:
+                logger.error("Timed out waiting for WebSocket message")
+                return False
+    except Exception as e:
+        logger.error(f"Error connecting directly to WebSocket server: {e}")
+        return False
+
+async def check_services_running():
     """Check if required services are running."""
     api_server_host = os.getenv("API_SERVER_HOST", "localhost")
     api_server_port = os.getenv("API_SERVER_PORT", "8000")

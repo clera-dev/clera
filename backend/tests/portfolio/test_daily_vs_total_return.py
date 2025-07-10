@@ -17,19 +17,23 @@ from portfolio_realtime.portfolio_calculator import PortfolioCalculator
 from datetime import datetime, date
 import json
 
-def test_daily_vs_total_return():
+def test_daily_vs_total_return(calculator_factory=None):
     """Investigate if we're showing daily or total return"""
     try:
         print("🔍 INVESTIGATING: DAILY vs TOTAL RETURN")
         print("=" * 80)
+        if calculator_factory is not None:
+            calc = calculator_factory()
+        else:
+            calc = PortfolioCalculator(
+                broker_api_key=os.getenv('BROKER_API_KEY'),
+                broker_secret_key=os.getenv('BROKER_SECRET_KEY'),
+                sandbox=True
+            )
         
-        calc = PortfolioCalculator(
-            broker_api_key=os.getenv('BROKER_API_KEY'),
-            broker_secret_key=os.getenv('BROKER_SECRET_KEY'),
-            sandbox=True
-        )
-        
-        account_id = '60205bf6-1d3f-46a5-8a1c-7248ee9210c5'
+        account_id = os.getenv('TEST_ALPACA_ACCOUNT_ID')
+        if not account_id:
+            raise RuntimeError("TEST_ALPACA_ACCOUNT_ID environment variable must be set for this test.")
         
         print(f"\n1️⃣ ACCOUNT EQUITY ANALYSIS:")
         print("-" * 50)
@@ -53,5 +57,12 @@ def test_daily_vs_total_return():
             if hasattr(account, 'created_at'):
                 print(f"      Account Created: {account.created_at}")
             if hasattr(account, 'updated_at'):
-                print(f"      Account Updated: {account.updated_at}")if __name__ == "__main__":
+                print(f"      Account Updated: {account.updated_at}")
+        except Exception as e:
+            print(f"      Error analyzing account dates: {e}")
+    except Exception as e:
+        print(f"Test failed: {e}")
+        raise
+
+if __name__ == "__main__":
     test_daily_vs_total_return() 

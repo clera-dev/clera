@@ -5,12 +5,18 @@ Debug test to investigate why the "Total" is showing $0.00 in comprehensive acti
 import sys
 import os
 from datetime import datetime, timezone, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Add the backend directory to the path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-# TEST ACCOUNT CONFIGURATION
-TEST_ALPACA_ACCOUNT_ID = "60205bf6-1d3f-46a5-8a1c-7248ee9210c5"
+# TEST ACCOUNT CONFIGURATION - Load from environment variable
+TEST_ALPACA_ACCOUNT_ID = os.getenv("TEST_ALPACA_ACCOUNT_ID")
+if not TEST_ALPACA_ACCOUNT_ID:
+    raise ValueError("TEST_ALPACA_ACCOUNT_ID environment variable is required. Please set it in your .env file.")
 
 from clera_agents.tools.purchase_history import get_account_activities
 

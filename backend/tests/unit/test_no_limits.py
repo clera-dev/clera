@@ -80,5 +80,12 @@ def test_no_limits():
         else:
             print(f"   ⚠️  Still getting zeros - likely due to other factors (Redis cache, position calc)")
         
-        return Trueif __name__ == "__main__":
-    test_no_limits() 
+        return True
+    except Exception as e:
+        print(f"❌ Test failed with error: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    success = test_no_limits()
+    sys.exit(0 if success else 1) 

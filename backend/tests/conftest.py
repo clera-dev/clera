@@ -7,7 +7,12 @@ modifying sys.path, following architectural best practices.
 
 import pytest
 import sys
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Add the backend directory to Python path for imports
 # This is done at the pytest level, not in individual test files
@@ -59,7 +64,10 @@ def mock_redis_client():
 @pytest.fixture
 def sample_account_id():
     """Fixture to provide a sample account ID for testing"""
-    return '60205bf6-1d3f-46a5-8a1c-7248ee9210c5'
+    account_id = os.getenv("TEST_ALPACA_ACCOUNT_ID")
+    if not account_id:
+        pytest.skip("TEST_ALPACA_ACCOUNT_ID environment variable not set. Please set it in your .env file.")
+    return account_id
 
 
 @pytest.fixture

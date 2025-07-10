@@ -22,7 +22,9 @@ def test_debug_return_calculation():
             sandbox=True
         )
         
-        account_id = '60205bf6-1d3f-46a5-8a1c-7248ee9210c5'
+        account_id = os.getenv('TEST_ALPACA_ACCOUNT_ID')
+        if not account_id:
+            raise RuntimeError("TEST_ALPACA_ACCOUNT_ID environment variable must be set for this test.")
         print(f"🔍 DEBUGGING RETURN CALCULATION for account {account_id}")
         print("=" * 80)
         
@@ -110,5 +112,10 @@ def test_debug_return_calculation():
             else:
                 print("   ✅ Return seems reasonable")
                 
-        return Trueif __name__ == "__main__":
+        return True
+    except Exception as e:
+        print(f"Test failed: {e}")
+        raise
+
+if __name__ == "__main__":
     test_debug_return_calculation() 

@@ -72,42 +72,13 @@ export async function POST(request: NextRequest) {
     const apiUrl = process.env.BACKEND_API_URL;
     
     try {
-      // Delete from Supabase first (safer to delete local record before remote)
-      try {
-        const { error: supabaseDeleteError, count } = await supabase
-          .from('user_bank_connections')
-          .delete()
-          .eq('relationship_id', achRelationshipId)
-          .eq('user_id', user.id)
-          .eq('alpaca_account_id', accountId); // Extra security check
-        
-        if (supabaseDeleteError) {
-          console.error(`Delete ACH API: Failed to delete bank connection from Supabase: ${supabaseDeleteError.message}`);
-          return NextResponse.json(
-            { error: 'Failed to delete local bank connection' },
-            { status: 500 }
-          );
-        }
-        
-        if (count === 0) {
-          console.error(`Delete ACH API: No rows deleted from Supabase for relationship ${achRelationshipId}`);
-          return NextResponse.json(
-            { error: 'ACH relationship not found' },
-            { status: 404 }
-          );
-        }
-        
-        console.log(`Delete ACH API: Successfully deleted bank connection from Supabase for relationship: ${achRelationshipId}`);
-        
-      } catch (supabaseError) {
-        console.error(`Delete ACH API: Exception deleting from Supabase: ${supabaseError}`);
-        return NextResponse.json(
-          { error: 'Failed to delete local bank connection' },
-          { status: 500 }
-        );
-      }
+      // =================================================================
+      // FIXED: Delete from Alpaca FIRST to maintain transactional integrity
+      // =================================================================
       
-      // Delete from Alpaca
+      console.log(`Delete ACH API: Deleting ACH relationship from Alpaca: ${achRelationshipId}`);
+      
+      // Delete from Alpaca FIRST (maintains transactional integrity)
       const response = await fetch(`${apiUrl}/delete-ach-relationship`, {
         method: 'POST',
         headers: {
@@ -124,12 +95,75 @@ export async function POST(request: NextRequest) {
       
       if (!response.ok) {
         const errorMessage = responseData.detail || responseData.error || JSON.stringify(responseData);
-        console.error(`Delete ACH API: Backend deletion failed: ${errorMessage}`);
-        throw new Error(errorMessage);
+        console.error(`Delete ACH API: Alpaca deletion failed: ${errorMessage}`);
+        return NextResponse.json(
+          { error: `Failed to delete ACH relationship from Alpaca: ${errorMessage}` },
+          { status: response.status }
+        );
       }
       
-      console.log("Delete ACH API: Successfully deleted ACH relationship:", responseData);
-      return NextResponse.json(responseData);
+      console.log(`Delete ACH API: Successfully deleted ACH relationship from Alpaca: ${achRelationshipId}`);
+      
+      // =================================================================
+      // Only delete from Supabase AFTER Alpaca deletion succeeds
+      // =================================================================
+      
+      console.log(`Delete ACH API: Deleting local reference from Supabase: ${achRelationshipId}`);
+      
+      try {
+        const { error: supabaseDeleteError, count } = await supabase
+          .from('user_bank_connections')
+          .delete()
+          .eq('relationship_id', achRelationshipId)
+          .eq('user_id', user.id)
+          .eq('alpaca_account_id', accountId); // Extra security check
+        
+        if (supabaseDeleteError) {
+          console.error(`Delete ACH API: Failed to delete bank connection from Supabase: ${supabaseDeleteError.message}`);
+          // Note: Alpaca deletion succeeded but local cleanup failed
+          // This is less critical than the reverse scenario
+          return NextResponse.json(
+            { 
+              success: true,
+              warning: 'ACH relationship deleted from Alpaca but local cleanup failed',
+              error: 'Failed to delete local bank connection reference'
+            },
+            { status: 207 } // 207 Multi-Status: partial success
+          );
+        }
+        
+        if (count === 0) {
+          console.warn(`Delete ACH API: No rows deleted from Supabase for relationship ${achRelationshipId} (may have been already deleted)`);
+          // Alpaca deletion succeeded, so we return success even if local record was already gone
+          return NextResponse.json({
+            success: true,
+            message: 'ACH relationship deleted from Alpaca',
+            warning: 'Local reference was already removed'
+          });
+        }
+        
+        console.log(`Delete ACH API: Successfully deleted bank connection from Supabase for relationship: ${achRelationshipId}`);
+        
+      } catch (supabaseError) {
+        console.error(`Delete ACH API: Exception deleting from Supabase: ${supabaseError}`);
+        // Alpaca deletion succeeded but local cleanup failed
+        return NextResponse.json(
+          { 
+            success: true,
+            warning: 'ACH relationship deleted from Alpaca but local cleanup failed',
+            error: 'Failed to delete local bank connection reference'
+          },
+          { status: 207 } // 207 Multi-Status: partial success
+        );
+      }
+      
+      // Both operations succeeded
+      console.log("Delete ACH API: Successfully deleted ACH relationship from both Alpaca and Supabase");
+      return NextResponse.json({
+        success: true,
+        message: 'ACH relationship deleted successfully',
+        data: responseData
+      });
       
     } catch (error) {
       console.error('Delete ACH API: Error deleting ACH relationship:', error);

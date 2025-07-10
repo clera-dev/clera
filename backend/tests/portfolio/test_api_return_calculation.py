@@ -12,69 +12,53 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 import json
 
+def fetch_api_return_data(api_url, account_id, api_key=None):
+    """Helper to fetch return data from the API."""
+    try:
+        headers = {"x-api-key": api_key} if api_key else {}
+        response = requests.get(
+            f"{api_url}/api/portfolio/value?accountId={account_id}",
+            headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+def validate_return_data(data):
+    """Helper to validate and print return data."""
+    if "error" in data:
+        print(f"API error: {data['error']}")
+        return False
+    print(json.dumps(data, indent=2))
+    raw_value = data.get('raw_value', 0)
+    raw_return = data.get('raw_return', 0)
+    if raw_value == 0:
+        print(f"   🚨 ISSUE: raw_value is 0 - broker connection or account lookup failed")
+    if raw_return == 0:
+        print(f"   🚨 ISSUE: raw_return is 0 - calculation returned 0")
+    return True
+
 def test_api_return_calculation():
     """Test and debug the API return calculation"""
+    api_url = os.getenv("BACKEND_API_URL", "http://localhost:8000")
+    account_id = os.getenv("TEST_ALPACA_ACCOUNT_ID")
+    api_key = os.getenv("BACKEND_API_KEY")
+    if not account_id or not api_key:
+        raise RuntimeError("Required environment variables not set.")
+    print(f"🔍 API RETURN CALCULATION DEBUG for account {account_id}")
+    print("=" * 80)
+    print(f"\n1️⃣ TESTING API ENDPOINT:")
+    print("-" * 50)
+    data = fetch_api_return_data(api_url, account_id, api_key)
+    assert validate_return_data(data)
+    print(f"\n4️⃣ SERVER HEALTH CHECK:")
+    print("-" * 50)
     try:
-        account_id = '60205bf6-1d3f-46a5-8a1c-7248ee9210c5'
-        print(f"🔍 API RETURN CALCULATION DEBUG for account {account_id}")
-        print("=" * 80)
-        
-        # Test the API endpoint
-        print(f"\n1️⃣ TESTING API ENDPOINT:")
-        print("-" * 50)
-        
-        response = requests.get(f"http://localhost:8000/api/portfolio/value?accountId={account_id}")
-        
-        if response.status_code == 200:
-            api_data = response.json()
-            print(f"   Status: SUCCESS ({response.status_code})")
-            print(f"   Response:")
-            for key, value in api_data.items():
-                print(f"      {key}: {value}")
-        else:
-            print(f"   Status: ERROR ({response.status_code})")
-            print(f"   Response: {response.text}")
-            
-        # Analyze the problem
-        print(f"\n2️⃣ PROBLEM ANALYSIS:")
-        print("-" * 50)
-        
-        if response.status_code == 200:
-            raw_value = api_data.get('raw_value', 0)
-            raw_return = api_data.get('raw_return', 0)
-            
-            if raw_value == 0:
-                print(f"   🚨 ISSUE: raw_value is 0 - broker connection or account lookup failed")
-                print(f"   💡 This means account.equity returned 0 or broker_client failed")
-                
-            if raw_return == 0:
-                print(f"   🚨 ISSUE: raw_return is 0 - calculation returned 0")
-                print(f"   💡 This could be:")
-                print(f"      - Position-based calc returned 0 (expected in sandbox)")
-                print(f"      - Equity difference was rejected as unrealistic")
-                print(f"      - API validation failed")
-        
-        # Check if this is the validation logic kicking in
-        print(f"\n3️⃣ VALIDATION LOGIC ANALYSIS:")
-        print("-" * 50)
-        
-        # Test what SHOULD happen based on the values we saw earlier
-        print(f"   🧮 Based on previous debug:")
-        print(f"      Current Equity: $153,850.05")
-        print(f"      Last Equity: $143,910.89")
-        print(f"      Raw Difference: $9,939.16")
-        print(f"      Raw Percentage: 6.91%")
-        
-        print(f"\n   📋 API Validation Logic:")
-        print(f"      - Is 6.91% > 10%? NO")
-        print(f"      - Is 6.91% > 5%? YES")
-        print(f"      - Decision: REJECT and return 0 (this is what's happening!)")
-        
-        # Test if the server is working at all
-        print(f"\n4️⃣ SERVER HEALTH CHECK:")
-        print("-" * 50)
-        
-        try:
-            health_response = requests.get("http://localhost:8000/")
-            print(f"   Root endpoint: {health_response.status_code}")if __name__ == "__main__":
+        health_response = requests.get(f"{api_url}/")
+        print(f"   Root endpoint: {health_response.status_code}")
+    except Exception as e:
+        print(f"   Health check failed: {e}")
+
+if __name__ == "__main__":
     test_api_return_calculation() 

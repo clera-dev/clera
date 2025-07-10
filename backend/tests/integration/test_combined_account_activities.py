@@ -27,7 +27,7 @@ def test_combined_account_activities():
         
         print(f"   ✅ Function executed successfully")
         print(f"   📝 Result length: {len(result)} characters")
-        print(f"   📝 First 300 chars: {result[:300]}...")
+        print(f"   🔒 Result content: [REDACTED - Contains sensitive account data]")
         print()
         
         # Test the @tool decorated function
@@ -49,6 +49,7 @@ def test_combined_account_activities():
         
         print(f"   ✅ Tool executed successfully")
         print(f"   📝 Tool result length: {len(tool_result)} characters")
+        print(f"   🔒 Tool result content: [REDACTED - Contains sensitive account data]")
         print()
         
         # Check that the result contains expected sections

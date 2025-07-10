@@ -177,7 +177,16 @@ def test_api_server_integration():
             return True
         else:
             print("❌ API server may not have the complete fix")
-            return Falsedef main():
+            return False
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return False
+
+
+def main():
     """Run the final verification tests."""
     
     print("🧪 DEPOSIT EXCLUSION FIX - FINAL VERIFICATION")

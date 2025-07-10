@@ -39,6 +39,11 @@ def test_apple_ytd():
                 return True
         else:
             print("❌ No valid response received")
-            return Falseif __name__ == "__main__":
+            return False
+    except Exception as e:
+        print(f"❌ Error during test: {e}")
+        return False
+
+if __name__ == "__main__":
     success = test_apple_ytd()
     print(f"\n{'✅ SUCCESS' if success else '❌ FAILED'}") 

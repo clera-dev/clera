@@ -15,7 +15,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 # TEST ACCOUNT CONFIGURATION
 # =========================
 # This test uses a specific Alpaca test account for consistent results
-TEST_ALPACA_ACCOUNT_ID = "60205bf6-1d3f-46a5-8a1c-7248ee9210c5"
+TEST_ALPACA_ACCOUNT_ID = os.getenv("TEST_ALPACA_ACCOUNT_ID")
+if not TEST_ALPACA_ACCOUNT_ID:
+    raise RuntimeError("TEST_ALPACA_ACCOUNT_ID environment variable must be set for this test.")
 
 print(f"🧪 EDGE CASE TESTING WITH ALPACA ACCOUNT ID: {TEST_ALPACA_ACCOUNT_ID}")
 print("=" * 80)

@@ -3,11 +3,22 @@
 Test script for live portfolio calculation with deposit exclusion
 """
 
-import sys
-sys.path.append('.')
+# =================================================================
+# ARCHITECTURAL FIX: Removed sys.path modification
+# =================================================================
+# 
+# REASON: Directly modifying sys.path is an architectural anti-pattern that:
+# - Creates tight coupling between test and application code
+# - Bypasses proper module boundaries
+# - Can lead to import errors or hidden circular dependencies
+# - Violates separation of concerns
+#
+# SOLUTION: Use proper imports that work with the project structure
+# The backend directory should be in the Python path when running tests
+# from the backend directory, or use proper packaging mechanisms.
 
-from portfolio_realtime.portfolio_calculator import PortfolioCalculator
 import os
+from portfolio_realtime.portfolio_calculator import PortfolioCalculator
 
 def test_portfolio_calculation():
     """Test the portfolio calculation to verify deposit exclusion works"""

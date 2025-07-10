@@ -26,8 +26,10 @@ from clera_agents.portfolio_management_agent import get_portfolio_summary, broke
 def test_real_account_verification():
     """Test with real Alpaca account to verify live data integration."""
     
-    # Real account ID provided by user
-    test_account_id = "60205bf6-1d3f-46a5-8a1c-7248ee9210c5"
+    # Load account ID from environment variable for security
+    test_account_id = os.getenv("TEST_ALPACA_ACCOUNT_ID")
+    if not test_account_id:
+        raise RuntimeError("TEST_ALPACA_ACCOUNT_ID environment variable must be set for this test.")
     
     print("="*80)
     print("REAL ACCOUNT VERIFICATION TEST")
@@ -174,28 +176,19 @@ def test_real_account_verification():
         print(f"  💵 Cash Balance: ${raw_cash:,.2f}")
         print(f"  🧮 Cash + Securities: ${calculated_total:,.2f}")
         
-        # Save the output to a file for review
-        output_dir = os.path.join(current_dir, "portfolio_summary_outputs")
-        os.makedirs(output_dir, exist_ok=True)
-        output_file = os.path.join(output_dir, "real_account_verification_output.txt")
+        # Log test completion securely (no sensitive data)
+        print(f"\n🔒 Test completed successfully - sensitive financial data not persisted to disk")
+        print(f"📋 Test Result: {'PASSED' if all_checks_passed else 'FAILED'}")
         
-        with open(output_file, 'w') as f:
-            f.write("=== REAL ACCOUNT VERIFICATION TEST ===\n")
-            f.write(f"Account ID: {test_account_id}\n")
-            f.write(f"Test Date: {os.popen('date').read().strip()}\n\n")
-            f.write("RAW ALPACA DATA:\n")
-            f.write(f"Cash: ${raw_cash:,.2f}\n")
-            f.write(f"Total Equity: ${raw_equity:,.2f}\n")
-            f.write(f"Securities Value: ${total_securities_value:,.2f}\n")
-            f.write(f"Cash + Securities: ${calculated_total:,.2f}\n\n")
-            f.write("ENHANCED PORTFOLIO SUMMARY OUTPUT:\n")
-            f.write("="*50 + "\n")
-            f.write(result)
-            f.write("\n" + "="*50 + "\n")
-            f.write(f"\nTest Result: {'PASSED' if all_checks_passed else 'FAILED'}\n")
-        
-        print(f"\n📁 Detailed output saved to: {output_file}")
-        
-        return all_checks_passedif __name__ == "__main__":
+        return all_checks_passed
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Unexpected error during verification: {e}")
+        return False
+
+
+if __name__ == "__main__":
     success = test_real_account_verification()
     exit(0 if success else 1) 

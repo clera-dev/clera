@@ -92,7 +92,7 @@ class AutomatedAccountClosureProcessor:
             
             # STEP 2: Update Supabase to pending_closure immediately (if not already done)
             if self.supabase:
-                self._update_supabase_status(user_id, "pending_closure", {
+                await self._update_supabase_status(user_id, "pending_closure", {
                     "confirmation_number": confirmation_number,
                     "initiated_at": datetime.now().isoformat()
                 })
@@ -126,15 +126,15 @@ class AutomatedAccountClosureProcessor:
             
             # Update Supabase to failed status
             if self.supabase:
-                self._update_supabase_status(user_id, "approved", {
+                await self._update_supabase_status(user_id, "approved", {
                     "closure_failed": True,
                     "failure_reason": str(e)
                 })
             
             return {
                 "success": False,
-                "error": str(e),
-                "log_file": detailed_logger.get_log_summary()
+                "error": "Account closure process failed. Please contact support if the issue persists."
+                # "log_file": detailed_logger.get_log_summary()  # Removed for security
             }
     
     async def _run_automated_closure_process(self, user_id: str, account_id: str, 
@@ -174,7 +174,7 @@ class AutomatedAccountClosureProcessor:
             
             # PHASE 6: FINAL SUPABASE UPDATE
             if self.supabase:
-                self._update_supabase_status(user_id, "closed", {
+                await self._update_supabase_status(user_id, "closed", {
                     "completed_at": datetime.now().isoformat(),
                     "confirmation_number": confirmation_number
                 })
@@ -189,7 +189,7 @@ class AutomatedAccountClosureProcessor:
             
             # Update Supabase to show failure but keep pending_closure for manual review
             if self.supabase:
-                self._update_supabase_status(user_id, "pending_closure", {
+                await self._update_supabase_status(user_id, "pending_closure", {
                     "process_failed": True,
                     "failure_reason": str(e),
                     "requires_manual_review": True
@@ -199,8 +199,10 @@ class AutomatedAccountClosureProcessor:
         """Handle position liquidation and order cancellation."""
         detailed_logger.log_step_start("LIQUIDATION_PHASE")
         
-        # Call our existing liquidation system
-        liquidation_result = self.manager.liquidate_all_positions(account_id)
+        # Call our existing liquidation system (run in thread pool to avoid blocking)
+        liquidation_result = await asyncio.to_thread(
+            self.manager.liquidate_all_positions, account_id
+        )
         
         if not liquidation_result.get("success", False):
             raise Exception(f"Liquidation failed: {liquidation_result.get('error', 'Unknown error')}")
@@ -226,7 +228,9 @@ class AutomatedAccountClosureProcessor:
         
         # Monitor settlement status
         while True:
-            settlement_status = self.manager.check_settlement_status(account_id)
+            settlement_status = await asyncio.to_thread(
+                self.manager.check_settlement_status, account_id
+            )
             
             if settlement_status.get("settled", False):
                 detailed_logger.log_step_success("SETTLEMENT_COMPLETE", settlement_status)
@@ -248,8 +252,10 @@ class AutomatedAccountClosureProcessor:
         """Automatically withdraw all funds."""
         detailed_logger.log_step_start("WITHDRAWAL_PHASE")
         
-        # Automatically withdraw all available funds
-        withdrawal_result = self.manager.withdraw_all_funds(account_id, ach_relationship_id)
+        # Automatically withdraw all available funds (run in thread pool to avoid blocking)
+        withdrawal_result = await asyncio.to_thread(
+            self.manager.withdraw_all_funds, account_id, ach_relationship_id
+        )
         
         if not withdrawal_result.get("success", False):
             raise Exception(f"Withdrawal failed: {withdrawal_result.get('error', 'Unknown error')}")
@@ -269,7 +275,9 @@ class AutomatedAccountClosureProcessor:
         detailed_logger.log_step_start("TRANSFER_MONITORING_PHASE", {"transfer_id": transfer_id})
         
         while True:
-            transfer_status = self.manager.check_withdrawal_status(account_id, transfer_id)
+            transfer_status = await asyncio.to_thread(
+                self.manager.check_withdrawal_status, account_id, transfer_id
+            )
             
             if transfer_status.get("status") == "SETTLED":
                 detailed_logger.log_step_success("TRANSFER_COMPLETE", transfer_status)
@@ -291,8 +299,10 @@ class AutomatedAccountClosureProcessor:
         """Final account closure."""
         detailed_logger.log_step_start("ACCOUNT_CLOSURE_PHASE")
         
-        # Final safety verification
-        account_status = self.manager.get_closure_status(account_id)
+        # Final safety verification (run in thread pool to avoid blocking)
+        account_status = await asyncio.to_thread(
+            self.manager.get_closure_status, account_id
+        )
         
         # Verify account is ready for closure
         if account_status.get("open_positions", 0) > 0:
@@ -301,8 +311,10 @@ class AutomatedAccountClosureProcessor:
         if account_status.get("cash_balance", 0) > 1.0:
             raise Exception(f"Cannot close account: cash balance ${account_status.get('cash_balance'):.2f} > $1.00")
         
-        # Close the account
-        closure_result = self.manager.close_account(account_id)
+        # Close the account (run in thread pool to avoid blocking)
+        closure_result = await asyncio.to_thread(
+            self.manager.close_account, account_id
+        )
         
         if not closure_result.get("success", False):
             raise Exception(f"Account closure failed: {closure_result.get('error', 'Unknown error')}")
@@ -315,7 +327,9 @@ class AutomatedAccountClosureProcessor:
         attempt = 0
         
         while attempt < max_attempts:
-            status = self.manager.get_closure_status(account_id)
+            status = await asyncio.to_thread(
+                self.manager.get_closure_status, account_id
+            )
             
             if status.get("open_positions", 0) == 0:
                 detailed_logger.log_step_success("POSITIONS_CLEARED", status)
@@ -332,7 +346,7 @@ class AutomatedAccountClosureProcessor:
         
         raise Exception("Positions failed to clear within 15 minutes")
     
-    def _update_supabase_status(self, user_id: str, status: str, additional_data: Dict[str, Any] = None):
+    async def _update_supabase_status(self, user_id: str, status: str, additional_data: Dict[str, Any] = None):
         """Update user status in Supabase."""
         if not self.supabase:
             return
@@ -342,7 +356,10 @@ class AutomatedAccountClosureProcessor:
             
             if additional_data:
                 # Store closure-specific data in onboarding_data jsonb field
-                result = self.supabase.table("user_onboarding").select("onboarding_data").eq("user_id", user_id).execute()
+                # Use asyncio.to_thread to run blocking I/O in thread pool
+                result = await asyncio.to_thread(
+                    lambda: self.supabase.table("user_onboarding").select("onboarding_data").eq("user_id", user_id).execute()
+                )
                 
                 if result.data:
                     existing_data = result.data[0].get("onboarding_data", {})
@@ -353,7 +370,10 @@ class AutomatedAccountClosureProcessor:
                 if "confirmation_number" in additional_data:
                     update_data["account_closure_confirmation_number"] = additional_data["confirmation_number"]
             
-            self.supabase.table("user_onboarding").update(update_data).eq("user_id", user_id).execute()
+            # Use asyncio.to_thread to run blocking I/O in thread pool
+            await asyncio.to_thread(
+                lambda: self.supabase.table("user_onboarding").update(update_data).eq("user_id", user_id).execute()
+            )
             
         except Exception as e:
             logger.error(f"Failed to update Supabase status for user {user_id}: {e}")

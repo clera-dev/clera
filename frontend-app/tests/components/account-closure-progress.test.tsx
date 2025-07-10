@@ -31,11 +31,21 @@ const MockAccountClosurePending: React.FC<{ accountId: string }> = ({ accountId 
       try {
         setLoading(true);
         
+        // =================================================================
+        // SECURITY FIX: Use environment variable instead of hardcoded API key
+        // =================================================================
+        // 
+        // REASON: Hardcoded API keys in test files violate secure secret
+        // management practices and can expose sensitive credentials.
+        //
+        // SOLUTION: Use environment variable from test setup, which provides
+        // a safe test value while maintaining security best practices.
+        
         // Simulate the exact API call the frontend makes
         const response = await fetch(`/api/account-closure/progress/${accountId}`, {
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': 'clera-is-the-goat-tok8s825nvjdk0482mc6'
+            'x-api-key': process.env.BACKEND_API_KEY || 'test-backend-api-key'
           }
         });
 
@@ -199,7 +209,7 @@ describe('Account Closure Progress Component', () => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': 'clera-is-the-goat-tok8s825nvjdk0482mc6'
+            'x-api-key': process.env.BACKEND_API_KEY || 'test-backend-api-key'
           }
         }
       );

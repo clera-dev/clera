@@ -361,6 +361,23 @@ def run_all_tests():
         try:
             test_instance.setup_method()  # Reset for each test
             test()
-            passed += 1if __name__ == "__main__":
+            passed += 1
+            print(f"✅ {test.__name__} passed")
+        except Exception as e:
+            failed += 1
+            print(f"❌ {test.__name__} failed: {e}")
+    
+    print(f"\n📊 TEST SUMMARY:")
+    print(f"   Passed: {passed}")
+    print(f"   Failed: {failed}")
+    print(f"   Total: {len(all_tests)}")
+    
+    success = passed == len(all_tests)
+    print(f"\n🎯 OVERALL RESULT: {'✅ ALL TESTS PASSED' if success else '❌ SOME TESTS FAILED'}")
+    
+    return success
+
+
+if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1) 

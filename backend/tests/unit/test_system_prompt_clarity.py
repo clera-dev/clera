@@ -84,7 +84,16 @@ def test_system_prompt_clarity():
         print("✅ SYSTEM PROMPT CLARITY TEST COMPLETED!")
         print("=" * 70)
         
-        return Truedef test_tool_descriptions():
+        return True
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return False
+
+
+def test_tool_descriptions():
     """Test that tool descriptions are accurate and complete."""
     print("\n🔧 Testing Tool Descriptions")
     print("=" * 50)
@@ -111,7 +120,16 @@ def test_system_prompt_clarity():
             else:
                 print(f"   ⚠️  Missing: {element}")
         
-        return Trueif __name__ == "__main__":
+        return True
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return False
+
+
+if __name__ == "__main__":
     success1 = test_system_prompt_clarity()
     success2 = test_tool_descriptions()
     

@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
     }
 
     const responseData = await response.json();
-    console.log('Funding Status API: Backend response:', responseData);
+    console.log('Funding Status API: Backend call succeeded');
 
     return NextResponse.json(responseData);
     

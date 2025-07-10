@@ -55,5 +55,40 @@ def test_edge_cases_comprehensive():
                     test_results['zero_portfolio'] = 'PASS'
                 else:
                     print(f"      ❌ FAIL: Zero portfolio returned ${todays_return:.2f} on ${portfolio_value:.2f}")
-                    test_results['zero_portfolio'] = 'FAIL'if __name__ == "__main__":
-    test_edge_cases_comprehensive() 
+                    test_results['zero_portfolio'] = 'FAIL'
+            except Exception as e:
+                print(f"      ❌ ERROR: {e}")
+                test_results['zero_portfolio'] = 'ERROR'
+        
+        # Continue with more edge case tests...
+        print(f"\n2️⃣ TESTING MISSING/INVALID ACCOUNT DATA:")
+        print("-" * 60)
+        
+        # Test with invalid account ID
+        print(f"   🔬 Test: Invalid account ID")
+        try:
+            todays_return, portfolio_value = calc.calculate_todays_return_robust('invalid-account-id')
+            print(f"      ❌ FAIL: Invalid account should have failed")
+            test_results['invalid_account'] = 'FAIL'
+        except Exception as e:
+            print(f"      ✅ PASS: Invalid account properly rejected: {e}")
+            test_results['invalid_account'] = 'PASS'
+        
+        # Summary
+        print(f"\n📊 TEST RESULTS SUMMARY:")
+        print("-" * 60)
+        for test_name, result in test_results.items():
+            print(f"   {test_name}: {result}")
+        
+        all_passed = all(result == 'PASS' for result in test_results.values())
+        print(f"\n🎯 OVERALL RESULT: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}")
+        
+        return all_passed
+    except Exception as e:
+        print(f"❌ Test suite failed with error: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    success = test_edge_cases_comprehensive()
+    sys.exit(0 if success else 1) 

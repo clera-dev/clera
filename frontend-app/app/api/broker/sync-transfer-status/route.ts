@@ -114,13 +114,25 @@ export async function POST(request: NextRequest) {
         if (alpacaTransfer && alpacaTransfer.status !== supabaseTransfer.status) {
           console.log(`Sync Transfer Status API: Updating transfer ${supabaseTransfer.transfer_id} from ${supabaseTransfer.status} to ${alpacaTransfer.status}`);
           
+          // =================================================================
+          // CRITICAL SECURITY FIX: Added user_id filter to prevent data leakage
+          // =================================================================
+          // 
+          // REASON: The original query only filtered by transfer_id, which could
+          // allow one user to modify another user's transfer data if transfer_id
+          // is not globally unique, leading to data leakage/corruption.
+          //
+          // SOLUTION: Added user_id filter to ensure users can only update
+          // their own transfer records, maintaining proper data isolation.
+          
           const { error: updateError } = await supabase
             .from('user_transfers')
             .update({
               status: alpacaTransfer.status,
               updated_at: alpacaTransfer.updated_at || new Date().toISOString()
             })
-            .eq('transfer_id', supabaseTransfer.transfer_id);
+            .eq('transfer_id', supabaseTransfer.transfer_id)
+            .eq('user_id', user.id); // CRITICAL: Ensure user can only update their own transfers
 
           if (updateError) {
             console.error(`Sync Transfer Status API: Error updating transfer ${supabaseTransfer.transfer_id}:`, updateError);

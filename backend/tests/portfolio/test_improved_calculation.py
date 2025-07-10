@@ -112,5 +112,10 @@ def test_improved_calculation():
             print(f"   ⚠️  Still need to resolve broker connection")
             print(f"   💡 But validation logic is improved")
             
-        return Trueif __name__ == "__main__":
+        return True
+    except Exception as e:
+        print(f"❌ Error during test: {e}")
+        return False
+
+if __name__ == "__main__":
     test_improved_calculation() 
