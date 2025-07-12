@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from alpaca.broker import BrokerClient
 from alpaca.broker.requests import CreateACHTransferRequest
-from alpaca.broker.enums import TransferDirection, TransferType, TransferStatus
+from alpaca.broker.enums import TransferDirection
 from .create_account import get_broker_client
 
 logger = logging.getLogger("alpaca-account-closure")
@@ -93,14 +93,14 @@ class BrokerService:
     def withdraw_funds(self, account_id: str, ach_relationship_id: str, amount: float) -> Dict[str, Any]:
         """Withdraw funds from the account."""
         try:
-            from alpaca.broker.requests import ACHTransferRequest
-            from alpaca.broker.enums import TransferDirection
+            from alpaca.broker.requests import CreateACHTransferRequest
+            from alpaca.broker.enums import TransferDirection, TransferTiming
             
-            transfer_request = ACHTransferRequest(
-                transfer_type="ach",
-                relationship_id=ach_relationship_id,
+            transfer_request = CreateACHTransferRequest(
                 amount=str(amount),
-                direction=TransferDirection.OUTGOING
+                direction=TransferDirection.OUTGOING,
+                timing=TransferTiming.IMMEDIATE,
+                relationship_id=ach_relationship_id
             )
             
             transfer = self.broker_client.create_ach_transfer_for_account(account_id, transfer_request)

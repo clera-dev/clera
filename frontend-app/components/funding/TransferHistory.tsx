@@ -232,7 +232,7 @@ export default function TransferHistory() {
                     <div className="flex-grow min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <p className="font-semibold text-foreground">
-                          ${transfer.amount.toFixed(2)}
+                          {`$${transfer.amount.toFixed(2)}`}
                         </p>
                         <Badge className={`text-xs ${getStatusColor(transfer.status)}`}>
                           {transfer.status}

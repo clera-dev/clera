@@ -10,60 +10,79 @@ Features:
 - Rate limiting for high-frequency operations
 - Only logs meaningful events and state changes
 - Performance optimized for real-time monitoring
+- Proper singleton pattern without global mutable state
 """
 
 import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import os
+import weakref
+from threading import Lock
 
 # Import database logging functions
 try:
-    from ..supabase.account_closure_db import save_account_closure_log
+    from ..supabase.account_closure_service import account_closure_service
     DATABASE_LOGGING_AVAILABLE = True
 except ImportError:
-    save_account_closure_log = None
+    account_closure_service = None
     DATABASE_LOGGING_AVAILABLE = False
-
-# Global cache for logger instances (singleton pattern)
-_logger_instances = {}
 
 class AccountClosureLogger:
     """
     Smart account closure logger that only uses Supabase database logging.
     
     Features:
-    - Singleton pattern prevents multiple loggers per account
+    - Proper singleton pattern per account_id (no global mutable state)
     - Smart deduplication prevents duplicate entries
     - Rate limiting for high-frequency operations
     - Only logs meaningful events and state changes
+    - Thread-safe instance management
     """
+    
+    # Class-level cache using weak references to prevent memory leaks
+    _instances: weakref.WeakValueDictionary[str, 'AccountClosureLogger'] = weakref.WeakValueDictionary()
+    _lock = Lock()
+    
+    def __new__(cls, account_id: str, user_id: Optional[str] = None):
+        """
+        Implement singleton pattern per account_id using weak references.
+        This prevents duplicate logger instances while avoiding global mutable state.
+        """
+        with cls._lock:
+            # Check if we already have an instance for this account
+            if account_id in cls._instances:
+                existing_instance = cls._instances[account_id]
+                # Update user_id if not set
+                if not existing_instance.user_id and user_id:
+                    existing_instance.user_id = user_id
+                return existing_instance
+            
+            # Create new instance
+            instance = super().__new__(cls)
+            cls._instances[account_id] = instance
+            return instance
     
     def __init__(self, account_id: str, user_id: Optional[str] = None):
         """
         Initialize the logger for an account.
+        Only runs once per account_id due to singleton pattern.
         
         Args:
             account_id (str): The Alpaca account ID
             user_id (Optional[str]): The Supabase user ID
         """
+        # Prevent re-initialization if instance already exists
+        if hasattr(self, 'account_id'):
+            return
+            
         self.account_id = account_id
         self.user_id = user_id
-        
-        # Check if we already have a logger instance for this account
-        if account_id in _logger_instances:
-            existing_logger = _logger_instances[account_id]
-            # Update user_id if not set
-            if not existing_logger.user_id and user_id:
-                existing_logger.user_id = user_id
-            # Return the existing instance by updating this instance
-            self.__dict__.update(existing_logger.__dict__)
-            return
         
         # Log initialization to database only once per account
         if DATABASE_LOGGING_AVAILABLE:
             try:
-                save_account_closure_log(
+                account_closure_service.save_log_entry(
                     account_id=account_id,
                     step_name="LOGGER_INITIALIZATION",
                     log_level="INFO",
@@ -74,14 +93,11 @@ class AccountClosureLogger:
             except Exception as e:
                 print(f"⚠️ Database logging not available: {e}")
         
-        # Store this instance in the global cache
-        _logger_instances[account_id] = self
-        
     def _log_to_database(self, step_name: str, log_level: str, message: str, data: Optional[Dict[str, Any]] = None):
         """Helper method to log to database if available."""
-        if DATABASE_LOGGING_AVAILABLE and save_account_closure_log:
+        if DATABASE_LOGGING_AVAILABLE and account_closure_service:
             try:
-                save_account_closure_log(
+                account_closure_service.save_log_entry(
                     account_id=self.account_id,
                     step_name=step_name,
                     log_level=log_level,
@@ -248,4 +264,30 @@ class AccountClosureLogger:
         
         # This would be a link to the Supabase dashboard
         # You can customize this based on your Supabase project URL
-        return f"https://supabase.com/dashboard/project/[YOUR_PROJECT_ID]/table/account_closure_logs?filter=account_id.eq.{self.account_id}" 
+        return f"https://supabase.com/dashboard/project/[YOUR_PROJECT_ID]/logs"
+    
+    def __repr__(self) -> str:
+        """String representation of the logger."""
+        return f"AccountClosureLogger(account_id='{self.account_id}', user_id='{self.user_id}')"
+    
+    def __eq__(self, other) -> bool:
+        """Equality comparison based on account_id."""
+        if not isinstance(other, AccountClosureLogger):
+            return False
+        return self.account_id == other.account_id
+    
+    def __hash__(self) -> int:
+        """Hash based on account_id for use in sets/dicts."""
+        return hash(self.account_id)
+    
+    @classmethod
+    def clear_instances(cls):
+        """Clear all cached instances. Useful for testing."""
+        with cls._lock:
+            cls._instances.clear()
+    
+    @classmethod
+    def get_instance_count(cls) -> int:
+        """Get the current number of cached instances."""
+        with cls._lock:
+            return len(cls._instances) 

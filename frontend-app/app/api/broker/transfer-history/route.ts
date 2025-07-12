@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`Transfer History API: Fetching transfers for user: ${user.id}`);
+    console.log('Transfer History API: Fetching transfers for authenticated user');
 
     // Get user's Alpaca account ID
     const { data: onboardingData, error: onboardingError } = await supabase
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (onboardingError || !onboardingData?.alpaca_account_id) {
-      console.error('Transfer History API: No Alpaca account found for user:', user.id);
+      console.error('Transfer History API: No Alpaca account found for authenticated user');
       return NextResponse.json(
         { error: 'No account found' },
         { status: 400 }
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       const apiKey = process.env.BACKEND_API_KEY;
 
       if (apiKey) {
-        console.log(`Transfer History API: Fetching from backend for account: ${alpacaAccountId}`);
+        console.log('Transfer History API: Fetching from backend for user account');
         
         // Use the dedicated transfers endpoint for comprehensive history
         const response = await fetch(`${backendUrl}/api/account/${alpacaAccountId}/transfers?limit=20&direction=INCOMING`, {
@@ -159,7 +159,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Transfer History API: Unexpected error', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'An unknown error occurred' },
+      { error: 'Failed to fetch transfer history' },
       { status: 500 }
     );
   }

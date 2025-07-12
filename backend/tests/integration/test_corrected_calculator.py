@@ -23,7 +23,7 @@ except ImportError:
     backend_dir = Path(__file__).parent.parent.parent
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))
-    from portfolio_realtime.portfolio_calculator import PortfolioCalculator
+from portfolio_realtime.portfolio_calculator import PortfolioCalculator
 
 
 class MockAccount:
@@ -78,13 +78,13 @@ class TestCorrectedCalculator(unittest.TestCase):
                 }.get(key)
                 
                 mock_redis_class.return_value = mock_redis_instance
-                
-                calc = PortfolioCalculator(
+        
+        calc = PortfolioCalculator(
                     broker_api_key="mock_key",
                     broker_secret_key="mock_secret",
-                    sandbox=True
-                )
-                
+            sandbox=True
+        )
+        
                 # Test the robust calculation method
                 todays_return, portfolio_value = calc.calculate_todays_return_robust(self.account_id)
                 
@@ -94,8 +94,8 @@ class TestCorrectedCalculator(unittest.TestCase):
                 self.assertGreater(portfolio_value, 0, "Portfolio value should be positive")
                 
                 # Calculate return percentage
-                if portfolio_value > 0:
-                    return_pct = (todays_return / portfolio_value * 100)
+        if portfolio_value > 0:
+            return_pct = (todays_return / portfolio_value * 100)
                     
                     # Assert realistic daily return range
                     self.assertGreater(
@@ -154,7 +154,7 @@ class TestCorrectedCalculator(unittest.TestCase):
                 
                 # Test portfolio calculation
                 portfolio_data = calc.calculate_portfolio_value(self.account_id)
-                
+        
                 # Assert valid portfolio data
                 self.assertIsNotNone(portfolio_data, "Portfolio data should not be None")
                 self.assertIn('total_value', portfolio_data, "Portfolio data should contain total_value")
@@ -235,7 +235,7 @@ class TestCorrectedCalculator(unittest.TestCase):
             mock_redis_class.return_value = mock_redis_instance
             
             # Test with dedicated database (db=1 for testing)
-            import redis
+        import redis
             test_redis_client = redis.Redis(host='localhost', port=6379, db=1)  # Use dedicated test database
             
             # Clear only the test database, not the entire Redis instance
@@ -243,7 +243,7 @@ class TestCorrectedCalculator(unittest.TestCase):
             
             # Verify that flushdb() was called instead of flushall()
             mock_redis_instance.flushdb.assert_called_once()
-            
+        
             # Verify that flushall() was NOT called
             mock_redis_instance.flushall.assert_not_called()
     

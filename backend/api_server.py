@@ -3042,6 +3042,30 @@ async def resume_account_closure_endpoint(
         logger.error(f"❌ Error resuming account closure for {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error resuming account closure: {str(e)}")
 
+@app.get("/api/job-status/{job_id}")
+async def get_job_status_endpoint(
+    job_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """Get the status of a background job."""
+    try:
+        # Job queue system has been removed - return a simple status response
+        logger.warning(f"Job status endpoint called for {job_id} - job queue system removed")
+        
+        return {
+            "job_id": job_id,
+            "status": "not_found",
+            "message": "Job queue system has been removed. Use account closure status endpoints instead.",
+            "available_endpoints": [
+                "/account-closure/status/{account_id}",
+                "/api/account-closure/progress/{account_id}"
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting job status for {job_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting job status: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     # Check if running in development or AWS environment

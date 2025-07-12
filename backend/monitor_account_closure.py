@@ -41,12 +41,9 @@ sys.path.append(backend_dir)
 
 # Import database functions
 try:
-    from utils.supabase.account_closure_db import (
-        get_account_closure_logs,
-        get_account_closure_summary,
-        get_account_closure_statistics,
-        cleanup_old_account_closure_logs
-    )
+    from utils.supabase.account_closure_service import account_closure_service
+    from utils.supabase.account_closure_analytics import account_closure_analytics
+    from utils.supabase.user_closure_service import user_closure_service
     from utils.supabase.db_client import get_user_alpaca_account_id
     DATABASE_AVAILABLE = True
 except ImportError as e:
@@ -120,7 +117,7 @@ def show_database_logs(account_id: Optional[str] = None, user_id: Optional[str] 
         return
     
     try:
-        logs = get_account_closure_logs(
+        logs = account_closure_service.get_logs_with_filters(
             account_id=account_id,
             user_id=user_id,
             limit=limit
@@ -147,7 +144,7 @@ def show_account_summary(account_id: str):
         return
     
     try:
-        summary = get_account_closure_summary(account_id)
+        summary = account_closure_service.get_account_summary(account_id)
         
         if not summary:
             print(f"{Colors.YELLOW}No summary found for account {account_id}{Colors.END}")
@@ -197,7 +194,7 @@ def show_statistics(days: int = 30):
         return
     
     try:
-        stats = get_account_closure_statistics(days)
+        stats = account_closure_analytics.generate_statistics(days)
         
         print(f"\n{Colors.BOLD}📈 Account Closure Statistics (Last {days} days):{Colors.END}")
         print(f"{Colors.CYAN}{'='*60}{Colors.END}")
@@ -231,7 +228,7 @@ def cleanup_logs(days_to_keep: int = 180):
         return
     
     try:
-        deleted_count = cleanup_old_account_closure_logs(days_to_keep)
+        deleted_count = account_closure_service.cleanup_old_logs(days_to_keep)
         print(f"{Colors.GREEN}✅ Cleaned up {deleted_count} old log entries (older than {days_to_keep} days){Colors.END}")
         
     except Exception as e:
@@ -255,7 +252,7 @@ def monitor_database_logs(account_id: Optional[str] = None, user_id: Optional[st
     try:
         while True:
             # Get latest logs
-            logs = get_account_closure_logs(
+            logs = account_closure_service.get_logs_with_filters(
                 account_id=account_id,
                 user_id=user_id,
                 limit=10

@@ -129,7 +129,43 @@ export async function POST(request: NextRequest) {
           
           console.log(`Connect Bank API: Ownership verified. User ${user.id} owns ACH relationship ${existingRelationship.id}`);
           
-          // Delete from Supabase first (safer to delete local record before remote)
+          // =================================================================
+          // ATOMICITY FIX: Delete remote resource first, then local state
+          // =================================================================
+          
+          // Delete the existing relationship from Alpaca FIRST
+          const deleteResponse = await fetch(`${apiUrl}/delete-ach-relationship`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': process.env.BACKEND_API_KEY || '',
+            },
+            body: JSON.stringify({
+              accountId,
+              achRelationshipId: existingRelationship.id
+            }),
+          });
+          
+          // Check if remote deletion was successful
+          if (!deleteResponse.ok) {
+            const errorText = await deleteResponse.text();
+            console.error(`Connect Bank API: Failed to delete existing relationship from Alpaca: ${deleteResponse.status}`);
+            console.error(`Error details: ${errorText}`);
+            
+            // If it's not a 404 (not found), this is a real error
+            if (deleteResponse.status !== 404) {
+              return NextResponse.json(
+                { error: 'Failed to delete existing ACH relationship from remote service' },
+                { status: 500 }
+              );
+            }
+            // If it's 404, the remote resource is already gone, so we can continue
+            console.log(`Remote relationship ${existingRelationship.id} already deleted (404), continuing with local cleanup`);
+          } else {
+            console.log(`Successfully deleted existing relationship from Alpaca: ${existingRelationship.id}`);
+          }
+          
+          // Only delete from Supabase AFTER successful remote deletion
           try {
             const { error: supabaseDeleteError, count } = await supabase
               .from('user_bank_connections')
@@ -149,7 +185,7 @@ export async function POST(request: NextRequest) {
             if (count === 0) {
               console.error(`Connect Bank API: No rows deleted from Supabase for relationship ${existingRelationship.id}`);
               return NextResponse.json(
-                { error: 'ACH relationship not found' },
+                { error: 'ACH relationship not found in local database' },
                 { status: 404 }
               );
             }
@@ -162,30 +198,6 @@ export async function POST(request: NextRequest) {
               { error: 'Failed to delete local bank connection' },
               { status: 500 }
             );
-          }
-          
-          // Delete the existing relationship from Alpaca
-          const deleteResponse = await fetch(`${apiUrl}/delete-ach-relationship`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-API-Key': process.env.BACKEND_API_KEY || '',
-            },
-            body: JSON.stringify({
-              accountId,
-              achRelationshipId: existingRelationship.id
-            }),
-          });
-          
-          if (!deleteResponse.ok) {
-            console.warn(`Failed to delete existing relationship from Alpaca: ${deleteResponse.status}`);
-            if (deleteResponse.status !== 404) {
-              // Only show warning for errors other than "not found"
-              console.warn(`Error details: ${await deleteResponse.text()}`);
-            }
-            // Continue anyway, as we'll try to create the new one
-          } else {
-            console.log(`Successfully deleted existing relationship from Alpaca: ${existingRelationship.id}`);
           }
         }
       }

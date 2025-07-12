@@ -106,39 +106,39 @@ class TestCorrectPositionBasedCalculation(unittest.TestCase):
                     # Get yesterday's closing price from mock data
                     if symbol in mock_bars_data and len(mock_bars_data[symbol]) > 0:
                         yesterday_close = float(mock_bars_data[symbol][0].close)
-                    else:
-                        # Fallback: use current price (no change calculation)
-                        yesterday_close = current_price
-                    
-                    # Calculate values
-                    position_current_value = qty * current_price
-                    position_previous_value = qty * yesterday_close
-                    position_pnl = position_current_value - position_previous_value
+                else:
+                    # Fallback: use current price (no change calculation)
+                yesterday_close = current_price
+            
+            # Calculate values
+            position_current_value = qty * current_price
+            position_previous_value = qty * yesterday_close
+            position_pnl = position_current_value - position_previous_value
                     
                     # Safe percentage calculation
                     if position_previous_value > 0:
                         position_pnl_pct = (position_pnl / position_previous_value * 100)
                     else:
                         position_pnl_pct = 0
-                    
-                    total_current_value += position_current_value
-                    total_previous_value += position_previous_value
-                    
+            
+            total_current_value += position_current_value
+            total_previous_value += position_previous_value
+            
                     # Assert realistic position-level returns
                     self.assertLess(
                         abs(position_pnl_pct), 
                         self.max_realistic_daily_return_percent,
                         f"Position {symbol} return {position_pnl_pct:.2f}% should be less than {self.max_realistic_daily_return_percent}%"
                     )
-                
-                # Add cash (cash doesn't change in value)
+        
+        # Add cash (cash doesn't change in value)
                 account = calc.broker_client.get_trade_account_by_id(self.account_id)
-                cash = float(account.cash)
-                total_current_value += cash
-                total_previous_value += cash
-                
-                # Calculate total return
-                total_return = total_current_value - total_previous_value
+        cash = float(account.cash)
+        total_current_value += cash
+        total_previous_value += cash
+        
+        # Calculate total return
+        total_return = total_current_value - total_previous_value
                 
                 # Safe percentage calculation
                 if total_previous_value > 0:
@@ -158,9 +158,9 @@ class TestCorrectPositionBasedCalculation(unittest.TestCase):
                 self.assertGreater(total_previous_value, 0, "Total previous value should be positive")
                 
                 # Verify the calculation is more accurate than broken approach
-                current_equity = float(account.equity)
-                last_equity = float(account.last_equity) if account.last_equity else 0
-                broken_return = current_equity - last_equity
+        current_equity = float(account.equity)
+        last_equity = float(account.last_equity) if account.last_equity else 0
+        broken_return = current_equity - last_equity
                 
                 if last_equity > 0:
                     broken_return_pct = (broken_return / last_equity * 100)

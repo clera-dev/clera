@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import AccountClosureButton from "./AccountClosureButton";
 import ClosureConfirmationModal from "./ClosureConfirmationModal";
-import { useAccountClosure } from "@/hooks/useAccountClosure";
+import { useClosureInitiation } from "@/hooks/useClosureInitiation";
 
 interface DangerZoneProps {
   accountId: string;
@@ -21,7 +21,7 @@ export default function DangerZone({ accountId, userName }: DangerZoneProps) {
     setIsConfirmationModalOpen,
     closureState,
     initiateClosure
-  } = useAccountClosure(accountId);
+  } = useClosureInitiation(accountId);
 
   // Fetch ACH relationship ID when component mounts
   useEffect(() => {

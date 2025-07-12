@@ -62,6 +62,24 @@ class AutomatedAccountClosureProcessor:
         detailed_logger = AccountClosureLogger(account_id)
         
         try:
+            # STEP 0: Check preconditions before starting the process
+            detailed_logger.log_step_start("PRECONDITION_CHECK", {
+                "user_id": user_id,
+                "account_id": account_id
+            })
+            
+            preconditions = self.manager.check_closure_preconditions(account_id)
+            
+            if not preconditions.get("ready", False):
+                detailed_logger.log_step_failure("PRECONDITION_CHECK", 
+                    preconditions.get("reason", "Account not ready for closure"))
+                return {
+                    "success": False,
+                    "error": preconditions.get("reason", "Account not ready for closure")
+                }
+            
+            detailed_logger.log_step_success("PRECONDITION_CHECK", preconditions)
+            
             # STEP 1: Get existing confirmation number from Supabase (don't generate new one)
             confirmation_number = None
             try:
@@ -101,10 +119,15 @@ class AutomatedAccountClosureProcessor:
                     "confirmation_number": confirmation_number
                 })
             
-            # STEP 3: Start background process (non-blocking)
+            # STEP 3: Start background process with asyncio.create_task (simple and effective)
             asyncio.create_task(self._run_automated_closure_process(
                 user_id, account_id, ach_relationship_id, confirmation_number, detailed_logger
             ))
+            
+            detailed_logger.log_step_success("BACKGROUND_PROCESS_STARTED", {
+                "method": "asyncio.create_task",
+                "task": "automated_account_closure"
+            })
             
             # STEP 4: Return immediate response to frontend
             return {

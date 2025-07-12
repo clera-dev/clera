@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Funding Status API: Unexpected error', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'An unknown error occurred' },
+      { error: 'Unable to retrieve funding status' },
       { status: 500 }
     );
   }

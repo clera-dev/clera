@@ -10,6 +10,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime
 from jinja2 import Environment, select_autoescape
+from markupsafe import escape
 
 logger = logging.getLogger("clera-email-service")
 
@@ -195,6 +196,12 @@ class EmailService:
                                    confirmation_number: str, estimated_completion: str) -> str:
         """Generate HTML email content for account closure notification."""
         
+        # Escape user-supplied values to prevent XSS
+        user_name_escaped = escape(user_name)
+        account_id_escaped = escape(account_id)
+        confirmation_number_escaped = escape(confirmation_number)
+        estimated_completion_escaped = escape(estimated_completion)
+        
         env = Environment(autoescape=select_autoescape(['html', 'xml']))
         template = env.from_string("""
 <!DOCTYPE html>
@@ -299,10 +306,10 @@ class EmailService:
         """)
         
         return template.render(
-            user_name=user_name,
-            account_id=account_id,
-            confirmation_number=confirmation_number,
-            estimated_completion=estimated_completion,
+            user_name=user_name_escaped,
+            account_id=account_id_escaped,
+            confirmation_number=confirmation_number_escaped,
+            estimated_completion=estimated_completion_escaped,
             request_date=datetime.now().strftime("%B %d, %Y at %I:%M %p"),
             support_email=self.support_email,
             current_year=datetime.now().year
@@ -311,6 +318,12 @@ class EmailService:
     def _generate_closure_email_text(self, user_name: str, account_id: str,
                                    confirmation_number: str, estimated_completion: str) -> str:
         """Generate plain text email content for account closure notification."""
+        
+        # Escape user-supplied values for consistency (less critical for text templates)
+        user_name_escaped = escape(user_name)
+        account_id_escaped = escape(account_id)
+        confirmation_number_escaped = escape(confirmation_number)
+        estimated_completion_escaped = escape(estimated_completion)
         
         env = Environment(autoescape=select_autoescape(['html', 'xml']))
         template = env.from_string("""
@@ -355,10 +368,10 @@ This is an automated message. Please do not reply to this email.
         """)
         
         return template.render(
-            user_name=user_name,
-            account_id=account_id,
-            confirmation_number=confirmation_number,
-            estimated_completion=estimated_completion,
+            user_name=user_name_escaped,
+            account_id=account_id_escaped,
+            confirmation_number=confirmation_number_escaped,
+            estimated_completion=estimated_completion_escaped,
             request_date=datetime.now().strftime("%B %d, %Y at %I:%M %p"),
             support_email=self.support_email,
             current_year=datetime.now().year
@@ -367,6 +380,11 @@ This is an automated message. Please do not reply to this email.
     def _generate_closure_complete_email_html(self, user_name: str, account_id: str,
                                             confirmation_number: str, final_transfer_amount: float) -> str:
         """Generate HTML email content for account closure completion notification."""
+        
+        # Escape user-supplied values to prevent XSS
+        user_name_escaped = escape(user_name)
+        account_id_escaped = escape(account_id)
+        confirmation_number_escaped = escape(confirmation_number)
         
         env = Environment(autoescape=select_autoescape(['html', 'xml']))
         template = env.from_string("""
@@ -468,9 +486,9 @@ This is an automated message. Please do not reply to this email.
         """)
         
         return template.render(
-            user_name=user_name,
-            account_id=account_id,
-            confirmation_number=confirmation_number,
+            user_name=user_name_escaped,
+            account_id=account_id_escaped,
+            confirmation_number=confirmation_number_escaped,
             final_transfer_amount=final_transfer_amount,
             closure_date=datetime.now().strftime("%B %d, %Y at %I:%M %p"),
             support_email=self.support_email,
@@ -480,6 +498,11 @@ This is an automated message. Please do not reply to this email.
     def _generate_closure_complete_email_text(self, user_name: str, account_id: str,
                                             confirmation_number: str, final_transfer_amount: float) -> str:
         """Generate plain text email content for account closure completion notification."""
+        
+        # Escape user-supplied values for consistency (less critical for text templates)
+        user_name_escaped = escape(user_name)
+        account_id_escaped = escape(account_id)
+        confirmation_number_escaped = escape(confirmation_number)
         
         env = Environment(autoescape=select_autoescape(['html', 'xml']))
         template = env.from_string("""
@@ -524,9 +547,9 @@ This is an automated message. Please do not reply to this email.
         """)
         
         return template.render(
-            user_name=user_name,
-            account_id=account_id,
-            confirmation_number=confirmation_number,
+            user_name=user_name_escaped,
+            account_id=account_id_escaped,
+            confirmation_number=confirmation_number_escaped,
             final_transfer_amount=final_transfer_amount,
             closure_date=datetime.now().strftime("%B %d, %Y at %I:%M %p"),
             support_email=self.support_email,

@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ detail: 'Period is required' }, { status: 400 });
     }
 
-    console.log(`Portfolio History API: Checking history for account: ${accountId}, user: ${user.id}`);
+    console.log('Portfolio History API: Processing portfolio history request');
 
     // =================================================================
     // CRITICAL SECURITY FIX: Verify account ownership before querying
@@ -46,14 +46,14 @@ export async function GET(request: NextRequest) {
       .single();
     
     if (onboardingError || !onboardingData) {
-      console.error(`Portfolio History API: User ${user.id} does not own account ${accountId}`);
+      console.error('Portfolio History API: Account ownership verification failed - access denied');
       return NextResponse.json(
         { error: 'Account not found or access denied' },
         { status: 403 }
       );
     }
     
-    console.log(`Portfolio History API: Ownership verified. User ${user.id} owns account ${accountId}`);
+    console.log('Portfolio History API: Account ownership verified successfully');
 
     // --- Fetch from actual backend ---
     const backendUrl = process.env.BACKEND_API_URL;

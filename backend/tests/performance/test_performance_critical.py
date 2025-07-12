@@ -79,14 +79,14 @@ class TestPerformanceCritical(unittest.TestCase):
             
             mock_broker_class.return_value = mock_broker_instance
             
-            calc = PortfolioCalculator(
+        calc = PortfolioCalculator(
                 broker_api_key="mock_key",
                 broker_secret_key="mock_secret",
-                sandbox=True
-            )
-            
+            sandbox=True
+        )
+        
             # Test calculation speed
-            start_time = time.time()
+        start_time = time.time()
             calc_data = calc.calculate_portfolio_value(self.account_id)
             calc_duration = time.time() - start_time
             
@@ -118,19 +118,19 @@ class TestPerformanceCritical(unittest.TestCase):
                 broker_secret_key="mock_secret",
                 sandbox=True
             )
-            
+        
             # Test multiple calculations
-            num_repeats = 10
-            times = []
-            
-            for i in range(num_repeats):
-                start_time = time.time()
+        num_repeats = 10
+        times = []
+        
+        for i in range(num_repeats):
+            start_time = time.time()
                 calc.calculate_portfolio_value(self.account_id)
                 times.append(time.time() - start_time)
-            
-            avg_time = sum(times) / len(times)
-            min_time = min(times)
-            max_time = max(times)
+        
+        avg_time = sum(times) / len(times)
+        min_time = min(times)
+        max_time = max(times)
             time_variance = max_time - min_time
             
             # Assert consistent performance
@@ -166,14 +166,14 @@ class TestPerformanceCritical(unittest.TestCase):
                 sandbox=True
             )
             
-            def single_calculation():
-                start = time.time()
-                try:
+        def single_calculation():
+            start = time.time()
+            try:
                     calc.calculate_portfolio_value(self.account_id)
-                    return time.time() - start, None
-                except Exception as e:
-                    return time.time() - start, str(e)
-            
+                return time.time() - start, None
+            except Exception as e:
+                return time.time() - start, str(e)
+        
             # Test with moderate concurrency
             num_threads = 10
             
@@ -227,29 +227,29 @@ class TestPerformanceCritical(unittest.TestCase):
                 broker_secret_key="mock_secret",
                 sandbox=True
             )
-            
+        
             # Monitor memory usage
-            process = psutil.Process()
-            baseline_memory = process.memory_info().rss / 1024 / 1024  # MB
-            
+        process = psutil.Process()
+        baseline_memory = process.memory_info().rss / 1024 / 1024  # MB
+        
             # Run multiple calculations
-            memory_samples = []
-            for i in range(20):
+        memory_samples = []
+        for i in range(20):
                 calc.calculate_portfolio_value(self.account_id)
-                current_memory = process.memory_info().rss / 1024 / 1024
-                memory_samples.append(current_memory)
-            
-            final_memory = memory_samples[-1]
-            memory_growth = final_memory - baseline_memory
-            max_memory = max(memory_samples)
-            
+            current_memory = process.memory_info().rss / 1024 / 1024
+            memory_samples.append(current_memory)
+        
+        final_memory = memory_samples[-1]
+        memory_growth = final_memory - baseline_memory
+        max_memory = max(memory_samples)
+        
             # Assert acceptable memory growth
             self.assertLess(
                 memory_growth, 
                 self.max_memory_growth,
                 f"Memory growth {memory_growth:.2f}MB should be less than {self.max_memory_growth}MB"
             )
-            
+        
             # Assert memory doesn't grow excessively
             self.assertLess(
                 memory_growth, 
@@ -275,14 +275,14 @@ class TestPerformanceCritical(unittest.TestCase):
                 broker_secret_key="mock_secret",
                 sandbox=True
             )
-            
+        
             # Test multiple calculations
-            results = []
-            for i in range(5):
+        results = []
+        for i in range(5):
                 calc_data = calc.calculate_portfolio_value(self.account_id)
-                if calc_data:
-                    results.append(calc_data.get('raw_return', 0))
-            
+            if calc_data:
+                results.append(calc_data.get('raw_return', 0))
+        
             # Assert we have sufficient results
             self.assertGreaterEqual(
                 len(results), 
@@ -339,8 +339,8 @@ class TestPerformanceCritical(unittest.TestCase):
 def run_performance_critical_demo():
     """Run a demonstration of the performance test (for documentation)"""
     print("⚡ CRITICAL PERFORMANCE TEST")
-    print("=" * 80)
-    
+        print("=" * 80)
+        
     print(f"\n📋 PERFORMANCE ASPECTS TESTED:")
     print("-" * 50)
     print(f"   1. Response time under normal load")

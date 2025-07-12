@@ -9,6 +9,55 @@ import { OnboardingData } from "@/components/onboarding/OnboardingTypes";
 
 export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected' | 'pending_closure' | 'closed';
 
+/**
+ * Waits for auth state to be consistent after authentication operations.
+ * Uses exponential backoff with a maximum of 3 retries to avoid infinite loops.
+ * 
+ * @param supabase - The Supabase client instance
+ * @param maxRetries - Maximum number of retry attempts (default: 3)
+ * @param baseDelay - Base delay in milliseconds (default: 100)
+ * @returns Promise that resolves when auth state is consistent or rejects after max retries
+ */
+async function waitForAuthStateConsistency(
+  supabase: any, 
+  maxRetries: number = 3, 
+  baseDelay: number = 100
+): Promise<any> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error) {
+        throw new Error(`Auth error on attempt ${attempt + 1}: ${error.message}`);
+      }
+      
+      if (user) {
+        // Auth state is consistent, return the user
+        return user;
+      }
+      
+      // If no user found and this isn't the last attempt, wait and retry
+      if (attempt < maxRetries) {
+        const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+        console.log(`Auth state not ready, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw new Error(`Auth state not consistent after ${maxRetries + 1} attempts`);
+      }
+    } catch (error) {
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      // For non-auth errors, still retry with exponential backoff
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.log(`Auth check failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw new Error('Auth state consistency check failed');
+}
+
 export const signUpAction = async (formData: FormData) => {
   const email = formData.get("email")?.toString();
   const password = formData.get("password")?.toString();
@@ -52,11 +101,14 @@ export const signUpAction = async (formData: FormData) => {
       return encodedRedirect("error", "/sign-in", "Signup was successful, but automatic login failed. Please sign in manually.");
     }
     
-    // Small delay to ensure auth state consistency
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    // Get the user to check their onboarding and funding status
-    const { data: { user } } = await supabase.auth.getUser();
+    // Wait for auth state to be consistent using proper retry mechanism
+    let user;
+    try {
+      user = await waitForAuthStateConsistency(supabase);
+    } catch (authError) {
+      console.error("Failed to get consistent auth state after signup:", authError);
+      return encodedRedirect("error", "/sign-in", "Signup successful, but there was an issue with the login. Please sign in manually.");
+    }
     
     if (user) {
       // Check onboarding status
@@ -112,11 +164,14 @@ export const signInAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-in", error.message);
   }
 
-  // Small delay to ensure auth state consistency
-  await new Promise(resolve => setTimeout(resolve, 50));
-
-  // Get the user to check their onboarding and funding status
-  const { data: { user } } = await supabase.auth.getUser();
+  // Wait for auth state to be consistent using proper retry mechanism
+  let user;
+  try {
+    user = await waitForAuthStateConsistency(supabase);
+  } catch (authError) {
+    console.error("Failed to get consistent auth state after signin:", authError);
+    return encodedRedirect("error", "/sign-in", "Sign in successful, but there was an issue with the session. Please try signing in again.");
+  }
   
   if (user) {
     // Check onboarding status

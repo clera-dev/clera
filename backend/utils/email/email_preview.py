@@ -8,14 +8,10 @@ so you can see exactly what your customers will receive.
 """
 
 import os
-import sys
 from datetime import datetime
 
-# Add the backend directory to the path so we can import the email service
-backend_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(backend_path)
-
-from utils.email.email_service import EmailService
+# Use relative import instead of mutating sys.path
+from .email_service import EmailService
 
 def generate_email_preview(output_dir: str = "email_previews"):
     """
