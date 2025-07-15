@@ -80,25 +80,25 @@ class TestPerformanceCritical(unittest.TestCase):
             mock_broker_class.return_value = mock_broker_instance
             
         calc = PortfolioCalculator(
-                broker_api_key="mock_key",
-                broker_secret_key="mock_secret",
+            broker_api_key="mock_key",
+            broker_secret_key="mock_secret",
             sandbox=True
         )
-        
-            # Test calculation speed
+
+        # Test calculation speed
         start_time = time.time()
-            calc_data = calc.calculate_portfolio_value(self.account_id)
-            calc_duration = time.time() - start_time
-            
-            # Assert calculation completes within acceptable time
-            self.assertLess(
-                calc_duration, 
-                self.max_calculation_time,
-                f"Calculation took {calc_duration:.3f}s, should be less than {self.max_calculation_time}s"
-            )
-            
-            # Assert calculation returns valid data
-            self.assertIsNotNone(calc_data, "Calculation should return valid data")
+        calc_data = calc.calculate_portfolio_value(self.account_id)
+        calc_duration = time.time() - start_time
+
+        # Assert calculation completes within acceptable time
+        self.assertLess(
+            calc_duration, 
+            self.max_calculation_time,
+            f"Calculation took {calc_duration:.3f}s, should be less than {self.max_calculation_time}s"
+        )
+
+        # Assert calculation returns valid data
+        self.assertIsNotNone(calc_data, "Calculation should return valid data")
     
     def test_repeated_calculations_consistency(self):
         """Test that repeated calculations maintain consistent performance"""
@@ -125,27 +125,27 @@ class TestPerformanceCritical(unittest.TestCase):
         
         for i in range(num_repeats):
             start_time = time.time()
-                calc.calculate_portfolio_value(self.account_id)
-                times.append(time.time() - start_time)
+            calc.calculate_portfolio_value(self.account_id)
+            times.append(time.time() - start_time)
         
         avg_time = sum(times) / len(times)
         min_time = min(times)
         max_time = max(times)
-            time_variance = max_time - min_time
-            
-            # Assert consistent performance
-            self.assertLess(
-                time_variance, 
-                0.5,
-                f"Performance variance {time_variance:.3f}s should be less than 0.5s"
-            )
-            
-            # Assert average time is acceptable
-            self.assertLess(
-                avg_time, 
-                self.max_calculation_time,
-                f"Average calculation time {avg_time:.3f}s should be less than {self.max_calculation_time}s"
-            )
+        time_variance = max_time - min_time
+
+        # Assert consistent performance
+        self.assertLess(
+            time_variance, 
+            0.5,
+            f"Performance variance {time_variance:.3f}s should be less than 0.5s"
+        )
+
+        # Assert average time is acceptable
+        self.assertLess(
+            avg_time, 
+            self.max_calculation_time,
+            f"Average calculation time {avg_time:.3f}s should be less than {self.max_calculation_time}s"
+        )
     
     def test_concurrent_calculations(self):
         """Test that concurrent calculations handle load properly"""
@@ -169,7 +169,7 @@ class TestPerformanceCritical(unittest.TestCase):
         def single_calculation():
             start = time.time()
             try:
-                    calc.calculate_portfolio_value(self.account_id)
+                calc.calculate_portfolio_value(self.account_id)
                 return time.time() - start, None
             except Exception as e:
                 return time.time() - start, str(e)
@@ -235,7 +235,7 @@ class TestPerformanceCritical(unittest.TestCase):
             # Run multiple calculations
         memory_samples = []
         for i in range(20):
-                calc.calculate_portfolio_value(self.account_id)
+            calc.calculate_portfolio_value(self.account_id)
             current_memory = process.memory_info().rss / 1024 / 1024
             memory_samples.append(current_memory)
         
@@ -243,20 +243,20 @@ class TestPerformanceCritical(unittest.TestCase):
         memory_growth = final_memory - baseline_memory
         max_memory = max(memory_samples)
         
-            # Assert acceptable memory growth
-            self.assertLess(
-                memory_growth, 
-                self.max_memory_growth,
-                f"Memory growth {memory_growth:.2f}MB should be less than {self.max_memory_growth}MB"
-            )
-        
-            # Assert memory doesn't grow excessively
-            self.assertLess(
-                memory_growth, 
-                10,
-                f"Memory growth {memory_growth:.2f}MB should be less than 10MB for no significant leak"
-            )
+        # Assert acceptable memory growth
+        self.assertLess(
+            memory_growth, 
+            self.max_memory_growth,
+            f"Memory growth {memory_growth:.2f}MB should be less than {self.max_memory_growth}MB"
+        )
     
+        # Assert memory doesn't grow excessively
+        self.assertLess(
+            memory_growth, 
+            10,
+            f"Memory growth {memory_growth:.2f}MB should be less than 10MB for no significant leak"
+        )
+
     def test_calculation_stability(self):
         """Test that calculations return consistent results"""
         with patch('portfolio_realtime.portfolio_calculator.BrokerClient') as mock_broker_class:
@@ -279,7 +279,7 @@ class TestPerformanceCritical(unittest.TestCase):
             # Test multiple calculations
         results = []
         for i in range(5):
-                calc_data = calc.calculate_portfolio_value(self.account_id)
+            calc_data = calc.calculate_portfolio_value(self.account_id)
             if calc_data:
                 results.append(calc_data.get('raw_return', 0))
         
@@ -339,8 +339,8 @@ class TestPerformanceCritical(unittest.TestCase):
 def run_performance_critical_demo():
     """Run a demonstration of the performance test (for documentation)"""
     print("⚡ CRITICAL PERFORMANCE TEST")
-        print("=" * 80)
-        
+    print("=" * 80)
+
     print(f"\n📋 PERFORMANCE ASPECTS TESTED:")
     print("-" * 50)
     print(f"   1. Response time under normal load")
@@ -350,7 +350,7 @@ def run_performance_critical_demo():
     print(f"   5. Concurrent calculation handling")
     print(f"   6. Cache performance")
     print(f"   7. API response times")
-    
+
     print(f"\n✅ PERFORMANCE REQUIREMENTS:")
     print("-" * 50)
     print(f"   - Single calculation: < 1.0 seconds")
@@ -358,7 +358,7 @@ def run_performance_critical_demo():
     print(f"   - Memory growth: < 50MB")
     print(f"   - Concurrent success rate: > 95%")
     print(f"   - Calculation consistency: Deterministic results")
-    
+
     print(f"\n🎯 TESTING APPROACH:")
     print("-" * 50)
     print(f"   - Uses proper assertions for failure detection")

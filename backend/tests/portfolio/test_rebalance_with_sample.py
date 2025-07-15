@@ -19,7 +19,7 @@ project_root = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.insert(0, project_root)
 
 # Import our test utility for calling tool functions
-from tests.test_utils import test_create_rebalance_instructions
+from tests.utils.test_utils import test_create_rebalance_instructions
 
 class MockEnum(str, Enum):
     """Mock enum for testing."""

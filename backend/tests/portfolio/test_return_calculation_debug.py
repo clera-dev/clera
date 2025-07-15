@@ -74,34 +74,34 @@ class TestReturnCalculationDebug(unittest.TestCase):
             mock_broker_class.return_value = mock_broker_instance
             
         calc = PortfolioCalculator(
-                broker_api_key="mock_key",
-                broker_secret_key="mock_secret",
+            broker_api_key="mock_key",
+            broker_secret_key="mock_secret",
             sandbox=True
         )
-        
-            # Test account data retrieval
-            account = calc.broker_client.get_trade_account_by_id(self.account_id)
-            
-            # Assert account data is valid
-            self.assertIsNotNone(account, "Account should not be None")
-            self.assertGreater(float(account.equity), 0, "Equity should be positive")
-            self.assertGreaterEqual(float(account.cash), 0, "Cash should be non-negative")
-            
-            # Test data conversion
+
+        # Test account data retrieval
+        account = calc.broker_client.get_trade_account_by_id(self.account_id)
+
+        # Assert account data is valid
+        self.assertIsNotNone(account, "Account should not be None")
+        self.assertGreater(float(account.equity), 0, "Equity should be positive")
+        self.assertGreaterEqual(float(account.cash), 0, "Cash should be non-negative")
+
+        # Test data conversion
         current_equity = float(account.equity)
         last_equity = float(account.last_equity) if account.last_equity else 0
         cash = float(account.cash)
-            
-            # Assert reasonable values
-            self.assertGreater(current_equity, 0, "Current equity should be positive")
-            self.assertGreaterEqual(cash, 0, "Cash should be non-negative")
-            
-            # Test equity difference calculation
+
+        # Assert reasonable values
+        self.assertGreater(current_equity, 0, "Current equity should be positive")
+        self.assertGreaterEqual(cash, 0, "Cash should be non-negative")
+
+        # Test equity difference calculation
         raw_difference = current_equity - last_equity
         raw_percentage = (raw_difference / last_equity * 100) if last_equity > 0 else 0
-        
-            # Assert reasonable percentage (should be less than 50% for daily returns)
-            self.assertLess(abs(raw_percentage), 50, f"Daily return percentage {raw_percentage:.2f}% should be less than 50%")
+
+        # Assert reasonable percentage (should be less than 50% for daily returns)
+        self.assertLess(abs(raw_percentage), 50, f"Daily return percentage {raw_percentage:.2f}% should be less than 50%")
     
     def test_position_data_validation(self):
         """Test that position data is valid and accessible"""
@@ -133,17 +133,17 @@ class TestReturnCalculationDebug(unittest.TestCase):
             
             # Test position data validation
             total_position_value = 0.0
-        for position in positions:
+            for position in positions:
                 # Assert position has required attributes
                 self.assertIsNotNone(position.symbol, "Position should have a symbol")
                 self.assertIsNotNone(position.qty, "Position should have quantity")
                 self.assertIsNotNone(position.market_value, "Position should have market value")
                 
                 # Test data conversion
-            qty = float(position.qty)
+                qty = float(position.qty)
                 market_value = float(position.market_value)
-            avg_cost = float(position.avg_entry_price) if position.avg_entry_price else 0
-            unrealized_pl = float(position.unrealized_pl) if position.unrealized_pl else 0
+                avg_cost = float(position.avg_entry_price) if position.avg_entry_price else 0
+                unrealized_pl = float(position.unrealized_pl) if position.unrealized_pl else 0
                 
                 # Assert reasonable values
                 self.assertGreater(qty, 0, f"Quantity for {position.symbol} should be positive")

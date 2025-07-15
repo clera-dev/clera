@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`Funding Status API: Checking funding status for account: ${accountId}, user: ${user.id}`);
+    console.log('Funding Status API: Checking funding status for account');
 
     // =================================================================
     // CRITICAL SECURITY FIX: Verify account ownership before querying

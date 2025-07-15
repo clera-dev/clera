@@ -10,6 +10,7 @@ import FooterComponent from "@/components/FooterComponent";
 import { CleraAssistProvider } from "@/components/ui/clera-assist-provider";
 import { Button } from "@/components/ui/button";
 import { Menu, ChevronLeft } from "lucide-react";
+import { useAccountClosure } from "@/hooks/useAccountClosure";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -40,6 +41,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [hasCompletedFunding, setHasCompletedFunding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Get account closure state from backend (authoritative source)
+  const { closureData, loading: closureLoading } = useAccountClosure();
 
   // Paths that don't need the sidebar
   const nonSidebarPaths = [
@@ -222,20 +226,21 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const isOnboardingPage = pathname === '/protected' && !hasCompletedOnboarding;
   const isFundingPage = pathname === '/protected' && hasCompletedOnboarding && !hasCompletedFunding;
   
-  // Check for account closure statuses from localStorage (safe for SSR)
-  const isPendingClosure = typeof window !== 'undefined' && localStorage.getItem("isPendingClosure") === 'true';
-  const isClosed = typeof window !== 'undefined' && localStorage.getItem("isClosed") === 'true';
+  // Determine account closure state from backend data (authoritative source)
+  // If closureData exists, it means account closure has been initiated
+  // Hide sidebar for any account closure activity (in progress or completed)
+  const hasAccountClosureActivity = Boolean(closureData && !closureLoading);
   
   const shouldShowSidebar = 
     isClient && 
     !isLoading && 
+    !closureLoading && // Wait for closure data to load
     isAuthenticated && 
     pathname !== null && 
     !nonSidebarPaths.includes(pathname) && 
     !isOnboardingPage &&
     !isFundingPage &&
-    !isPendingClosure && // CRITICAL: No sidebar for pending closure
-    !isClosed && // CRITICAL: No sidebar for closed accounts  
+    !hasAccountClosureActivity && // CRITICAL: No sidebar for any account closure activity
     hasCompletedFunding; // Must be funded to see sidebar
 
   // Check if current path supports side chat
