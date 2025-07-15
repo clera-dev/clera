@@ -125,7 +125,10 @@ export class MarketHolidayUtil {
    */
   static isMarketHoliday(date: Date, exchange: string = 'NYSE'): boolean {
     const year = date.getFullYear().toString();
-    const dateStr = date.toISOString().split('T')[0];
+    
+    // FIXED: Use timezone-safe date string construction to avoid timezone parsing issues
+    // Instead of toISOString() which can cause timezone shifts, use the actual date components
+    const dateStr = `${year}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     
     const calendar = US_MARKET_CALENDAR[year];
     if (!calendar) return false;
@@ -142,7 +145,9 @@ export class MarketHolidayUtil {
    */
   static isEarlyCloseDay(date: Date, exchange: string = 'NYSE'): MarketHoliday | null {
     const year = date.getFullYear().toString();
-    const dateStr = date.toISOString().split('T')[0];
+    
+    // FIXED: Use timezone-safe date string construction to avoid timezone parsing issues
+    const dateStr = `${year}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     
     const calendar = US_MARKET_CALENDAR[year];
     if (!calendar) return null;

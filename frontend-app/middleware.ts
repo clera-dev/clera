@@ -54,6 +54,7 @@ const protectedApiPaths = [
   '/api/assets',
   '/api/user',
   '/api/ws/portfolio',
+  '/api/watchlist',
 ];
 
 // API routes that require authentication but not necessarily completed onboarding
@@ -94,29 +95,24 @@ export async function middleware(request: NextRequest) {
       }
     );
 
-    console.log(`[Middleware] Processing: ${path}`);
-
-    // Get user authentication status
+    // Get user authentication status first for homepage handling
     let user = null;
     try {
       const {
         data: { user: authUser },
       } = await supabase.auth.getUser();
       user = authUser;
-      console.log(`[Middleware] User auth status: ${user ? 'authenticated' : 'unauthenticated'}`);
     } catch (authError) {
-      console.log(`[Middleware] Auth error: ${authError instanceof Error ? authError.message : 'Unknown auth error'}`);
+      // Auth errors handled silently in production
       user = null;
     }
 
     // Handle the homepage specifically
     if (path === '/') {
       if (user) {
-        console.log(`[Middleware] Authenticated user accessing homepage, redirecting to portfolio`);
         const redirectUrl = new URL('/portfolio', request.url);
         return NextResponse.redirect(redirectUrl);
       }
-      console.log(`[Middleware] Unauthenticated user accessing homepage, allowing`);
       return response;
     }
 
@@ -215,19 +211,16 @@ export async function middleware(request: NextRequest) {
     }
 
     // Check if the route is public (no auth needed)
-    if (isPublicPath(path)) {
-      console.log(`[Middleware] Public path allowed: ${path}`);
-      return response;
+    if (publicPaths.some(publicPath => path.startsWith(publicPath))) {
+          return response;
     }
 
     // Handle auth pages (sign-in, sign-up, forgot-password)
     if (isAuthPage(path)) {
       if (user) {
-        console.log(`[Middleware] Authenticated user accessing auth page, redirecting to portfolio`);
         const redirectUrl = new URL('/portfolio', request.url);
         return NextResponse.redirect(redirectUrl);
       }
-      console.log(`[Middleware] Unauthenticated user accessing auth page, allowing`);
       return response;
     }
 
@@ -244,28 +237,10 @@ export async function middleware(request: NextRequest) {
     
     // Check authentication requirement
     if (config.requiresAuth && !user) {
-      // Check for beta testing mode for specific endpoints
-      const isBetaMode = process.env.NEXT_PUBLIC_BETA_TESTING === 'true';
-      const isInvestmentResearch = path.startsWith('/api/investment/research');
-      const isFMPChart = path.startsWith('/api/fmp/chart');
-      const isCompanyProfiles = path.startsWith('/api/companies/profiles');
-      
-      if (isBetaMode && (isInvestmentResearch || isFMPChart || isCompanyProfiles)) {
-        console.log(`[Middleware] Beta mode: allowing unauthenticated access to ${path}`);
-        return NextResponse.next();
-      }
-      
-      if (path.startsWith('/api/')) {
-        console.log(`[Middleware] Unauthenticated user accessing auth-required API, returning 401`);
-        return new NextResponse(
-          JSON.stringify({ error: 'Authentication required' }),
-          { status: 401, headers: { 'Content-Type': 'application/json' } }
-        );
-      } else {
-        console.log(`[Middleware] Unauthenticated user accessing protected route, redirecting to homepage`);
-        const redirectUrl = new URL('/', request.url);
-        return NextResponse.redirect(redirectUrl);
-      }
+      return new NextResponse(
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
     // Check onboarding requirement

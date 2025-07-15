@@ -4,15 +4,18 @@ import { useState, useEffect } from 'react';
 import StockSearchBar from '@/components/invest/StockSearchBar';
 import StockInfoCard from '@/components/invest/StockInfoCard';
 import OrderModal from '@/components/invest/OrderModal';
-import InvestmentResearch from '@/components/invest/InvestmentResearch';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import StockWatchlist from '@/components/invest/StockWatchlist';
+import StockPicksCard from '@/components/invest/StockPicksCard';
+import InvestmentIdeasCard from '@/components/invest/InvestmentIdeasCard';
+import ResearchSourcesCard from '@/components/invest/ResearchSourcesCard';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
 import { useSidebarCollapse } from "@/components/ClientLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Search, AlertCircle, X } from "lucide-react";
+import { Search, AlertCircle, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +41,30 @@ interface BalanceData {
   currency: string;
 }
 
+interface InvestmentTheme {
+  title: string;
+  summary: string;
+  report: string;
+  relevant_tickers: string[];
+}
+
+interface StockPick {
+  ticker: string;
+  company_name: string;
+  rationale: string;
+}
+
+interface MarketAnalysis {
+  current_environment: string;
+  risk_factors: string;
+}
+
+interface InvestmentResearchData {
+  investment_themes: InvestmentTheme[];
+  stock_picks: StockPick[];
+  market_analysis: MarketAnalysis;
+}
+
 export default function InvestPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -46,7 +73,18 @@ export default function InvestPage() {
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [isLoadingAccountId, setIsLoadingAccountId] = useState(true);
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [watchlistSymbols, setWatchlistSymbols] = useState<Set<string>>(new Set());
+  const [watchlistVersion, setWatchlistVersion] = useState(0);
+  
+  // Research data state
+  const [researchData, setResearchData] = useState<InvestmentResearchData | null>(null);
+  const [isLoadingResearch, setIsLoadingResearch] = useState(true);
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const [lastGenerated, setLastGenerated] = useState<string | null>(null);
+  const [citations, setCitations] = useState<string[]>([]);
+  
+  // Responsive state
+  const [isNarrowScreen, setIsNarrowScreen] = useState(false);
   
   // Get sidebar collapse function
   const { autoCollapseSidebar } = useSidebarCollapse();
@@ -89,32 +127,29 @@ export default function InvestPage() {
     return () => {};
   }, []);
 
-  // Use effect to check if side chat is open
+  // Detect chat mode and screen width
   useEffect(() => {
-    const checkChatPanel = () => {
-      // Look for chat panel elements
-      const chatPanel = document.querySelector('[role="dialog"]') || 
-                        document.querySelector('.chat-panel') ||
-                        document.querySelector('[class*="chat"]');
-      setIsChatOpen(!!chatPanel && window.innerWidth < 1500);
+    const checkScreenSize = () => {
+      const width = window.innerWidth;
+      const narrowScreen = width < 1280; // xl breakpoint
+      
+      setIsNarrowScreen(narrowScreen);
     };
 
     // Initial check
-    checkChatPanel();
+    checkScreenSize();
 
-    // Set up observer to detect DOM changes that might indicate chat panel opened/closed
-    const observer = new MutationObserver(checkChatPanel);
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    // Also check on resize
-    window.addEventListener('resize', checkChatPanel);
+    // Only check on resize
+    window.addEventListener('resize', checkScreenSize);
 
     return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', checkChatPanel);
+      window.removeEventListener('resize', checkScreenSize);
     };
   }, []);
 
+  // Determine if we should use stacked layout (simplified)
+  const shouldUseStackedLayout = isNarrowScreen;
+  
   useEffect(() => {
     const fetchAndSetAccountId = async () => {
       setIsLoadingAccountId(true);
@@ -169,14 +204,53 @@ export default function InvestPage() {
     };
 
     fetchBalance();
-
   }, [accountId, isLoadingAccountId]);
+
+  // Load cached research data
+  useEffect(() => {
+    const loadCachedResearchData = async () => {
+      setIsLoadingResearch(true);
+      setResearchError(null);
+      
+      try {
+        console.log('Loading cached investment research data...');
+        
+        const response = await fetch('/api/investment/research', {
+          method: 'GET',
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error('No cached data available. Using fallback content.');
+          }
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Cached research data loaded successfully:', data);
+        
+        if (data.research_data) {
+          setResearchData(data.research_data);
+          setLastGenerated(data.generated_at ? new Date(data.generated_at).toLocaleDateString() : null);
+          setCitations(data.citations || []);
+        }
+      } catch (error) {
+        console.error('Error loading cached research data:', error);
+        setResearchError(error instanceof Error ? error.message : 'Failed to load research data');
+        // Don't set researchData to null here - let components handle fallback
+      } finally {
+        setIsLoadingResearch(false);
+      }
+    };
+
+    loadCachedResearchData();
+  }, []);
 
   const handleStockSelect = (symbol: string) => {
     // Auto-collapse sidebar when stock dialog opens
     autoCollapseSidebar();
     setSelectedSymbol(symbol);
-    // Open modal instead of scrolling
   };
 
   const handleOpenModal = () => {
@@ -188,6 +262,55 @@ export default function InvestPage() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
   };
+
+  // Fetch watchlist data
+  const fetchWatchlist = async () => {
+    if (!accountId) {
+      setWatchlistSymbols(new Set());
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/watchlist/${accountId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setWatchlistSymbols(new Set(data.symbols || []));
+      }
+    } catch (error) {
+      console.error('Error fetching watchlist:', error);
+    }
+  };
+
+  const refreshWatchlist = () => {
+    fetchWatchlist();
+    setWatchlistVersion(prev => prev + 1);
+  };
+
+  const handleWatchlistChange = (symbol: string, action: 'add' | 'remove') => {
+    setWatchlistSymbols(prev => {
+      const newSet = new Set(prev);
+      if (action === 'add') {
+        newSet.add(symbol);
+      } else {
+        newSet.delete(symbol);
+      }
+      return newSet;
+    });
+    setWatchlistVersion(prev => prev + 1);
+  };
+
+  const optimisticAddToWatchlist = (symbol: string) => {
+    handleWatchlistChange(symbol, 'add');
+  };
+
+  const optimisticRemoveFromWatchlist = (symbol: string) => {
+    handleWatchlistChange(symbol, 'remove');
+  };
+
+  // Load watchlist when account changes
+  useEffect(() => {
+    fetchWatchlist();
+  }, [accountId]);
 
   if (isLoadingAccountId) {
     return (
@@ -201,7 +324,7 @@ export default function InvestPage() {
      return (
         <div className="flex items-center justify-center h-full p-4">
             <Alert variant="destructive" className="max-w-md">
-                <Terminal className="h-4 w-4" />
+                <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Account Error</AlertTitle>
                 <AlertDescription>
                     {balanceError}
@@ -212,7 +335,7 @@ export default function InvestPage() {
   }
 
   return (
-    <div className="h-full w-full overflow-auto">
+    <div className="p-4 space-y-4 bg-background text-foreground w-full h-full">
       <Toaster 
         position="bottom-center"
         toastOptions={{
@@ -245,51 +368,119 @@ export default function InvestPage() {
           },
         }}
       />
-      <div className="p-4 space-y-6">
-        <div className="flex flex-col space-y-2 mb-2">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold">Discover Your Investment Opportunities:</h1>
-          </div>
-          
-          {/* Search Bar Section - Featured prominently at the top with visual highlight */}
-          <div className="mt-4 mb-6">
-            <div className="bg-gradient-to-r from-slate-900 to-slate-800 dark:from-slate-900 dark:to-slate-800 border border-slate-700 rounded-xl p-4 shadow-lg">
-              <div className="flex items-center gap-3 mb-3">
-                <Search className="text-primary h-5 w-5" />
-                <h2 className="text-xl font-semibold text-white">Find Investment Opportunities</h2>
-              </div>
-              <div className="w-full">
-                <StockSearchBar onStockSelect={handleStockSelect} />
-              </div>
-            </div>
-          </div>
-          
-          {!isLoadingBalance && balanceError && !isLoadingAccountId && (
-            <Alert variant="default" className="mb-2 bg-amber-50 border-amber-200 text-amber-800">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Account Information Unavailable</AlertTitle>
-                <AlertDescription>
-                    We're having trouble connecting to your account data. You can still browse investments, but buying functionality may be limited.
-                </AlertDescription>
-            </Alert>
-          )}
-        </div>
 
-        {/* Investment Research Component - Replaces static content */}
-        <InvestmentResearch 
-          onStockSelect={handleStockSelect}
-          isChatOpen={isChatOpen}
-          onThemeSelect={autoCollapseSidebar}
-        />
-
-        <div className="pb-24">
-          {/* Empty space for bottom padding */}
-        </div>
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Discover Your Investment Opportunities</h1>
       </div>
+      
+      {/* Search Bar Section */}
+      <Card className="bg-gradient-to-r from-slate-900 to-slate-800 border-slate-700 shadow-lg">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <Search className="text-primary h-5 w-5" />
+            <h2 className="text-xl font-semibold text-white">Find Investment Opportunities</h2>
+          </div>
+          <StockSearchBar 
+            onStockSelect={handleStockSelect} 
+            accountId={accountId}
+            watchlistSymbols={watchlistSymbols}
+            onWatchlistChange={refreshWatchlist}
+            onOptimisticAdd={optimisticAddToWatchlist}
+          />
+        </CardContent>
+      </Card>
+      
+      {/* Balance Error Alert */}
+      {!isLoadingBalance && balanceError && !isLoadingAccountId && (
+        <Alert variant="default" className="bg-amber-50 border-amber-200 text-amber-800">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Account Information Unavailable</AlertTitle>
+            <AlertDescription>
+                We're having trouble connecting to your account data. You can still browse investments, but buying functionality may be limited.
+            </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Responsive Layout */}
+      {shouldUseStackedLayout ? (
+        /* Stacked Layout for Chat Mode / Narrow Screens */
+        <div className="space-y-4">
+          {/* Stock Watchlist - First in stacked layout */}
+          <StockWatchlist 
+            accountId={accountId}
+            onStockSelect={handleStockSelect}
+            watchlistSymbols={watchlistSymbols}
+            onWatchlistChange={refreshWatchlist}
+            onOptimisticAdd={optimisticAddToWatchlist}
+            onOptimisticRemove={optimisticRemoveFromWatchlist}
+          />
+          
+          {/* Stock Picks - Second in stacked layout */}
+          <StockPicksCard
+            stockPicks={researchData?.stock_picks || []}
+            onStockSelect={handleStockSelect}
+            lastGenerated={lastGenerated}
+            isLoading={isLoadingResearch}
+          />
+          
+          {/* Investment Ideas - Third in stacked layout */}
+          <InvestmentIdeasCard
+            investmentThemes={researchData?.investment_themes || []}
+            onStockSelect={handleStockSelect}
+            onThemeSelect={autoCollapseSidebar}
+            isLoading={isLoadingResearch}
+          />
+          
+          {/* Research Sources - Fourth in stacked layout */}
+          <ResearchSourcesCard
+            citations={citations}
+            isLoading={isLoadingResearch}
+          />
+        </div>
+      ) : (
+        /* Desktop Layout: 2x3 Grid Structure */
+        <div className="space-y-4">
+          {/* Top Row: Stock Picks (left) + Stock Watchlist (right) - 50/50 split */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <StockPicksCard
+              stockPicks={researchData?.stock_picks || []}
+              onStockSelect={handleStockSelect}
+              lastGenerated={lastGenerated}
+              isLoading={isLoadingResearch}
+            />
+            <StockWatchlist 
+              accountId={accountId}
+              onStockSelect={handleStockSelect}
+              watchlistSymbols={watchlistSymbols}
+              onWatchlistChange={refreshWatchlist}
+              onOptimisticAdd={optimisticAddToWatchlist}
+              onOptimisticRemove={optimisticRemoveFromWatchlist}
+            />
+          </div>
+          
+          {/* Middle Row: Investment Ideas - Full Width */}
+          <InvestmentIdeasCard
+            investmentThemes={researchData?.investment_themes || []}
+            onStockSelect={handleStockSelect}
+            onThemeSelect={autoCollapseSidebar}
+            isLoading={isLoadingResearch}
+          />
+          
+          {/* Bottom Row: Research Sources - Full Width */}
+          <ResearchSourcesCard
+            citations={citations}
+            isLoading={isLoadingResearch}
+          />
+        </div>
+      )}
+
+      {/* Bottom Padding */}
+      <div className="pb-24" />
 
       {/* Stock Information Dialog */}
       <Dialog open={!!selectedSymbol} onOpenChange={(open) => !open && setSelectedSymbol(null)}>
-        <DialogContent className="sm:max-w-[85vw] lg:max-w-[70vw] xl:max-w-[60vw] p-0 max-h-[90vh] overflow-auto border-0 shadow-xl rounded-lg left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-[100]">
+        <DialogContent className="sm:max-w-[85vw] lg:max-w-[70vw] xl:max-w-[60vw] p-0 max-h-[90vh] overflow-auto border-0 shadow-xl rounded-lg left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-[50]">
           <DialogHeader className="bg-slate-950 p-4 flex flex-row items-center justify-between sticky top-0 z-10 border-b border-slate-800">
             <DialogTitle className="text-white text-xl font-semibold">{selectedSymbol}</DialogTitle>
             <DialogClose className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded-full p-1">
@@ -297,7 +488,16 @@ export default function InvestPage() {
             </DialogClose>
           </DialogHeader>
           <div className="p-0">
-            {selectedSymbol && <StockInfoCard symbol={selectedSymbol} />}
+            {selectedSymbol && (
+              <StockInfoCard 
+                symbol={selectedSymbol} 
+                accountId={accountId}
+                isInWatchlist={watchlistSymbols.has(selectedSymbol)}
+                onWatchlistChange={refreshWatchlist}
+                onOptimisticAdd={optimisticAddToWatchlist}
+                onOptimisticRemove={optimisticRemoveFromWatchlist}
+              />
+            )}
           </div>
           
           {/* Action Footer */}
@@ -326,6 +526,7 @@ export default function InvestPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Order Modal */}
       {selectedSymbol && accountId && (
         <OrderModal 
             isOpen={isModalOpen} 

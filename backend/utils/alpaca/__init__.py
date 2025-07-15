@@ -31,6 +31,18 @@ from .account_closure import (
     get_closure_progress
 )
 
+from .watchlist import (
+    get_watchlist_for_account,
+    get_all_watchlists_for_account,
+    create_default_watchlist_for_account,
+    get_or_create_default_watchlist,
+    add_symbol_to_watchlist,
+    remove_symbol_from_watchlist,
+    is_symbol_in_watchlist,
+    get_watchlist_symbols,
+    get_watchlist_details
+)
+
 __all__ = [
     'get_broker_client',
     'create_alpaca_account',
@@ -50,4 +62,13 @@ __all__ = [
     'check_account_closure_readiness',
     'initiate_account_closure',
     'get_closure_progress',
+    'get_watchlist_for_account',
+    'get_all_watchlists_for_account',
+    'create_default_watchlist_for_account',
+    'get_or_create_default_watchlist',
+    'add_symbol_to_watchlist',
+    'remove_symbol_from_watchlist',
+    'is_symbol_in_watchlist',
+    'get_watchlist_symbols',
+    'get_watchlist_details',
 ] 
