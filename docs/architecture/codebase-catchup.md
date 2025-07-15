@@ -25,6 +25,73 @@
 - **Deployment**: Dedicated LangGraph servers
 - **Purpose**: Financial analysis, portfolio management, trade execution
 
+---
+
+## Frontend–Backend Integration: API Proxy Pattern
+
+### How the Frontend Talks to the Backend
+
+Clera uses a **proxy pattern** for all frontend-to-backend communication:
+- **React components** do NOT call the backend directly.
+- Instead, they call **Next.js API routes** (in `frontend-app/app/api/`).
+- These API routes:
+  - Authenticate and authorize the user (using Supabase Auth)
+  - Proxy the request to the backend FastAPI server (using environment variables for the backend URL and API key)
+  - Return the backend response to the frontend
+
+#### Why?
+- This pattern centralizes authentication/authorization and keeps backend API keys secret.
+- It also allows for custom logic, caching, and error handling in the API route layer.
+
+### Key API Route Mappings
+
+| Frontend API Route                              | Backend Endpoint                                 | Purpose                                 |
+|------------------------------------------------|--------------------------------------------------|-----------------------------------------|
+| `/api/portfolio/positions`                     | `/api/portfolio/{account_id}/positions`          | Get user’s portfolio positions          |
+| `/api/portfolio/orders`                        | `/api/portfolio/{account_id}/orders`             | Get user’s order history                |
+| `/api/portfolio/analytics`                     | `/api/portfolio/{account_id}/analytics`          | Get portfolio analytics                 |
+| `/api/portfolio/history`                       | `/api/portfolio/{account_id}/history`            | Get portfolio value history             |
+| `/api/portfolio/sector-allocation`             | `/api/portfolio/sector-allocation`               | Get sector allocation                   |
+| `/api/assets/[assetId]`                        | `/api/assets/{symbol_or_asset_id}`               | Get asset details                       |
+| `/api/watchlist/[accountId]`                   | `/api/watchlist/{account_id}`                    | Get user’s watchlist                    |
+| `/api/watchlist/[accountId]/add`/`/remove`     | `/api/watchlist/{account_id}/add`/`/remove`      | Add/remove symbol from watchlist        |
+| `/api/account/[accountId]/balance`             | `/get-account-balance/{account_id}`              | Get account balance                     |
+| `/api/broker/account-summary`                  | `/get-ach-relationships`                         | Get ACH relationships                   |
+| `/api/account-closure/check-readiness/[accountId]` | `/account-closure/check-readiness/{account_id}` | Check if account can be closed          |
+| `/api/account-closure/initiate/[accountId]`    | `/account-closure/initiate/{account_id}`         | Initiate account closure                |
+| `/api/account-closure/progress/[accountId]`    | `/account-closure/progress/{account_id}`         | Get closure progress                    |
+| `/api/trade`                                   | `/api/trade`                                     | Place a trade order                     |
+| `/api/chat`                                    | `/api/chat-with-account`                         | AI chat with account context            |
+| `/api/chat-stream`                             | `/api/chat-stream`                               | AI chat streaming                       |
+| `/api/conversations/save`                      | `/save-conversation`                             | Save chat conversation                  |
+| `/api/conversations/history`                   | `/get-conversations`                             | Get chat history                        |
+| `/api/investment/research`                     | `/api/investment/research`                       | Get investment research                 |
+| `/api/news/trending`                           | `/api/news/trending`                             | Get trending news                       |
+| `/api/news/portfolio-summary`                  | `/api/news/portfolio-summary`                    | Get portfolio news summary              |
+| `/api/companies/profiles/[symbol]`             | `/api/companies/profiles/{symbol}`               | Get company profile                     |
+| `/api/broker/transfer`                         | `/api/broker/transfer`                           | Initiate ACH transfer                   |
+| `/api/market/assets`                           | `/api/market/assets`                             | List tradable assets                    |
+| `/api/market/latest-trade/[symbol]`            | `/api/market/latest-trade/{symbol}`              | Get latest trade price                  |
+| `/api/market/quote/[symbol]`                   | `/api/market/quote/{symbol}`                     | Get market quote                        |
+| `/api/ws/portfolio/[accountId]`                | `/ws/portfolio/{account_id}`                     | WebSocket proxy for real-time updates   |
+
+> **Note:** Not all backend endpoints are exposed to the frontend; only those listed above are actively used.
+
+### Authentication & Authorization Flow
+- **Frontend API routes** use Supabase Auth to verify the user and check account ownership before proxying.
+- **Backend endpoints** require an API key (passed from the Next.js API route, never exposed to the browser).
+- **WebSocket connections** are proxied through a Next.js API route for auth, then connect to the backend’s WebSocket service.
+
+### Adding a New API Feature
+1. **Implement the backend endpoint** in FastAPI (`backend/api_server.py`).
+2. **Add a Next.js API route** in `frontend-app/app/api/` to:
+   - Authenticate the user (if needed)
+   - Proxy the request to the backend (using env vars for URL and API key)
+3. **Call the new API route** from your React component or hook.
+4. **Test end-to-end** (frontend → Next.js API route → backend → response).
+
+---
+
 ## Key Directory Structure
 
 ```
