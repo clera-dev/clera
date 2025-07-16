@@ -21,6 +21,29 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    // --- PRODUCTION-READY ONBOARDING CHECK ---
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('status')
+      .eq('user_id', user.id)
+      .single();
+
+    if (onboardingError || !onboardingData) {
+      console.error('API Onboarding Check: Error fetching status for user:', user.id, onboardingError);
+      return NextResponse.json({ error: 'Could not verify onboarding status' }, { status: 500 });
+    }
+
+    const isOnboardingComplete = onboardingData.status === 'submitted' || onboardingData.status === 'approved';
+
+    if (!isOnboardingComplete) {
+      console.error(`API Onboarding Check: User ${user.id} has not completed onboarding. Status: ${onboardingData.status}`);
+      return NextResponse.json(
+        { error: 'Onboarding not completed' },
+        { status: 401 }
+      );
+    }
+    // --- END CHECK ---
     
     // Get request body
     const reqBody = await request.json();
@@ -83,7 +106,34 @@ export async function POST(request: NextRequest) {
           const existingRelationship = relationshipsData.relationships[0];
           console.log(`Found existing relationship with ID: ${existingRelationship.id}. Attempting to delete it first.`);
           
-          // Delete the existing relationship - using the correct endpoint
+          // =================================================================
+          // CRITICAL SECURITY FIX: Verify ownership before deletion
+          // =================================================================
+          
+          // Verify the user owns this ACH relationship before deleting
+          const { data: existingBankConnection, error: ownershipError } = await supabase
+            .from('user_bank_connections')
+            .select('id, relationship_id, alpaca_account_id')
+            .eq('user_id', user.id)
+            .eq('relationship_id', existingRelationship.id)
+            .eq('alpaca_account_id', accountId)
+            .single();
+          
+          if (ownershipError || !existingBankConnection) {
+            console.error(`Connect Bank API: User ${user.id} does not own ACH relationship ${existingRelationship.id} for account ${accountId}`);
+            return NextResponse.json(
+              { error: 'ACH relationship not found or access denied' },
+              { status: 403 }
+            );
+          }
+          
+          console.log(`Connect Bank API: Ownership verified. User ${user.id} owns ACH relationship ${existingRelationship.id}`);
+          
+          // =================================================================
+          // ATOMICITY FIX: Delete remote resource first, then local state
+          // =================================================================
+          
+          // Delete the existing relationship from Alpaca FIRST
           const deleteResponse = await fetch(`${apiUrl}/delete-ach-relationship`, {
             method: 'POST',
             headers: {
@@ -96,15 +146,58 @@ export async function POST(request: NextRequest) {
             }),
           });
           
+          // Check if remote deletion was successful
           if (!deleteResponse.ok) {
-            console.warn(`Failed to delete existing relationship: ${deleteResponse.status}`);
+            const errorText = await deleteResponse.text();
+            console.error(`Connect Bank API: Failed to delete existing relationship from Alpaca: ${deleteResponse.status}`);
+            console.error(`Error details: ${errorText}`);
+            
+            // If it's not a 404 (not found), this is a real error
             if (deleteResponse.status !== 404) {
-              // Only show warning for errors other than "not found"
-              console.warn(`Error details: ${await deleteResponse.text()}`);
+              return NextResponse.json(
+                { error: 'Failed to delete existing ACH relationship from remote service' },
+                { status: 500 }
+              );
             }
-            // Continue anyway, as we'll try to create the new one
+            // If it's 404, the remote resource is already gone, so we can continue
+            console.log(`Remote relationship ${existingRelationship.id} already deleted (404), continuing with local cleanup`);
           } else {
-            console.log(`Successfully deleted existing relationship: ${existingRelationship.id}`);
+            console.log(`Successfully deleted existing relationship from Alpaca: ${existingRelationship.id}`);
+          }
+          
+          // Only delete from Supabase AFTER successful remote deletion
+          try {
+            const { error: supabaseDeleteError, count } = await supabase
+              .from('user_bank_connections')
+              .delete()
+              .eq('relationship_id', existingRelationship.id)
+              .eq('user_id', user.id)
+              .eq('alpaca_account_id', accountId);
+            
+            if (supabaseDeleteError) {
+              console.error(`Connect Bank API: Failed to delete bank connection from Supabase: ${supabaseDeleteError.message}`);
+              return NextResponse.json(
+                { error: 'Failed to delete local bank connection' },
+                { status: 500 }
+              );
+            }
+            
+            if (count === 0) {
+              console.error(`Connect Bank API: No rows deleted from Supabase for relationship ${existingRelationship.id}`);
+              return NextResponse.json(
+                { error: 'ACH relationship not found in local database' },
+                { status: 404 }
+              );
+            }
+            
+            console.log(`Connect Bank API: Successfully deleted bank connection from Supabase for relationship: ${existingRelationship.id}`);
+            
+          } catch (supabaseError) {
+            console.error(`Connect Bank API: Exception deleting from Supabase: ${supabaseError}`);
+            return NextResponse.json(
+              { error: 'Failed to delete local bank connection' },
+              { status: 500 }
+            );
           }
         }
       }

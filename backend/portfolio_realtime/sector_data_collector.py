@@ -26,10 +26,18 @@ logger = logging.getLogger("sector_data_collector")
 load_dotenv()
 
 class SectorDataCollector:
-    def __init__(self, redis_host='localhost', redis_port=6379, redis_db=0, 
+    def __init__(self, redis_host=None, redis_port=None, redis_db=None, 
                  FINANCIAL_MODELING_PREP_API_KEY=None):
         """Initialize the Sector Data Collector service."""
-        # Initialize Redis client
+        _IS_PRODUCTION = os.getenv("COPILOT_ENVIRONMENT_NAME", "").lower() == "production" or os.getenv("ENVIRONMENT", "").lower() == "production"
+        if _IS_PRODUCTION:
+            redis_host = redis_host or os.getenv("REDIS_HOST")
+            if not redis_host:
+                raise RuntimeError("REDIS_HOST environment variable must be set in production!")
+        else:
+            redis_host = redis_host or os.getenv("REDIS_HOST", "127.0.0.1")
+        redis_port = int(redis_port or os.getenv("REDIS_PORT", "6379"))
+        redis_db = int(redis_db or os.getenv("REDIS_DB", "0"))
         self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=redis_db, decode_responses=True)
         
         # Setup FMP API key

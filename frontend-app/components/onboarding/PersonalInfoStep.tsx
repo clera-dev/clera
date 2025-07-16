@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +38,49 @@ export default function PersonalInfoStep({
   onBack 
 }: PersonalInfoStepProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [openTooltip, setOpenTooltip] = useState<FundingSource | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect screen size for responsive tooltip positioning
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsMobile(window.innerWidth < 768); // Tailwind's md breakpoint
+    };
+
+    // Check on mount
+    checkScreenSize();
+
+    // Listen for resize events
+    window.addEventListener('resize', checkScreenSize);
+
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
+
+  // Close tooltip when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      
+      // Check if the click is on a tooltip trigger button or inside a tooltip
+      const isTooltipTrigger = target.closest('[data-tooltip-trigger]');
+      const isTooltipContent = target.closest('[data-radix-tooltip-content]');
+      
+      // If click is outside both the trigger and content, close the tooltip
+      if (!isTooltipTrigger && !isTooltipContent && openTooltip) {
+        setOpenTooltip(null);
+      }
+    };
+
+    // Only add listener if a tooltip is open
+    if (openTooltip) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [openTooltip]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -97,6 +140,10 @@ export default function PersonalInfoStep({
     onUpdate({ fundingSource: updatedSources });
   };
 
+  const handleTooltipToggle = (source: FundingSource) => {
+    setOpenTooltip(openTooltip === source ? null : source);
+  };
+
   const formatSSN = (value: string) => {
     // Remove all non-digits
     const digits = value.replace(/\D/g, '');
@@ -117,8 +164,8 @@ export default function PersonalInfoStep({
       
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-4">
-          <div>
-            <Label htmlFor="firstName">First Name</Label>
+          <div className="grid grid-rows-[auto_1fr] gap-1">
+            <Label htmlFor="firstName" className="text-sm font-medium min-h-[2.5rem] flex items-end">First Name</Label>
             <Input
               id="firstName"
               value={data.firstName}
@@ -128,8 +175,8 @@ export default function PersonalInfoStep({
             {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
           </div>
           
-          <div>
-            <Label htmlFor="middleName">Middle Name (Optional)</Label>
+          <div className="grid grid-rows-[auto_1fr] gap-1">
+            <Label htmlFor="middleName" className="text-sm font-medium min-h-[2.5rem] flex items-end">Middle Name (Optional)</Label>
             <Input
               id="middleName"
               value={data.middleName}
@@ -137,8 +184,8 @@ export default function PersonalInfoStep({
             />
           </div>
           
-          <div>
-            <Label htmlFor="lastName">Last Name</Label>
+          <div className="grid grid-rows-[auto_1fr] gap-1">
+            <Label htmlFor="lastName" className="text-sm font-medium min-h-[2.5rem] flex items-end">Last Name</Label>
             <Input
               id="lastName"
               value={data.lastName}
@@ -149,29 +196,31 @@ export default function PersonalInfoStep({
           </div>
         </div>
 
-        <div>
-          <Label htmlFor="dateOfBirth">Date of Birth</Label>
-          <Input
-            id="dateOfBirth"
-            type="date"
-            value={data.dateOfBirth}
-            onChange={(e) => onUpdate({ dateOfBirth: e.target.value })}
-            className={errors.dateOfBirth ? "border-red-500" : ""}
-          />
-          {errors.dateOfBirth && <p className="text-red-500 text-sm mt-1">{errors.dateOfBirth}</p>}
-        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-rows-[auto_1fr] gap-1">
+            <Label htmlFor="dateOfBirth" className="text-sm font-medium min-h-[2.5rem] flex items-end">Date of Birth</Label>
+            <Input
+              id="dateOfBirth"
+              type="date"
+              value={data.dateOfBirth}
+              onChange={(e) => onUpdate({ dateOfBirth: e.target.value })}
+              className={errors.dateOfBirth ? "border-red-500" : ""}
+            />
+            {errors.dateOfBirth && <p className="text-red-500 text-sm mt-1">{errors.dateOfBirth}</p>}
+          </div>
 
-        <div>
-          <Label htmlFor="taxId">Social Security Number (SSN)</Label>
-          <Input
-            id="taxId"
-            value={data.taxId}
-            onChange={(e) => onUpdate({ taxId: formatSSN(e.target.value) })}
-            className={errors.taxId ? "border-red-500" : ""}
-            maxLength={11}
-            placeholder="123-45-6789"
-          />
-          {errors.taxId && <p className="text-red-500 text-sm mt-1">{errors.taxId}</p>}
+          <div className="grid grid-rows-[auto_1fr] gap-1">
+            <Label htmlFor="taxId" className="text-sm font-medium min-h-[2.5rem] flex items-end">Social Security Number (SSN)</Label>
+            <Input
+              id="taxId"
+              value={data.taxId}
+              onChange={(e) => onUpdate({ taxId: formatSSN(e.target.value) })}
+              className={errors.taxId ? "border-red-500" : ""}
+              maxLength={11}
+              placeholder="123-45-6789"
+            />
+            {errors.taxId && <p className="text-red-500 text-sm mt-1">{errors.taxId}</p>}
+          </div>
         </div>
 
         <div>
@@ -189,24 +238,43 @@ export default function PersonalInfoStep({
                       handleFundingSourceChange(source, checked as boolean)
                     }
                   />
-                  <Label 
-                    htmlFor={`source-${source}`}
-                    className="font-normal cursor-pointer"
-                  >
-                    {source.split('_').map(word => 
-                      word.charAt(0).toUpperCase() + word.slice(1)
-                    ).join(' ')}
-                  </Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <InfoIcon 
-                        className="h-4 w-4 opacity-70" 
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-[250px]">
-                      {fundingSourceDescriptions[source]}
-                    </TooltipContent>
-                  </Tooltip>
+                  <div className="flex items-center space-x-1">
+                    <Label 
+                      htmlFor={`source-${source}`}
+                      className="font-normal cursor-pointer"
+                    >
+                      {source.split('_').map(word => 
+                        word.charAt(0).toUpperCase() + word.slice(1)
+                      ).join(' ')}
+                    </Label>
+                    <Tooltip open={openTooltip === source} onOpenChange={() => {}}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="cursor-help p-1 hover:bg-muted rounded-sm transition-colors ml-1"
+                          onClick={() => handleTooltipToggle(source)}
+                          data-tooltip-trigger
+                          aria-label={`Information about ${source.split('_').map(word => 
+                            word.charAt(0).toUpperCase() + word.slice(1)
+                          ).join(' ')}`}
+                        >
+                          <InfoIcon 
+                            className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" 
+                          />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent 
+                        side={isMobile ? "top" : "right"}
+                        className={isMobile 
+                          ? "max-w-[280px] text-xs z-50" 
+                          : "max-w-[320px] text-sm z-50"
+                        }
+                        sideOffset={8}
+                      >
+                        <p>{fundingSourceDescriptions[source]}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
               ))}
             </TooltipProvider>

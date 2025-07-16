@@ -212,6 +212,10 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
                 onChange={handleInputChange}
                 className="text-center text-2xl font-bold h-14 focus-visible:ring-primary"
                 disabled={isSubmitting}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+                data-form-type="other"
             />
         </div>
 

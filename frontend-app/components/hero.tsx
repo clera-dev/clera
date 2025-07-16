@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
  * Local helpers
  * ------------------------------------------------------------------------------------------------*/
 const CleraLogo = () => (
-  <img src="/clera-logo copy.png" alt="Clera" className="h-10 w-auto" />
+  <img src="/clera-logo.png" alt="Clera" className="h-10 w-auto" />
 );
 
 const AuthButtons = () => (

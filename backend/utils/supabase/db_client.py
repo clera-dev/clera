@@ -8,8 +8,11 @@ particularly for retrieving Alpaca account IDs.
 import os
 from typing import Dict, Any, Optional, Tuple, List
 import logging
+import json
+from uuid import UUID
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +27,17 @@ supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not supabase_url or not supabase_service_key:
     logger.error("Supabase URL or service role key not found in environment variables")
+
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle UUID and other non-serializable objects."""
+    def default(self, obj):
+        if isinstance(obj, UUID):
+            return str(obj)
+        elif hasattr(obj, '__dict__'):
+            return str(obj)
+        elif hasattr(obj, 'isoformat'):  # datetime objects
+            return obj.isoformat()
+        return super().default(obj)
 
 
 def get_supabase_client() -> Client:
@@ -184,58 +198,61 @@ def get_user_data(user_id: str) -> Optional[Dict[str, Any]]:
 
 def save_conversation(user_id: str, portfolio_id: str, message: str, response: str) -> Dict[str, Any]:
     """
-    Save a conversation entry to the database.
+    Save a conversation to the database.
     
     Args:
-        user_id (str): The user's Supabase ID
-        portfolio_id (str): The Alpaca account ID
+        user_id (str): The user ID
+        portfolio_id (str): The portfolio ID
         message (str): The user's message
         response (str): The assistant's response
         
     Returns:
-        Dict[str, Any]: The created conversation entry or None if error
+        Dict[str, Any]: The saved conversation data
     """
     try:
         # Create Supabase client
         supabase = get_supabase_client()
         
-        # Insert the conversation
-        result = supabase.table("conversations").insert({
+        # Prepare conversation data
+        conversation_data = {
             "user_id": user_id,
             "portfolio_id": portfolio_id,
             "message": message,
-            "response": response
-        }).execute()
+            "response": response,
+            "created_at": datetime.now().isoformat()
+        }
         
-        # Check if insert was successful
+        # Insert the conversation
+        result = supabase.table("conversations").insert(conversation_data).execute()
+        
         if result.data and len(result.data) > 0:
-            logger.info(f"Saved conversation for user {user_id} with portfolio {portfolio_id}")
+            logger.info(f"Saved conversation for user {user_id}")
             return result.data[0]
         else:
             logger.warning(f"No data returned when saving conversation for user {user_id}")
-            return None
+            return {}
     
     except Exception as e:
         logger.error(f"Error saving conversation for user {user_id}: {e}")
-        return None
+        return {}
 
 
 def get_user_conversations(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
     """
-    Get conversation history for a specific user.
+    Retrieve conversations for a specific user.
     
     Args:
-        user_id (str): The user's Supabase ID
+        user_id (str): The user ID
         limit (int): Maximum number of conversations to retrieve
         
     Returns:
-        List[Dict[str, Any]]: List of conversation entries, newest first
+        List[Dict[str, Any]]: List of conversation records
     """
     try:
         # Create Supabase client
         supabase = get_supabase_client()
         
-        # Query the conversations table
+        # Query conversations for the user
         response = supabase.table("conversations") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -243,7 +260,6 @@ def get_user_conversations(user_id: str, limit: int = 50) -> List[Dict[str, Any]
             .limit(limit) \
             .execute()
         
-        # Return the conversation data
         if response.data:
             logger.info(f"Retrieved {len(response.data)} conversations for user {user_id}")
             return response.data
@@ -258,21 +274,21 @@ def get_user_conversations(user_id: str, limit: int = 50) -> List[Dict[str, Any]
 
 def get_portfolio_conversations(user_id: str, portfolio_id: str, limit: int = 50) -> List[Dict[str, Any]]:
     """
-    Get conversation history for a specific user and portfolio.
+    Retrieve conversations for a specific user and portfolio.
     
     Args:
-        user_id (str): The user's Supabase ID
-        portfolio_id (str): The Alpaca account ID
+        user_id (str): The user ID
+        portfolio_id (str): The portfolio ID
         limit (int): Maximum number of conversations to retrieve
         
     Returns:
-        List[Dict[str, Any]]: List of conversation entries, newest first
+        List[Dict[str, Any]]: List of conversation records
     """
     try:
         # Create Supabase client
         supabase = get_supabase_client()
         
-        # Query the conversations table
+        # Query conversations for the user and portfolio
         response = supabase.table("conversations") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -281,45 +297,47 @@ def get_portfolio_conversations(user_id: str, portfolio_id: str, limit: int = 50
             .limit(limit) \
             .execute()
         
-        # Return the conversation data
         if response.data:
-            logger.info(f"Retrieved {len(response.data)} conversations for user {user_id} with portfolio {portfolio_id}")
+            logger.info(f"Retrieved {len(response.data)} conversations for user {user_id} and portfolio {portfolio_id}")
             return response.data
         else:
-            logger.info(f"No conversations found for user {user_id} with portfolio {portfolio_id}")
+            logger.info(f"No conversations found for user {user_id} and portfolio {portfolio_id}")
             return []
     
     except Exception as e:
-        logger.error(f"Error retrieving conversations for user {user_id} with portfolio {portfolio_id}: {e}")
+        logger.error(f"Error retrieving portfolio conversations for user {user_id}: {e}")
         return []
 
 
 def create_chat_session(user_id: str, portfolio_id: str, title: str) -> Optional[Dict[str, Any]]:
     """
-    Create a new chat session for a user.
+    Create a new chat session.
     
     Args:
-        user_id (str): The user's Supabase ID
-        portfolio_id (str): The Alpaca account ID
-        title (str): The title of the chat session
+        user_id (str): The user ID
+        portfolio_id (str): The portfolio ID
+        title (str): The session title
         
     Returns:
-        Optional[Dict[str, Any]]: The created chat session or None if error
+        Optional[Dict[str, Any]]: The created session data or None if failed
     """
     try:
         # Create Supabase client
         supabase = get_supabase_client()
         
-        # Insert the chat session
-        result = supabase.table("chat_sessions").insert({
+        # Prepare session data
+        session_data = {
             "user_id": user_id,
             "portfolio_id": portfolio_id,
-            "title": title
-        }).execute()
+            "title": title,
+            "created_at": datetime.now().isoformat()
+        }
         
-        # Check if insert was successful
+        # Insert the session
+        result = supabase.table("chat_sessions").insert(session_data).execute()
+        
         if result.data and len(result.data) > 0:
-            logger.info(f"Created chat session for user {user_id} with portfolio {portfolio_id}")
+            logger.info(f"Created chat session for user {user_id}")
             return result.data[0]
         else:
             logger.warning(f"No data returned when creating chat session for user {user_id}")
@@ -332,32 +350,28 @@ def create_chat_session(user_id: str, portfolio_id: str, title: str) -> Optional
 
 def get_chat_sessions(user_id: str, portfolio_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Get all chat sessions for a user, optionally filtered by portfolio ID.
+    Retrieve chat sessions for a user.
     
     Args:
-        user_id (str): The user's Supabase ID
-        portfolio_id (Optional[str]): The Alpaca account ID (optional filter)
+        user_id (str): The user ID
+        portfolio_id (Optional[str]): Optional portfolio ID filter
         
     Returns:
-        List[Dict[str, Any]]: List of chat sessions
+        List[Dict[str, Any]]: List of chat session records
     """
     try:
         # Create Supabase client
         supabase = get_supabase_client()
         
-        # Start the query
-        query = supabase.table("chat_sessions") \
-            .select("*") \
-            .eq("user_id", user_id)
+        # Build query
+        query = supabase.table("chat_sessions").select("*").eq("user_id", user_id)
         
-        # Add portfolio filter if provided
         if portfolio_id:
             query = query.eq("portfolio_id", portfolio_id)
         
-        # Execute the query
+        # Execute query
         response = query.order("created_at", desc=True).execute()
         
-        # Return the chat sessions
         if response.data:
             logger.info(f"Retrieved {len(response.data)} chat sessions for user {user_id}")
             return response.data
@@ -372,26 +386,25 @@ def get_chat_sessions(user_id: str, portfolio_id: Optional[str] = None) -> List[
 
 def get_conversations_by_session(session_id: str) -> List[Dict[str, Any]]:
     """
-    Get all conversations for a specific chat session.
+    Retrieve conversations for a specific chat session.
     
     Args:
         session_id (str): The chat session ID
         
     Returns:
-        List[Dict[str, Any]]: List of conversations in the session
+        List[Dict[str, Any]]: List of conversation records
     """
     try:
         # Create Supabase client
         supabase = get_supabase_client()
         
-        # Query the conversations table
+        # Query conversations for the session
         response = supabase.table("conversations") \
             .select("*") \
             .eq("session_id", session_id) \
             .order("created_at", asc=True) \
             .execute()
         
-        # Return the conversations
         if response.data:
             logger.info(f"Retrieved {len(response.data)} conversations for session {session_id}")
             return response.data
@@ -406,34 +419,41 @@ def get_conversations_by_session(session_id: str) -> List[Dict[str, Any]]:
 
 def delete_chat_session(user_id: str, session_id: str) -> bool:
     """
-    Delete a chat session and all its conversations.
+    Delete a chat session and its associated conversations.
     
     Args:
-        user_id (str): The user's Supabase ID (for validation)
-        session_id (str): The chat session ID to delete
+        user_id (str): The user ID (for security check)
+        session_id (str): The session ID to delete
         
     Returns:
-        bool: True if deleted successfully, False otherwise
+        bool: True if deletion was successful, False otherwise
     """
     try:
         # Create Supabase client
         supabase = get_supabase_client()
         
-        # First verify that the session belongs to the user
-        verify_response = supabase.table("chat_sessions") \
+        # First, verify the session belongs to the user
+        session_response = supabase.table("chat_sessions") \
             .select("id") \
             .eq("id", session_id) \
             .eq("user_id", user_id) \
             .execute()
         
-        if not verify_response.data or len(verify_response.data) == 0:
-            logger.warning(f"User {user_id} attempted to delete session {session_id} which doesn't belong to them")
+        if not session_response.data:
+            logger.warning(f"Session {session_id} not found or doesn't belong to user {user_id}")
             return False
         
-        # Delete the session (will cascade to conversations)
-        delete_response = supabase.table("chat_sessions") \
+        # Delete associated conversations first
+        conversations_result = supabase.table("conversations") \
+            .delete() \
+            .eq("session_id", session_id) \
+            .execute()
+        
+        # Delete the session
+        session_result = supabase.table("chat_sessions") \
             .delete() \
             .eq("id", session_id) \
+            .eq("user_id", user_id) \
             .execute()
         
         logger.info(f"Deleted chat session {session_id} for user {user_id}")
@@ -446,57 +466,57 @@ def delete_chat_session(user_id: str, session_id: str) -> bool:
 
 def save_conversation_with_session(user_id: str, portfolio_id: str, message: str, response: str, session_id: str) -> Optional[Dict[str, Any]]:
     """
-    Save a conversation to a specific chat session.
+    Save a conversation with a specific session ID.
     
     Args:
-        user_id (str): The user's Supabase ID
-        portfolio_id (str): The Alpaca account ID
+        user_id (str): The user ID
+        portfolio_id (str): The portfolio ID
         message (str): The user's message
         response (str): The assistant's response
         session_id (str): The chat session ID
         
     Returns:
-        Optional[Dict[str, Any]]: The created conversation or None if error
+        Optional[Dict[str, Any]]: The saved conversation data or None if failed
     """
     try:
         # Create Supabase client
         supabase = get_supabase_client()
         
-        # Verify session exists and belongs to user
-        verify_response = supabase.table("chat_sessions") \
-            .select("id") \
-            .eq("id", session_id) \
-            .eq("user_id", user_id) \
-            .execute()
-        
-        if not verify_response.data or len(verify_response.data) == 0:
-            logger.warning(f"User {user_id} attempted to save to session {session_id} which doesn't belong to them")
-            return None
-        
-        # Insert the conversation
-        result = supabase.table("conversations").insert({
+        # Prepare conversation data
+        conversation_data = {
             "user_id": user_id,
             "portfolio_id": portfolio_id,
             "message": message,
             "response": response,
-            "session_id": session_id
-        }).execute()
+            "session_id": session_id,
+            "created_at": datetime.now().isoformat()
+        }
         
-        # Check if insert was successful
+        # Insert the conversation
+        result = supabase.table("conversations").insert(conversation_data).execute()
+        
         if result.data and len(result.data) > 0:
-            logger.info(f"Saved conversation to session {session_id} for user {user_id}")
+            logger.info(f"Saved conversation for user {user_id} in session {session_id}")
             return result.data[0]
         else:
-            logger.warning(f"No data returned when saving conversation to session {session_id}")
+            logger.warning(f"No data returned when saving conversation for user {user_id}")
             return None
     
     except Exception as e:
-        logger.error(f"Error saving conversation to session {session_id} for user {user_id}: {e}")
+        logger.error(f"Error saving conversation for user {user_id}: {e}")
         return None
 
 
 def conversations_to_messages(conversations: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    """Convert a list of database conversation records to chat messages."""
+    """
+    Convert conversation records to a format suitable for chat APIs.
+    
+    Args:
+        conversations (List[Dict[str, Any]]): List of conversation records
+        
+    Returns:
+        List[Dict[str, str]]: List of messages in the format [{"role": "user", "content": "..."}, ...]
+    """
     messages: List[Dict[str, str]] = []
     
     # Sort conversations by created_at (oldest first)

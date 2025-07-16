@@ -41,11 +41,19 @@ import alpaca.broker.models.accounts
 alpaca.broker.models.accounts.Disclosures = PatchedDisclosures
 
 class PortfolioCalculator:
-    def __init__(self, redis_host='localhost', redis_port=6379, redis_db=0,
+    def __init__(self, redis_host=None, redis_port=None, redis_db=None,
                  broker_api_key=None, broker_secret_key=None, sandbox=False,
                  min_update_interval=2):
         """Initialize the Portfolio Calculator service."""
-        # Initialize Redis client
+        _IS_PRODUCTION = os.getenv("COPILOT_ENVIRONMENT_NAME", "").lower() == "production" or os.getenv("ENVIRONMENT", "").lower() == "production"
+        if _IS_PRODUCTION:
+            redis_host = redis_host or os.getenv("REDIS_HOST")
+            if not redis_host:
+                raise RuntimeError("REDIS_HOST environment variable must be set in production!")
+        else:
+            redis_host = redis_host or os.getenv("REDIS_HOST", "127.0.0.1")
+        redis_port = int(redis_port or os.getenv("REDIS_PORT", "6379"))
+        redis_db = int(redis_db or os.getenv("REDIS_DB", "0"))
         self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=redis_db)
         self.pubsub = self.redis_client.pubsub()
         

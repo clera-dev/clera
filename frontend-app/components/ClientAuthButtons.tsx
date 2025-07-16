@@ -54,6 +54,9 @@ export default function ClientAuthButtons() {
         } else if (event === "SIGNED_OUT") {
           setUser(null);
           router.refresh();
+        } else if (event === "TOKEN_REFRESHED" && session) {
+          // Handle token refresh to ensure user state stays current
+          setUser(session.user);
         }
         
         // Ensure loading is false after auth state changes

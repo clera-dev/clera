@@ -202,7 +202,7 @@ export default function OrderModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[95vw] max-w-md mx-auto max-h-[90vh] overflow-hidden">
+      <DialogContent className="w-[95vw] max-w-md mx-auto max-h-[90vh] overflow-hidden z-[110]">
         <DialogHeader>
           <DialogTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
             {isBuyOrder ? (
@@ -264,8 +264,12 @@ export default function OrderModal({
                 placeholder="0.00"
                 value={amount}
                 onChange={handleInputChange}
-                  className="text-center text-xl sm:text-2xl font-bold h-12 sm:h-14 focus-visible:ring-primary"
+                className="text-center text-xl sm:text-2xl font-bold h-12 sm:h-14 focus-visible:ring-primary"
                 disabled={isSubmitting}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+                data-form-type="other"
             />
         </div>
 

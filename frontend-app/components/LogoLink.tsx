@@ -69,7 +69,7 @@ export default function LogoLink() {
       className="font-bold"
     >
       <img 
-        src="/clera-logo copy.png" 
+        src="/clera-logo.png" 
         alt="Clera" 
         className="h-8 w-auto"
       />

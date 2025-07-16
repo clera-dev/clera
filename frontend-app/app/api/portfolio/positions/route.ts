@@ -1,27 +1,64 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const accountId = searchParams.get('accountId');
-
-  if (!accountId) {
-    return NextResponse.json({ detail: 'Account ID is required' }, { status: 400 });
-  }
-
-  // --- Fetch from actual backend ---
-  const backendUrl = process.env.BACKEND_API_URL;
-  const backendApiKey = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    console.error("Portfolio Positions API Route Error: Backend URL not configured.");
-    return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
-  }
-
-  const targetUrl = `${backendUrl}/api/portfolio/${accountId}/positions`;
-  console.log(`Proxying request to: ${targetUrl}`);
-
   try {
+    // Authenticate user
+    const supabase = await createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      console.error('Portfolio Positions API: User authentication failed:', userError);
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const accountId = searchParams.get('accountId');
+
+    if (!accountId) {
+      return NextResponse.json({ detail: 'Account ID is required' }, { status: 400 });
+    }
+
+    console.log(`Portfolio Positions API: Checking positions for account: ${accountId}, user: ${user.id}`);
+
+    // =================================================================
+    // CRITICAL SECURITY FIX: Verify account ownership before querying
+    // =================================================================
+    
+    // Verify that the authenticated user owns the accountId
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('alpaca_account_id')
+      .eq('user_id', user.id)
+      .eq('alpaca_account_id', accountId)
+      .single();
+    
+    if (onboardingError || !onboardingData) {
+      console.error(`Portfolio Positions API: User ${user.id} does not own account ${accountId}`);
+      return NextResponse.json(
+        { error: 'Account not found or access denied' },
+        { status: 403 }
+      );
+    }
+    
+    console.log(`Portfolio Positions API: Ownership verified. User ${user.id} owns account ${accountId}`);
+
+    // --- Fetch from actual backend ---
+    const backendUrl = process.env.BACKEND_API_URL;
+    const backendApiKey = process.env.BACKEND_API_KEY;
+
+    if (!backendUrl) {
+      console.error("Portfolio Positions API Route Error: Backend URL not configured.");
+      return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
+    }
+
+    const targetUrl = `${backendUrl}/api/portfolio/${accountId}/positions`;
+    console.log(`Proxying request to: ${targetUrl}`);
+
     // Prepare headers
     const headers: HeadersInit = {
       'Accept': 'application/json'

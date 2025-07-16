@@ -110,6 +110,11 @@ jobs:
           # Use GitHub Secrets for sensitive data
           # No sensitive data should be hardcoded in workflows
           NEXT_PUBLIC_API_URL: https://api-staging.clera.ai
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PPLX_API_KEY: ${{ secrets.PPLX_API_KEY }}
+          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
+          # Add any other required secrets here
         
       - name: List directory contents after build
         run: |
