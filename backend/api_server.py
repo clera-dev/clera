@@ -17,6 +17,8 @@ import requests
 from decimal import Decimal
 from uuid import UUID
 import contextlib
+import time
+import redis.asyncio as aioredis
 
 from dotenv import load_dotenv
 
@@ -24,7 +26,7 @@ from decouple import config
 import aiohttp
 import traceback
 import httpx
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -102,30 +104,15 @@ logger.info(
 )
 # ---------------------------------------------------------------------------
 
-# --- Redis Host/Port Resolution (similar to WebSocket URL) ---
-# _IS_PRODUCTION is already defined above for WEBSOCKET_SERVICE_URL resolution
-
-_DEFAULT_REDIS_HOST_PROD = "clera-redis.x1zzpk.0001.usw1.cache.amazonaws.com"
-_DEFAULT_REDIS_PORT_PROD = 6379
-_DEFAULT_REDIS_HOST_DEV = "127.0.0.1" # Explicitly 127.0.0.1 for clarity
-_DEFAULT_REDIS_PORT_DEV = 6379
-
-_FALLBACK_REDIS_HOST = _DEFAULT_REDIS_HOST_PROD if _IS_PRODUCTION else _DEFAULT_REDIS_HOST_DEV
-_FALLBACK_REDIS_PORT = _DEFAULT_REDIS_PORT_PROD if _IS_PRODUCTION else _DEFAULT_REDIS_PORT_DEV
-
-# Resolve once at import time. Prioritize environment variables set by Copilot.
-# If they are not set, fall back to production/dev defaults based on _IS_PRODUCTION.
-CANONICAL_REDIS_HOST = os.getenv("REDIS_HOST", _FALLBACK_REDIS_HOST)
-CANONICAL_REDIS_PORT = int(os.getenv("REDIS_PORT", str(_FALLBACK_REDIS_PORT))) # Ensure fallback is string for os.getenv conversion
-
-logger.info(
-    "Redis connection parameters resolved at import: HOST='%s', PORT=%s (is_production=%s, fallback_host_used=%s, fallback_port_used=%s)",
-    CANONICAL_REDIS_HOST,
-    CANONICAL_REDIS_PORT,
-    _IS_PRODUCTION,
-    CANONICAL_REDIS_HOST == _FALLBACK_REDIS_HOST,
-    str(CANONICAL_REDIS_PORT) == str(_FALLBACK_REDIS_PORT)
-)
+# --- Redis Host/Port Resolution (secure pattern) ---
+_IS_PRODUCTION = os.getenv("COPILOT_ENVIRONMENT_NAME", "").lower() == "production" or os.getenv("ENVIRONMENT", "").lower() == "production"
+if _IS_PRODUCTION:
+    CANONICAL_REDIS_HOST = os.getenv("REDIS_HOST")
+    if not CANONICAL_REDIS_HOST:
+        raise RuntimeError("REDIS_HOST environment variable must be set in production!")
+else:
+    CANONICAL_REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
+CANONICAL_REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 # ---------------------------------------------------------------------------
 
 # Track startup errors
@@ -2584,8 +2571,6 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
 async def get_redis_client():
     """Get a Redis client for caching."""
     try:
-        import redis.asyncio as aioredis
-        
         # Use canonical Redis host and port resolved at module import.
         # REDIS_DB can still be fetched from env here or defaulted.
         redis_db = int(os.getenv("REDIS_DB", "0"))
@@ -3083,6 +3068,84 @@ async def close_account_final_endpoint(
     except Exception as e:
         logger.error(f"Error closing account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error closing account: {str(e)}")
+
+@app.post("/account-closure/resume/{account_id}")
+async def resume_account_closure_endpoint(
+    account_id: str,
+    request_data: dict,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Resume account closure process with automatic retry logic.
+    
+    This endpoint checks the current closure status and automatically continues
+    the process from the appropriate step.
+    
+    Body should contain:
+    {
+        "ach_relationship_id": "string" (optional, will be determined if not provided)
+    }
+    """
+    try:
+        logger.info(f"Resuming account closure process for account {account_id}")
+        
+        ach_relationship_id = request_data.get("ach_relationship_id")
+        
+        # Use sandbox mode based on environment
+        sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+        result = resume_account_closure(account_id, ach_relationship_id, sandbox=sandbox)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error resuming closure for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error resuming account closure: {str(e)}")
+
+# WebSocket Endpoint (Remaining at the end as it was before)
+@app.websocket("/ws/portfolio/{account_id}")
+async def websocket_portfolio_endpoint(websocket: WebSocket, account_id: str, api_key: str = Query(...)):
+    try:
+        # Validate API key
+        if api_key != os.getenv("BACKEND_API_KEY"):
+            await websocket.close(code=4001, reason="Invalid API key")
+            return
+        
+        await websocket.accept()
+        logger.info(f"WebSocket connection accepted for account {account_id}")
+        
+        # Create Redis connection for this WebSocket
+        redis_url = f"redis://{CANONICAL_REDIS_HOST}:{CANONICAL_REDIS_PORT}"
+        redis_client = aioredis.Redis.from_url(redis_url)
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe(f"portfolio_updates:{account_id}")
+        
+        try:
+            while True:
+                # Listen for Redis messages with a timeout
+                try:
+                    message = await asyncio.wait_for(pubsub.get_message(ignore_subscribe_messages=True), timeout=30.0)
+                    if message and message['data']:
+                        # Decode and send the portfolio update
+                        data = json.loads(message['data'].decode('utf-8'))
+                        await websocket.send_text(json.dumps(data))
+                except asyncio.TimeoutError:
+                    # Send a heartbeat to keep the connection alive
+                    await websocket.send_text(json.dumps({"type": "heartbeat", "timestamp": time.time()}))
+                except Exception as e:
+                    logger.error(f"Error processing Redis message for {account_id}: {e}")
+                    break
+                    
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket disconnected for account {account_id}")
+        finally:
+            await pubsub.unsubscribe(f"portfolio_updates:{account_id}")
+            await pubsub.close()
+            await redis_client.close()
+            
+    except Exception as e:
+        logger.error(f"WebSocket error for account {account_id}: {e}")
+        if not websocket.client_state.disconnected:
+            await websocket.close(code=4000, reason="Internal server error")
 
 # === WATCHLIST ENDPOINTS ===
 

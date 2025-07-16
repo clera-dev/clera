@@ -40,7 +40,13 @@ load_dotenv()
 # Diagnostic functions
 def check_redis_connection():
     """Check if Redis is running and accessible."""
-    redis_host = os.getenv("REDIS_HOST", "localhost")
+    _IS_PRODUCTION = os.getenv("COPILOT_ENVIRONMENT_NAME", "").lower() == "production" or os.getenv("ENVIRONMENT", "").lower() == "production"
+    if _IS_PRODUCTION:
+        redis_host = os.getenv("REDIS_HOST")
+        if not redis_host:
+            raise RuntimeError("REDIS_HOST environment variable must be set in production!")
+    else:
+        redis_host = os.getenv("REDIS_HOST", "127.0.0.1")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
     redis_db = int(os.getenv("REDIS_DB", "0"))
     

@@ -25,11 +25,19 @@ logger = logging.getLogger("symbol_collector")
 load_dotenv()
 
 class SymbolCollector:
-    def __init__(self, redis_host='localhost', redis_port=6379, redis_db=0, 
-                 broker_api_key=None, broker_secret_key=None, sandbox=False):
+    def __init__(self, redis_host=None, redis_port=None, redis_db=None, broker_api_key=None, broker_secret_key=None, sandbox=False):
         """Initialize the Symbol Collector service."""
-        # Initialize Redis client
+        _IS_PRODUCTION = os.getenv("COPILOT_ENVIRONMENT_NAME", "").lower() == "production" or os.getenv("ENVIRONMENT", "").lower() == "production"
+        if _IS_PRODUCTION:
+            redis_host = redis_host or os.getenv("REDIS_HOST")
+            if not redis_host:
+                raise RuntimeError("REDIS_HOST environment variable must be set in production!")
+        else:
+            redis_host = redis_host or os.getenv("REDIS_HOST", "127.0.0.1")
+        redis_port = int(redis_port or os.getenv("REDIS_PORT", "6379"))
+        redis_db = int(redis_db or os.getenv("REDIS_DB", "0"))
         self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=redis_db)
+        self.pubsub = self.redis_client.pubsub()
         
         # Initialize Broker client with BROKER API credentials
         self.broker_api_key = broker_api_key or os.getenv("BROKER_API_KEY")
@@ -162,10 +170,14 @@ async def main():
     sandbox_mode = os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
     
     # Create and run the collector
+    broker_api_key = os.getenv("BROKER_API_KEY")
+    broker_secret_key = os.getenv("BROKER_SECRET_KEY")
     collector = SymbolCollector(
         redis_host=redis_host,
         redis_port=redis_port,
         redis_db=redis_db,
+        broker_api_key=broker_api_key,
+        broker_secret_key=broker_secret_key,
         sandbox=sandbox_mode
     )
     

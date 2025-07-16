@@ -11,7 +11,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize Redis client
-redis_host = os.getenv("REDIS_HOST", "localhost")
+_IS_PRODUCTION = os.getenv("COPILOT_ENVIRONMENT_NAME", "").lower() == "production" or os.getenv("ENVIRONMENT", "").lower() == "production"
+if _IS_PRODUCTION:
+    redis_host = os.getenv("REDIS_HOST")
+    if not redis_host:
+        raise RuntimeError("REDIS_HOST environment variable must be set in production!")
+else:
+    redis_host = os.getenv("REDIS_HOST", "127.0.0.1")
 redis_port = int(os.getenv("REDIS_PORT", "6379"))
 redis_db = int(os.getenv("REDIS_DB", "0"))
 redis_client = redis.Redis(host=redis_host, port=redis_port, db=redis_db)

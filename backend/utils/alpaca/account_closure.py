@@ -3,6 +3,8 @@
 import os
 import time
 import logging
+import redis
+import json
 from typing import Dict, Any, Optional, List, Tuple
 from enum import Enum
 from datetime import datetime, timedelta
@@ -36,23 +38,64 @@ class ClosureStep(Enum):
     LIQUIDATING_POSITIONS = "liquidating_positions"
     WAITING_SETTLEMENT = "waiting_settlement"
     WITHDRAWING_FUNDS = "withdrawing_funds"
+    PARTIAL_WITHDRAWAL_WAITING = "partial_withdrawal_waiting"  # New step for multi-day withdrawals
     CLOSING_ACCOUNT = "closing_account"
     COMPLETED = "completed"
     FAILED = "failed"
 
 class BrokerService:
-    """Handles all broker API interactions for account closure."""
+    """Service class for interacting with the broker API."""
     
     def __init__(self, broker_client):
         self.broker_client = broker_client
     
+    def get_ach_relationship_id(self, account_id: str) -> str:
+        """
+        Automatically get the active ACH relationship ID for an account.
+        
+        Returns:
+            str: The ACH relationship ID for active/approved relationships
+            
+        Raises:
+            ValueError: If no active ACH relationship is found
+        """
+        try:
+            # Get all ACH relationships for the account
+            relationships = self.broker_client.get_ach_relationships_for_account(account_id)
+            
+            if not relationships:
+                raise ValueError(f"No ACH relationships found for account {account_id}")
+            
+            # Find the first active/approved relationship
+            for rel in relationships:
+                status = str(rel.status).upper()
+                # Handle both enum string representation and plain status
+                if 'APPROVED' in status or 'ACTIVE' in status:
+                    return str(rel.id)
+            
+            # If no active relationship found, check for other valid statuses
+            for rel in relationships:
+                status = str(rel.status).upper()
+                if 'QUEUED' in status or 'SUBMITTED' in status:
+                    return str(rel.id)
+            
+            # If we get here, no usable relationships were found
+            statuses = [str(rel.status) for rel in relationships]
+            raise ValueError(
+                f"No active ACH relationships found for account {account_id}. "
+                f"Found relationships with statuses: {statuses}"
+            )
+            
+        except Exception as e:
+            raise ValueError(f"Failed to get ACH relationship for account {account_id}: {str(e)}")
+
     def get_account_info(self, account_id: str) -> Dict[str, Any]:
         """Get comprehensive account information."""
         account = self.broker_client.get_account_by_id(account_id)
         trade_account = self.broker_client.get_trade_account_by_id(account_id)
         positions = self.broker_client.get_all_positions_for_account(account_id)
         
-        # Get open orders using proper filter
+        # Get orders using proper filter
         from alpaca.trading.requests import GetOrdersRequest
         from alpaca.trading.enums import QueryOrderStatus
         order_filter = GetOrdersRequest(status=QueryOrderStatus.OPEN)
@@ -63,8 +106,8 @@ class BrokerService:
             "trade_account": trade_account,
             "positions": positions,
             "orders": orders,
-            "cash_balance": float(trade_account.cash) if hasattr(trade_account, 'cash') else 0,
-            "cash_withdrawable": float(trade_account.cash_withdrawable) if hasattr(trade_account, 'cash_withdrawable') else 0
+            "cash_balance": float(trade_account.cash),
+            "cash_withdrawable": float(trade_account.cash_withdrawable)
         }
     
     def liquidate_positions(self, account_id: str) -> Dict[str, Any]:
@@ -91,28 +134,76 @@ class BrokerService:
             return {"success": False, "error": str(e)}
     
     def withdraw_funds(self, account_id: str, ach_relationship_id: str, amount: float) -> Dict[str, Any]:
-        """Withdraw funds from the account."""
+        """
+        Withdraw funds from the account with automatic daily limit handling.
+        
+        Alpaca has a $50,000 daily transfer limit. This method automatically handles:
+        - Single withdrawals ≤ $50,000: Immediate withdrawal
+        - Large withdrawals > $50,000: Withdraw $50,000 now, schedule remainder
+        """
         try:
             from alpaca.broker.requests import CreateACHTransferRequest
             from alpaca.broker.enums import TransferDirection, TransferTiming
             
+            # Alpaca's daily transfer limit
+            DAILY_LIMIT = 50000.0
+            
+            # Determine actual withdrawal amount for today
+            if amount <= DAILY_LIMIT:
+                # Single withdrawal - can complete today
+                transfer_amount = amount
+                remaining_amount = 0.0
+                is_partial = False
+            else:
+                # Large withdrawal - split across multiple days
+                transfer_amount = DAILY_LIMIT
+                remaining_amount = amount - DAILY_LIMIT
+                is_partial = True
+            
+            # Create the transfer request for today's amount
             transfer_request = CreateACHTransferRequest(
-                amount=str(amount),
+                amount=str(transfer_amount),
                 direction=TransferDirection.OUTGOING,
                 timing=TransferTiming.IMMEDIATE,
                 relationship_id=ach_relationship_id
             )
             
-            transfer = self.broker_client.create_ach_transfer_for_account(account_id, transfer_request)
+            transfer = self.broker_client.create_transfer_for_account(account_id, transfer_request)
             
-            return {
-                "success": True,
-                "transfer_id": str(transfer.id),
-                "amount": amount,
-                "status": str(transfer.status)
-            }
+            if is_partial:
+                # Large withdrawal - partial completion
+                next_withdrawal_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                return {
+                    "success": True,
+                    "transfer_id": str(transfer.id),
+                    "amount_withdrawn": transfer_amount,
+                    "total_requested": amount,
+                    "remaining_amount": remaining_amount,
+                    "is_partial_withdrawal": True,
+                    "next_withdrawal_date": next_withdrawal_date,
+                    "status": str(transfer.status),
+                    "message": f"Partial withdrawal of ${transfer_amount:,.2f} initiated. Remaining ${remaining_amount:,.2f} will be withdrawn on {next_withdrawal_date}"
+                }
+            else:
+                # Complete withdrawal
+                return {
+                    "success": True,
+                    "transfer_id": str(transfer.id),
+                    "amount_withdrawn": transfer_amount,
+                    "total_requested": amount,
+                    "remaining_amount": 0.0,
+                    "is_partial_withdrawal": False,
+                    "status": str(transfer.status),
+                    "message": f"Complete withdrawal of ${transfer_amount:,.2f} initiated"
+                }
+                
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False, 
+                "error": str(e),
+                "amount_requested": amount,
+                "message": f"Failed to withdraw ${amount:,.2f}: {str(e)}"
+            }
     
     def close_account(self, account_id: str) -> Dict[str, Any]:
         """Close the account."""
@@ -125,13 +216,89 @@ class BrokerService:
 class ClosureStateManager:
     """Manages closure state transitions and validation."""
     
-    def determine_current_step(self, account_info: Dict[str, Any]) -> ClosureStep:
-        """Determine current step based on account state."""
+    def __init__(self):
+        """Initialize state manager with Redis connection."""
+        self.redis_client = self._get_redis_client()
+    
+    def _get_redis_client(self):
+        """Get Redis client for state persistence."""
+        try:
+            # Try REDIS_URL first (for production/Upstash)
+            redis_url = os.getenv('REDIS_URL')
+            if redis_url:
+                return redis.from_url(redis_url, decode_responses=True)
+            
+            # Fall back to individual Redis config variables (for local/AWS ElastiCache)
+            redis_host = os.getenv('REDIS_HOST', '127.0.0.1')
+            redis_port = int(os.getenv('REDIS_PORT', 6379))
+            redis_db = int(os.getenv('REDIS_DB', 0))
+            
+            if not redis_host:
+                logger.warning("Redis configuration not found - state persistence disabled")
+                return None
+                
+            return redis.Redis(
+                host=redis_host,
+                port=redis_port,
+                db=redis_db,
+                decode_responses=True
+            )
+        except Exception as e:
+            logger.warning(f"Redis connection failed - state persistence disabled: {e}")
+            return None
+    
+    def _get_partial_withdrawal_state(self, account_id: str) -> Optional[Dict[str, Any]]:
+        """Get partial withdrawal state from Redis."""
+        if not self.redis_client:
+            return None
+        try:
+            key = f"partial_withdrawal:{account_id}"
+            state_json = self.redis_client.get(key)
+            if state_json:
+                return json.loads(state_json)
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get partial withdrawal state: {e}")
+            return None
+    
+    def _set_partial_withdrawal_state(self, account_id: str, state: Dict[str, Any], ttl_hours: int = 72):
+        """Store partial withdrawal state in Redis with TTL."""
+        if not self.redis_client:
+            return
+        try:
+            key = f"partial_withdrawal:{account_id}"
+            state_json = json.dumps(state)
+            self.redis_client.setex(key, timedelta(hours=ttl_hours), state_json)
+            logger.info(f"Stored partial withdrawal state for {account_id}: {state}")
+        except Exception as e:
+            logger.error(f"Failed to store partial withdrawal state: {e}")
+    
+    def _clear_partial_withdrawal_state(self, account_id: str):
+        """Clear partial withdrawal state from Redis."""
+        if not self.redis_client:
+            return
+        try:
+            key = f"partial_withdrawal:{account_id}"
+            self.redis_client.delete(key)
+            logger.info(f"Cleared partial withdrawal state for {account_id}")
+        except Exception as e:
+            logger.warning(f"Failed to clear partial withdrawal state: {e}")
+    
+    def determine_current_step(self, account_info: Dict[str, Any], account_id: str = None) -> ClosureStep:
+        """Determine current step based on account state and Redis persistence."""
         account = account_info["account"]
         orders = account_info["orders"]
         positions = account_info["positions"]
         cash_balance = account_info["cash_balance"]
         cash_withdrawable = account_info["cash_withdrawable"]
+        
+        # Check for partial withdrawal state first
+        if account_id:
+            partial_state = self._get_partial_withdrawal_state(account_id)
+            if partial_state:
+                # We're in the middle of a multi-day withdrawal process
+                logger.info(f"Found partial withdrawal state for {account_id}: {partial_state}")
+                return ClosureStep.PARTIAL_WITHDRAWAL_WAITING
         
         if str(account.status) == "CLOSED":
             return ClosureStep.COMPLETED
@@ -146,7 +313,7 @@ class ClosureStateManager:
         else:
             return ClosureStep.INITIATED
     
-    def is_ready_for_next_step(self, current_step: ClosureStep, account_info: Dict[str, Any]) -> bool:
+    def is_ready_for_next_step(self, current_step: ClosureStep, account_info: Dict[str, Any], account_id: str = None) -> bool:
         """Check if ready for next step."""
         orders = account_info["orders"]
         positions = account_info["positions"]
@@ -158,7 +325,43 @@ class ClosureStateManager:
         elif current_step == ClosureStep.WAITING_SETTLEMENT:
             return cash_withdrawable == cash_balance and cash_withdrawable > 0
         elif current_step == ClosureStep.WITHDRAWING_FUNDS:
-            return cash_balance <= 1.0
+            # Two scenarios where we're ready to proceed:
+            # 1. Withdrawal completed (balance dropped to $1 or less) - ready to close account
+            # 2. Funds are fully settled (withdrawable == balance) - ready to initiate withdrawal
+            if cash_balance <= 1.0:
+                return True  # Withdrawal complete, ready to close account
+            else:
+                return cash_withdrawable == cash_balance  # Funds settled, ready to withdraw
+        elif current_step == ClosureStep.PARTIAL_WITHDRAWAL_WAITING:
+            # Ready when either:
+            # 1. Balance dropped to $1 or less (all withdrawals completed) - ready to close
+            # 2. Funds are settled AND 24+ hours have passed since last withdrawal
+            if cash_balance <= 1.0:
+                # Clear partial withdrawal state since all withdrawals are complete
+                if account_id:
+                    self._clear_partial_withdrawal_state(account_id)
+                return True  # All withdrawals complete, ready to close account
+            elif cash_withdrawable == cash_balance and cash_balance > 1.0:
+                # Funds are settled, but check if 24 hours have passed
+                if account_id:
+                    partial_state = self._get_partial_withdrawal_state(account_id)
+                    if partial_state and "initiated_at" in partial_state:
+                        try:
+                            last_withdrawal_time = datetime.fromisoformat(partial_state["initiated_at"])
+                            time_since_last = datetime.now() - last_withdrawal_time
+                            if time_since_last >= timedelta(hours=24):
+                                return True  # 24+ hours passed, ready for next withdrawal
+                            else:
+                                return False  # Still within 24-hour waiting period
+                        except Exception as e:
+                            logger.warning(f"Failed to parse withdrawal timestamp: {e}")
+                            return False  # Error parsing time, err on side of caution
+                    else:
+                        return True  # No timestamp available, allow withdrawal
+                else:
+                    return True  # No account_id provided, allow withdrawal
+            else:
+                return False  # Still waiting for settlement
         elif current_step == ClosureStep.CLOSING_ACCOUNT:
             return len(positions) == 0 and cash_balance <= 1.0
         return False
@@ -174,6 +377,8 @@ class ClosureStateManager:
             return "withdraw_funds"
         elif current_step == ClosureStep.WITHDRAWING_FUNDS:
             return "close_account"
+        elif current_step == ClosureStep.PARTIAL_WITHDRAWAL_WAITING:
+            return "continue_withdrawal"
         elif current_step == ClosureStep.CLOSING_ACCOUNT:
             return "close_account"
         
@@ -195,7 +400,7 @@ class AccountClosureManager:
         # Initialize service dependencies
         self.broker_service = BrokerService(self.broker_client)
         self.state_manager = ClosureStateManager()
-        
+    
     def _setup_broker_client(self):
         """Setup broker client with proper configuration."""
         import os
@@ -271,8 +476,8 @@ class AccountClosureManager:
                 detailed_logger.log_step_start("GET_CLOSURE_STATUS", {"account_id": account_id})
             
             account_info = self.broker_service.get_account_info(account_id)
-            current_step = self.state_manager.determine_current_step(account_info)
-            ready_for_next = self.state_manager.is_ready_for_next_step(current_step, account_info)
+            current_step = self.state_manager.determine_current_step(account_info, account_id)
+            ready_for_next = self.state_manager.is_ready_for_next_step(current_step, account_info, account_id)
             next_action = self.state_manager.get_next_action(current_step, ready_for_next)
             
             status_result = {
@@ -303,6 +508,392 @@ class AccountClosureManager:
             }
             if detailed_logger:
                 detailed_logger.log_step_failure("GET_CLOSURE_STATUS", str(e))
+                error_result["log_file"] = detailed_logger.get_log_summary()
+            return error_result
+    
+    def resume_closure_process(self, account_id: str, ach_relationship_id: str = None) -> Dict[str, Any]:
+        """
+        Resume account closure process with automatic retry logic.
+        
+        Args:
+            account_id: The account to resume closure for
+            ach_relationship_id: Optional ACH relationship ID. If not provided, will be auto-fetched
+            
+        Returns:
+            Dict containing the result of the resume operation
+        """
+        detailed_logger = AccountClosureLogger(account_id) if AccountClosureLogger else None
+        
+        try:
+            # If no ACH relationship ID provided, fetch it automatically
+            if not ach_relationship_id:
+                try:
+                    ach_relationship_id = self.broker_service.get_ach_relationship_id(account_id)
+                    if detailed_logger:
+                        detailed_logger.log_step_start("ACH_RELATIONSHIP_AUTO_FETCH", {
+                            "account_id": account_id,
+                            "ach_relationship_id": ach_relationship_id
+                        })
+                except Exception as e:
+                    error_msg = f"Failed to automatically fetch ACH relationship ID: {str(e)}"
+                    if detailed_logger:
+                        detailed_logger.log_step_failure("ACH_RELATIONSHIP_AUTO_FETCH", error_msg)
+                    return {
+                        "success": False,
+                        "step": "ach_lookup_failed",
+                        "error": error_msg,
+                        "suggestion": "Please ensure your bank account is properly connected"
+                    }
+            
+            if detailed_logger:
+                detailed_logger.log_step_start("RESUME_CLOSURE_PROCESS", {
+                    "account_id": account_id,
+                    "ach_relationship_id": ach_relationship_id,
+                    "auto_fetched": True
+                })
+            
+            # Get current status
+            current_status = self.get_closure_status(account_id)
+            current_step = current_status.get("current_step")
+            ready_for_next = current_status.get("ready_for_next_step", False)
+            
+            if detailed_logger:
+                detailed_logger.log_step_start("ANALYZING_CURRENT_STATE", current_status)
+            
+            # Handle each step appropriately
+            if current_step == ClosureStep.COMPLETED.value:
+                return {
+                    "success": True,
+                    "step": current_step,
+                    "message": "Account closure already completed",
+                    "status": current_status
+                }
+            
+            elif current_step == ClosureStep.FAILED.value:
+                # For failed closures, we should check if we can restart
+                preconditions = self.check_closure_preconditions(account_id)
+                if not preconditions.get("ready", False):
+                    return {
+                        "success": False,
+                        "step": current_step,
+                        "reason": "Cannot resume - account not ready for closure",
+                        "preconditions": preconditions
+                    }
+                
+                # Account is ready, restart liquidation
+                liquidation_result = self.liquidate_positions(account_id)
+                return {
+                    "success": liquidation_result.get("success", False),
+                    "step": ClosureStep.LIQUIDATING_POSITIONS.value,
+                    "action_taken": "restarted_liquidation",
+                    "liquidation_result": liquidation_result,
+                    "status": self.get_closure_status(account_id)
+                }
+            
+            elif current_step in [ClosureStep.INITIATED.value, ClosureStep.LIQUIDATING_POSITIONS.value]:
+                if ready_for_next or current_status.get("open_positions", 0) == 0:
+                    # Positions are settled, move to next step
+                    if detailed_logger:
+                        detailed_logger.log_step_start("POSITIONS_SETTLED_CHECK")
+                    
+                    # Check if we can proceed to withdrawal or closure
+                    cash_balance = current_status.get("cash_balance", 0)
+                    cash_withdrawable = current_status.get("cash_withdrawable", 0)
+                    
+                    if cash_balance <= 1.0:
+                        # Ready to close account
+                        close_result = self.close_account(account_id)
+                        return {
+                            "success": close_result.get("success", False),
+                            "step": ClosureStep.CLOSING_ACCOUNT.value,
+                            "action_taken": "closed_account",
+                            "close_result": close_result,
+                            "status": self.get_closure_status(account_id)
+                        }
+                    
+                    elif cash_withdrawable == cash_balance and cash_balance > 1.0:
+                        # Ready to withdraw funds - ACH ID is now automatically available
+                        withdraw_result = self.withdraw_funds(account_id, ach_relationship_id, cash_withdrawable)
+                        return {
+                            "success": withdraw_result.get("success", False),
+                            "step": ClosureStep.WITHDRAWING_FUNDS.value,
+                            "action_taken": "withdrew_funds",
+                            "amount_withdrawn": cash_withdrawable,
+                            "withdraw_result": withdraw_result,
+                            "status": self.get_closure_status(account_id)
+                        }
+                    
+                    else:
+                        # Still waiting for settlement
+                        return {
+                            "success": True,
+                            "step": ClosureStep.WAITING_SETTLEMENT.value,
+                            "action_taken": "waiting_for_settlement",
+                            "message": "Waiting for trades to settle",
+                            "cash_balance": cash_balance,
+                            "cash_withdrawable": cash_withdrawable,
+                            "estimated_settlement": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
+                            "status": current_status
+                        }
+            
+            elif current_step == ClosureStep.WAITING_SETTLEMENT.value:
+                cash_balance = current_status.get("cash_balance", 0)
+                cash_withdrawable = current_status.get("cash_withdrawable", 0)
+                
+                if cash_withdrawable == cash_balance and cash_balance > 1.0:
+                    # Settlement complete, ready to withdraw - ACH ID already fetched automatically
+                    withdraw_result = self.withdraw_funds(account_id, ach_relationship_id, cash_withdrawable)
+                    
+                    if withdraw_result.get("success"):
+                        if withdraw_result.get("is_partial_withdrawal", False):
+                            # Partial withdrawal initiated - move to waiting state
+                            return {
+                                "success": True,
+                                "step": ClosureStep.PARTIAL_WITHDRAWAL_WAITING.value,
+                                "action_taken": "initiated_partial_withdrawal",
+                                "amount_withdrawn": withdraw_result.get("amount_withdrawn"),
+                                "remaining_amount": withdraw_result.get("remaining_amount"),
+                                "next_withdrawal_date": withdraw_result.get("next_withdrawal_date"),
+                                "withdraw_result": withdraw_result,
+                                "status": self.get_closure_status(account_id),
+                                "message": withdraw_result.get("message")
+                            }
+                        else:
+                            # Complete withdrawal - continue to account closure
+                            return {
+                                "success": True,
+                                "step": ClosureStep.CLOSING_ACCOUNT.value,
+                                "action_taken": "completed_withdrawal",
+                                "amount_withdrawn": withdraw_result.get("amount_withdrawn"),
+                                "withdraw_result": withdraw_result,
+                                "status": self.get_closure_status(account_id),
+                                "message": withdraw_result.get("message")
+                            }
+                    else:
+                        # Withdrawal failed
+                        return {
+                            "success": False,
+                            "step": current_step,
+                            "action_taken": "withdrawal_failed",
+                            "amount_to_withdraw": cash_withdrawable,
+                            "withdraw_result": withdraw_result,
+                            "status": self.get_closure_status(account_id),
+                            "message": withdraw_result.get("message", f"Withdrawal failed: {withdraw_result.get('error', 'Unknown error')}")
+                        }
+                
+                elif cash_balance <= 1.0:
+                    # No funds to withdraw, ready to close
+                    close_result = self.close_account(account_id)
+                    return {
+                        "success": close_result.get("success", False),
+                        "step": ClosureStep.CLOSING_ACCOUNT.value,
+                        "action_taken": "closed_account",
+                        "close_result": close_result,
+                        "status": self.get_closure_status(account_id)
+                    }
+                
+                else:
+                    # Still waiting for settlement
+                    return {
+                        "success": True,
+                        "step": current_step,
+                        "action_taken": "still_waiting",
+                        "message": "Trades are still settling",
+                        "cash_balance": cash_balance,
+                        "cash_withdrawable": cash_withdrawable,
+                        "status": current_status
+                    }
+            
+            elif current_step == ClosureStep.WITHDRAWING_FUNDS.value:
+                # Check if withdrawal completed
+                cash_balance = current_status.get("cash_balance", 0)
+                cash_withdrawable = current_status.get("cash_withdrawable", 0)
+                
+                if cash_balance <= 1.0:
+                    # Withdrawal complete, close account
+                    close_result = self.close_account(account_id)
+                    return {
+                        "success": close_result.get("success", False),
+                        "step": ClosureStep.CLOSING_ACCOUNT.value,
+                        "action_taken": "closed_account",
+                        "close_result": close_result,
+                        "status": self.get_closure_status(account_id)
+                    }
+                elif cash_withdrawable == cash_balance and cash_balance > 1.0:
+                    # Funds are settled and ready to withdraw - ACH ID already fetched automatically
+                    withdraw_result = self.withdraw_funds(account_id, ach_relationship_id, cash_withdrawable)
+                    
+                    if withdraw_result.get("success"):
+                        if withdraw_result.get("is_partial_withdrawal", False):
+                            # Partial withdrawal initiated - move to waiting state
+                            return {
+                                "success": True,
+                                "step": ClosureStep.PARTIAL_WITHDRAWAL_WAITING.value,
+                                "action_taken": "initiated_partial_withdrawal",
+                                "amount_withdrawn": withdraw_result.get("amount_withdrawn"),
+                                "remaining_amount": withdraw_result.get("remaining_amount"),
+                                "next_withdrawal_date": withdraw_result.get("next_withdrawal_date"),
+                                "withdraw_result": withdraw_result,
+                                "status": self.get_closure_status(account_id),
+                                "message": withdraw_result.get("message")
+                            }
+                        else:
+                            # Complete withdrawal - ready to close account
+                            return {
+                                "success": True,
+                                "step": ClosureStep.CLOSING_ACCOUNT.value,
+                                "action_taken": "completed_withdrawal",
+                                "amount_withdrawn": withdraw_result.get("amount_withdrawn"),
+                                "withdraw_result": withdraw_result,
+                                "status": self.get_closure_status(account_id),
+                                "message": "Withdrawal completed, ready to close account"
+                            }
+                    else:
+                        # Withdrawal failed
+                        return {
+                            "success": False,
+                            "step": current_step,
+                            "action_taken": "withdrawal_failed",
+                            "amount_to_withdraw": cash_withdrawable,
+                            "withdraw_result": withdraw_result,
+                            "status": self.get_closure_status(account_id),
+                            "message": withdraw_result.get("message", f"Withdrawal failed: {withdraw_result.get('error', 'Unknown error')}")
+                        }
+                else:
+                    # Funds are not yet fully settled - wait for settlement
+                    return {
+                        "success": True,
+                        "step": current_step,
+                        "action_taken": "waiting_for_settlement",
+                        "message": "Waiting for funds to settle before withdrawal",
+                        "cash_balance": cash_balance,
+                        "cash_withdrawable": cash_withdrawable,
+                        "status": current_status
+                    }
+            
+            elif current_step == ClosureStep.PARTIAL_WITHDRAWAL_WAITING.value:
+                # Handle ongoing multi-day withdrawal process
+                cash_balance = current_status.get("cash_balance", 0)
+                cash_withdrawable = current_status.get("cash_withdrawable", 0)
+                
+                if cash_balance <= 1.0:
+                    # All withdrawals completed, ready to close account
+                    close_result = self.close_account(account_id)
+                    return {
+                        "success": close_result.get("success", False),
+                        "step": ClosureStep.CLOSING_ACCOUNT.value,
+                        "action_taken": "closed_account_after_partial_withdrawals",
+                        "close_result": close_result,
+                        "status": self.get_closure_status(account_id),
+                        "message": "All withdrawals completed, account closure initiated"
+                    }
+                
+                elif cash_withdrawable == cash_balance and cash_balance > 1.0:
+                    # Funds are settled, continue with next withdrawal
+                    if cash_balance > 50000.0:
+                        # Another partial withdrawal needed
+                        withdraw_result = self.withdraw_funds(account_id, ach_relationship_id, cash_withdrawable)
+                        
+                        if withdraw_result.get("success"):
+                            if withdraw_result.get("is_partial_withdrawal", False):
+                                # Still more partial withdrawals needed
+                                return {
+                                    "success": True,
+                                    "step": ClosureStep.PARTIAL_WITHDRAWAL_WAITING.value,
+                                    "action_taken": "continued_partial_withdrawal",
+                                    "amount_withdrawn": withdraw_result.get("amount_withdrawn"),
+                                    "remaining_amount": withdraw_result.get("remaining_amount"),
+                                    "next_withdrawal_date": withdraw_result.get("next_withdrawal_date"),
+                                    "withdraw_result": withdraw_result,
+                                    "status": self.get_closure_status(account_id),
+                                    "message": withdraw_result.get("message")
+                                }
+                            else:
+                                # Final withdrawal completed
+                                return {
+                                    "success": True,
+                                    "step": ClosureStep.CLOSING_ACCOUNT.value,
+                                    "action_taken": "completed_final_withdrawal",
+                                    "amount_withdrawn": withdraw_result.get("amount_withdrawn"),
+                                    "withdraw_result": withdraw_result,
+                                    "status": self.get_closure_status(account_id),
+                                    "message": "Final withdrawal completed, ready to close account"
+                                }
+                        else:
+                            # Withdrawal failed
+                            return {
+                                "success": False,
+                                "step": current_step,
+                                "action_taken": "partial_withdrawal_failed",
+                                "withdraw_result": withdraw_result,
+                                "status": self.get_closure_status(account_id),
+                                "message": f"Partial withdrawal failed: {withdraw_result.get('error', 'Unknown error')}"
+                            }
+                    else:
+                        # Final withdrawal (≤ $50,000 remaining)
+                        withdraw_result = self.withdraw_funds(account_id, ach_relationship_id, cash_withdrawable)
+                        
+                        if withdraw_result.get("success"):
+                            return {
+                                "success": True,
+                                "step": ClosureStep.CLOSING_ACCOUNT.value,
+                                "action_taken": "completed_final_withdrawal",
+                                "amount_withdrawn": withdraw_result.get("amount_withdrawn"),
+                                "withdraw_result": withdraw_result,
+                                "status": self.get_closure_status(account_id),
+                                "message": "Final withdrawal completed, ready to close account"
+                            }
+                        else:
+                            # Final withdrawal failed
+                            return {
+                                "success": False,
+                                "step": current_step,
+                                "action_taken": "final_withdrawal_failed",
+                                "withdraw_result": withdraw_result,
+                                "status": self.get_closure_status(account_id),
+                                "message": f"Final withdrawal failed: {withdraw_result.get('error', 'Unknown error')}"
+                            }
+                else:
+                    # Still waiting for funds to settle
+                    return {
+                        "success": True,
+                        "step": current_step,
+                        "action_taken": "waiting_for_settlement",
+                        "message": "Waiting for previous withdrawal to settle before next transfer",
+                        "cash_balance": cash_balance,
+                        "cash_withdrawable": cash_withdrawable,
+                        "status": current_status
+                    }
+            
+            elif current_step == ClosureStep.CLOSING_ACCOUNT.value:
+                # Final step - close the account
+                close_result = self.close_account(account_id)
+                return {
+                    "success": close_result.get("success", False),
+                    "step": current_step,
+                    "action_taken": "closed_account",
+                    "close_result": close_result,
+                    "status": self.get_closure_status(account_id)
+                }
+            
+            else:
+                # Unknown step, return current status
+                return {
+                    "success": False,
+                    "step": current_step,
+                    "reason": f"Unknown closure step: {current_step}",
+                    "status": current_status
+                }
+            
+        except Exception as e:
+            error_result = {
+                "success": False,
+                "step": "resume_error",
+                "error": str(e),
+                "account_id": account_id
+            }
+            if detailed_logger:
+                detailed_logger.log_step_failure("RESUME_CLOSURE_PROCESS", str(e))
                 error_result["log_file"] = detailed_logger.get_log_summary()
             return error_result
     
@@ -352,6 +943,20 @@ class AccountClosureManager:
                     return {"success": False, "error": "No withdrawable funds (amount <= $1.00)"}
             
             result = self.broker_service.withdraw_funds(account_id, ach_relationship_id, amount)
+            
+            # Store partial withdrawal state in Redis if this is a partial withdrawal
+            if result.get("success") and result.get("is_partial_withdrawal", False):
+                partial_state = {
+                    "total_requested": result.get("total_requested"),
+                    "amount_withdrawn": result.get("amount_withdrawn"),
+                    "remaining_amount": result.get("remaining_amount"),
+                    "next_withdrawal_date": result.get("next_withdrawal_date"),
+                    "transfer_id": result.get("transfer_id"),
+                    "initiated_at": datetime.now().isoformat(),
+                    "ach_relationship_id": ach_relationship_id
+                }
+                self.state_manager._set_partial_withdrawal_state(account_id, partial_state)
+                logger.info(f"Stored partial withdrawal state for account {account_id}")
             
             if detailed_logger:
                 if result.get("success"):

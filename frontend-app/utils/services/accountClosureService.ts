@@ -168,17 +168,22 @@ export class AccountClosureService {
    * Map backend step to frontend step index
    */
   mapBackendStepToIndex(backendStep: string): number {
+    // Normalize backend step name to lowercase to handle uppercase names from backend
+    const normalizedStep = backendStep.toLowerCase();
     const stepMapping: Record<string, number> = {
       'initiated': 0,
       'liquidating_positions': 1,
+      'liquidating': 1, // Support both possible keys
       'waiting_settlement': 2,
+      'settlement': 2, // Support both possible keys
       'withdrawing_funds': 3,
+      'withdrawing': 3, // Support both possible keys
       'closing_account': 4,
+      'closing': 4, // Support both possible keys
       'completed': 5,
       'failed': -1
     };
-    
-    return stepMapping[backendStep] ?? -1;
+    return stepMapping[normalizedStep] ?? -1;
   }
 
   /**
@@ -191,9 +196,10 @@ export class AccountClosureService {
       return updatedSteps;
     }
     
-    if (progressData.current_step === 'failed') {
+    if (progressData.current_step.toLowerCase() === 'failed') {
       // Handle failed state
-      const failedStepIndex = Math.max(0, (progressData.steps_completed || 0) + 1);
+      // Fix off-by-one: failedStepIndex should be steps_completed (not steps_completed + 1)
+      const failedStepIndex = Math.max(0, progressData.steps_completed || 0);
       
       // Mark completed steps
       for (let i = 0; i < failedStepIndex && i < updatedSteps.length; i++) {
@@ -229,7 +235,7 @@ export class AccountClosureService {
         
         // Mark current step
         if (currentStepIndex < updatedSteps.length) {
-          if (progressData.current_step === 'completed') {
+          if (progressData.current_step.toLowerCase() === 'completed') {
             // Mark all steps as completed
             for (let i = 0; i < updatedSteps.length; i++) {
               updatedSteps[i].status = 'completed';
