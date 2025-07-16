@@ -146,7 +146,6 @@ redis>=6.0.0
 regex>=2024.11.6
 requests>=2.32.3
 requests-toolbelt>=1.0.0
-retell>=0.5.1
 safetensors>=0.5.3
 scikit-learn>=1.6.1
 scipy>=1.15.2
