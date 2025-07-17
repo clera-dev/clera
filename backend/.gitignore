@@ -145,7 +145,4 @@ docker-compose.yml
 # Python installer
 get-pip.py
 
-# Project specific
-embeddings.py
-
 .langgraph_api/

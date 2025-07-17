@@ -43,13 +43,15 @@ export function useClosureInitiation(accountId: string): UseClosureInitiationRet
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ach_relationship_id: achRelationshipId
+          ach_relationship_id: achRelationshipId,
+          confirm_liquidation: true,
+          confirm_irreversible: true
         })
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to initiate account closure');
+        throw new Error(errorData.error || errorData.detail || 'Failed to initiate account closure');
       }
 
       const result = await response.json();

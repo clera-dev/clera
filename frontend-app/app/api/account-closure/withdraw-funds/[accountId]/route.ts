@@ -27,6 +27,41 @@ export async function POST(
       );
     }
 
+    // CRITICAL SECURITY FIX: Validate that the user owns this account
+    const { data: onboardingData, error: ownershipError } = await supabase
+      .from('user_onboarding')
+      .select('alpaca_account_id, status')
+      .eq('user_id', user.id)
+      .eq('alpaca_account_id', accountId)
+      .single();
+
+    if (ownershipError || !onboardingData) {
+      console.error(`User ${user.id} attempted to withdraw funds from account ${accountId} they don't own`);
+      return NextResponse.json(
+        { error: 'Account not found or access denied' },
+        { status: 403 }
+      );
+    }
+
+    // CRITICAL: Only allow withdrawal if account is in pending_closure status
+    if (onboardingData.status !== 'pending_closure') {
+      return NextResponse.json(
+        { error: 'Account must be in pending closure status to withdraw funds' },
+        { status: 400 }
+      );
+    }
+
+    // Get request body
+    const requestBody = await request.json();
+    const achRelationshipId = requestBody?.ach_relationship_id;
+
+    if (!achRelationshipId) {
+      return NextResponse.json(
+        { error: 'ACH relationship ID is required' },
+        { status: 400 }
+      );
+    }
+
     // Get backend configuration
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
@@ -40,13 +75,16 @@ export async function POST(
     }
 
     // Call backend API to withdraw funds
-    console.log(`Withdrawing funds for account closure: ${accountId}`);
+    console.log(`Withdrawing funds for account closure: ${accountId} by user ${user.id}`);
     const response = await fetch(`${backendUrl}/account-closure/withdraw-funds/${accountId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': backendApiKey,
       },
+      body: JSON.stringify({
+        ach_relationship_id: achRelationshipId
+      }),
       cache: 'no-store'
     });
 

@@ -1,17 +1,20 @@
-{
-  "dockerfile_lines": [],
-  "graphs": {
-    "agent": "./backend/clera_agents/graph.py:graph" 
-  },
-  "env": "./backend/.env",
-  "dependencies": ["./backend"],
-  "store": {
-    "index": {
-      "embed": "openai:text-embedding-3-small",
-      "dims": 1536,
-      "fields": ["$"]
-    }
-  }
+{   
+  "dockerfile_lines": [
+    "RUN pip install --force-reinstall --no-cache-dir langchain>=0.3.26 langchain-openai>=0.3.28 langchain-core>=0.3.69",
+    "COPY ./backend/requirements.txt /tmp/requirements.txt",
+    "RUN pip install --no-cache-dir -r /tmp/requirements.txt",
+    "ENV PYTHONPATH=/deps/backend:$PYTHONPATH"
+  ],
+  "graphs": {     
+    "agent": "./backend/clera_agents/graph.py:graph"    
+  },   
+  "env": "./backend/.env",   
+  "dependencies": ["./backend"],   
+  "store": {     
+    "index": {       
+      "embed": "openai:text-embedding-3-small",       
+      "dims": 1536,       
+      "fields": ["$"]     
+    }   
+  } 
 }
-
-

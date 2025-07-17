@@ -87,13 +87,20 @@ export class AccountClosureService {
       
       const result = await response.json();
       
-      if (result.success && result.data) {
-        return {
-          confirmationNumber: result.data.confirmationNumber,
-          initiatedAt: result.data.initiatedAt,
-          estimatedCompletion: result.data.estimatedCompletion,
-          nextSteps: result.data.nextSteps
-        };
+      if (result.success) {
+        // CRITICAL FIX: Handle the case where data is null (no closure activity)
+        if (result.data === null) {
+          return null;
+        }
+        
+        if (result.data) {
+          return {
+            confirmationNumber: result.data.confirmationNumber,
+            initiatedAt: result.data.initiatedAt,
+            estimatedCompletion: result.data.estimatedCompletion,
+            nextSteps: result.data.nextSteps
+          };
+        }
       }
       
       return null;

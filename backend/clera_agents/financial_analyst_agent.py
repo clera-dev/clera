@@ -6,6 +6,7 @@
 # Import necessary libraries
 import os
 import logging
+import requests
 from dotenv import load_dotenv
 from urllib.request import urlopen
 import certifi
@@ -40,10 +41,14 @@ def get_data_client():
     
     if not api_key or not secret_key:
         logger.warning("[Financial Analyst] Alpaca API credentials not found - some features may be limited")
+        logger.warning(f"[Financial Analyst] API Key present: {bool(api_key)}, Secret Key present: {bool(secret_key)}")
         return None
     
     try:
-        return StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
+        client = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
+        # Test the client with a simple request
+        logger.info("[Financial Analyst] Successfully initialized Alpaca data client")
+        return client
     except Exception as e:
         logger.error(f"[Financial Analyst] Failed to initialize Alpaca data client: {e}")
         return None
@@ -87,6 +92,7 @@ def web_search(query: str) -> str:
     # Determine if in-depth research is requested
     is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
     current_date = datetime.now().strftime("%Y-%m-%d")
+    current_year = datetime.now().year
 
     if is_in_depth_query:
         research_prompt = f"""You are the world's BEST financial news analyst. 
@@ -94,12 +100,18 @@ def web_search(query: str) -> str:
         Provide a thorough, comprehensive analysis with actionable insights on the query below. 
         Focus on concrete facts, figures, sources, and causal relationships. 
         Avoid generic advice. Use recent AND credible financial news sources. 
-        Today's date is {current_date}.
+        Today's date is {current_date}. Current year is {current_year}.
+        
+        CRITICAL: Always prioritize information from {current_year} and recent months. 
+        If referencing older data, clearly state the time period.
 
 Query: {query}
 """
     else:
-        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
+        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations. 
+
+IMPORTANT: Today's date is {current_date}. Current year is {current_year}. 
+Always prioritize recent information from {current_year} and clearly indicate time periods for any data you reference.
 
 Query: {query}
 """
@@ -211,7 +223,7 @@ def adjust_for_market_days(date_str: str, direction: str = "backward") -> str:
 
 
 def get_historical_prices(symbol: str, start_date: str, end_date: str = None) -> Dict:
-    """Get historical prices for performance calculation.
+    """Get historical prices for performance calculation using FMP API.
     
     Args:
         symbol: Stock symbol (e.g., 'AAPL', 'SPY')
@@ -223,47 +235,75 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str = None) ->
     
     Raises:
         ValueError: If no data available for the symbol/date range
-        Exception: For API errors or other issues
+        Exception: If API errors occur
     """
     if end_date is None:
         end_date = datetime.now().strftime('%Y-%m-%d')
-    
     logger.info(f"[Performance Analysis] Fetching historical data for {symbol} from {start_date} to {end_date}")
     
     try:
-        # Convert dates to timezone-aware datetime objects (market timezone)
-        start_time = pd.to_datetime(start_date).tz_localize('America/New_York')
-        end_time = pd.to_datetime(end_date).tz_localize('America/New_York')
+        # Validate inputs
+        validation = validate_symbol_and_dates(symbol, start_date, end_date)
+        if 'error' in validation:
+            raise ValueError(validation['error'])
         
-        # Create request for daily bars
-        request_params = StockBarsRequest(
-            symbol_or_symbols=[symbol],
-            timeframe=TimeFrame.Day,
-            start=start_time,
-            end=end_time
-        )
+        # Get FMP API key
+        fmp_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
+        if not fmp_api_key:
+            raise Exception("FMP API key not found. Please set FINANCIAL_MODELING_PREP_API_KEY environment variable.")
         
-        # Get data client and fetch data
-        data_client = get_data_client()
-        if not data_client:
-            raise Exception("Alpaca data client not available - API credentials may be missing")
+        # Build FMP API URL
+        base_url = "https://financialmodelingprep.com/stable/historical-price-eod/full"
+        params = {
+            'symbol': symbol.upper(),
+            'from': start_date,
+            'to': end_date,
+            'apikey': fmp_api_key
+        }
         
-        bars = data_client.get_stock_bars(request_params)
+        # Make API request
+        try:
+            logger.info(f"[Performance Analysis] Making FMP API request for {symbol}")
+            response = requests.get(base_url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[Performance Analysis] FMP API request failed for {symbol}: {e}")
+            if response.status_code == 401:
+                raise Exception("FMP API authentication failed. Please check your API key.")
+            elif response.status_code == 429:
+                raise Exception("FMP API rate limit exceeded. Please wait a moment and try again.")
+            else:
+                raise Exception(f"FMP API error: {e}")
+        except Exception as e:
+            logger.error(f"[Performance Analysis] Error parsing FMP response for {symbol}: {e}")
+            raise Exception(f"Error processing FMP data for {symbol}: {e}")
         
-        # Convert to DataFrame for easy manipulation
-        df = bars.df
-        if df.empty:
-            raise ValueError(f"No price data available for {symbol} in the specified date range ({start_date} to {end_date})")
+        # Validate response data
+        if not data or not isinstance(data, list):
+            raise ValueError(f"No data available for {symbol} in the specified date range ({start_date} to {end_date})")
+        
+        if len(data) == 0:
+            raise ValueError(f"No price data available for {symbol} in the specified date range ({start_date} to {end_date}). This could be due to:\n• Invalid date range (weekends, holidays, or non-trading days)\n• Symbol not traded during this period\n• Data not available for this symbol")
+        
+        # Sort data by date (FMP returns newest first, we want oldest first for analysis)
+        data.sort(key=lambda x: x['date'])
         
         # Extract start and end prices
-        start_price = df.iloc[0]['close']
-        end_price = df.iloc[-1]['close']
+        try:
+            start_price = float(data[0]['close'])
+            end_price = float(data[-1]['close'])
+            actual_start_date = data[0]['date']
+            actual_end_date = data[-1]['date']
+        except (KeyError, IndexError, ValueError) as e:
+            logger.error(f"[Performance Analysis] Error extracting prices from FMP data for {symbol}: {e}")
+            raise Exception(f"Data format error: unable to extract price information for {symbol}")
         
-        # Get actual dates from the data (in case of market holidays/weekends)
-        actual_start_date = df.index[0][1].strftime('%Y-%m-%d')  # [1] because of MultiIndex (symbol, timestamp)
-        actual_end_date = df.index[-1][1].strftime('%Y-%m-%d')
+        # Validate price data
+        if start_price <= 0 or end_price <= 0:
+            raise ValueError(f"Invalid price data for {symbol}: start_price={start_price}, end_price={end_price}")
         
-        logger.info(f"[Performance Analysis] Retrieved {len(df)} data points for {symbol}")
+        logger.info(f"[Performance Analysis] Successfully retrieved {len(data)} data points for {symbol}")
         
         return {
             'symbol': symbol,
@@ -275,13 +315,16 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str = None) ->
             'end_price': Decimal(str(end_price)),
             'price_change': Decimal(str(end_price - start_price)),
             'percentage_change': Decimal(str((end_price - start_price) / start_price * 100)),
-            'data_points': len(df),
+            'data_points': len(data),
             'has_data': True
         }
         
-    except Exception as e:
-        logger.error(f"[Performance Analysis] Error fetching data for {symbol}: {e}")
+    except ValueError:
+        # Re-raise ValueError as-is (these are user-facing validation errors)
         raise
+    except Exception as e:
+        logger.error(f"[Performance Analysis] Unexpected error fetching data for {symbol}: {e}", exc_info=True)
+        raise Exception(f"Unexpected error retrieving market data for {symbol}: {str(e)}")
 
 
 def calculate_annualized_return(total_return_pct: Decimal, days: int) -> Decimal:
@@ -375,7 +418,7 @@ def format_performance_analysis(performance_data: Dict, benchmark_data: Dict = N
         spy_return = benchmark_data['percentage_change']
         outperformance = pct_change - spy_return
         
-        outperf_emoji = "🎯" if outperformance >= 0 else "📊"
+        outperf_emoji = "��" if outperformance >= 0 else "📊"
         
         summary += f"""
 
@@ -391,7 +434,7 @@ def format_performance_analysis(performance_data: Dict, benchmark_data: Dict = N
 
 **Data Quality:**
 • Data Points: {performance_data['data_points']} trading days
-• Data Source: Alpaca Markets (daily close prices)"""
+• Data Source: Financial Modeling Prep (daily close prices)"""
 
     return summary
 

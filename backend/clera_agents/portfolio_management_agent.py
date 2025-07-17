@@ -18,7 +18,6 @@ import pandas as pd
 load_dotenv(override=True)
 fin_modeling_prep_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
 
-from alpaca.broker import BrokerClient
 from langgraph.pregel import Pregel # Import if needed to understand config structure
 from langgraph.config import get_config # Import get_config
 from langchain_core.runnables.config import RunnableConfig
@@ -26,7 +25,7 @@ from langchain_core.runnables.config import RunnableConfig
 
 # Import our custom types
 from clera_agents.types.portfolio_types import (
-    AssetClass, SecurityType, TargetPortfolio, RiskProfile
+    AssetClass, SecurityType, TargetPortfolio, RiskProfile, AssetAllocation
 )
 from clera_agents.tools.portfolio_analysis import (
     PortfolioPosition, PortfolioAnalyzer, PortfolioAnalyticsEngine
@@ -36,19 +35,41 @@ from clera_agents.tools.purchase_history import (
     find_first_purchase_dates
 )
 from utils.account_utils import get_account_id
+from utils.alpaca.broker_client_factory import get_broker_client
 
 
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# initialize Alpaca broker client
-broker_client = BrokerClient(
-    api_key=os.getenv("BROKER_API_KEY"),
-    secret_key=os.getenv("BROKER_SECRET_KEY"),
-    sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
-)
+# Use centralized broker client
+broker_client = get_broker_client()
 
+
+
+def get_account_cash_balance(config=None) -> Decimal:
+    """Get the cash balance from the user's account.
+    
+    Returns:
+        Decimal: The cash balance in the account
+    """
+    try:
+        account_id = get_account_id(config=config)
+        logger.info(f"[Portfolio Agent] Retrieving cash balance for account: {account_id}")
+        
+        # Get account information
+        account = broker_client.get_trade_account_by_id(account_id)
+        cash_balance = Decimal(str(account.cash))
+        
+        logger.info(f"[Portfolio Agent] Cash balance for account {account_id}: ${cash_balance:.2f}")
+        return cash_balance
+        
+    except ValueError as e:
+        logger.error(f"[Portfolio Agent] Account identification failed: {e}")
+        return Decimal('0')
+    except Exception as e:
+        logger.error(f"[Portfolio Agent] Failed to retrieve cash balance: {e}", exc_info=True)
+        return Decimal('0')
 
 
 #@tool("retrieve_portfolio_positions")
@@ -122,93 +143,77 @@ def create_rebalance_instructions(positions_data: List, target_portfolio_type: O
         
              if not positions_data:
                 return "❌ **Portfolio Error:** No positions found in your account. Cannot generate rebalancing instructions."
+        
+        # Get cash balance for complete portfolio analysis
+        cash_balance = get_account_cash_balance(config=config)
+        
         # Initialize our analytics engine
         analyzer = PortfolioAnalyzer()
         engine = PortfolioAnalyticsEngine()
         
         # Convert Alpaca positions to our internal format
         portfolio_positions = []
+        failed_positions = []
         
         for position in positions_data:
             try:
-                # Using market_value as the notional amount (total dollar value)
-                notional_value = float(position.market_value)
-                
                 # Convert Alpaca position to our PortfolioPosition format
-                portfolio_position = PortfolioPosition(
-                    symbol=position.symbol,
-                    notional_amount=notional_value,
-                    asset_class=AssetClass.US_EQUITY,  # Most positions will be US equity
-                    security_type=SecurityType.STOCK  # Default to stock
-                )
+                portfolio_position = PortfolioPosition.from_alpaca_position(position)
                 portfolio_positions.append(portfolio_position)
                 
             except (ValueError, AttributeError) as e:
-                logger.warning(f"[Rebalance] Could not process position {position.symbol}: {e}")
+                # Collect failed positions for reporting
+                symbol = getattr(position, 'symbol', 'UNKNOWN')
+                failed_positions.append(f"{symbol}: {str(e)}")
+                logger.warning(f"[Rebalance] Could not process position {symbol}: {e}")
                 continue
         
-        if not portfolio_positions:
-            return "❌ **Rebalancing Error:** Could not process any positions from your account."
+        # Check if we have any usable data
+        if not portfolio_positions and cash_balance == 0:
+            error_msg = "❌ **Rebalancing Error:** Could not process any positions from your account."
+            
+            if failed_positions:
+                error_msg += f"\n\n**Position Conversion Errors:**"
+                for error in failed_positions[:5]:  # Show first 5 errors
+                    error_msg += f"\n• {error}"
+                if len(failed_positions) > 5:
+                    error_msg += f"\n• ... and {len(failed_positions) - 5} more errors"
+                    
+                error_msg += f"\n\n**Troubleshooting:**"
+                error_msg += f"\n• This usually indicates missing or invalid data from your broker"
+                error_msg += f"\n• Try refreshing your positions or contact support if this persists"
+                error_msg += f"\n• Some positions may still be settling"
+            
+            return error_msg
+        
+        # Provide feedback on partial success
+        status_msg = ""
+        if failed_positions:
+            status_msg = f"\n**Note:** Successfully processed {len(portfolio_positions)} positions"
+            if len(failed_positions) == 1:
+                status_msg += f", but encountered 1 issue with position data."
+            else:
+                status_msg += f", but encountered {len(failed_positions)} issues with position data."
         
         # Get target portfolio based on user preference
         target_portfolio = get_target_portfolio_by_type(target_portfolio_type)
         
-        # Calculate current and target allocations
-        current_allocation = analyzer.calculate_current_allocation(portfolio_positions)
-        total_value = sum(pos.notional_amount for pos in portfolio_positions)
-        
-        # Generate rebalancing instructions
-        rebalancing_instructions = analyzer.generate_rebalancing_instructions(
-            current_allocation, target_portfolio, total_value
+        # Generate rebalancing instructions including cash balance
+        instructions = analyzer.generate_rebalance_instructions(
+            portfolio_positions, 
+            target_portfolio,
+            cash_balance=cash_balance
         )
         
-        # Format the instructions for human readability
-        instructions_text = f"""📊 **Portfolio Rebalancing Analysis**
-
-**Current Portfolio Value:** ${total_value:,.2f}
-**Target Strategy:** {target_portfolio_type.title()}
-
-**Current Allocation:**
-"""
+        # Add status message if there were any issues
+        if status_msg:
+            instructions += status_msg
         
-        for asset_class, percentage in current_allocation.items():
-            instructions_text += f"• {asset_class.value}: {percentage:.1f}%\n"
-        
-        instructions_text += f"""
-**Target Allocation:**
-"""
-        for asset_class, percentage in target_portfolio.allocations.items():
-            instructions_text += f"• {asset_class.value}: {percentage:.1f}%\n"
-        
-        instructions_text += f"""
-**📋 Rebalancing Instructions:**
-
-"""
-        
-        if not rebalancing_instructions:
-            instructions_text += "✅ **Your portfolio is already well-balanced!** No trades needed at this time."
-        else:
-            for instruction in rebalancing_instructions:
-                action = "🟢 BUY" if instruction['action'] == 'buy' else "🔴 SELL"
-                instructions_text += f"{action} ${instruction['amount']:,.2f} of {instruction['asset_class'].value}\n"
-                if 'reason' in instruction:
-                    instructions_text += f"   Reason: {instruction['reason']}\n"
-                instructions_text += "\n"
-        
-        instructions_text += """
-**💡 Next Steps:**
-1. Review these recommendations carefully
-2. Consider your risk tolerance and investment timeline
-3. Use the trade execution agent to implement specific trades
-4. Monitor and rebalance quarterly or when allocations drift >5%
-
-**⚠️ Important Note:** These are general recommendations. Consider consulting with a financial advisor for personalized advice."""
-        
-        return instructions_text
+        return instructions
         
     except Exception as e:
-        logger.error(f"[Rebalance] Error generating rebalancing instructions: {e}", exc_info=True)
-        return f"❌ **Rebalancing Error:** Could not generate rebalancing instructions. Error: {str(e)}"
+        logger.error(f"[Portfolio Agent] Error in create_rebalance_instructions: {e}", exc_info=True)
+        return f"❌ **Error:** Could not generate rebalancing instructions. Please try again later.\n\nError details: {str(e)}"
 
 
 @tool("rebalance_instructions")
@@ -268,10 +273,13 @@ def get_portfolio_summary(state=None, config=None) -> str:
         account_id = get_account_id(config=config)
         logger.info(f"[Portfolio Agent] Generating portfolio summary for account: {account_id}")
         
+        # Get cash balance first
+        cash_balance = get_account_cash_balance(config=config)
+        
         # Get all positions
         positions = retrieve_portfolio_positions(state=state, config=config)
         
-        if not positions:
+        if not positions and cash_balance == 0:
             return """📊 **Portfolio Summary**
 
 ❌ **No Positions Found**
@@ -286,22 +294,22 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
 • Consider making your first investment
 • Contact support if you believe this is an error"""
 
-        # Calculate portfolio totals
-        total_value = 0
-        total_unrealized_pl = 0
-        total_cost_basis = 0
+        # Calculate portfolio totals (positions only)
+        positions_value = Decimal('0')
+        total_unrealized_pl = Decimal('0')
+        total_cost_basis = Decimal('0')
         
         position_details = []
         
         for position in positions:
             try:
                 # Extract numeric values
-                market_value = float(position.market_value)
-                unrealized_pl = float(position.unrealized_pl)
-                cost_basis = float(position.cost_basis)
+                market_value = Decimal(str(position.market_value))
+                unrealized_pl = Decimal(str(position.unrealized_pl))
+                cost_basis = Decimal(str(position.cost_basis))
                 unrealized_plpc = float(position.unrealized_plpc) * 100  # Convert to percentage
                 
-                total_value += market_value
+                positions_value += market_value
                 total_unrealized_pl += unrealized_pl
                 total_cost_basis += cost_basis
                 
@@ -313,15 +321,21 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
                     'unrealized_pl': unrealized_pl,
                     'unrealized_plpc': unrealized_plpc,
                     'emoji': gain_loss_emoji,
-                    'weight': market_value / total_value if total_value > 0 else 0
                 })
                 
             except (ValueError, AttributeError) as e:
                 logger.warning(f"[Portfolio Agent] Could not process position {position.symbol}: {e}")
                 continue
         
+        # Calculate TOTAL portfolio value including cash
+        total_portfolio_value = positions_value + cash_balance
+        
+        # Calculate weights based on TOTAL portfolio value (including cash)
+        for pos in position_details:
+            pos['weight'] = float(pos['market_value'] / total_portfolio_value) if total_portfolio_value > 0 else 0
+        
         # Calculate overall return percentage
-        overall_return_pct = (total_unrealized_pl / total_cost_basis * 100) if total_cost_basis > 0 else 0
+        overall_return_pct = float(total_unrealized_pl / total_cost_basis * 100) if total_cost_basis > 0 else 0
         overall_emoji = "📈" if total_unrealized_pl >= 0 else "📉"
         
         # Sort positions by market value (largest first)
@@ -334,55 +348,109 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         for pos in position_details:
             pos['first_purchase'] = first_purchases.get(pos['symbol'])
         
-        # Get current timestamp
-        current_timestamp = datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')
+        # Calculate risk and diversification scores using the same logic as frontend
+        risk_score = Decimal('0')
+        diversification_score = Decimal('0')
         
-        # Build summary
+        if position_details:
+            try:
+                # Import the same mapping function used by the backend API
+                from clera_agents.tools.portfolio_analysis import PortfolioAnalyticsEngine
+                from api_server import map_alpaca_position_to_portfolio_position
+                
+                # Get the original Alpaca positions for proper mapping
+                original_positions = retrieve_portfolio_positions(config=config)
+                
+                # Create asset details map (empty for now, but could be enhanced)
+                asset_details_map = {}
+                
+                # Map positions using the same logic as the backend API
+                portfolio_positions = []
+                
+                for original_pos in original_positions:
+                    mapped_pos = map_alpaca_position_to_portfolio_position(original_pos, asset_details_map)
+                    if mapped_pos:
+                        portfolio_positions.append(mapped_pos)
+                
+                if portfolio_positions:
+                    risk_score = PortfolioAnalyticsEngine.calculate_risk_score(portfolio_positions)
+                    diversification_score = PortfolioAnalyticsEngine.calculate_diversification_score(portfolio_positions)
+                    logger.info(f"[Portfolio Agent] Calculated scores - Risk: {risk_score}, Diversification: {diversification_score}")
+                else:
+                    logger.warning("[Portfolio Agent] No positions could be mapped for score calculation")
+            except Exception as e:
+                logger.warning(f"[Portfolio Agent] Could not calculate risk/diversification scores: {e}")
+                # Continue with default scores of 0
+        # Get current timestamp in UTC
+        current_timestamp = datetime.now(timezone.utc).strftime('%A, %B %d, %Y at %I:%M %p UTC')
+
+        # Build summary with CORRECTED portfolio value calculations
         summary = f"""📊 **Portfolio Summary**
 **Generated:** {current_timestamp}
 
-{overall_emoji} **Portfolio Overview**
-• **Total Value:** ${total_value:,.2f}
-• **Total Positions:** {len(position_details)}
-• **Unrealized P&L:** ${total_unrealized_pl:+,.2f} ({overall_return_pct:+.2f}%)
-• **Cost Basis:** ${total_cost_basis:,.2f}
+**Risk Score:** {float(risk_score):.1f}/10
+**Diversification Score:** {float(diversification_score):.1f}/10
+"""
+
+        summary += f"""{overall_emoji} **Portfolio Overview**
+• **Total Portfolio Value:** ${float(total_portfolio_value):,.2f}
+• **Investment Positions:** ${float(positions_value):,.2f} ({float(positions_value/total_portfolio_value*100) if total_portfolio_value > 0 else 0:.1f}%)
+• **Cash Balance:** ${float(cash_balance):,.2f} ({float(cash_balance/total_portfolio_value*100) if total_portfolio_value > 0 else 0:.1f}%)
+• **Total Positions:** {len(position_details)}"""
+
+        if total_cost_basis > 0:
+            summary += f"""
+• **Unrealized P&L:** ${float(total_unrealized_pl):+,.2f} ({overall_return_pct:+.2f}%)
+• **Cost Basis:** ${float(total_cost_basis):,.2f}"""
+
+        if position_details:
+            summary += f"""
 
 📈 **Holdings Breakdown**
 """
-        
-        # Add position details
-        for pos in position_details:
-            weight_display = f"{pos['weight']*100:.1f}%"
-            first_purchase_str = ""
-            if pos.get('first_purchase'):
-                purchase_date = pos['first_purchase'].strftime('%b %d, %Y')
-                holding_days = (datetime.now(timezone.utc) - pos['first_purchase']).days
-                if holding_days < 30:
-                    holding_str = f"{holding_days} days"
-                elif holding_days < 365:
-                    months = holding_days // 30
-                    holding_str = f"{months} month{'s' if months != 1 else ''}"
-                else:
-                    years = holding_days // 365
-                    holding_str = f"{years} year{'s' if years != 1 else ''}"
-                first_purchase_str = f"\n• First purchased: {purchase_date} ({holding_str} ago)"
             
-            summary += f"""
+            # Add position details
+            for pos in position_details:
+                weight_display = f"{pos['weight']*100:.1f}%"
+                first_purchase_str = ""
+                if pos.get('first_purchase'):
+                    purchase_date = pos['first_purchase'].strftime('%b %d, %Y')
+                    holding_days = (datetime.now(timezone.utc) - pos['first_purchase']).days
+                    if holding_days < 30:
+                        holding_str = f"{holding_days} days"
+                    elif holding_days < 365:
+                        months = holding_days // 30
+                        holding_str = f"{months} month{'s' if months != 1 else ''}"
+                    else:
+                        years = holding_days // 365
+                        holding_str = f"{years} year{'s' if years != 1 else ''}"
+                    first_purchase_str = f"\n• First purchased: {purchase_date} ({holding_str} ago)"
+                
+                summary += f"""
 {pos['emoji']} **{pos['symbol']}** ({weight_display})
-• Value: ${pos['market_value']:,.2f}
-• P&L: ${pos['unrealized_pl']:+,.2f} ({pos['unrealized_plpc']:+.2f}%){first_purchase_str}"""
+• Value: ${float(pos['market_value']):,.2f}
+• P&L: ${float(pos['unrealized_pl']):+,.2f} ({pos['unrealized_plpc']:+.2f}%){first_purchase_str}"""
         
-        # Add insights
-        summary += f"""
+            # Add insights
+            summary += f"""
 
 💡 **Portfolio Insights**
 • **Largest Position:** {position_details[0]['symbol']} ({position_details[0]['weight']*100:.1f}% of portfolio)
 • **Best Performer:** {max(position_details, key=lambda x: x['unrealized_plpc'])['symbol']} ({max(position_details, key=lambda x: x['unrealized_plpc'])['unrealized_plpc']:+.2f}%)
-• **Concentration Risk:** {'HIGH' if position_details[0]['weight'] > 0.3 else 'MODERATE' if position_details[0]['weight'] > 0.2 else 'LOW'}"""
-        
-        if len(position_details) >= 3:
-            summary += f"""
+• **Concentration Risk:** {'HIGH' if position_details[0]['weight'] > 0.3 else 'MODERATE' if position_details[0]['weight'] > 0.2 else 'LOW'}
+• **Risk Score:** {float(risk_score):.1f}/10 ({'LOW' if float(risk_score) < 3 else 'MEDIUM' if float(risk_score) < 7 else 'HIGH'})
+• **Diversification Score:** {float(diversification_score):.1f}/10 ({'POOR' if float(diversification_score) < 3 else 'MODERATE' if float(diversification_score) < 7 else 'GOOD'})"""
+            
+            if len(position_details) >= 3:
+                summary += f"""
 • **Top 3 Holdings:** {position_details[0]['symbol']}, {position_details[1]['symbol']}, {position_details[2]['symbol']}"""
+        else:
+            summary += f"""
+
+💡 **Portfolio Status**
+• **Portfolio Type:** Cash-only portfolio
+• **Investment Opportunity:** ${float(cash_balance):,.2f} available for investment
+• **Next Steps:** Consider diversified investment strategy"""
         
         summary += """
 
@@ -391,7 +459,7 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
 • Need analysis? Ask about specific stock performance
 • Ready to trade? Use the trade execution agent"""
         
-        logger.info(f"[Portfolio Agent] Successfully generated portfolio summary with {len(position_details)} positions")
+        logger.info(f"[Portfolio Agent] Successfully generated portfolio summary - Total: ${float(total_portfolio_value):,.2f} (Positions: ${float(positions_value):,.2f}, Cash: ${float(cash_balance):,.2f})")
         return summary
         
     except ValueError as e:
@@ -445,43 +513,86 @@ def get_target_portfolio_by_type(portfolio_type: str) -> TargetPortfolio:
         TargetPortfolio: Target allocation strategy
     """
     if portfolio_type.lower() == 'aggressive':
-        return TargetPortfolio(
-            name="Aggressive Growth",
-            allocations={
-                AssetClass.US_EQUITY: 70.0,
-                AssetClass.INTERNATIONAL_EQUITY: 30.0,
-                AssetClass.FIXED_INCOME: 0.0,
-                AssetClass.ALTERNATIVES: 0.0,
-                AssetClass.CASH: 0.0
-            },
-            risk_profile=RiskProfile.HIGH,
-            description="High-growth portfolio focused on equity investments"
+        # 100% equity portfolio with 50% ETFs, 50% individual stocks
+        equity_allocation = AssetAllocation(
+            percentage=100.0,
+            security_allocations={
+                SecurityType.ETF: 50.0,
+                SecurityType.INDIVIDUAL_STOCK: 50.0
+            }
         )
+        
+        return TargetPortfolio(
+            asset_allocations={
+                AssetClass.EQUITY: equity_allocation
+            },
+            risk_profile=RiskProfile.AGGRESSIVE,
+            name="Aggressive Growth Portfolio",
+            notes="100% equity allocation with 50% ETFs and 50% individual stocks. Suitable for long-term investors with high risk tolerance."
+        )
+        
     elif portfolio_type.lower() == 'balanced':
-        return TargetPortfolio(
-            name="Balanced",
-            allocations={
-                AssetClass.US_EQUITY: 40.0,
-                AssetClass.INTERNATIONAL_EQUITY: 20.0,
-                AssetClass.FIXED_INCOME: 35.0,
-                AssetClass.ALTERNATIVES: 0.0,
-                AssetClass.CASH: 5.0
-            },
-            risk_profile=RiskProfile.MEDIUM,
-            description="Balanced portfolio with moderate risk and diversification"
+        # 60% equity, 40% fixed income
+        equity_allocation = AssetAllocation(
+            percentage=60.0,
+            security_allocations={
+                SecurityType.ETF: 70.0,
+                SecurityType.INDIVIDUAL_STOCK: 30.0
+            }
         )
-    elif portfolio_type.lower() == 'conservative':
+        
+        fixed_income_allocation = AssetAllocation(
+            percentage=40.0,
+            security_allocations={
+                SecurityType.ETF: 80.0,
+                SecurityType.BOND: 20.0
+            }
+        )
+        
         return TargetPortfolio(
-            name="Conservative",
-            allocations={
-                AssetClass.US_EQUITY: 20.0,
-                AssetClass.INTERNATIONAL_EQUITY: 10.0,
-                AssetClass.FIXED_INCOME: 60.0,
-                AssetClass.ALTERNATIVES: 0.0,
-                AssetClass.CASH: 10.0
+            asset_allocations={
+                AssetClass.EQUITY: equity_allocation,
+                AssetClass.FIXED_INCOME: fixed_income_allocation
             },
-            risk_profile=RiskProfile.LOW,
-            description="Conservative portfolio focused on capital preservation"
+            risk_profile=RiskProfile.MODERATE,
+            name="Balanced Portfolio",
+            notes="60% equity, 40% fixed income. Balances growth with stability for medium-term goals."
+        )
+        
+    elif portfolio_type.lower() == 'conservative':
+        # 30% equity, 60% fixed income, 10% cash
+        equity_allocation = AssetAllocation(
+            percentage=30.0,
+            security_allocations={
+                SecurityType.ETF: 80.0,
+                SecurityType.INDIVIDUAL_STOCK: 20.0
+            }
+        )
+        
+        fixed_income_allocation = AssetAllocation(
+            percentage=60.0,
+            security_allocations={
+                SecurityType.ETF: 70.0,
+                SecurityType.BOND: 30.0
+            }
+        )
+        
+        cash_allocation = AssetAllocation(
+            percentage=10.0,
+            security_allocations={
+                SecurityType.MONEY_MARKET: 100.0
+            }
+        )
+        
+        return TargetPortfolio(
+            asset_allocations={
+                AssetClass.EQUITY: equity_allocation,
+                AssetClass.FIXED_INCOME: fixed_income_allocation,
+                AssetClass.CASH: cash_allocation
+            },
+            risk_profile=RiskProfile.CONSERVATIVE,
+            name="Conservative Portfolio",
+            notes="30% equity, 60% fixed income, 10% cash. Focused on capital preservation with modest growth."
         )
     else:
         # Default to balanced if unknown type

@@ -30,9 +30,10 @@ export function useAccountClosure(): UseAccountClosureReturn {
       const data = await accountClosureService.fetchClosureData();
       setClosureData(data);
       
-      if (!data) {
-        setError('Failed to load closure data');
-      }
+      // CRITICAL FIX: Don't set error when data is null
+      // null now indicates "no closure activity" (normal state), not an error
+      // The service will return null for users without closure activity
+      
     } catch (err) {
       console.error('[useAccountClosure] Error fetching closure data:', err);
       setError('Failed to load closure data');
