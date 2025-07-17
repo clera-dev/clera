@@ -344,7 +344,6 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         position_details.sort(key=lambda x: x['market_value'], reverse=True)
         
         # Get first purchase dates for enhanced information
-        account_id = get_account_id(config=config)
         first_purchases = find_first_purchase_dates(account_id)
         
         # Add first purchase dates to position details
