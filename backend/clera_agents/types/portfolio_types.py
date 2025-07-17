@@ -12,6 +12,10 @@ including:
 from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Dict, Optional, List
+from datetime import datetime
+from decimal import Decimal
+from typing import List, Any, Optional
+import uuid
 
 
 class AssetClass(Enum):
@@ -191,3 +195,65 @@ class TargetPortfolio:
             name="Conservative Portfolio",
             notes="30% equity, 60% fixed income, 10% cash. Focused on capital preservation with modest growth."
         ) 
+
+
+@dataclass
+class PositionResponse:
+    """Mirrors Alpaca's Position model fields for API responses."""
+    asset_id: uuid.UUID
+    symbol: str
+    exchange: str
+    asset_class: str
+    avg_entry_price: Decimal
+    qty: Decimal
+    side: str
+    market_value: Decimal
+    cost_basis: Decimal
+    unrealized_pl: Decimal
+    unrealized_plpc: Decimal
+    unrealized_intraday_pl: Decimal
+    unrealized_intraday_plpc: Decimal
+    current_price: Decimal
+    lastday_price: Decimal
+    change_today: Decimal
+    # Added fields for analytics mapping
+    asset_marginable: Optional[bool] = None
+    asset_shortable: Optional[bool] = None
+    asset_easy_to_borrow: Optional[bool] = None
+
+@dataclass
+class OrderResponse:
+    """Mirrors Alpaca's Order model fields for API responses."""
+    id: uuid.UUID
+    client_order_id: str
+    created_at: datetime
+    asset_id: uuid.UUID
+    symbol: str
+    asset_class: str
+    order_type: str
+    type: str
+    side: str
+    time_in_force: str
+    status: str
+    updated_at: Optional[datetime] = None
+    submitted_at: Optional[datetime] = None
+    filled_at: Optional[datetime] = None
+    expired_at: Optional[datetime] = None
+    canceled_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+    replaced_at: Optional[datetime] = None
+    replaced_by: Optional[uuid.UUID] = None
+    replaces: Optional[uuid.UUID] = None
+    notional: Optional[Decimal] = None
+    qty: Optional[Decimal] = None
+    filled_qty: Optional[Decimal] = None
+    filled_avg_price: Optional[Decimal] = None
+    order_class: Optional[str] = None
+    limit_price: Optional[Decimal] = None
+    stop_price: Optional[Decimal] = None
+    extended_hours: bool = False
+    legs: Optional[List[Any]] = None
+    trail_percent: Optional[Decimal] = None
+    trail_price: Optional[Decimal] = None
+    hwm: Optional[Decimal] = None
+    commission: Optional[Decimal] = None 

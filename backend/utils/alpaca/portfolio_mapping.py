@@ -6,8 +6,7 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 
 from clera_agents.tools.portfolio_analysis import PortfolioPosition
-from clera_agents.types.portfolio_types import AssetClass, SecurityType
-from backend.api_server import OrderResponse  # If OrderResponse is not available elsewhere, this import may need to be adjusted
+from clera_agents.types.portfolio_types import AssetClass, SecurityType, OrderResponse, PositionResponse
 
 logger = logging.getLogger(__name__)
 
@@ -143,4 +142,31 @@ def map_order_to_response(order):
         trail_price=Decimal(order.trail_price) if order.trail_price is not None else None,
         hwm=Decimal(order.hwm) if order.hwm is not None else None,
         commission=Decimal(order.commission) if order.commission is not None else None,
+    )
+
+def map_position_to_response(position):
+    """Maps an Alpaca Position object to our PositionResponse model."""
+    # Access asset_class via position.asset_class which should be AlpacaTradingAssetClass
+    asset_class_value = str(position.asset_class.value) if position.asset_class else 'unknown'
+
+    return PositionResponse(
+        asset_id=position.asset_id,
+        symbol=position.symbol,
+        exchange=str(position.exchange.value) if position.exchange else 'unknown', # Convert enum
+        asset_class=asset_class_value,
+        avg_entry_price=Decimal(position.avg_entry_price),
+        qty=Decimal(position.qty),
+        side=str(position.side.value),
+        market_value=Decimal(position.market_value),
+        cost_basis=Decimal(position.cost_basis),
+        unrealized_pl=Decimal(position.unrealized_pl),
+        unrealized_plpc=Decimal(position.unrealized_plpc),
+        unrealized_intraday_pl=Decimal(position.unrealized_intraday_pl),
+        unrealized_intraday_plpc=Decimal(position.unrealized_intraday_plpc),
+        current_price=Decimal(position.current_price),
+        lastday_price=Decimal(position.lastday_price),
+        change_today=Decimal(position.change_today),
+        asset_marginable=getattr(position, 'marginable', None), # Get optional asset attributes
+        asset_shortable=getattr(position, 'shortable', None),
+        asset_easy_to_borrow=getattr(position, 'easy_to_borrow', None)
     ) 

@@ -57,6 +57,8 @@ from utils.alpaca.watchlist import (
     get_watchlist_details
 )
 
+from utils.alpaca.portfolio_mapping import map_alpaca_position_to_portfolio_position, map_order_to_response, map_position_to_response
+
 # Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
 logger.setLevel(logging.INFO) # Changed to INFO for less verbose startup in prod
@@ -236,7 +238,7 @@ try:
     from clera_agents.tools.company_analysis import company_profile
     # Import PortfolioAnalyticsEngine and related types
     from clera_agents.tools.portfolio_analysis import PortfolioAnalyticsEngine, PortfolioPosition
-    from clera_agents.types.portfolio_types import AssetClass, SecurityType
+    from clera_agents.types.portfolio_types import AssetClass, SecurityType, OrderResponse, PositionResponse
     logger.info("Successfully imported trade execution, company analysis, and portfolio analysis modules")
 except ImportError as e:
     error_msg = f"Failed to import agent modules: {e}"
@@ -1499,30 +1501,6 @@ class PortfolioHistoryResponse(BaseModel):
     timeframe: str
     base_value_asof: Optional[str] = None # Added based on Alpaca docs
 
-class PositionResponse(BaseModel):
-    # Mirroring Alpaca's Position model fields we need
-    asset_id: uuid.UUID
-    symbol: str
-    exchange: str
-    asset_class: str # Consider mapping to our AssetClass enum if needed frontend
-    avg_entry_price: Decimal
-    qty: Decimal
-    side: str
-    market_value: Decimal
-    cost_basis: Decimal
-    unrealized_pl: Decimal
-    unrealized_plpc: Decimal
-    unrealized_intraday_pl: Decimal
-    unrealized_intraday_plpc: Decimal
-    current_price: Decimal
-    lastday_price: Decimal
-    change_today: Decimal
-    # Added fields for analytics mapping
-    asset_marginable: Optional[bool] = None
-    asset_shortable: Optional[bool] = None
-    asset_easy_to_borrow: Optional[bool] = None
-
-
 class PortfolioAnalyticsResponse(BaseModel):
     risk_score: Decimal
     diversification_score: Decimal
@@ -1546,250 +1524,7 @@ class AssetDetailsResponse(BaseModel):
     # sector: Optional[str] = None
 
 
-class OrderResponse(BaseModel):
-    # Mirroring Alpaca's Order model fields
-    id: uuid.UUID
-    client_order_id: str
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-    submitted_at: Optional[datetime] = None
-    filled_at: Optional[datetime] = None
-    expired_at: Optional[datetime] = None
-    canceled_at: Optional[datetime] = None
-    failed_at: Optional[datetime] = None
-    replaced_at: Optional[datetime] = None
-    replaced_by: Optional[uuid.UUID] = None
-    replaces: Optional[uuid.UUID] = None
-    asset_id: uuid.UUID
-    symbol: str
-    asset_class: str # Consider mapping
-    notional: Optional[Decimal] = None
-    qty: Optional[Decimal] = None
-    filled_qty: Optional[Decimal] = None
-    filled_avg_price: Optional[Decimal] = None
-    order_class: Optional[str] = None # Consider mapping
-    order_type: str # Consider mapping
-    type: str # Consider mapping
-    side: str # Consider mapping
-    time_in_force: str # Consider mapping
-    limit_price: Optional[Decimal] = None
-    stop_price: Optional[Decimal] = None
-    status: str
-    extended_hours: bool
-    legs: Optional[List[Any]] = None # Keep Any for simplicity unless legs are used
-    trail_percent: Optional[Decimal] = None
-    trail_price: Optional[Decimal] = None
-    hwm: Optional[Decimal] = None
-    commission: Optional[Decimal] = None
-
-
 # --- Helper Functions ---
-
-def map_position_to_response(position): # -> PositionResponse:
-    """Maps an Alpaca Position object to our PositionResponse model."""
-    # Access asset_class via position.asset_class which should be AlpacaTradingAssetClass
-    asset_class_value = str(position.asset_class.value) if position.asset_class else 'unknown'
-    
-    # Return type originally PositionResponse
-    return PositionResponse(
-        asset_id=position.asset_id,
-        symbol=position.symbol,
-        exchange=str(position.exchange.value) if position.exchange else 'unknown', # Convert enum
-        asset_class=asset_class_value,
-        avg_entry_price=Decimal(position.avg_entry_price),
-        qty=Decimal(position.qty),
-        side=str(position.side.value),
-        market_value=Decimal(position.market_value),
-        cost_basis=Decimal(position.cost_basis),
-        unrealized_pl=Decimal(position.unrealized_pl),
-        unrealized_plpc=Decimal(position.unrealized_plpc),
-        unrealized_intraday_pl=Decimal(position.unrealized_intraday_pl),
-        unrealized_intraday_plpc=Decimal(position.unrealized_intraday_plpc),
-        current_price=Decimal(position.current_price),
-        lastday_price=Decimal(position.lastday_price),
-        change_today=Decimal(position.change_today),
-        asset_marginable=getattr(position, 'marginable', None), # Get optional asset attributes
-        asset_shortable=getattr(position, 'shortable', None),
-        asset_easy_to_borrow=getattr(position, 'easy_to_borrow', None)
-    )
-
-def map_alpaca_position_to_portfolio_position(alpaca_pos, asset_details_map: Dict[UUID, Any]) : # -> Optional[PortfolioPosition]:
-    """Maps an Alpaca Position and fetched Asset details to our PortfolioPosition for analytics."""
-    # Parameter 'alpaca_pos' originally type Position
-    # Return type originally Optional[PortfolioPosition]
-    
-    # Check if necessary types were imported successfully
-    if not PortfolioPosition or not AssetClass or not SecurityType:
-        logger.error("Portfolio analysis types (PortfolioPosition, AssetClass, SecurityType) not available due to import error.")
-        return None
-        
-    if not alpaca_pos or not alpaca_pos.asset_class:
-        logger.warning(f"Skipping position mapping due to missing data: {alpaca_pos.symbol if alpaca_pos else 'N/A'}")
-        return None
-
-    # our_asset_class: Optional[AssetClass] = None # Original Type Hint
-    # security_type: Optional[SecurityType] = None # Original Type Hint
-    our_asset_class = None
-    security_type = None
-    asset_details = asset_details_map.get(alpaca_pos.asset_id)
-
-    # --- Determine AssetClass and SecurityType based on Alpaca data --- 
-    alpaca_asset_class = alpaca_pos.asset_class # This is AlpacaTradingAssetClass
-
-    if alpaca_asset_class == AlpacaTradingAssetClass.US_EQUITY:
-        our_asset_class = AssetClass.EQUITY
-        
-        # Try to use fetched asset details first
-        if asset_details:
-            asset_name_lower = asset_details.name.lower() if asset_details.name else ""
-            asset_symbol_upper = asset_details.symbol.upper() if asset_details.symbol else ""
-            # Heuristics based on common naming conventions
-            if "etf" in asset_name_lower or "fund" in asset_name_lower or "trust" in asset_name_lower or "shares" in asset_name_lower:
-                security_type = SecurityType.ETF
-            elif "reit" in asset_name_lower:
-                security_type = SecurityType.REIT
-            # Potentially check asset_details.asset_class again if it differs from position's?
-            # elif getattr(asset_details, 'asset_class', None) == SomeOtherAlpacaEnum.BOND:
-            #     security_type = SecurityType.BOND # Example if asset details had more info
-            else:
-                 security_type = SecurityType.INDIVIDUAL_STOCK
-        else:
-            # FALLBACK: Use multiple strategies to identify ETFs
-            
-            # Strategy 1: Check if symbol is in our known ETF list
-            COMMON_ETFS = {
-                # US Broad Market
-                'SPY', 'VOO', 'IVV', 'VTI', 'QQQ',
-                # International
-                'VXUS', 'EFA', 'VEA', 'EEM', 'VWO',
-                # Fixed Income
-                'AGG', 'BND', 'VCIT', 'MUB', 'TIP', 'VTIP',
-                # Real Estate
-                'VNQ', 'SCHH', 'IYR',
-                # Commodities
-                'GLD', 'IAU', 'SLV', 'USO',
-                # Sector Specific
-                'XLF', 'XLK', 'XLV', 'XLE',
-            }
-            
-            # Strategy 2: Check if we can fetch asset name from our asset cache file
-            # and look for "ETF" in the name (since ALL ETFs on Alpaca have "ETF" in their name)
-            is_etf_by_name = False
-            try:
-                # Try to read asset details from our cached assets file
-                if os.path.exists(ASSET_CACHE_FILE):
-                    with open(ASSET_CACHE_FILE, 'r') as f:
-                        cached_assets = json.load(f)
-                        cached_asset = next((asset for asset in cached_assets if asset.get('symbol') == alpaca_pos.symbol), None)
-                        if cached_asset and cached_asset.get('name'):
-                            asset_name_lower = cached_asset['name'].lower()
-                            if 'etf' in asset_name_lower:
-                                is_etf_by_name = True
-                                logger.info(f"Identified {alpaca_pos.symbol} as ETF from cached asset name: {cached_asset['name']}")
-            except Exception as e:
-                logger.debug(f"Could not check cached asset name for {alpaca_pos.symbol}: {e}")
-            
-            # Determine if this is an ETF using either strategy
-            if alpaca_pos.symbol in COMMON_ETFS or is_etf_by_name:
-                security_type = SecurityType.ETF
-                
-                if alpaca_pos.symbol in COMMON_ETFS:
-                    logger.info(f"Using fallback ETF classification for known symbol {alpaca_pos.symbol}")
-                else:
-                    logger.info(f"Using fallback ETF classification for {alpaca_pos.symbol} based on asset name containing 'ETF'")
-                
-                # Apply asset class classification for specialized ETFs
-                if alpaca_pos.symbol in ('AGG', 'BND', 'VCIT', 'MUB', 'TIP', 'VTIP'):
-                    our_asset_class = AssetClass.FIXED_INCOME
-                elif alpaca_pos.symbol in ('VNQ', 'SCHH', 'IYR'):
-                    our_asset_class = AssetClass.REAL_ESTATE
-                elif alpaca_pos.symbol in ('GLD', 'IAU', 'SLV', 'USO'):
-                    our_asset_class = AssetClass.COMMODITIES
-                # Keep EQUITY for other ETFs
-            else:
-                # Final fallback if asset details couldn't be fetched and not identified as ETF
-                logger.warning(f"Missing asset details for equity {alpaca_pos.symbol}, defaulting SecurityType to INDIVIDUAL_STOCK.")
-                security_type = SecurityType.INDIVIDUAL_STOCK
-
-    elif alpaca_asset_class == AlpacaTradingAssetClass.CRYPTO:
-        our_asset_class = AssetClass.EQUITY # Or AssetClass.ALTERNATIVES based on preference
-        security_type = SecurityType.CRYPTOCURRENCY
-
-    elif alpaca_asset_class == AlpacaTradingAssetClass.US_OPTION:
-        our_asset_class = AssetClass.ALTERNATIVES
-        security_type = SecurityType.OPTIONS
-    
-    # Add mappings for other Alpaca Asset Classes if they become relevant
-    # elif alpaca_asset_class == AlpacaTradingAssetClass.XYZ:
-    #     our_asset_class = AssetClass.SOME_CLASS
-    #     security_type = SecurityType.SOME_TYPE
-
-    else:
-        logger.warning(f"Unmapped Alpaca asset class '{alpaca_asset_class.name}' for {alpaca_pos.symbol}. Cannot determine internal types.")
-        return None # Cannot map if Alpaca asset class is unknown/unhandled
-
-    # Ensure both internal types were determined
-    if our_asset_class is None or security_type is None:
-         logger.warning(f"Could not determine internal AssetClass or SecurityType for {alpaca_pos.symbol} (Alpaca Class: {alpaca_asset_class.name}). Skipping.")
-         return None
-
-    # --- Create internal PortfolioPosition --- 
-    try:
-        return PortfolioPosition(
-            symbol=alpaca_pos.symbol,
-            asset_class=our_asset_class,
-            security_type=security_type,
-            market_value=Decimal(alpaca_pos.market_value),
-            cost_basis=Decimal(alpaca_pos.cost_basis),
-            unrealized_pl=Decimal(alpaca_pos.unrealized_pl),
-            quantity=Decimal(alpaca_pos.qty),
-            current_price=Decimal(alpaca_pos.current_price) # Added missing argument
-        )
-    except Exception as e:
-        logger.error(f"Error creating PortfolioPosition for {alpaca_pos.symbol}: {e}", exc_info=True)
-        return None
-
-def map_order_to_response(order) : # -> OrderResponse:
-    """Maps an Alpaca Order object to our OrderResponse model."""
-    # Parameter 'order' originally type Order
-    # Return type originally OrderResponse
-    # Safely convert Decimals to strings or floats if needed by Pydantic/JSON
-    return OrderResponse(
-        id=order.id,
-        client_order_id=order.client_order_id,
-        created_at=order.created_at,
-        updated_at=order.updated_at,
-        submitted_at=order.submitted_at,
-        filled_at=order.filled_at,
-        expired_at=order.expired_at,
-        canceled_at=order.canceled_at,
-        failed_at=order.failed_at,
-        replaced_at=order.replaced_at,
-        replaced_by=order.replaced_by,
-        replaces=order.replaces,
-        asset_id=order.asset_id,
-        symbol=order.symbol,
-        asset_class=str(order.asset_class.value) if order.asset_class else None,
-        notional=Decimal(order.notional) if order.notional is not None else None,
-        qty=Decimal(order.qty) if order.qty is not None else None,
-        filled_qty=Decimal(order.filled_qty) if order.filled_qty is not None else None,
-        filled_avg_price=Decimal(order.filled_avg_price) if order.filled_avg_price is not None else None,
-        order_class=str(order.order_class.value) if order.order_class else None,
-        order_type=str(order.order_type.value) if order.order_type else None,
-        type=str(order.type.value) if order.type else None, # Duplicate of order_type? Check Alpaca model
-        side=str(order.side.value) if order.side else None,
-        time_in_force=str(order.time_in_force.value) if order.time_in_force else None,
-        limit_price=Decimal(order.limit_price) if order.limit_price is not None else None,
-        stop_price=Decimal(order.stop_price) if order.stop_price is not None else None,
-        status=str(order.status.value) if order.status else None,
-        extended_hours=order.extended_hours,
-        legs=order.legs, # Keep as is for now
-        trail_percent=Decimal(order.trail_percent) if order.trail_percent is not None else None,
-        trail_price=Decimal(order.trail_price) if order.trail_price is not None else None,
-        hwm=Decimal(order.hwm) if order.hwm is not None else None,
-        commission=Decimal(order.commission) if order.commission is not None else None,
-    )
-
 
 # --- API Endpoints ---
 
@@ -2037,7 +1772,7 @@ async def get_asset_details(
         logger.error(f"Error fetching asset details for {symbol_or_asset_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error fetching asset details.")
 
-@app.get("/api/portfolio/{account_id}/orders", response_model=List[OrderResponse])
+@app.get("/api/portfolio/{account_id}/orders")
 async def get_account_orders(
     account_id: str,
     status: Optional[str] = 'all', # closed, open, all
