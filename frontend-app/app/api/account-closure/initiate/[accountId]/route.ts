@@ -72,9 +72,9 @@ export async function POST(
       );
     }
 
-    if (!confirm_liquidation || !confirm_irreversible) {
+    if (confirm_liquidation !== true || confirm_irreversible !== true) {
       return NextResponse.json(
-        { error: 'Both liquidation and irreversible action confirmations are required' },
+        { error: 'You must explicitly confirm liquidation and acknowledge irreversibility.' },
         { status: 400 }
       );
     }

@@ -76,7 +76,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
   // Different prompts based on content availability
   const getContextualPrompt = () => {
     if (!portfolioSummary || disabled) {
-      return "I'm interested in understanding how market news affects my investments. Can you explain how to read financial news and what to look for as a young investor?";
+      return "I'm interested in understanding how market news affects my investments. Can you explain how to read financial news and what to look for?";
     }
     
     if (summaryError) {
@@ -93,7 +93,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
   };
 
   const getDescription = () => {
-    if (!portfolioSummary || disabled) return "Learn how to read financial news as a young investor";
+    if (!portfolioSummary || disabled) return "Learn how to read financial news";
     if (summaryError) return "Get help understanding what market news matters for you";
     return "Get specific analysis of how this news affects your investments and what actions to consider";
   };

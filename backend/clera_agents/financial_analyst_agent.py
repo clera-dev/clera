@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
+import numpy as np
 
 # Make sure we load environment variables first
 load_dotenv(override=True)
@@ -222,13 +223,35 @@ def adjust_for_market_days(date_str: str, direction: str = "backward") -> str:
         return date_str
 
 
-def get_historical_prices(symbol: str, start_date: str, end_date: str = None) -> Dict:
+def calculate_volatility_and_variance(price_data: list) -> dict:
+    """Calculate volatility and variance from a list of EOD price data.
+    Args:
+        price_data (list): List of dicts with 'close' prices, sorted oldest to newest.
+    Returns:
+        dict: {'volatility': ..., 'variance': ..., 'annualized_volatility': ...}
+    """
+    closes = [float(item['close']) for item in price_data]
+    if len(closes) < 2:
+        return {'volatility': None, 'variance': None, 'annualized_volatility': None}
+    returns = np.diff(closes) / closes[:-1]
+    volatility = float(np.std(returns, ddof=1))  # sample stddev of daily returns
+    variance = float(np.var(returns, ddof=1))
+    annualized_volatility = volatility * np.sqrt(252)  # 252 trading days/year
+    return {
+        'volatility': volatility,
+        'variance': variance,
+        'annualized_volatility': annualized_volatility
+    }
+
+
+def get_historical_prices(symbol: str, start_date: str, end_date: str = None, return_full_data: bool = False) -> Dict:
     """Get historical prices for performance calculation using FMP API.
     
     Args:
         symbol: Stock symbol (e.g., 'AAPL', 'SPY')
         start_date: Start date in YYYY-MM-DD format
         end_date: End date in YYYY-MM-DD format (defaults to today)
+        return_full_data: If True, also return the full price data list for volatility analysis
     
     Returns:
         Dict: Historical price data with start/end prices and metadata
@@ -252,7 +275,7 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str = None) ->
         if not fmp_api_key:
             raise Exception("FMP API key not found. Please set FINANCIAL_MODELING_PREP_API_KEY environment variable.")
         
-        # Build FMP API URL
+        # Build FMP API URL (correct endpoint per FMP docs)
         base_url = "https://financialmodelingprep.com/stable/historical-price-eod/full"
         params = {
             'symbol': symbol.upper(),
@@ -269,17 +292,17 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str = None) ->
             data = response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"[Performance Analysis] FMP API request failed for {symbol}: {e}")
-            if response.status_code == 401:
+            if getattr(e, "response", None) is not None and e.response.status_code == 401:
                 raise Exception("FMP API authentication failed. Please check your API key.")
-            elif response.status_code == 429:
-                raise Exception("FMP API rate limit exceeded. Please wait a moment and try again.")
+            elif getattr(e, "response", None) is not None and e.response.status_code == 429:
+                raise Exception("FMP API rate limit exceeded. Please try again later.")
             else:
-                raise Exception(f"FMP API error: {e}")
+                raise Exception(f"FMP API request failed: {e}") from e
         except Exception as e:
             logger.error(f"[Performance Analysis] Error parsing FMP response for {symbol}: {e}")
             raise Exception(f"Error processing FMP data for {symbol}: {e}")
         
-        # Validate response data
+        # Validate response data (FMP returns a list of price objects)
         if not data or not isinstance(data, list):
             raise ValueError(f"No data available for {symbol} in the specified date range ({start_date} to {end_date})")
         
@@ -305,7 +328,7 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str = None) ->
         
         logger.info(f"[Performance Analysis] Successfully retrieved {len(data)} data points for {symbol}")
         
-        return {
+        result = {
             'symbol': symbol,
             'requested_start_date': start_date,
             'requested_end_date': end_date,
@@ -318,6 +341,9 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str = None) ->
             'data_points': len(data),
             'has_data': True
         }
+        if return_full_data:
+            result['full_price_data'] = data
+        return result
         
     except ValueError:
         # Re-raise ValueError as-is (these are user-facing validation errors)
@@ -418,7 +444,7 @@ def format_performance_analysis(performance_data: Dict, benchmark_data: Dict = N
         spy_return = benchmark_data['percentage_change']
         outperformance = pct_change - spy_return
         
-        outperf_emoji = "��" if outperformance >= 0 else "📊"
+        outperf_emoji = "🎯" if outperformance >= 0 else "📊"
         
         summary += f"""
 
@@ -430,6 +456,13 @@ def format_performance_analysis(performance_data: Dict, benchmark_data: Dict = N
         if abs(outperformance) > 5:
             summary += f"\n• Note: Significant {'outperformance' if outperformance > 0 else 'underperformance'} vs market"
 
+    # Add volatility/variance if present
+    if 'volatility' in performance_data and performance_data['volatility'] is not None:
+        summary += f"\n\n**Volatility & Risk Metrics:**"
+        summary += f"\n• Daily Volatility (std dev of returns): {performance_data['volatility']:.4f}"
+        summary += f"\n• Daily Variance: {performance_data['variance']:.6f}"
+        summary += f"\n• Annualized Volatility: {performance_data['annualized_volatility']:.2%}"
+
     summary += f"""
 
 **Data Quality:**
@@ -439,62 +472,37 @@ def format_performance_analysis(performance_data: Dict, benchmark_data: Dict = N
     return summary
 
 
-@tool("calculate_investment_performance")
-def calculate_investment_performance(
+def _calculate_investment_performance_impl(
     symbol: str,
     start_date: str,
     end_date: str = "",
     compare_to_sp500: bool = True
 ) -> str:
-    """Calculate investment performance between two dates.
-    
-    This tool analyzes the price performance of any stock symbol over a specified
-    time period, with optional comparison to the S&P 500 (SPY) as a benchmark.
-    
-    Args:
-        symbol: Stock symbol (e.g., 'AAPL', 'MSFT', 'TSLA')
-        start_date: Start date in YYYY-MM-DD format
-        end_date: End date in YYYY-MM-DD format (defaults to today if not specified)
-        compare_to_sp500: Whether to include S&P 500 benchmark comparison (default: True)
-    
-    Returns:
-        str: Formatted performance analysis including:
-             - Price change (absolute and percentage)
-             - Annualized return calculation
-             - Optional S&P 500 benchmark comparison
-             - Key statistics and data quality metrics
-    
-    Examples:
-        - YTD performance: calculate_investment_performance('AAPL', '2024-01-01')
-        - Custom period: calculate_investment_performance('MSFT', '2023-06-15', '2024-06-15')
-        - No benchmark: calculate_investment_performance('TSLA', '2024-01-01', compare_to_sp500=False)
-    """
     try:
-        # Set default end date to today if not provided
         if not end_date or end_date == "":
             end_date = datetime.now().strftime('%Y-%m-%d')
-        
-        # Validate inputs
-        validation = validate_symbol_and_dates(symbol.upper(), start_date, end_date)
-        if 'error' in validation:
-            return f"❌ **Error:** {validation['error']}"
-        
-        # Adjust dates for market days if needed
-        adjusted_start = adjust_for_market_days(start_date, "forward")
+        # Always adjust both dates backwards to the previous trading day
+        adjusted_start = adjust_for_market_days(start_date, "backward")
         adjusted_end = adjust_for_market_days(end_date, "backward")
-        
-        logger.info(f"[Performance Analysis] Analyzing {symbol.upper()} from {start_date} to {end_date}")
-        
-        # Get performance data for the target symbol
+        # If after adjustment, the dates are the same, return a clear error
+        if adjusted_start == adjusted_end:
+            return f"❌ **Error:** The selected date range only includes a single trading day: {adjusted_start}. Please select a wider range for meaningful analysis."
+        # Validate inputs on adjusted dates
+        validation = validate_symbol_and_dates(symbol.upper(), adjusted_start, adjusted_end)
+        # Only return other errors if not the single-day case
+        if 'error' in validation and 'Start date must be before end date' not in validation['error']:
+            return f"❌ **Error:** {validation['error']}"
+        logger.info(f"[Performance Analysis] Analyzing {symbol.upper()} from {adjusted_start} to {adjusted_end}")
         try:
-            performance_data = get_historical_prices(symbol.upper(), adjusted_start, adjusted_end)
+            performance_data = get_historical_prices(symbol.upper(), adjusted_start, adjusted_end, return_full_data=True)
+            if 'full_price_data' in performance_data:
+                vol_stats = calculate_volatility_and_variance(performance_data['full_price_data'])
+                performance_data.update(vol_stats)
         except ValueError as ve:
             return f"❌ **Data Error:** {str(ve)}\n\nPlease verify the symbol exists and has trading data for the specified period."
         except Exception as e:
             logger.error(f"[Performance Analysis] API error for {symbol}: {e}")
             return f"❌ **API Error:** Could not retrieve data for {symbol.upper()}. This might be due to:\n• Invalid symbol\n• Market data service unavailable\n• Network connectivity issues\n\nPlease try again later or verify the symbol."
-        
-        # Get benchmark data if requested
         benchmark_data = None
         if compare_to_sp500:
             try:
@@ -502,14 +510,19 @@ def calculate_investment_performance(
                 benchmark_data = get_historical_prices('SPY', adjusted_start, adjusted_end)
             except Exception as e:
                 logger.warning(f"[Performance Analysis] Could not fetch SPY benchmark data: {e}")
-                # Continue without benchmark rather than failing
-        
-        # Format and return the analysis
         analysis = format_performance_analysis(performance_data, benchmark_data)
-        
         logger.info(f"[Performance Analysis] Successfully completed analysis for {symbol.upper()}")
         return analysis
-        
     except Exception as e:
         logger.error(f"[Performance Analysis] Unexpected error in calculate_investment_performance: {e}", exc_info=True)
         return f"❌ **Unexpected Error:** An error occurred while analyzing {symbol}. Please try again later.\n\nError details: {str(e)}"
+
+@tool("calculate_investment_performance")
+def calculate_investment_performance(
+    symbol: str,
+    start_date: str,
+    end_date: str = "",
+    compare_to_sp500: bool = True
+) -> str:
+    """Calculate investment performance between two dates, with optional S&P 500 benchmark comparison. Returns formatted analysis string."""
+    return _calculate_investment_performance_impl(symbol, start_date, end_date, compare_to_sp500)

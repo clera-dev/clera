@@ -61,7 +61,8 @@ def get_account_cash_balance(config=None) -> Decimal:
         account = broker_client.get_trade_account_by_id(account_id)
         cash_balance = Decimal(str(account.cash))
         
-        logger.info(f"[Portfolio Agent] Cash balance for account {account_id}: ${cash_balance:.2f}")
+        # Remove sensitive info from logs
+        logger.debug("[Portfolio Agent] Cash balance retrieved successfully")
         return cash_balance
         
     except ValueError as e:

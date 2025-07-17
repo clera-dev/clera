@@ -51,7 +51,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
   
   // Create contextual prompt with portfolio performance data
   const generatePrompt = useContextualPrompt(
-    "I'm looking at my portfolio summary showing {timeRange} performance. {performanceContext} Can you briefly explain what this means for my investment journey as a young investor?",
+    "I'm looking at my portfolio summary showing {timeRange} performance. {performanceContext} Can you briefly explain what this means for my investment journey?",
     "portfolio_summary",
     {
       timeRange: selectedTimeRange,
@@ -65,7 +65,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
 
   const getContextualPrompt = () => {
     if (!accountId || disabled) {
-      return "I'm interested in learning about portfolio tracking and performance. Can you briefly explain how to evaluate investment performance and what young investors should focus on?";
+      return "I'm interested in learning about portfolio tracking and performance. Can you briefly explain how to evaluate investment performance and what I should focus on?";
     }
     
     if (!hasHistoryData) {

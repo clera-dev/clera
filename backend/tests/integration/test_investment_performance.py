@@ -28,7 +28,7 @@ def test_investment_performance():
     print()
     
     # Test symbols
-    test_symbols = ['TSLA, SPY']
+    test_symbols = ['TSLA', 'SPY']
     
     for symbol in test_symbols:
         print(f"Testing {symbol} Performance Analysis...")

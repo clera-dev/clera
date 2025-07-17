@@ -36,7 +36,7 @@ export async function POST(
       .single();
 
     if (ownershipError || !onboardingData) {
-      console.error(`User ${user.id} attempted to close account ${accountId} they don't own`);
+      console.error('Unauthorized account closure attempt detected');
       return NextResponse.json(
         { error: 'Account not found or access denied' },
         { status: 403 }

@@ -53,7 +53,14 @@ export async function POST(
 
     // Get request body
     const requestBody = await request.json();
-    const achRelationshipId = requestBody?.ach_relationship_id;
+    const achRelationshipId = typeof requestBody?.ach_relationship_id === 'string' ? requestBody.ach_relationship_id : null;
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (!achRelationshipId || !uuidRegex.test(achRelationshipId)) {
+      return NextResponse.json(
+        { error: 'Invalid ACH relationship ID format' },
+        { status: 400 }
+      );
+    }
 
     if (!achRelationshipId) {
       return NextResponse.json(

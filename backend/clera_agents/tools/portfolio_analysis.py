@@ -263,7 +263,7 @@ class PortfolioAnalyzer:
         
         # Add cash to money market category
         if cash_balance > 0:
-            security_type_values[SecurityType.MONEY_MARKET] = cash_balance
+            security_type_values[SecurityType.MONEY_MARKET] += cash_balance
         
         security_type_percentages = {
             security_type: (value / total_value * 100 if total_value > 0 else 0)
