@@ -137,12 +137,12 @@ class TestTradeExecutionAgent:
             if hasattr(trade_execution_agent, item):
                 assert getattr(trade_execution_agent, item) is not None
 
-    @patch('clera_agents.trade_execution_agent.BrokerClient')
-    def test_trade_execution_mock_small_buy_order(self, mock_broker_client):
+    @patch('utils.alpaca.broker_client_factory.get_broker_client')
+    def test_trade_execution_mock_small_buy_order(self, mock_broker_factory):
         """Test trade execution with mocked $10 buy order."""
         # Mock the broker client
         mock_client = Mock()
-        mock_broker_client.return_value = mock_client
+        mock_broker_factory.return_value = mock_client
         
         # Mock successful order response
         mock_order = Mock()
@@ -171,12 +171,12 @@ class TestTradeExecutionAgent:
             from clera_agents import trade_execution_agent
             assert trade_execution_agent is not None
 
-    @patch('clera_agents.trade_execution_agent.BrokerClient')
-    def test_trade_execution_mock_small_sell_order(self, mock_broker_client):
+    @patch('utils.alpaca.broker_client_factory.get_broker_client')
+    def test_trade_execution_mock_small_sell_order(self, mock_broker_factory):
         """Test trade execution with mocked $10 sell order."""
         # Mock the broker client
         mock_client = Mock()
-        mock_broker_client.return_value = mock_client
+        mock_broker_factory.return_value = mock_client
         
         # Mock successful order response
         mock_order = Mock()
@@ -360,7 +360,7 @@ class TestIntegrationScenarios:
         
         # Step 1: Get purchase history
         from clera_agents.tools.purchase_history import get_comprehensive_account_activities
-        activities = get_comprehensive_account_activities(account_id=TEST_ALPACA_ACCOUNT_ID)
+        activities = get_comprehensive_account_activities(days_back=60, config=None)
         assert len(activities) > 0
         
         # Step 2: Analyze portfolio (if available)
@@ -371,16 +371,16 @@ class TestIntegrationScenarios:
         except Exception as e:
             print(f"⚠️ Portfolio analysis not available: {e}")
         
-        # Step 3: Test trade preparation (mocked)
-        with patch('clera_agents.trade_execution_agent.BrokerClient') as mock_broker:
-            mock_client = Mock()
-            mock_broker.return_value = mock_client
+        # Step 3: Test trade execution (mocked)
+        with patch('utils.alpaca.broker_client_factory.get_broker_client') as mock_broker_factory:
+            # Create mock broker client with required methods
+            mock_broker = MagicMock()
+            mock_broker.submit_order_for_account.return_value = MagicMock(id="test-order-123")
+            mock_broker_factory.return_value = mock_broker
             
-            try:
-                from clera_agents.trade_execution_agent import submit_order
-                print("📝 Trade execution functions available")
-            except ImportError:
-                print("⚠️ Trade execution functions not available")
+            from clera_agents.trade_execution_agent import execute_buy_market_order
+            # Note: This would normally require interrupt handling in real usage
+            print("🎯 Trade execution tools imported successfully")
 
 
 def run_comprehensive_tests():

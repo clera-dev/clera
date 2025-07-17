@@ -149,8 +149,6 @@ fresh_env/
 get-pip.py
 
 
-embeddings.py
-
 # personal notes and trackers
 notes.md
 todo.md

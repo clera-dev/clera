@@ -79,11 +79,11 @@ class TestCorrectedCalculator(unittest.TestCase):
                 
                 mock_redis_class.return_value = mock_redis_instance
         
-        calc = PortfolioCalculator(
-                    broker_api_key="mock_key",
-                    broker_secret_key="mock_secret",
-            sandbox=True
-        )
+                calc = PortfolioCalculator(
+                            broker_api_key="mock_key",
+                            broker_secret_key="mock_secret",
+                    sandbox=True
+                )
         
                 # Test the robust calculation method
                 todays_return, portfolio_value = calc.calculate_todays_return_robust(self.account_id)
@@ -94,9 +94,9 @@ class TestCorrectedCalculator(unittest.TestCase):
                 self.assertGreater(portfolio_value, 0, "Portfolio value should be positive")
                 
                 # Calculate return percentage
-        if portfolio_value > 0:
-            return_pct = (todays_return / portfolio_value * 100)
-                    
+                if portfolio_value > 0:
+                    return_pct = (todays_return / portfolio_value * 100)
+                            
                     # Assert realistic daily return range
                     self.assertGreater(
                         abs(return_pct), 
@@ -235,7 +235,7 @@ class TestCorrectedCalculator(unittest.TestCase):
             mock_redis_class.return_value = mock_redis_instance
             
             # Test with dedicated database (db=1 for testing)
-        import redis
+            import redis
             test_redis_client = redis.Redis(host='localhost', port=6379, db=1)  # Use dedicated test database
             
             # Clear only the test database, not the entire Redis instance

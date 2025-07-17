@@ -93,11 +93,11 @@ class TestIntegrationComplete(unittest.TestCase):
                 
                 mock_redis_class.return_value = mock_redis_instance
                 
-        calc = PortfolioCalculator(
-                    broker_api_key="mock_key",
-                    broker_secret_key="mock_secret",
-            sandbox=True
-        )
+                calc = PortfolioCalculator(
+                            broker_api_key="mock_key",
+                            broker_secret_key="mock_secret",
+                    sandbox=True
+                )
         
                 # Test calculator directly (no cache)
                 calc_data = calc.calculate_portfolio_value(self.account_id)
@@ -168,13 +168,13 @@ class TestIntegrationComplete(unittest.TestCase):
                     
                     # Compare results
                     if calc_data:
-            calc_return = calc_data.get('raw_return', 0)
-            calc_percent = calc_data.get('raw_return_percent', 0)
-            api_return = api_data.get('raw_return', 0)
-            api_percent = api_data.get('raw_return_percent', 0)
-            
-            return_diff = abs(calc_return - api_return)
-            percent_diff = abs(calc_percent - api_percent)
+                        calc_return = calc_data.get('raw_return', 0)
+                        calc_percent = calc_data.get('raw_return_percent', 0)
+                        api_return = api_data.get('raw_return', 0)
+                        api_percent = api_data.get('raw_return_percent', 0)
+                        
+                        return_diff = abs(calc_return - api_return)
+                        percent_diff = abs(calc_percent - api_percent)
             
                         # Assert consistency (allow small differences for floating point precision)
                         self.assertLess(

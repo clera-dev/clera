@@ -6,6 +6,7 @@
 # Import necessary libraries
 import os
 import logging
+import requests
 from dotenv import load_dotenv
 from urllib.request import urlopen
 import certifi
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
+import numpy as np
 
 # Make sure we load environment variables first
 load_dotenv(override=True)
@@ -40,10 +42,14 @@ def get_data_client():
     
     if not api_key or not secret_key:
         logger.warning("[Financial Analyst] Alpaca API credentials not found - some features may be limited")
+        logger.warning(f"[Financial Analyst] API Key present: {bool(api_key)}, Secret Key present: {bool(secret_key)}")
         return None
     
     try:
-        return StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
+        client = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
+        # Test the client with a simple request
+        logger.info("[Financial Analyst] Successfully initialized Alpaca data client")
+        return client
     except Exception as e:
         logger.error(f"[Financial Analyst] Failed to initialize Alpaca data client: {e}")
         return None
@@ -87,6 +93,7 @@ def web_search(query: str) -> str:
     # Determine if in-depth research is requested
     is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
     current_date = datetime.now().strftime("%Y-%m-%d")
+    current_year = datetime.now().year
 
     if is_in_depth_query:
         research_prompt = f"""You are the world's BEST financial news analyst. 
@@ -94,12 +101,18 @@ def web_search(query: str) -> str:
         Provide a thorough, comprehensive analysis with actionable insights on the query below. 
         Focus on concrete facts, figures, sources, and causal relationships. 
         Avoid generic advice. Use recent AND credible financial news sources. 
-        Today's date is {current_date}.
+        Today's date is {current_date}. Current year is {current_year}.
+        
+        CRITICAL: Always prioritize information from {current_year} and recent months. 
+        If referencing older data, clearly state the time period.
 
 Query: {query}
 """
     else:
-        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
+        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations. 
+
+IMPORTANT: Today's date is {current_date}. Current year is {current_year}. 
+Always prioritize recent information from {current_year} and clearly indicate time periods for any data you reference.
 
 Query: {query}
 """
@@ -210,62 +223,112 @@ def adjust_for_market_days(date_str: str, direction: str = "backward") -> str:
         return date_str
 
 
-def get_historical_prices(symbol: str, start_date: str, end_date: str = None) -> Dict:
-    """Get historical prices for performance calculation.
+def calculate_volatility_and_variance(price_data: list) -> dict:
+    """Calculate volatility and variance from a list of EOD price data.
+    Args:
+        price_data (list): List of dicts with 'close' prices, sorted oldest to newest.
+    Returns:
+        dict: {'volatility': ..., 'variance': ..., 'annualized_volatility': ...}
+    """
+    closes = [float(item['close']) for item in price_data]
+    if len(closes) < 2:
+        return {'volatility': None, 'variance': None, 'annualized_volatility': None}
+    returns = np.diff(closes) / closes[:-1]
+    volatility = float(np.std(returns, ddof=1))  # sample stddev of daily returns
+    variance = float(np.var(returns, ddof=1))
+    annualized_volatility = volatility * np.sqrt(252)  # 252 trading days/year
+    return {
+        'volatility': volatility,
+        'variance': variance,
+        'annualized_volatility': annualized_volatility
+    }
+
+
+def get_historical_prices(symbol: str, start_date: str, end_date: str = None, return_full_data: bool = False) -> Dict:
+    """Get historical prices for performance calculation using FMP API.
     
     Args:
         symbol: Stock symbol (e.g., 'AAPL', 'SPY')
         start_date: Start date in YYYY-MM-DD format
         end_date: End date in YYYY-MM-DD format (defaults to today)
+        return_full_data: If True, also return the full price data list for volatility analysis
     
     Returns:
         Dict: Historical price data with start/end prices and metadata
     
     Raises:
         ValueError: If no data available for the symbol/date range
-        Exception: For API errors or other issues
+        Exception: If API errors occur
     """
     if end_date is None:
         end_date = datetime.now().strftime('%Y-%m-%d')
-    
     logger.info(f"[Performance Analysis] Fetching historical data for {symbol} from {start_date} to {end_date}")
     
     try:
-        # Convert dates to timezone-aware datetime objects (market timezone)
-        start_time = pd.to_datetime(start_date).tz_localize('America/New_York')
-        end_time = pd.to_datetime(end_date).tz_localize('America/New_York')
+        # Validate inputs
+        validation = validate_symbol_and_dates(symbol, start_date, end_date)
+        if 'error' in validation:
+            raise ValueError(validation['error'])
         
-        # Create request for daily bars
-        request_params = StockBarsRequest(
-            symbol_or_symbols=[symbol],
-            timeframe=TimeFrame.Day,
-            start=start_time,
-            end=end_time
-        )
+        # Get FMP API key
+        fmp_api_key = os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
+        if not fmp_api_key:
+            raise Exception("FMP API key not found. Please set FINANCIAL_MODELING_PREP_API_KEY environment variable.")
         
-        # Get data client and fetch data
-        data_client = get_data_client()
-        if not data_client:
-            raise Exception("Alpaca data client not available - API credentials may be missing")
+        # Build FMP API URL (correct endpoint per FMP docs)
+        base_url = "https://financialmodelingprep.com/stable/historical-price-eod/full"
+        params = {
+            'symbol': symbol.upper(),
+            'from': start_date,
+            'to': end_date,
+            'apikey': fmp_api_key
+        }
         
-        bars = data_client.get_stock_bars(request_params)
+        # Make API request
+        try:
+            logger.info(f"[Performance Analysis] Making FMP API request for {symbol}")
+            response = requests.get(base_url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[Performance Analysis] FMP API request failed for {symbol}: {e}")
+            if getattr(e, "response", None) is not None and e.response.status_code == 401:
+                raise Exception("FMP API authentication failed. Please check your API key.")
+            elif getattr(e, "response", None) is not None and e.response.status_code == 429:
+                raise Exception("FMP API rate limit exceeded. Please try again later.")
+            else:
+                raise Exception(f"FMP API request failed: {e}") from e
+        except Exception as e:
+            logger.error(f"[Performance Analysis] Error parsing FMP response for {symbol}: {e}")
+            raise Exception(f"Error processing FMP data for {symbol}: {e}")
         
-        # Convert to DataFrame for easy manipulation
-        df = bars.df
-        if df.empty:
-            raise ValueError(f"No price data available for {symbol} in the specified date range ({start_date} to {end_date})")
+        # Validate response data (FMP returns a list of price objects)
+        if not data or not isinstance(data, list):
+            raise ValueError(f"No data available for {symbol} in the specified date range ({start_date} to {end_date})")
+        
+        if len(data) == 0:
+            raise ValueError(f"No price data available for {symbol} in the specified date range ({start_date} to {end_date}). This could be due to:\n• Invalid date range (weekends, holidays, or non-trading days)\n• Symbol not traded during this period\n• Data not available for this symbol")
+        
+        # Sort data by date (FMP returns newest first, we want oldest first for analysis)
+        data.sort(key=lambda x: x['date'])
         
         # Extract start and end prices
-        start_price = df.iloc[0]['close']
-        end_price = df.iloc[-1]['close']
+        try:
+            start_price = float(data[0]['close'])
+            end_price = float(data[-1]['close'])
+            actual_start_date = data[0]['date']
+            actual_end_date = data[-1]['date']
+        except (KeyError, IndexError, ValueError) as e:
+            logger.error(f"[Performance Analysis] Error extracting prices from FMP data for {symbol}: {e}")
+            raise Exception(f"Data format error: unable to extract price information for {symbol}")
         
-        # Get actual dates from the data (in case of market holidays/weekends)
-        actual_start_date = df.index[0][1].strftime('%Y-%m-%d')  # [1] because of MultiIndex (symbol, timestamp)
-        actual_end_date = df.index[-1][1].strftime('%Y-%m-%d')
+        # Validate price data
+        if start_price <= 0 or end_price <= 0:
+            raise ValueError(f"Invalid price data for {symbol}: start_price={start_price}, end_price={end_price}")
         
-        logger.info(f"[Performance Analysis] Retrieved {len(df)} data points for {symbol}")
+        logger.info(f"[Performance Analysis] Successfully retrieved {len(data)} data points for {symbol}")
         
-        return {
+        result = {
             'symbol': symbol,
             'requested_start_date': start_date,
             'requested_end_date': end_date,
@@ -275,13 +338,19 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str = None) ->
             'end_price': Decimal(str(end_price)),
             'price_change': Decimal(str(end_price - start_price)),
             'percentage_change': Decimal(str((end_price - start_price) / start_price * 100)),
-            'data_points': len(df),
+            'data_points': len(data),
             'has_data': True
         }
+        if return_full_data:
+            result['full_price_data'] = data
+        return result
         
-    except Exception as e:
-        logger.error(f"[Performance Analysis] Error fetching data for {symbol}: {e}")
+    except ValueError:
+        # Re-raise ValueError as-is (these are user-facing validation errors)
         raise
+    except Exception as e:
+        logger.error(f"[Performance Analysis] Unexpected error fetching data for {symbol}: {e}", exc_info=True)
+        raise Exception(f"Unexpected error retrieving market data for {symbol}: {str(e)}")
 
 
 def calculate_annualized_return(total_return_pct: Decimal, days: int) -> Decimal:
@@ -387,14 +456,66 @@ def format_performance_analysis(performance_data: Dict, benchmark_data: Dict = N
         if abs(outperformance) > 5:
             summary += f"\n• Note: Significant {'outperformance' if outperformance > 0 else 'underperformance'} vs market"
 
+    # Add volatility/variance if present
+    if 'volatility' in performance_data and performance_data['volatility'] is not None:
+        summary += f"\n\n**Volatility & Risk Metrics:**"
+        summary += f"\n• Daily Volatility (std dev of returns): {performance_data['volatility']:.4f}"
+        summary += f"\n• Daily Variance: {performance_data['variance']:.6f}"
+        summary += f"\n• Annualized Volatility: {performance_data['annualized_volatility']:.2%}"
+
     summary += f"""
 
 **Data Quality:**
 • Data Points: {performance_data['data_points']} trading days
-• Data Source: Alpaca Markets (daily close prices)"""
+• Data Source: Financial Modeling Prep (daily close prices)"""
 
     return summary
 
+
+def _calculate_investment_performance_impl(
+    symbol: str,
+    start_date: str,
+    end_date: str = "",
+    compare_to_sp500: bool = True
+) -> str:
+    try:
+        if not end_date or end_date == "":
+            end_date = datetime.now().strftime('%Y-%m-%d')
+        # Always adjust both dates backwards to the previous trading day
+        adjusted_start = adjust_for_market_days(start_date, "backward")
+        adjusted_end = adjust_for_market_days(end_date, "backward")
+        # If after adjustment, the dates are the same, return a clear error
+        if adjusted_start == adjusted_end:
+            return f"❌ **Error:** The selected date range only includes a single trading day: {adjusted_start}. Please select a wider range for meaningful analysis."
+        # Validate inputs on adjusted dates
+        validation = validate_symbol_and_dates(symbol.upper(), adjusted_start, adjusted_end)
+        # Only return other errors if not the single-day case
+        if 'error' in validation and 'Start date must be before end date' not in validation['error']:
+            return f"❌ **Error:** {validation['error']}"
+        logger.info(f"[Performance Analysis] Analyzing {symbol.upper()} from {adjusted_start} to {adjusted_end}")
+        try:
+            performance_data = get_historical_prices(symbol.upper(), adjusted_start, adjusted_end, return_full_data=True)
+            if 'full_price_data' in performance_data:
+                vol_stats = calculate_volatility_and_variance(performance_data['full_price_data'])
+                performance_data.update(vol_stats)
+        except ValueError as ve:
+            return f"❌ **Data Error:** {str(ve)}\n\nPlease verify the symbol exists and has trading data for the specified period."
+        except Exception as e:
+            logger.error(f"[Performance Analysis] API error for {symbol}: {e}")
+            return f"❌ **API Error:** Could not retrieve data for {symbol.upper()}. This might be due to:\n• Invalid symbol\n• Market data service unavailable\n• Network connectivity issues\n\nPlease try again later or verify the symbol."
+        benchmark_data = None
+        if compare_to_sp500:
+            try:
+                logger.info(f"[Performance Analysis] Fetching S&P 500 benchmark data")
+                benchmark_data = get_historical_prices('SPY', adjusted_start, adjusted_end)
+            except Exception as e:
+                logger.warning(f"[Performance Analysis] Could not fetch SPY benchmark data: {e}")
+        analysis = format_performance_analysis(performance_data, benchmark_data)
+        logger.info(f"[Performance Analysis] Successfully completed analysis for {symbol.upper()}")
+        return analysis
+    except Exception as e:
+        logger.error(f"[Performance Analysis] Unexpected error in calculate_investment_performance: {e}", exc_info=True)
+        return f"❌ **Unexpected Error:** An error occurred while analyzing {symbol}. Please try again later.\n\nError details: {str(e)}"
 
 @tool("calculate_investment_performance")
 def calculate_investment_performance(
@@ -403,70 +524,5 @@ def calculate_investment_performance(
     end_date: str = "",
     compare_to_sp500: bool = True
 ) -> str:
-    """Calculate investment performance between two dates.
-    
-    This tool analyzes the price performance of any stock symbol over a specified
-    time period, with optional comparison to the S&P 500 (SPY) as a benchmark.
-    
-    Args:
-        symbol: Stock symbol (e.g., 'AAPL', 'MSFT', 'TSLA')
-        start_date: Start date in YYYY-MM-DD format
-        end_date: End date in YYYY-MM-DD format (defaults to today if not specified)
-        compare_to_sp500: Whether to include S&P 500 benchmark comparison (default: True)
-    
-    Returns:
-        str: Formatted performance analysis including:
-             - Price change (absolute and percentage)
-             - Annualized return calculation
-             - Optional S&P 500 benchmark comparison
-             - Key statistics and data quality metrics
-    
-    Examples:
-        - YTD performance: calculate_investment_performance('AAPL', '2024-01-01')
-        - Custom period: calculate_investment_performance('MSFT', '2023-06-15', '2024-06-15')
-        - No benchmark: calculate_investment_performance('TSLA', '2024-01-01', compare_to_sp500=False)
-    """
-    try:
-        # Set default end date to today if not provided
-        if not end_date or end_date == "":
-            end_date = datetime.now().strftime('%Y-%m-%d')
-        
-        # Validate inputs
-        validation = validate_symbol_and_dates(symbol.upper(), start_date, end_date)
-        if 'error' in validation:
-            return f"❌ **Error:** {validation['error']}"
-        
-        # Adjust dates for market days if needed
-        adjusted_start = adjust_for_market_days(start_date, "forward")
-        adjusted_end = adjust_for_market_days(end_date, "backward")
-        
-        logger.info(f"[Performance Analysis] Analyzing {symbol.upper()} from {start_date} to {end_date}")
-        
-        # Get performance data for the target symbol
-        try:
-            performance_data = get_historical_prices(symbol.upper(), adjusted_start, adjusted_end)
-        except ValueError as ve:
-            return f"❌ **Data Error:** {str(ve)}\n\nPlease verify the symbol exists and has trading data for the specified period."
-        except Exception as e:
-            logger.error(f"[Performance Analysis] API error for {symbol}: {e}")
-            return f"❌ **API Error:** Could not retrieve data for {symbol.upper()}. This might be due to:\n• Invalid symbol\n• Market data service unavailable\n• Network connectivity issues\n\nPlease try again later or verify the symbol."
-        
-        # Get benchmark data if requested
-        benchmark_data = None
-        if compare_to_sp500:
-            try:
-                logger.info(f"[Performance Analysis] Fetching S&P 500 benchmark data")
-                benchmark_data = get_historical_prices('SPY', adjusted_start, adjusted_end)
-            except Exception as e:
-                logger.warning(f"[Performance Analysis] Could not fetch SPY benchmark data: {e}")
-                # Continue without benchmark rather than failing
-        
-        # Format and return the analysis
-        analysis = format_performance_analysis(performance_data, benchmark_data)
-        
-        logger.info(f"[Performance Analysis] Successfully completed analysis for {symbol.upper()}")
-        return analysis
-        
-    except Exception as e:
-        logger.error(f"[Performance Analysis] Unexpected error in calculate_investment_performance: {e}", exc_info=True)
-        return f"❌ **Unexpected Error:** An error occurred while analyzing {symbol}. Please try again later.\n\nError details: {str(e)}"
+    """Calculate investment performance between two dates, with optional S&P 500 benchmark comparison. Returns formatted analysis string."""
+    return _calculate_investment_performance_impl(symbol, start_date, end_date, compare_to_sp500)

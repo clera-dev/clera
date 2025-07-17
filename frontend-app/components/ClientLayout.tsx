@@ -231,10 +231,13 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   // Hide sidebar for any account closure activity (in progress or completed)
   const hasAccountClosureActivity = Boolean(closureData && !closureLoading);
   
+  // CRITICAL FIX: Wait for both auth/onboarding AND closure data to load
+  // This prevents race conditions where sidebar shows/hides incorrectly
+  const isDataLoading = isLoading || closureLoading;
+  
   const shouldShowSidebar = 
     isClient && 
-    !isLoading && 
-    !closureLoading && // Wait for closure data to load
+    !isDataLoading && // Wait for ALL data to load
     isAuthenticated && 
     pathname !== null && 
     !nonSidebarPaths.includes(pathname) && 

@@ -14,23 +14,19 @@ from dotenv import load_dotenv
 # Load environment variables first, with override to ensure they're set
 load_dotenv(override=True)
 
-from alpaca.broker.client import BrokerClient
 from alpaca.broker.requests import MarketOrderRequest, LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
 # Import shared account utilities
 from utils.account_utils import get_account_id
 from utils.market_data import get_stock_quote
+from utils.alpaca.broker_client_factory import get_broker_client
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# initialize Alpaca broker client with the correct environment variable names
-broker_client = BrokerClient(
-    api_key=os.getenv("BROKER_API_KEY"),
-    secret_key=os.getenv("BROKER_SECRET_KEY"),
-    sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
-)
+# Use centralized broker client
+broker_client = get_broker_client()
 
 
 
@@ -70,8 +66,22 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         # Let GraphInterrupt propagate if raised by interrupt()
         stock_quote = get_stock_quote(ticker)
         price = stock_quote[0]['price']
+        if not price or price <= 0:
+            err_msg = f"Error: Unable to retrieve a valid price for {ticker}. Please try again later or check the symbol."
+            logger.error(f"[Trade Agent] Invalid price for {ticker}: {price}")
+            return err_msg
+        
+        # Calculate approximate shares
+        approximate_shares = notional_amount / price
+        
+        # Create detailed confirmation prompt
         confirmation_prompt = (
-            f"TRADE CONFIRMATION REQUIRED: Buy ${notional_amount_formatted} worth of {ticker} (current price: ${price}).\n\n"
+            f"TRADE CONFIRMATION REQUIRED\n\n"
+            f"• BUY ${notional_amount_formatted} of {ticker}\n"
+            f"• Current Price: ${price:.2f} per share\n"
+            f"• Approximate Shares: {approximate_shares:.2f} shares\n"
+            f"• Order Type: Market Order (executed at current market price)\n\n"
+            f"⚠️  IMPORTANT: Final shares and price may vary slightly due to market movements. Market orders execute immediately at the best available price.\n"
             f"Please confirm with 'Yes' to execute or 'No' to cancel this trade."
         )
         # This call will raise GraphInterrupt if confirmation is needed
@@ -149,8 +159,22 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
         # Let GraphInterrupt propagate if raised by interrupt()
         stock_quote = get_stock_quote(ticker)
         price = stock_quote[0]['price']
+        if not price or price <= 0:
+            err_msg = f"Error: Unable to retrieve a valid price for {ticker}. Please try again later or check the symbol."
+            logger.error(f"[Trade Agent] Invalid price for {ticker}: {price}")
+            return err_msg
+        
+        # Calculate approximate shares
+        approximate_shares = notional_amount / price
+        
+        # Create detailed confirmation prompt
         confirmation_prompt = (
-            f"TRADE CONFIRMATION REQUIRED: Sell ${notional_amount_formatted} worth of {ticker} (current price: ${price}).\n\n"
+            f"TRADE CONFIRMATION REQUIRED\n\n"
+            f"• SELL ${notional_amount_formatted} of {ticker}\n"
+            f"• Current Price: ${price:.2f} per share\n"
+            f"• Approximate Shares: {approximate_shares:.2f} shares\n"
+            f"• Order Type: Market Order (executed at current market price)\n\n"
+            f"⚠️  IMPORTANT: Final shares and price may vary slightly due to market movements. Market orders execute immediately at the best available price.\n"
             f"Please confirm with 'Yes' to execute or 'No' to cancel this trade."
         )
         # This call will raise GraphInterrupt if confirmation is needed

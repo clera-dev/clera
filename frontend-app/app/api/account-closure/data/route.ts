@@ -42,6 +42,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // CRITICAL FIX: Only return closure data if account closure has actually been initiated
+    // Check if confirmation number exists (this indicates closure was initiated)
+    if (!onboardingData.account_closure_confirmation_number) {
+      // No closure activity - return null to indicate no closure
+      return NextResponse.json({
+        success: true,
+        data: null
+      });
+    }
+
     // Extract closure-specific data from onboarding_data JSONB
     const closureData = onboardingData.onboarding_data?.account_closure || {};
 

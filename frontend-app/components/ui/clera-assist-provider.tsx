@@ -167,7 +167,7 @@ export const useContextualPrompt = (
     const contextInfo = `\n\nContext: I'm currently on the ${context.replace(/_/g, ' ')} page.`;
     
     // Add conciseness instruction
-    const conciseInstruction = "\n\nPlease keep your response concise and conversational - aim for 2-3 short paragraphs maximum. Focus on the most important points and actionable advice.";
+    const conciseInstruction = "\n\nFocus on the most important points and actionable advice.";
     
     return prompt + contextInfo + conciseInstruction;
   }, [template, context, variables]);

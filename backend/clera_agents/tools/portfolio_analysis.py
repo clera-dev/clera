@@ -4,7 +4,7 @@ Portfolio analysis tools for classifying securities and analyzing portfolios.
 
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from clera_agents.types.portfolio_types import (
     AssetClass, SecurityType, TargetPortfolio
@@ -28,19 +28,92 @@ class PortfolioPosition:
     
     @classmethod
     def from_alpaca_position(cls, position) -> 'PortfolioPosition':
-        """Create a PortfolioPosition from an Alpaca Position object."""
-        return cls(
-            symbol=position.symbol,
-            quantity=Decimal(position.qty),  # Share quantity (for reference)
-            current_price=Decimal(position.current_price),  # Per share price (for reference)
-            market_value=Decimal(position.market_value),  # This is the notional (dollar) value for trading
-            cost_basis=Decimal(position.cost_basis) if hasattr(position, 'cost_basis') else None,
-            unrealized_pl=Decimal(position.unrealized_pl) if hasattr(position, 'unrealized_pl') else None,
-            unrealized_plpc=Decimal(position.unrealized_plpc) if hasattr(position, 'unrealized_plpc') else None,
-            # We'll apply classification in a separate step
-            asset_class=None,
-            security_type=None
-        )
+        """Create a PortfolioPosition from an Alpaca Position object.
+        
+        Args:
+            position: Alpaca Position object
+            
+        Returns:
+            PortfolioPosition: Converted position object
+            
+        Raises:
+            ValueError: If required fields are missing or invalid
+        """
+        try:
+            # Validate required fields
+            if not hasattr(position, 'symbol') or not position.symbol:
+                raise ValueError("Position missing required 'symbol' field")
+            
+            if not hasattr(position, 'qty') or position.qty is None:
+                raise ValueError(f"Position {position.symbol} missing required 'qty' field")
+                
+            if not hasattr(position, 'current_price') or position.current_price is None:
+                raise ValueError(f"Position {position.symbol} missing required 'current_price' field")
+                
+            if not hasattr(position, 'market_value') or position.market_value is None:
+                raise ValueError(f"Position {position.symbol} missing required 'market_value' field")
+            
+            # Convert required fields with error handling
+            try:
+                quantity = Decimal(str(position.qty))
+            except (ValueError, InvalidOperation, TypeError) as e:
+                raise ValueError(f"Position {position.symbol} has invalid qty '{position.qty}': {e}")
+                
+            try:
+                current_price = Decimal(str(position.current_price))
+            except (ValueError, InvalidOperation, TypeError) as e:
+                raise ValueError(f"Position {position.symbol} has invalid current_price '{position.current_price}': {e}")
+                
+            try:
+                market_value = Decimal(str(position.market_value))
+            except (ValueError, InvalidOperation, TypeError) as e:
+                raise ValueError(f"Position {position.symbol} has invalid market_value '{position.market_value}': {e}")
+            
+            # Convert optional fields with error handling
+            cost_basis = None
+            if hasattr(position, 'cost_basis') and position.cost_basis is not None:
+                try:
+                    cost_basis = Decimal(str(position.cost_basis))
+                except (ValueError, InvalidOperation, TypeError):
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Position {position.symbol} has invalid cost basis; using None")
+            
+            unrealized_pl = None
+            if hasattr(position, 'unrealized_pl') and position.unrealized_pl is not None:
+                try:
+                    unrealized_pl = Decimal(str(position.unrealized_pl))
+                except (ValueError, InvalidOperation, TypeError):
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Position {position.symbol} has invalid unrealized_pl '{position.unrealized_pl}', using None")
+            
+            unrealized_plpc = None
+            if hasattr(position, 'unrealized_plpc') and position.unrealized_plpc is not None:
+                try:
+                    unrealized_plpc = Decimal(str(position.unrealized_plpc))
+                except (ValueError, InvalidOperation, TypeError):
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Position {position.symbol} has invalid unrealized_plpc '{position.unrealized_plpc}', using None")
+            
+            return cls(
+                symbol=position.symbol,
+                quantity=quantity,
+                current_price=current_price,
+                market_value=market_value,
+                cost_basis=cost_basis,
+                unrealized_pl=unrealized_pl,
+                unrealized_plpc=unrealized_plpc,
+                # We'll apply classification in a separate step
+                asset_class=None,
+                security_type=None
+            )
+            
+        except Exception as e:
+            # Re-raise with more context
+            symbol = getattr(position, 'symbol', 'UNKNOWN')
+            raise ValueError(f"Failed to convert Alpaca position {symbol} to PortfolioPosition: {str(e)}") from e
 
 
 class PortfolioAnalyzer:
@@ -69,6 +142,7 @@ class PortfolioAnalyzer:
         'MUB': 'iShares National Muni Bond ETF',
         'TIP': 'iShares TIPS Bond ETF',
         'VTIP': 'Vanguard Short-Term Inflation-Protected Securities ETF',
+        'FLOT': 'iShares Floating Rate Bond ETF',
         
         # Real Estate
         'VNQ': 'Vanguard Real Estate ETF',
@@ -96,7 +170,7 @@ class PortfolioAnalyzer:
             position.security_type = SecurityType.ETF
             
             # Rough asset class classification
-            if position.symbol in ('AGG', 'BND', 'VCIT', 'MUB', 'TIP', 'VTIP'):
+            if position.symbol in ('AGG', 'BND', 'VCIT', 'MUB', 'TIP', 'VTIP', 'FLOT'):
                 position.asset_class = AssetClass.FIXED_INCOME
             elif position.symbol in ('VNQ', 'SCHH', 'IYR'):
                 position.asset_class = AssetClass.REAL_ESTATE
@@ -137,15 +211,26 @@ class PortfolioAnalyzer:
         return position
     
     @classmethod
-    def analyze_portfolio(cls, positions: List[PortfolioPosition]) -> Dict:
-        """Analyze a portfolio of positions and return summary statistics."""
+    def analyze_portfolio(cls, positions: List[PortfolioPosition], cash_balance: Decimal = Decimal('0')) -> Dict:
+        """Analyze a portfolio of positions and return summary statistics.
+        
+        Args:
+            positions: List of portfolio positions
+            cash_balance: Cash balance to include in total portfolio value
+            
+        Returns:
+            Dict: Portfolio analysis results including total value with cash
+        """
         # Classify positions if not already classified
         for i, position in enumerate(positions):
             if position.asset_class is None or position.security_type is None:
                 positions[i] = cls.classify_position(position)
         
-        # Calculate total value
-        total_value = sum(position.market_value for position in positions)
+        # Calculate positions value (securities only)
+        positions_value = sum(position.market_value for position in positions)
+        
+        # Calculate TOTAL portfolio value including cash
+        total_value = positions_value + cash_balance
         
         # Calculate asset class breakdown
         asset_class_values = {}
@@ -156,6 +241,11 @@ class PortfolioAnalyzer:
             if position.asset_class:
                 asset_class_values[position.asset_class] += position.market_value
         
+        # Add cash as its own asset class if there is any
+        if cash_balance > 0:
+            asset_class_values[AssetClass.CASH] = cash_balance
+        
+        # Calculate percentages based on TOTAL portfolio value (positions + cash)
         asset_class_percentages = {
             asset_class: (value / total_value * 100 if total_value > 0 else 0)
             for asset_class, value in asset_class_values.items()
@@ -169,6 +259,10 @@ class PortfolioAnalyzer:
         for position in positions:
             if position.security_type:
                 security_type_values[position.security_type] += position.market_value
+        
+        # Add cash to money market category
+        if cash_balance > 0:
+            security_type_values[SecurityType.MONEY_MARKET] += cash_balance
         
         security_type_percentages = {
             security_type: (value / total_value * 100 if total_value > 0 else 0)
@@ -185,6 +279,8 @@ class PortfolioAnalyzer:
         
         return {
             'total_value': total_value,
+            'positions_value': positions_value,
+            'cash_balance': cash_balance,
             'asset_class_values': asset_class_values,
             'asset_class_percentages': asset_class_percentages,
             'security_type_values': security_type_values,
@@ -199,14 +295,24 @@ class PortfolioAnalyzer:
     def generate_rebalance_instructions(
         cls, 
         positions: List[PortfolioPosition], 
-        target_portfolio: TargetPortfolio
+        target_portfolio: TargetPortfolio,
+        cash_balance: Decimal = Decimal('0')
     ) -> str:
-        """Generate rebalancing instructions based on current positions and target portfolio."""
-        # First convert alpaca positions to our standard format
+        """Generate rebalancing instructions based on current positions and target portfolio.
+        
+        Args:
+            positions: List of current positions
+            target_portfolio: Target portfolio allocation
+            cash_balance: Current cash balance
+            
+        Returns:
+            str: Detailed rebalancing instructions
+        """
+        # First convert alpaca positions to our standard format and classify them
         converted_positions = positions
         
-        # Analyze the portfolio
-        analysis = cls.analyze_portfolio(converted_positions)
+        # Analyze the portfolio including cash balance
+        analysis = cls.analyze_portfolio(converted_positions, cash_balance)
         
         # Build rebalancing instructions
         instructions = []
@@ -214,6 +320,8 @@ class PortfolioAnalyzer:
         # Add portfolio summary
         instructions.append(f"Current Portfolio Summary:")
         instructions.append(f"Total Portfolio Value: ${analysis['total_value']:,.2f}")
+        instructions.append(f"Investment Positions: ${analysis['positions_value']:,.2f} ({float(analysis['positions_value']/analysis['total_value']*100) if analysis['total_value'] > 0 else 0:.1f}%)")
+        instructions.append(f"Cash Balance: ${analysis['cash_balance']:,.2f} ({float(analysis['cash_balance']/analysis['total_value']*100) if analysis['total_value'] > 0 else 0:.1f}%)")
         
         # Add asset class breakdown
         instructions.append("\nCurrent Asset Allocation:")
@@ -300,7 +408,7 @@ class PortfolioAnalyzer:
                                 f"(from {current_stock_percentage:.1f}% to {target_stock_percentage:.1f}%)")
         
         # Add note if portfolio is reasonably aligned with target
-        if len(instructions) <= 6:  # Only has summaries, no specific instructions
+        if len(instructions) <= 8:  # Only has summaries, no specific instructions
             instructions.append("  Your portfolio is already well-aligned with your target allocation.")
             
         return "\n".join(instructions)

@@ -1,32 +1,24 @@
 """
-Purchase history and account activities tools for retrieving transaction data.
+Purchase history and account activity tools for portfolio management.
 """
 
 import os
 import logging
-from typing import List, Dict, Optional, Any
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
-
-from alpaca.broker import BrokerClient
-from langgraph.config import get_config
+from decimal import Decimal
 from langchain_core.runnables.config import RunnableConfig
 
-# Import shared account utilities  
 from utils.account_utils import get_account_id
+from utils.alpaca.broker_client_factory import get_broker_client
+from decimal import InvalidOperation
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Initialize Alpaca broker client
-broker_client = BrokerClient(
-    api_key=os.getenv("BROKER_API_KEY"),
-    secret_key=os.getenv("BROKER_SECRET_KEY"),
-    sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
-)
-
-
+# Use centralized broker client
+broker_client = get_broker_client()
 
 
 @dataclass
@@ -41,86 +33,100 @@ class ActivityRecord:
     net_amount: Optional[Decimal]
     description: str
     id: str
-    
+
     @classmethod
-    def from_alpaca_activity(cls, activity: Any) -> 'ActivityRecord':
+    def from_alpaca_activity(cls, activity) -> 'ActivityRecord':
         """Create an ActivityRecord from an Alpaca activity object."""
-        # Handle datetime parsing
-        transaction_time = activity.transaction_time
-        if isinstance(transaction_time, str):
-            try:
-                # Parse ISO format datetime
-                transaction_time = datetime.fromisoformat(transaction_time.replace('Z', '+00:00'))
-            except ValueError:
-                # Fallback to current time if parsing fails
-                transaction_time = datetime.now(timezone.utc)
-        
-        # Extract relevant fields
-        symbol = getattr(activity, 'symbol', None)
-        quantity = None
-        price = None
-        side = None
-        net_amount = None
-        
-        # Handle different activity types
-        activity_type = getattr(activity, 'activity_type', 'unknown')
-        
-        if hasattr(activity, 'qty') and activity.qty is not None:
-            try:
-                quantity = Decimal(str(activity.qty))
-            except (InvalidOperation, ValueError):
-                quantity = None
-                
-        if hasattr(activity, 'price') and activity.price is not None:
-            try:
-                price = Decimal(str(activity.price))
-            except (InvalidOperation, ValueError):
-                price = None
-                
-        if hasattr(activity, 'side'):
-            side = str(activity.side) if activity.side else None
+        try:
+            # Extract basic fields
+            activity_type = getattr(activity, 'activity_type', 'UNKNOWN')
+            symbol = getattr(activity, 'symbol', None)
+            activity_id = getattr(activity, 'id', str(datetime.now().timestamp()))
             
-        if hasattr(activity, 'net_amount') and activity.net_amount is not None:
-            try:
-                net_amount = Decimal(str(activity.net_amount))
-            except (InvalidOperation, ValueError):
-                net_amount = None
-        
-        # Generate description
-        description = cls._generate_description(activity_type, symbol, quantity, price, side, net_amount)
-        
-        return cls(
-            activity_type=activity_type,
-            symbol=symbol,
-            transaction_time=transaction_time,
-            quantity=quantity,
-            price=price,
-            side=side,
-            net_amount=net_amount,
-            description=description,
-            id=getattr(activity, 'id', str(hash(str(activity))))
-        )
+            # Parse transaction time
+            transaction_time = getattr(activity, 'transaction_time', None)
+            if transaction_time is None:
+                transaction_time = getattr(activity, 'date', datetime.now(timezone.utc))
+            if isinstance(transaction_time, str):
+                transaction_time = datetime.fromisoformat(transaction_time.replace('Z', '+00:00'))
+            elif not isinstance(transaction_time, datetime):
+                transaction_time = datetime.now(timezone.utc)
+            
+            # Ensure timezone awareness
+            if transaction_time.tzinfo is None:
+                transaction_time = transaction_time.replace(tzinfo=timezone.utc)
+            
+            # Extract trade-specific fields (for FILL activities)
+            quantity = None
+            price = None
+            side = None
+            net_amount = None
+            
+            if hasattr(activity, 'qty'):
+                try:
+                    quantity = Decimal(str(activity.qty))
+                except (ValueError, InvalidOperation):
+                    quantity = None
+            
+            if hasattr(activity, 'price'):
+                try:
+                    price = Decimal(str(activity.price))
+                except (ValueError, InvalidOperation):
+                    price = None
+            
+            if hasattr(activity, 'side'):
+                # 🔧 IMPROVED: Normalize side values for consistent processing
+                raw_side = str(activity.side)
+                # Handle enum formats like "OrderSide.BUY" -> "buy"
+                if '.' in raw_side:
+                    side = raw_side.split('.')[-1].lower()  # Extract "BUY" -> "buy"
+                else:
+                    side = raw_side.lower()  # Direct "BUY" -> "buy"
+                
+                # Normalize some alternative formats
+                if side == 'long':
+                    side = 'buy'
+                elif side == 'short':
+                    side = 'sell'
+            
+            if hasattr(activity, 'net_amount'):
+                try:
+                    net_amount = Decimal(str(activity.net_amount))
+                except (ValueError, InvalidOperation):
+                    net_amount = None
+            
+            # Create description
+            description = cls._create_description(activity_type, symbol, side, quantity, price, net_amount)
+            
+            return cls(
+                activity_type=activity_type,
+                symbol=symbol,
+                transaction_time=transaction_time,
+                quantity=quantity,
+                price=price,
+                side=side,
+                net_amount=net_amount,
+                description=description,
+                id=activity_id
+            )
+            
+        except Exception as e:
+            logger.error(f"[Purchase History] Failed to parse activity: {e}")
+            raise ValueError(f"Could not parse activity: {e}")
     
     @staticmethod
-    def _generate_description(activity_type: str, symbol: Optional[str], quantity: Optional[Decimal], 
-                            price: Optional[Decimal], side: Optional[str], net_amount: Optional[Decimal]) -> str:
-        """Generate a human-readable description of the activity."""
-        if activity_type == 'FILL' and symbol and quantity and side:
-            action = "Bought" if side.lower() == 'buy' else "Sold"
-            if price:
-                return f"{action} {quantity} shares of {symbol} at ${price}"
+    def _create_description(activity_type: str, symbol: Optional[str], side: Optional[str], 
+                          quantity: Optional[Decimal], price: Optional[Decimal], 
+                          net_amount: Optional[Decimal]) -> str:
+        """Create a human-readable description of the activity."""
+        if activity_type == 'FILL' and symbol and side:
+            action = side.title()
+            if quantity and price:
+                return f"{action} {quantity} shares of {symbol} at ${price:.2f}"
+            elif net_amount:
+                return f"{action} {symbol} for ${abs(net_amount):.2f}"
             else:
-                return f"{action} {quantity} shares of {symbol}"
-        elif activity_type == 'DIV' and symbol and net_amount:
-            return f"Dividend payment of ${net_amount} from {symbol}"
-        elif activity_type == 'ACATC':
-            return "Account transfer (ACAT)"
-        elif activity_type == 'CSD':
-            return "Cash dividend"
-        elif activity_type == 'CSR':
-            return "Cash receipt"
-        elif activity_type == 'CSW':
-            return "Cash withdrawal"
+                return f"{action} {symbol}"
         else:
             return f"{activity_type} activity" + (f" for {symbol}" if symbol else "")
 
@@ -163,12 +169,15 @@ def get_account_activities(
         # Get activities from Alpaca using GetAccountActivitiesRequest
         from alpaca.broker.requests import GetAccountActivitiesRequest
         
+        # 🚨 CRITICAL FIX: Add account_id parameter to prevent data leakage
         request = GetAccountActivitiesRequest(
+            account_id=account_id,  # ✅ This ensures we only get activities for THIS user
             activity_types=activity_types,
             page_size=page_size,
             **date_params
         )
         
+        # Call the Alpaca API with the properly filtered request
         activities = broker_client.get_account_activities(request)
         
         # Convert to our ActivityRecord objects
@@ -192,290 +201,216 @@ def get_account_activities(
         return []
 
 
-
-
-def find_first_purchase_dates(config: RunnableConfig = None) -> Dict[str, datetime]:
+def find_first_purchase_dates(account_id: str) -> Dict[str, datetime]:
     """
     Find the first purchase date for each symbol in the user's portfolio.
-    
     Args:
-        config: LangGraph configuration
-    
+        account_id: Alpaca account ID to filter activities
     Returns:
-        Dict[str, datetime]: Mapping of symbol to first purchase date
+        Dict[str, datetime]: Mapping of symbol to first purchase datetime
     """
     try:
-        account_id = get_account_id(config=config)
-        
-        # Get longer history to find first purchases (365 days) - only returns 1 date per symbol
+        # Look back up to 1 year
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=365)
-        
-        # Get all trade activities
+        # Get all trade activities with proper account filtering
         trade_activities = get_account_activities(
-            account_id=account_id,
+            account_id=account_id,  # ✅ Properly filter by account
             activity_types=['FILL'],
             date_start=start_date,
             date_end=end_date,
-            page_size=100  # Max page size is 100
+            page_size=100
         )
-        
-        # Find first purchase for each symbol
         first_purchases = {}
         for activity in trade_activities:
             if activity.symbol and activity.side:
-                # Check if it's a buy transaction (handle both string and enum formats)
-                side_str = str(activity.side).lower()
-                if 'buy' in side_str:
+                side_str = str(activity.side).upper()
+                is_buy_transaction = (
+                    side_str == 'BUY' or 
+                    'BUY' in side_str or
+                    side_str == 'LONG'
+                )
+                if is_buy_transaction:
                     if activity.symbol not in first_purchases:
                         first_purchases[activity.symbol] = activity.transaction_time
                     else:
-                        # Keep the earliest date
                         if activity.transaction_time < first_purchases[activity.symbol]:
                             first_purchases[activity.symbol] = activity.transaction_time
-        
+        logger.info(f"[Purchase History] Found first purchase dates for {len(first_purchases)} symbols")
         return first_purchases
-        
     except ValueError as e:
         logger.error(f"[Purchase History] Account identification failed: {e}")
         return {}
     except Exception as e:
-        logger.error(f"[Purchase History] Error finding first purchase dates: {e}", exc_info=True)
+        logger.error(f"[Purchase History] Failed to find first purchase dates: {e}", exc_info=True)
         return {}
 
 
-def get_comprehensive_account_activities(account_id: str = None, days_back: int = 60, config: RunnableConfig = None) -> str:
+def fetch_account_activities_data(account_id: str, days_back: int = 60) -> dict:
     """
-    Get comprehensive account activities including trading history, dividends, and other activities.
-    
-    This combines all account activities into one comprehensive view with:
-    - Trading history (purchases/sales) 
-    - Account activities summary
-    - Recent transaction details
-    - Trading statistics
-    
-    Args:
-        account_id: Alpaca account ID (optional, will be retrieved if not provided)
-        days_back: Number of days to look back (default: 60)
-        config: LangGraph configuration object
-        
-    Returns:
-        str: Formatted comprehensive account activities report
+    Retrieve all activities, trade activities, other activities, and first purchase dates for the account.
+    Returns a dictionary with all relevant data for report generation.
     """
-    try:
-        logger.info(f"[Account Activities] Getting comprehensive activities for last {days_back} days")
-        
-        # Get account ID if not provided
-        if not account_id:
-            account_id = get_account_id(config=config)
-        
-        logger.info(f"[Account Activities] Using account ID: {account_id}")
-        
-        # Calculate date range
-        end_date = datetime.now(timezone.utc)
-        start_date = end_date - timedelta(days=days_back)
-        
-        # Get trading activities (FILL)
-        trading_activities = get_account_activities(
-            account_id=account_id,
-            activity_types=['FILL'],
-            date_start=start_date,
-            date_end=end_date
-        )
-        
-        # Get all other activities (dividends, fees, etc.)
-        other_activities = get_account_activities(
-            account_id=account_id,
-            activity_types=['DIV', 'ACATC', 'CSD', 'CSW', 'FEE', 'INT'],
-            date_start=start_date,
-            date_end=end_date
-        )
-        
-        # Combine and sort all activities
-        all_activities = trading_activities + other_activities
-        all_activities.sort(key=lambda x: x.transaction_time, reverse=True)
-        
-        if not all_activities:
-            return f"""📋 **Account Activities**
+    days_back = min(days_back, 60)
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=days_back)
+    all_activities = get_account_activities(
+        account_id=account_id,
+        activity_types=None,
+        date_start=start_date,
+        date_end=end_date,
+        page_size=100
+    )
+    trade_activities = [a for a in all_activities if a.activity_type == 'FILL']
+    other_activities = [a for a in all_activities if a.activity_type != 'FILL']
+    first_purchases = find_first_purchase_dates(account_id)
+    return {
+        'all_activities': all_activities,
+        'trade_activities': trade_activities,
+        'other_activities': other_activities,
+        'first_purchases': first_purchases,
+        'days_back': days_back
+    }
 
-❌ **No Recent Activities Found**
+def calculate_account_activity_stats(trade_activities: list) -> dict:
+    """
+    Calculate trading statistics from trade activities.
+    """
+    buy_trades = [a for a in trade_activities if a.side and 'buy' in a.side.lower()]
+    sell_trades = [a for a in trade_activities if a.side and 'sell' in a.side.lower()]
+    unique_symbols = set(a.symbol for a in trade_activities if a.symbol)
+    total_volume = sum(abs(a.net_amount) for a in trade_activities if a.net_amount is not None)
+    return {
+        'buy_trades': buy_trades,
+        'sell_trades': sell_trades,
+        'unique_symbols': unique_symbols,
+        'total_volume': total_volume
+    }
 
-No account activities found in the last {days_back} days. This could mean:
-• Your account is new
-• No transactions have occurred recently
+def format_account_activities_report(
+    all_activities: list,
+    trade_activities: list,
+    other_activities: list,
+    first_purchases: dict,
+    stats: dict,
+    days_back: int
+) -> str:
+    """
+    Format the comprehensive account activities report as a markdown string.
+    """
+    current_timestamp = datetime.now(timezone.utc).strftime('%A, %B %d, %Y at %I:%M %p UTC')
+    if not all_activities:
+        return f"""📈 **Account Activities Report**
+**Period:** Last {days_back} days
+
+❌ **No Activities Found**
+
+No account activities were found for the requested period. This could be because:
+• No trades or transactions occurred during this time
 • Activities are still processing
+• There may be a temporary issue accessing activity data
 
 💡 **Next Steps:**
-• Check for pending transactions
-• Review your account status
-• Try extending the date range"""
-        
-        # Separate trading activities for detailed purchase history
-        trades = [a for a in all_activities if a.activity_type == 'FILL']
-        non_trades = [a for a in all_activities if a.activity_type != 'FILL']
-        
-        # Build comprehensive report
-        report = f"📋 **Account Activities** ({days_back}-day summary)\n\n"
-        
-        # Activity Summary
-        report += "📊 **Activity Summary**\n"
-        report += f"• **Total Activities:** {len(all_activities)}\n"
-        report += f"• **Trades:** {len(trades)}\n"
-        report += f"• **Other Activities:** {len(non_trades)}\n"
-        
-        # Trading statistics
-        if trades:
-            symbols = set()
-            buy_count = 0
-            sell_count = 0
-            total_volume = Decimal('0')
-            
-            for trade in trades:
-                if trade.symbol:
-                    symbols.add(trade.symbol)
-                side_str = str(trade.side).lower() if trade.side else ""
-                if 'buy' in side_str:
-                    buy_count += 1
-                elif 'sell' in side_str:
-                    sell_count += 1
-                
-                # Calculate trade volume: use net_amount if available, otherwise calculate qty * price
-                if trade.net_amount:
-                    total_volume += abs(Decimal(str(trade.net_amount)))
-                elif trade.quantity and trade.price:
-                    calculated_amount = abs(Decimal(str(trade.quantity)) * Decimal(str(trade.price)))
-                    total_volume += calculated_amount
-            
-            report += f"• **Unique Symbols Traded:** {len(symbols)}\n"
-            report += f"• **Buy Transactions:** {buy_count}\n"
-            report += f"• **Sell Transactions:** {sell_count}\n"
-            report += f"• **Total Volume:** ${total_volume:,.2f}\n\n"
-        
-        # Purchase History Section (detailed trading history)
-        if trades:
-            report += "💰 **Purchase History** (Trading Details)\n\n"
-            
-            # Group trades by date
-            trades_by_date = {}
-            for trade in trades[:50]:  # Limit to last 50 trades
-                date_str = trade.transaction_time.strftime('%A, %B %d, %Y')
-                if date_str not in trades_by_date:
-                    trades_by_date[date_str] = []
-                trades_by_date[date_str].append(trade)
-            
-            # Format each date group
-            for date_str, date_trades in trades_by_date.items():
-                report += f"📆 **{date_str}**\n"
-                
-                for trade in date_trades:
-                    time_str = trade.transaction_time.strftime('%I:%M %p')
-                    
-                    # Determine emoji and action
-                    side_str = str(trade.side).lower() if trade.side else ""
-                    if 'buy' in side_str:
-                        emoji = "🟢"
-                        action = "Bought"
-                    elif 'sell' in side_str:
-                        emoji = "🔴"
-                        action = "Sold"
-                    else:
-                        emoji = "📊"
-                        action = "Traded"
-                    
-                    # Format quantity and price
-                    qty_str = f"{float(trade.quantity):.6f}".rstrip('0').rstrip('.') if trade.quantity else "0"
-                    price_str = f"${float(trade.price):.2f}" if trade.price else "$0.00"
-                    
-                    # Calculate total: use net_amount if available, otherwise calculate qty * price
-                    if trade.net_amount:
-                        total_str = f"${abs(float(trade.net_amount)):.2f}"
-                    elif trade.quantity and trade.price:
-                        calculated_total = float(trade.quantity) * float(trade.price)
-                        total_str = f"${calculated_total:.2f}"
-                    else:
-                        total_str = "$0.00"
-                    
-                    report += f"  {emoji} **{time_str}** - {action} {qty_str} shares of {trade.symbol} at {price_str}\n"
-                    report += f"    💰 Total: {total_str}\n"
-                
-                report += "\n"
-        
-        # Recent Activities Section (non-trading activities)
-        if non_trades:
-            report += "📈 **Other Account Activities**\n\n"
-            
-            # Group by activity type
-            activity_groups = {}
-            for activity in non_trades[:20]:  # Limit to last 20
-                act_type = str(activity.activity_type)
-                if act_type not in activity_groups:
-                    activity_groups[act_type] = []
-                activity_groups[act_type].append(activity)
-            
-            for act_type, activities in activity_groups.items():
-                type_emoji = "💸" if act_type == "DIV" else "📋"
-                type_name = "Dividends" if act_type == "DIV" else f"{act_type} Activities"
-                
-                report += f"{type_emoji} **{type_name}** ({len(activities)} activities)\n"
-                
-                for activity in activities:
-                    date_str = activity.transaction_time.strftime('%b %d, %Y')
-                    amount_str = f"${abs(float(activity.net_amount)):.2f}" if activity.net_amount else ""
-                    
-                    if activity.symbol:
-                        report += f"• {date_str} - {activity.symbol} {amount_str}\n"
-                    else:
-                        report += f"• {date_str} - {activity.description or act_type} {amount_str}\n"
-                
-                report += "\n"
-        
-        # First Purchase Dates Section (365-day lookback)
-        try:
-            first_purchase_dates = find_first_purchase_dates(config=config)
-            if first_purchase_dates:
-                report += "📅 **First Purchase Dates** (365-day lookback)\n\n"
-                
-                # Sort by date (most recent first)
-                sorted_purchases = sorted(first_purchase_dates.items(), key=lambda x: x[1], reverse=True)
-                
-                for symbol, purchase_date in sorted_purchases:
-                    date_str = purchase_date.strftime('%B %d, %Y')
-                    days_ago = (datetime.now(timezone.utc) - purchase_date).days
-                    
-                    if days_ago == 0:
-                        time_str = "today"
-                    elif days_ago == 1:
-                        time_str = "1 day ago"
-                    else:
-                        time_str = f"{days_ago} days ago"
-                    
-                    report += f"• **{symbol}**: First purchased on {date_str} ({time_str})\n"
-                
-                report += "\n"
-        except Exception as e:
-            logger.warning(f"[Account Activities] Could not retrieve first purchase dates: {str(e)}")
-        
-        # Footer with helpful suggestions
-        report += "💡 **Need More Details?**\n"
-        report += "• Ask about specific stock purchase dates\n"
-        report += "• Request longer date ranges for more history\n"
-        report += "• Check portfolio performance since purchase\n"
-        report += "\n📝 **Important Notes:**\n"
-        report += "• Trading activities shown are FILLED orders only (no pending orders)\n"
-        report += "• Recent activities cover the last 60 days\n"
-        report += "• First purchase dates cover the last 365 days\n"
-        
+• Check if you've made any trades recently
+• Try requesting a shorter time period
+• Contact support if you believe this is an error"""
+    report = f"""📈 **Account Activities Report**
+**Generated:** {current_timestamp}
+**Period:** Last {days_back} days (maximum available)
+
+🔢 **Trading Summary**
+• **Total Trades:** {len(trade_activities)}
+• **Buy Orders:** {len(stats['buy_trades'])}
+• **Sell Orders:** {len(stats['sell_trades'])}
+• **Unique Symbols Traded:** {len(stats['unique_symbols'])}
+• **Total Trading Volume:** ${stats['total_volume']:,.2f}
+
+📊 **Recent Trading Activity**"""
+    if trade_activities:
+        recent_trades = trade_activities[:10]
+        for activity in recent_trades:
+            date_str = activity.transaction_time.strftime('%b %d, %Y')
+            side_emoji = "🟢" if activity.side and 'buy' in activity.side.lower() else "🔴"
+            if activity.quantity and activity.price:
+                report += f"""
+{side_emoji} **{activity.symbol}** - {activity.side.title() if activity.side else 'Trade'}
+• Date: {date_str}
+• Quantity: {activity.quantity} shares
+• Price: ${activity.price:.2f}
+• Value: ${abs(activity.net_amount or 0):,.2f}"""
+            else:
+                report += f"""
+{side_emoji} **{activity.symbol}** - {activity.description}
+• Date: {date_str}"""
+    if first_purchases:
+        report += f"""
+
+📅 **First Purchase Dates**"""
+        for symbol, first_date in sorted(first_purchases.items()):
+            date_str = first_date.strftime('%b %d, %Y')
+            days_held = (datetime.now(timezone.utc) - first_date).days
+            if days_held < 30:
+                holding_str = f"{days_held} days"
+            elif days_held < 365:
+                months = days_held // 30
+                holding_str = f"{months} month{'s' if months != 1 else ''}"
+            else:
+                years = days_held // 365
+                holding_str = f"{years} year{'s' if years != 1 else ''}"
+            report += f"""
+• **{symbol}**: {date_str} ({holding_str} ago)"""
+    if other_activities:
+        report += f"""
+
+💰 **Other Account Activities**"""
+        for activity in other_activities[:5]:
+            date_str = activity.transaction_time.strftime('%b %d, %Y')
+            report += f"""
+• **{activity.activity_type}**: {activity.description}
+  Date: {date_str}"""
+    report += f"""
+
+ℹ️ **Data Limitations**
+This report shows activities from the last {days_back} days only. For older transaction history, please check your account statements or contact support."""
+    return report
+
+
+def get_comprehensive_account_activities(days_back: int = 60, config: RunnableConfig = None) -> str:
+    """
+    Get a comprehensive formatted report of account activities including trading history,
+    statistics, and first purchase dates.
+    """
+    try:
+        account_id = get_account_id(config=config)
+        logger.info("[Portfolio Agent] Generating comprehensive account activities")
+        data = fetch_account_activities_data(account_id, days_back)
+        stats = calculate_account_activity_stats(data['trade_activities'])
+        report = format_account_activities_report(
+            all_activities=data['all_activities'],
+            trade_activities=data['trade_activities'],
+            other_activities=data['other_activities'],
+            first_purchases=data['first_purchases'],
+            stats=stats,
+            days_back=data['days_back']
+        )
+        logger.info(f"[Portfolio Agent] Successfully generated comprehensive activities report with {len(data['all_activities'])} total activities")
         return report
-        
+    except ValueError as e:
+        logger.error(f"[Portfolio Agent] Account identification error: {e}")
+        return f"""📈 **Account Activities Report**
+
+🚫 **Authentication Error**
+
+Could not securely identify your account for this activities report. This is a security protection to prevent unauthorized access.
+
+**Error Details:** {str(e)}
+
+💡 **Next Steps:**
+• Please log out and log back in
+• Ensure you have completed account setup
+• Contact support if the issue persists
+
+**Security Note:** This error prevents unauthorized access to trading data."""
     except Exception as e:
-        logger.error(f"[Account Activities] Error getting comprehensive activities: {str(e)}")
-        return f"""📋 **Account Activities**
-
-❌ **Error Retrieving Activities**
-
-Could not retrieve account activities: {str(e)}
-
-💡 **Troubleshooting:**
-• Check your internet connection
-• Verify account permissions
-• Try again in a few moments""" 
+        logger.error(f"[Portfolio Agent] Error generating activities report: {e}", exc_info=True)
+        return "❌ **Error:** Could not generate account activities report. Please try again later or contact support if the issue persists." 
