@@ -35,8 +35,7 @@ export async function POST(
       .eq('alpaca_account_id', accountId)
       .single();
 
-git     if (ownershipError) {
-      console.error('Database error during account closure ownership check:', ownershipError);
+    if (ownershipError) {
       return NextResponse.json(
         { error: 'Internal server error' },
         { status: 500 }

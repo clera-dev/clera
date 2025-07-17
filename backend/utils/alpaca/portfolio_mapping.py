@@ -5,7 +5,8 @@ from decimal import Decimal
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from clera_agents.types.portfolio_types import PortfolioPosition, AssetClass, SecurityType
+from clera_agents.tools.portfolio_analysis import PortfolioPosition
+from clera_agents.types.portfolio_types import AssetClass, SecurityType
 from backend.api_server import OrderResponse  # If OrderResponse is not available elsewhere, this import may need to be adjusted
 
 logger = logging.getLogger(__name__)
