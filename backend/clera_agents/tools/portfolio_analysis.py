@@ -75,10 +75,9 @@ class PortfolioPosition:
                 try:
                     cost_basis = Decimal(str(position.cost_basis))
                 except (ValueError, InvalidOperation, TypeError):
-                    # If cost_basis can't be converted, leave as None and log warning
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"Position {position.symbol} has invalid cost_basis '{position.cost_basis}', using None")
+                    logger.warning(f"Position {position.symbol} has invalid cost basis; using None")
             
             unrealized_pl = None
             if hasattr(position, 'unrealized_pl') and position.unrealized_pl is not None:

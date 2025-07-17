@@ -62,13 +62,6 @@ export async function POST(
       );
     }
 
-    if (!achRelationshipId) {
-      return NextResponse.json(
-        { error: 'ACH relationship ID is required' },
-        { status: 400 }
-      );
-    }
-
     // Get backend configuration
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;

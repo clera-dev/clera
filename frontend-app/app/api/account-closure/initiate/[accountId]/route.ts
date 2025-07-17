@@ -36,7 +36,7 @@ export async function POST(
       .single();
 
     if (ownershipError || !onboardingData) {
-      console.error(`User ${user.id} attempted to close account ${accountId} they don't own`);
+      console.error('Unauthorized account closure attempt');
       return NextResponse.json(
         { error: 'Account not found or access denied' },
         { status: 403 }
@@ -92,7 +92,7 @@ export async function POST(
     }
 
     // Call backend API to initiate closure
-    console.log(`Initiating account closure for account ${accountId} by user ${user.id}`);
+    console.log('Initiating account closure request');
     const response = await fetch(`${backendUrl}/account-closure/initiate/${accountId}`, {
       method: 'POST',
       headers: {

@@ -47,16 +47,7 @@ def get_broker_client() -> BrokerClient:
         return client
     except Exception as e:
         logger.error(f"[BrokerClient Factory] Failed to create broker client: {e}")
-        raise Exception(f"Failed to initialize Alpaca broker client: {str(e)}") from e
-
-def reset_broker_client() -> None:
-    """
-    Reset the cached broker client instance.
-    Useful for testing or when credentials change.
-    """
-    global _broker_client_instance
-    _broker_client_instance = None
-    logger.info("[BrokerClient Factory] Reset cached broker client instance")
+        raise
 
 def get_broker_config() -> dict:
     """

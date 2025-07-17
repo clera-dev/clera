@@ -201,60 +201,43 @@ def get_account_activities(
         return []
 
 
-def find_first_purchase_dates(config: RunnableConfig = None) -> Dict[str, datetime]:
+def find_first_purchase_dates(account_id: str) -> Dict[str, datetime]:
     """
     Find the first purchase date for each symbol in the user's portfolio.
-    
     Args:
-        config: LangGraph configuration
-    
+        account_id: Alpaca account ID to filter activities
     Returns:
-        Dict[str, datetime]: Mapping of symbol to first purchase date
+        Dict[str, datetime]: Mapping of symbol to first purchase datetime
     """
     try:
-        account_id = get_account_id(config=config)
-        
-        # Get longer history to find first purchases (365 days) - only returns 1 date per symbol
+        # Look back up to 1 year
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=365)
-        
         # Get all trade activities with proper account filtering
         trade_activities = get_account_activities(
             account_id=account_id,  # ✅ Properly filter by account
             activity_types=['FILL'],
             date_start=start_date,
             date_end=end_date,
-            page_size=100  # Max page size is 100
+            page_size=100
         )
-        
-        # Find first purchase for each symbol
         first_purchases = {}
         for activity in trade_activities:
             if activity.symbol and activity.side:
-                # 🔧 IMPROVED: Handle all possible side formats from Alpaca API
-                side_str = str(activity.side).upper()  # Convert to uppercase for consistency
-                
-                # Handle multiple possible formats:
-                # - "BUY" / "SELL" (direct strings)
-                # - "OrderSide.BUY" / "OrderSide.SELL" (enum string representation)  
-                # - "buy" / "sell" (lowercase)
+                side_str = str(activity.side).upper()
                 is_buy_transaction = (
                     side_str == 'BUY' or 
                     'BUY' in side_str or
-                    side_str == 'LONG'  # Some APIs use LONG for buy positions
+                    side_str == 'LONG'
                 )
-                
                 if is_buy_transaction:
                     if activity.symbol not in first_purchases:
                         first_purchases[activity.symbol] = activity.transaction_time
                     else:
-                        # Keep the earliest date
                         if activity.transaction_time < first_purchases[activity.symbol]:
                             first_purchases[activity.symbol] = activity.transaction_time
-        
         logger.info(f"[Purchase History] Found first purchase dates for {len(first_purchases)} symbols")
         return first_purchases
-        
     except ValueError as e:
         logger.error(f"[Purchase History] Account identification failed: {e}")
         return {}
@@ -280,7 +263,7 @@ def fetch_account_activities_data(account_id: str, days_back: int = 60) -> dict:
     )
     trade_activities = [a for a in all_activities if a.activity_type == 'FILL']
     other_activities = [a for a in all_activities if a.activity_type != 'FILL']
-    first_purchases = find_first_purchase_dates(config=None)
+    first_purchases = find_first_purchase_dates(account_id)
     return {
         'all_activities': all_activities,
         'trade_activities': trade_activities,
@@ -430,4 +413,4 @@ Could not securely identify your account for this activities report. This is a s
 **Security Note:** This error prevents unauthorized access to trading data."""
     except Exception as e:
         logger.error(f"[Portfolio Agent] Error generating activities report: {e}", exc_info=True)
-        return f"❌ **Error:** Could not generate account activities report. Please try again later.\n\nError details: {str(e)}" 
+        return "❌ **Error:** Could not generate account activities report. Please try again later or contact support if the issue persists." 

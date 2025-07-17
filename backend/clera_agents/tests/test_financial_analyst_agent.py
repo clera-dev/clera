@@ -4,7 +4,7 @@ import os
 import sys
 
 # Ensure the parent directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from clera_agents.financial_analyst_agent import calculate_investment_performance, get_historical_prices, calculate_volatility_and_variance
 

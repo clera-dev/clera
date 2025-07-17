@@ -35,8 +35,14 @@ export async function POST(
       .eq('alpaca_account_id', accountId)
       .single();
 
-    if (ownershipError || !onboardingData) {
-      console.error('Unauthorized account closure attempt detected');
+git     if (ownershipError) {
+      console.error('Database error during account closure ownership check:', ownershipError);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+    if (!onboardingData) {
       return NextResponse.json(
         { error: 'Account not found or access denied' },
         { status: 403 }

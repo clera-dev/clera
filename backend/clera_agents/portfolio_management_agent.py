@@ -36,6 +36,7 @@ from clera_agents.tools.purchase_history import (
 )
 from utils.account_utils import get_account_id
 from utils.alpaca.broker_client_factory import get_broker_client
+from utils.alpaca.portfolio_mapping import map_alpaca_position_to_portfolio_position
 
 
 
@@ -214,7 +215,7 @@ def create_rebalance_instructions(positions_data: List, target_portfolio_type: O
         
     except Exception as e:
         logger.error(f"[Portfolio Agent] Error in create_rebalance_instructions: {e}", exc_info=True)
-        return f"❌ **Error:** Could not generate rebalancing instructions. Please try again later.\n\nError details: {str(e)}"
+        return "❌ **Error:** Could not generate rebalancing instructions. Please try again later or contact support if the issue persists."
 
 
 @tool("rebalance_instructions")
@@ -357,7 +358,6 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
             try:
                 # Import the same mapping function used by the backend API
                 from clera_agents.tools.portfolio_analysis import PortfolioAnalyticsEngine
-                from api_server import map_alpaca_position_to_portfolio_position
                 
                 # Get the original Alpaca positions for proper mapping
                 original_positions = retrieve_portfolio_positions(config=config)

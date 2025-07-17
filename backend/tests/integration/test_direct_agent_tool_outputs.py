@@ -2,7 +2,7 @@ import os
 import logging
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
-import pandas as pd
+# import pandas as pd  # unused import removed
 
 from utils.account_utils import get_account_id
 from utils.alpaca.broker_client_factory import get_broker_client

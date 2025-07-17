@@ -66,6 +66,10 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         # Let GraphInterrupt propagate if raised by interrupt()
         stock_quote = get_stock_quote(ticker)
         price = stock_quote[0]['price']
+        if not price or price <= 0:
+            err_msg = f"Error: Unable to retrieve a valid price for {ticker}. Please try again later or check the symbol."
+            logger.error(f"[Trade Agent] Invalid price for {ticker}: {price}")
+            return err_msg
         
         # Calculate approximate shares
         approximate_shares = notional_amount / price
@@ -155,6 +159,10 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
         # Let GraphInterrupt propagate if raised by interrupt()
         stock_quote = get_stock_quote(ticker)
         price = stock_quote[0]['price']
+        if not price or price <= 0:
+            err_msg = f"Error: Unable to retrieve a valid price for {ticker}. Please try again later or check the symbol."
+            logger.error(f"[Trade Agent] Invalid price for {ticker}: {price}")
+            return err_msg
         
         # Calculate approximate shares
         approximate_shares = notional_amount / price
