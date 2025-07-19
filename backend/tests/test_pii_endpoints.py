@@ -109,10 +109,12 @@ class TestPIIEndpoints:
     def test_update_account_pii_success(self, mock_broker_client, api_key_setup, sample_account_id):
         """Test successful PII update."""
         update_data = {
-            "phone_number": "+1987654321",
-            "street_address": "456 Oak Ave",
-            "city": "Los Angeles",
-            "postal_code": "90210"
+            "contact": {
+                "phone": "+1987654321",
+                "street_address": ["456 Oak Ave"],
+                "city": "Los Angeles",
+                "postal_code": "90210"
+            }
         }
         
         response = client.patch(
@@ -132,7 +134,9 @@ class TestPIIEndpoints:
     def test_update_account_pii_with_update_request(self, mock_broker_client, api_key_setup, sample_account_id):
         """Test PII update with proper UpdateAccountRequest construction."""
         update_data = {
-            "phone_number": "+1987654321"
+            "contact": {
+                "phone": "+1987654321"
+            }
         }
         
         # Mock the UpdateAccountRequest import since it's imported inside the function
@@ -149,12 +153,10 @@ class TestPIIEndpoints:
         assert response.status_code == 200
 
     def test_update_account_pii_no_updateable_fields(self, mock_broker_client, api_key_setup, sample_account_id):
-        """Test PII update when trying to update non-updateable fields."""
-        # Try to update non-updateable fields like given_name, family_name
+        """Test PII update when no updateable fields are provided."""
+        # Send an empty contact object - no fields should be updated
         update_data = {
-            "given_name": "Jane",
-            "family_name": "Smith",
-            "email": "jane@example.com"
+            "contact": {}
         }
         
         response = client.patch(
@@ -175,7 +177,9 @@ class TestPIIEndpoints:
         mock_broker_client.update_account.side_effect = Exception("Field cannot be updated")
         
         update_data = {
-            "phone_number": "+1987654321"
+            "contact": {
+                "phone": "+1987654321"
+            }
         }
         
         response = client.patch(
@@ -195,7 +199,9 @@ class TestPIIEndpoints:
         mock_broker_client.update_account.side_effect = Exception("General API error")
         
         update_data = {
-            "phone_number": "+1987654321"
+            "contact": {
+                "phone": "+1987654321"
+            }
         }
         
         response = client.patch(
