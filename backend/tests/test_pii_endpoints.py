@@ -1,0 +1,399 @@
+"""
+Tests for PII (Personally Identifiable Information) management endpoints.
+"""
+
+import pytest
+import uuid
+import os
+from unittest.mock import Mock, patch, MagicMock
+from fastapi.testclient import TestClient
+from fastapi import HTTPException
+
+# Import the main app
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from api_server import app
+
+client = TestClient(app)
+
+class TestPIIEndpoints:
+    
+    @pytest.fixture
+    def mock_broker_client(self):
+        """Mock broker client for testing."""
+        with patch('api_server.broker_client') as mock_client:
+            mock_account = Mock()
+            mock_account.email = "test@example.com"
+            mock_account.phone = "+1234567890"
+            mock_account.street_address = ["123 Main St"]
+            mock_account.city = "New York"
+            mock_account.state = "NY"
+            mock_account.postal_code = "10001"
+            mock_account.country = "USA"
+            mock_account.date_of_birth = "1990-01-01"
+            mock_account.given_name = "John"
+            mock_account.family_name = "Doe"
+            mock_account.status = "ACTIVE"
+            
+            mock_client.get_account_by_id.return_value = mock_account
+            mock_client.update_account.return_value = mock_account
+            yield mock_client
+
+    @pytest.fixture
+    def api_key_setup(self):
+        """Set up API key environment for testing."""
+        test_api_key = "test-api-key-12345"
+        with patch.dict(os.environ, {'BACKEND_API_KEY': test_api_key}):
+            yield test_api_key
+
+    @pytest.fixture
+    def sample_account_id(self):
+        """Sample account ID for testing."""
+        return str(uuid.uuid4())
+
+    def test_get_account_pii_success(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test successful PII retrieval."""
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "pii_data" in data
+        assert data["pii_data"]["given_name"] == "John"
+        assert data["pii_data"]["family_name"] == "Doe"
+        assert data["pii_data"]["email"] == "test@example.com"
+        assert data["pii_data"]["phone_number"] == "+1234567890"
+        assert data["pii_data"]["street_address"] == "123 Main St"
+        assert data["pii_data"]["city"] == "New York"
+        assert data["pii_data"]["state"] == "NY"
+        assert data["pii_data"]["postal_code"] == "10001"
+        assert data["pii_data"]["country"] == "USA"
+        assert data["pii_data"]["date_of_birth"] == "1990-01-01"
+        
+        # Verify the broker client was called correctly
+        mock_broker_client.get_account_by_id.assert_called_once_with(sample_account_id)
+
+    def test_get_account_pii_unauthorized(self, sample_account_id):
+        """Test PII retrieval without API key."""
+        response = client.get(f"/api/account/{sample_account_id}/pii")
+        
+        assert response.status_code == 401
+
+    def test_get_account_pii_broker_client_not_initialized(self, api_key_setup, sample_account_id):
+        """Test PII retrieval when broker client is not initialized."""
+        with patch('api_server.broker_client', None):
+            response = client.get(
+                f"/api/account/{sample_account_id}/pii",
+                headers={"x-api-key": api_key_setup}
+            )
+            
+            assert response.status_code == 500
+            assert "Broker client not available" in response.json()["detail"]
+
+    def test_get_account_pii_alpaca_error(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test PII retrieval when Alpaca API returns an error."""
+        mock_broker_client.get_account_by_id.side_effect = Exception("Alpaca API error")
+        
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 500
+
+    def test_update_account_pii_success(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test successful PII update."""
+        update_data = {
+            "phone_number": "+1987654321",
+            "street_address": "456 Oak Ave",
+            "city": "Los Angeles",
+            "postal_code": "90210"
+        }
+        
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json=update_data,
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "updated_fields" in data
+        
+        # Verify the broker client was called
+        mock_broker_client.update_account.assert_called_once()
+
+    def test_update_account_pii_with_update_request(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test PII update with proper UpdateAccountRequest construction."""
+        update_data = {
+            "phone_number": "+1987654321"
+        }
+        
+        # Mock the UpdateAccountRequest import since it's imported inside the function
+        with patch('alpaca.broker.requests.UpdateAccountRequest') as mock_update_request_class:
+            mock_update_request = Mock()
+            mock_update_request_class.return_value = mock_update_request
+            
+            response = client.patch(
+                f"/api/account/{sample_account_id}/pii",
+                json=update_data,
+                headers={"x-api-key": api_key_setup}
+            )
+        
+        assert response.status_code == 200
+
+    def test_update_account_pii_no_updateable_fields(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test PII update when trying to update non-updateable fields."""
+        # Try to update non-updateable fields like given_name, family_name
+        update_data = {
+            "given_name": "Jane",
+            "family_name": "Smith",
+            "email": "jane@example.com"
+        }
+        
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json=update_data,
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        # Should indicate no fields were updated
+        assert len(data.get("updated_fields", [])) == 0
+
+    def test_update_account_pii_alpaca_restriction_error(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test PII update when Alpaca restricts certain fields."""
+        # Mock Alpaca returning an error for restricted field updates
+        mock_broker_client.update_account.side_effect = Exception("Field cannot be updated")
+        
+        update_data = {
+            "phone_number": "+1987654321"
+        }
+        
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json=update_data,
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        # Should return success=False with error details
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "error" in data
+
+    def test_update_account_pii_general_alpaca_error(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test PII update when Alpaca API returns a general error."""
+        mock_broker_client.update_account.side_effect = Exception("General API error")
+        
+        update_data = {
+            "phone_number": "+1987654321"
+        }
+        
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json=update_data,
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 500
+
+    def test_get_updateable_pii_fields_success(self, api_key_setup, sample_account_id):
+        """Test successful retrieval of updateable PII fields."""
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii/updateable-fields",
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "updateable_fields" in data
+        assert isinstance(data["updateable_fields"], list)
+        
+        # Should contain commonly updateable fields
+        expected_fields = ["phone_number", "street_address", "city", "postal_code"]
+        for field in expected_fields:
+            assert field in data["updateable_fields"]
+
+    def test_get_updateable_pii_fields_with_descriptions(self, api_key_setup, sample_account_id):
+        """Test updateable fields endpoint includes field descriptions."""
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii/updateable-fields",
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "field_descriptions" in data
+        assert isinstance(data["field_descriptions"], dict)
+        
+        # Should have descriptions for key fields
+        assert "phone_number" in data["field_descriptions"]
+        assert "street_address" in data["field_descriptions"]
+
+    def test_update_account_pii_empty_request(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test PII update with empty request body."""
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json={},
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert len(data.get("updated_fields", [])) == 0
+
+    def test_update_account_pii_invalid_json(self, api_key_setup, sample_account_id):
+        """Test PII update with invalid JSON."""
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            data="invalid json",
+            headers={"x-api-key": api_key_setup, "Content-Type": "application/json"}
+        )
+        
+        assert response.status_code == 422  # Unprocessable Entity
+
+    def test_pii_endpoints_handle_missing_account_attributes(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test PII endpoints handle accounts with missing attributes gracefully."""
+        # Mock account with missing attributes
+        mock_account = Mock()
+        mock_account.email = None
+        mock_account.phone = None
+        mock_account.given_name = "John"
+        mock_account.family_name = "Doe"
+        # Missing other attributes
+        for attr in ['street_address', 'city', 'state', 'postal_code', 'country', 'date_of_birth']:
+            setattr(mock_account, attr, None)
+        
+        mock_broker_client.get_account_by_id.return_value = mock_account
+        
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Should handle missing attributes gracefully
+        assert data["pii_data"]["given_name"] == "John"
+        assert data["pii_data"]["family_name"] == "Doe"
+        assert data["pii_data"]["email"] is None
+        assert data["pii_data"]["phone_number"] is None
+
+    def test_street_address_array_handling(self, mock_broker_client, api_key_setup, sample_account_id):
+        """Test that street_address arrays are handled correctly."""
+        mock_account = Mock()
+        mock_account.street_address = ["123 Main St", "Apt 4B"]
+        mock_account.given_name = "John"
+        mock_account.family_name = "Doe"
+        # Set other required attributes
+        for attr in ['email', 'phone', 'city', 'state', 'postal_code', 'country', 'date_of_birth']:
+            setattr(mock_account, attr, None)
+        
+        mock_broker_client.get_account_by_id.return_value = mock_account
+        
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"x-api-key": api_key_setup}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Should join array into single string
+        assert data["pii_data"]["street_address"] == "123 Main St, Apt 4B"
+
+
+class TestPIIEndpointsSecurity:
+    """Security-focused tests for PII endpoints."""
+    
+    @pytest.fixture
+    def api_key_setup(self):
+        """Set up API key environment for testing."""
+        test_api_key = "test-api-key-12345"
+        with patch.dict(os.environ, {'BACKEND_API_KEY': test_api_key}):
+            yield test_api_key
+
+    def test_pii_endpoints_require_api_key(self):
+        """Test that all PII endpoints require valid API key."""
+        sample_account_id = str(uuid.uuid4())
+        
+        # Test GET endpoint
+        response = client.get(f"/api/account/{sample_account_id}/pii")
+        assert response.status_code == 401
+        
+        # Test PATCH endpoint
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json={"phone_number": "+1234567890"}
+        )
+        assert response.status_code == 401
+        
+        # Test updateable fields endpoint
+        response = client.get(f"/api/account/{sample_account_id}/pii/updateable-fields")
+        assert response.status_code == 401
+
+    def test_pii_endpoints_with_invalid_api_key(self, api_key_setup):
+        """Test PII endpoints with invalid API key."""
+        sample_account_id = str(uuid.uuid4())
+        
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"x-api-key": "invalid-key"}
+        )
+        assert response.status_code == 401
+
+    def test_pii_data_does_not_expose_sensitive_info(self, api_key_setup):
+        """Test that PII data doesn't expose overly sensitive information."""
+        sample_account_id = str(uuid.uuid4())
+        
+        with patch('api_server.broker_client') as mock_client:
+            mock_account = Mock()
+            # Set up account with various attributes
+            mock_account.given_name = "John"
+            mock_account.family_name = "Doe"
+            mock_account.email = "john@example.com"
+            mock_account.phone = "+1234567890"
+            mock_account.street_address = ["123 Main St"]
+            mock_account.city = "New York"
+            mock_account.state = "NY"
+            mock_account.postal_code = "10001"
+            mock_account.country = "USA"
+            mock_account.date_of_birth = "1990-01-01"
+            
+            # These attributes should NOT be exposed in PII response
+            mock_account.ssn = "123-45-6789"  # Should never be exposed
+            mock_account.account_number = "12345678"  # Should never be exposed
+            mock_account.internal_id = "internal-123"  # Should never be exposed
+            
+            mock_client.get_account_by_id.return_value = mock_account
+            
+            response = client.get(
+                f"/api/account/{sample_account_id}/pii",
+                headers={"x-api-key": api_key_setup}
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Verify sensitive data is NOT included
+            pii_data = data["pii_data"]
+            assert "ssn" not in pii_data
+            assert "account_number" not in pii_data
+            assert "internal_id" not in pii_data
+            
+            # Verify appropriate data IS included
+            assert pii_data["given_name"] == "John"
+            assert pii_data["email"] == "john@example.com" 
