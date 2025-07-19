@@ -73,10 +73,47 @@ function OrderDetailsModal({ order, isOpen, onClose }: OrderDetailsModalProps) {
 
   const getStatusColor = (status: string) => {
     status = status.toLowerCase();
-    if (status === 'filled' || status === 'accepted') return 'bg-green-500';
-    if (status === 'pending' || status === 'new' || status === 'accepted_for_bidding') return 'bg-yellow-500';
-    if (status === 'rejected' || status === 'canceled' || status === 'expired' || status === 'failed') return 'bg-red-500';
+    
+    // Completed orders
+    if (status === 'filled') return 'bg-green-500';
+    
+    // Active/Pending orders
+    if (status === 'open' || status === 'new' || status === 'accepted_for_bidding' || 
+        status === 'pending' || status === 'pending_new' || status === 'pending_cancel' || 
+        status === 'pending_replace' || status === 'partially_filled' || status === 'accepted') {
+      return 'bg-yellow-500';
+    }
+    
+    // Cancelled/Rejected orders
+    if (status === 'canceled' || status === 'cancelled' || status === 'rejected' || 
+        status === 'expired' || status === 'failed' || status === 'stopped') {
+      return 'bg-red-500';
+    }
+    
     return 'bg-gray-500';
+  };
+
+  const getDisplayStatus = (status: string) => {
+    status = status.toLowerCase();
+    
+    // Completed orders
+    if (status === 'filled') return 'Filled';
+    
+    // Active/Pending orders - show as "Pending" for user clarity
+    if (status === 'open' || status === 'new' || status === 'accepted_for_bidding' || 
+        status === 'pending' || status === 'pending_new' || status === 'pending_cancel' || 
+        status === 'pending_replace' || status === 'partially_filled' || status === 'accepted') {
+      return 'Pending';
+    }
+    
+    // Cancelled/Rejected orders
+    if (status === 'canceled' || status === 'cancelled') return 'Cancelled';
+    if (status === 'rejected') return 'Rejected';
+    if (status === 'expired') return 'Expired';
+    if (status === 'failed') return 'Failed';
+    if (status === 'stopped') return 'Stopped';
+    
+    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   const getSideIcon = (side: string) => {
@@ -107,16 +144,16 @@ function OrderDetailsModal({ order, isOpen, onClose }: OrderDetailsModalProps) {
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-lg">{order.symbol}</h3>
               <Badge className={`text-xs ${getStatusColor(order.status)}`}>
-                {order.status}
+                {getDisplayStatus(order.status)}
               </Badge>
             </div>
             <div className="flex items-center gap-2 mb-2">
               <span className={`font-medium ${getSideColor(order.side)}`}>
                 {order.side.toUpperCase()}
               </span>
-              {order.filled_qty && (
+              {(order.filled_qty || order.qty) && (
                 <span className="text-sm text-muted-foreground">
-                  {formatNumber(parseFloat(order.filled_qty).toFixed(2))} shares
+                  {formatNumber(parseFloat(order.filled_qty || order.qty || '0').toFixed(2))} shares
                 </span>
               )}
             </div>
@@ -262,46 +299,88 @@ export default function OrderHistory() {
       const now = new Date();
       let afterDate: string;
       
+      // Helper function to safely subtract months
+      const subtractMonths = (date: Date, months: number): Date => {
+        const newDate = new Date(date);
+        const currentDay = newDate.getDate();
+        
+        // Set to first day of the month to avoid rollover issues
+        newDate.setDate(1);
+        
+        // Subtract the months
+        newDate.setMonth(newDate.getMonth() - months);
+        
+        // Get the last day of the target month
+        const lastDayOfMonth = new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0).getDate();
+        
+        // Set the day, but don't exceed the last day of the month
+        newDate.setDate(Math.min(currentDay, lastDayOfMonth));
+        
+        return newDate;
+      };
+      
       switch (timeRange) {
         case '1m':
-          afterDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()).toISOString();
+          afterDate = subtractMonths(now, 1).toISOString();
           break;
         case '3m':
-          afterDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()).toISOString();
+          afterDate = subtractMonths(now, 3).toISOString();
           break;
         case '6m':
-          afterDate = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate()).toISOString();
+          afterDate = subtractMonths(now, 6).toISOString();
           break;
         case '1y':
         default:
+          // For years, we can use the simpler approach since we're only subtracting 1 year
           afterDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toISOString();
           break;
       }
 
-      const response = await fetch(`/api/portfolio/${accountId}/orders?status=closed&limit=50&direction=desc&after=${afterDate}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': 'clera-is-the-goat-tok8s825nvjdk0482mc6',
-        },
-      });
+      // Fetch both closed and open orders separately since Alpaca doesn't support status=all
+      const [closedResponse, openResponse] = await Promise.all([
+        fetch(`/api/portfolio/orders?accountId=${accountId}&status=closed&limit=50&direction=desc&after=${afterDate}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        }),
+        fetch(`/api/portfolio/orders?accountId=${accountId}&status=open&limit=50&direction=desc&after=${afterDate}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      ]);
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch order history: ${response.statusText}`);
+      if (!closedResponse.ok) {
+        throw new Error(`Failed to fetch closed orders: ${closedResponse.statusText}`);
       }
 
-      const data = await response.json();
-      console.log('Order History API Response:', data);
-      console.log('Account ID used:', accountId);
-      console.log('Time range:', timeRange);
-      console.log('After date:', afterDate);
-      console.log('API URL:', `/api/portfolio/${accountId}/orders?status=closed&limit=50&direction=desc&after=${afterDate}`);
-      
+      if (!openResponse.ok) {
+        throw new Error(`Failed to fetch open orders: ${openResponse.statusText}`);
+      }
+
+      const [closedData, openData] = await Promise.all([
+        closedResponse.json(),
+        openResponse.json()
+      ]);
+
+      // Combine and deduplicate orders
+      const allOrders = [...(Array.isArray(closedData) ? closedData : []), ...(Array.isArray(openData) ? openData : [])];
+      const uniqueOrders = allOrders.filter((order, index, self) => 
+        index === self.findIndex(o => o.id === order.id)
+      );
+
+      const data = uniqueOrders;
+
       if (Array.isArray(data)) {
-        setOrders(data);
-        console.log(`Order History: Loaded ${data.length} orders`);
+        // Sort orders by creation date (newest first)
+        const sortedOrders = data.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        
+        setOrders(sortedOrders);
+        
+
       } else {
-        throw new Error('Invalid response format');
+        console.error('Order History: Invalid response format', data);
+        setError('Invalid response format from server');
       }
     } catch (error) {
       console.error('Error fetching order history:', error);
@@ -321,11 +400,10 @@ export default function OrderHistory() {
       const accountId = localStorage.getItem('alpacaAccountId');
       if (!accountId) return;
 
-      const response = await fetch(`/api/portfolio/${accountId}/positions`, {
+      const response = await fetch(`/api/portfolio/positions?accountId=${accountId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': 'clera-is-the-goat-tok8s825nvjdk0482mc6',
         },
       });
 
@@ -364,18 +442,69 @@ export default function OrderHistory() {
 
   const getStatusIcon = (status: string) => {
     status = status.toLowerCase();
-    if (status === 'filled' || status === 'accepted') return <CheckCircle className="h-5 w-5 text-green-600" />;
-    if (status === 'pending' || status === 'new' || status === 'accepted_for_bidding') return <Clock className="h-5 w-5 text-yellow-600" />;
-    if (status === 'rejected' || status === 'canceled' || status === 'expired' || status === 'failed') return <XCircle className="h-5 w-5 text-red-600" />;
+    
+    // Completed orders
+    if (status === 'filled') return <CheckCircle className="h-5 w-5 text-green-600" />;
+    
+    // Active/Pending orders
+    if (status === 'open' || status === 'new' || status === 'accepted_for_bidding' || 
+        status === 'pending' || status === 'pending_new' || status === 'pending_cancel' || 
+        status === 'pending_replace' || status === 'partially_filled' || status === 'accepted') {
+      return <Clock className="h-5 w-5 text-yellow-600" />;
+    }
+    
+    // Cancelled/Rejected orders
+    if (status === 'canceled' || status === 'cancelled' || status === 'rejected' || 
+        status === 'expired' || status === 'failed' || status === 'stopped') {
+      return <XCircle className="h-5 w-5 text-red-600" />;
+    }
+    
     return <AlertCircle className="h-5 w-5 text-gray-600" />;
   };
 
   const getStatusColor = (status: string) => {
     status = status.toLowerCase();
-    if (status === 'filled' || status === 'accepted') return 'bg-green-500';
-    if (status === 'pending' || status === 'new' || status === 'accepted_for_bidding') return 'bg-yellow-500';
-    if (status === 'rejected' || status === 'canceled' || status === 'expired' || status === 'failed') return 'bg-red-500';
+    
+    // Completed orders
+    if (status === 'filled') return 'bg-green-500';
+    
+    // Active/Pending orders
+    if (status === 'open' || status === 'new' || status === 'accepted_for_bidding' || 
+        status === 'pending' || status === 'pending_new' || status === 'pending_cancel' || 
+        status === 'pending_replace' || status === 'partially_filled' || status === 'accepted') {
+      return 'bg-yellow-500';
+    }
+    
+    // Cancelled/Rejected orders
+    if (status === 'canceled' || status === 'cancelled' || status === 'rejected' || 
+        status === 'expired' || status === 'failed' || status === 'stopped') {
+      return 'bg-red-500';
+    }
+    
     return 'bg-gray-500';
+  };
+
+  const getDisplayStatus = (status: string) => {
+    status = status.toLowerCase();
+    
+    // Completed orders
+    if (status === 'filled') return 'Filled';
+    
+    // Active/Pending orders - show as "Pending" for user clarity
+    if (status === 'open' || status === 'new' || status === 'accepted_for_bidding' || 
+        status === 'pending' || status === 'pending_new' || status === 'pending_cancel' || 
+        status === 'pending_replace' || status === 'partially_filled' || status === 'accepted') {
+      return 'Pending';
+    }
+    
+    // Cancelled/Rejected orders
+    if (status === 'canceled' || status === 'cancelled') return 'Cancelled';
+    if (status === 'rejected') return 'Rejected';
+    if (status === 'expired') return 'Expired';
+    if (status === 'failed') return 'Failed';
+    if (status === 'stopped') return 'Stopped';
+    
+    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   const getSideIcon = (side: string) => {
@@ -548,7 +677,7 @@ export default function OrderHistory() {
                             </p>
                           </div>
                           <Badge className={`text-xs ${getStatusColor(order.status)}`}>
-                            {order.status}
+                            {getDisplayStatus(order.status)}
                           </Badge>
                         </div>
                         <div className="space-y-1">
@@ -556,9 +685,9 @@ export default function OrderHistory() {
                             <span className={`text-sm font-medium ${getSideColor(order.side)}`}>
                               {order.side.toUpperCase()}
                             </span>
-                            {order.filled_qty && (
+                            {(order.filled_qty || order.qty) && (
                               <span className="text-sm text-muted-foreground">
-                                {formatNumber(parseFloat(order.filled_qty).toFixed(2))} shares
+                                {formatNumber(parseFloat(order.filled_qty || order.qty || '0').toFixed(2))} shares
                               </span>
                             )}
                             {order.filled_avg_price && (
