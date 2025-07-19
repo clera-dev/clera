@@ -71,10 +71,11 @@ const nextConfig = {
         source: '/api/resume-chat-stream/:path*', // Added for resume
         destination: `${backendUrl}/api/resume-chat-stream/:path*`,
       },
-      {
-        source: '/api/account/:path*',
-        destination: `${backendUrl}/api/account/:path*`,
-      },
+      // REMOVED: /api/account/:path* rewrite rule - this was bypassing Next.js API routes
+      // {
+      //   source: '/api/account/:path*',
+      //   destination: `${backendUrl}/api/account/:path*`,
+      // },
       // IMPORTANT: Do NOT add a generic `/api/:path*` rule here, 
       // as it would conflict with Next.js internal API routes (like /api/fmp)
       
