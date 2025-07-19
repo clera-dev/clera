@@ -1,11 +1,25 @@
-import { configureWebpack } from './webpack.config.js';
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // transpilePackages: ['@alpacahq/alpaca-trade-api'], // No longer needed
   
-  // Webpack configuration - extracted to separate module for maintainability
-  webpack: configureWebpack,
+  // Webpack configuration - inline for better maintainability and Next.js conventions
+  webpack: (config, { dev, isServer }) => {
+    // Apply production optimizations for client builds only
+    if (!dev && !isServer) {
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        cacheGroups: {
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            chunks: 'all',
+          },
+        },
+      };
+    }
+    
+    return config;
+  },
   
   // Enable compression for better performance
   compress: true,
