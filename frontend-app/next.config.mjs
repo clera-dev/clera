@@ -1,6 +1,34 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // transpilePackages: ['@alpacahq/alpaca-trade-api'], // No longer needed
+  
+  // Webpack configuration - inline for better maintainability and Next.js conventions
+  webpack: (config, { dev, isServer }) => {
+    // Apply production optimizations for client builds only
+    if (!dev && !isServer) {
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        cacheGroups: {
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            chunks: 'all',
+          },
+        },
+      };
+    }
+    
+    return config;
+  },
+  
+  // Enable compression for better performance
+  compress: true,
+  
+  // Optimize images
+  images: {
+    formats: ['image/webp', 'image/avif'],
+  },
+  
   async rewrites() {
     // Add a default value for backendUrl if it's not defined in environment variables
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
