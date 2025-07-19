@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
+from langgraph.config import get_stream_writer
 import numpy as np
 
 # Make sure we load environment variables first
@@ -82,7 +83,7 @@ deep_research_perplexity = ChatPerplexity(
 
 @tool("web_search")
 def web_search(query: str) -> str:
-    """Simple one-step search tool for financial information.
+    """Simple one-step search tool for financial information with real-time updates.
     
     Args:
         query (str): The search query
@@ -90,12 +91,29 @@ def web_search(query: str) -> str:
     Returns:
         str: Search results
     """
+    # Get the stream writer for real-time updates
+    writer = get_stream_writer()
+    
+    # Send custom update to frontend
+    writer({
+        "type": "tool_update", 
+        "tool": "web_search",
+        "status": "starting",
+        "message": f"🔍 Searching for: {query[:50]}{'...' if len(query) > 50 else ''}"
+    })
+    
     # Determine if in-depth research is requested
     is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
     current_date = datetime.now().strftime("%Y-%m-%d")
     current_year = datetime.now().year
 
     if is_in_depth_query:
+        writer({
+            "type": "tool_update",
+            "tool": "web_search", 
+            "status": "processing",
+            "message": "📊 Conducting detailed research..."
+        })
         research_prompt = f"""You are the world's BEST financial news analyst. 
         The user has asked for DETAILED/IN-DEPTH research. 
         Provide a thorough, comprehensive analysis with actionable insights on the query below. 
@@ -109,6 +127,12 @@ def web_search(query: str) -> str:
 Query: {query}
 """
     else:
+        writer({
+            "type": "tool_update",
+            "tool": "web_search",
+            "status": "processing", 
+            "message": "🔍 Gathering financial information..."
+        })
         research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations. 
 
 IMPORTANT: Today's date is {current_date}. Current year is {current_year}. 
@@ -119,17 +143,36 @@ Query: {query}
 
     messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
     try:
-        # Use the standard perplexity model for efficiency unless deep research is needed?
-        # For now, standard model should handle prompt instructions.
+        writer({
+            "type": "tool_update",
+            "tool": "web_search",
+            "status": "processing",
+            "message": "🤖 Analyzing results with AI..."
+        })
+        
         response = chat_perplexity.invoke(messages)
+        
+        writer({
+            "type": "tool_update",
+            "tool": "web_search", 
+            "status": "completed",
+            "message": "✅ Research completed"
+        })
+        
         return response.content
     except Exception as e:
+        writer({
+            "type": "tool_update",
+            "tool": "web_search",
+            "status": "error", 
+            "message": f"❌ Error: {str(e)}"
+        })
         return f"Error searching for information: {e}"
 
 
 @tool("get_stock_price")
 def get_stock_price(ticker: str) -> str:
-    """Get the current price of a stock.
+    """Get the current price of a stock with real-time updates.
     
     Args:
         ticker (str): The stock symbol to get the price for
@@ -137,11 +180,43 @@ def get_stock_price(ticker: str) -> str:
     Returns:
         str: The current stock price information
     """
+    writer = get_stream_writer()
+    
+    writer({
+        "type": "tool_update",
+        "tool": "get_stock_price",
+        "status": "starting", 
+        "message": f"📈 Looking up current price for {ticker.upper()}"
+    })
 
-    stock_quote = get_stock_quote(ticker)
-    price = stock_quote[0]['price']
+    try:
+        writer({
+            "type": "tool_update",
+            "tool": "get_stock_price",
+            "status": "processing",
+            "message": "🔄 Fetching live market data..."
+        })
+        
+        stock_quote = get_stock_quote(ticker)
+        price = stock_quote[0]['price']
+        
+        writer({
+            "type": "tool_update", 
+            "tool": "get_stock_price",
+            "status": "completed",
+            "message": f"✅ Retrieved price: ${price}"
+        })
 
-    return f"The current price of {ticker} is {price}."
+        return f"The current price of {ticker} is {price}."
+    
+    except Exception as e:
+        writer({
+            "type": "tool_update",
+            "tool": "get_stock_price", 
+            "status": "error",
+            "message": f"❌ Error fetching price for {ticker}: {str(e)}"
+        })
+        return f"Error getting stock price: {e}"
 
 ###############################################################################
 # Performance Analysis Functions (moved from portfolio_management_agent.py)
@@ -478,39 +553,143 @@ def _calculate_investment_performance_impl(
     end_date: str = "",
     compare_to_sp500: bool = True
 ) -> str:
+    """Calculate investment performance with detailed progress updates."""
+    writer = get_stream_writer()
+    
+    writer({
+        "type": "tool_update",
+        "tool": "calculate_investment_performance", 
+        "status": "starting",
+        "message": f"📊 Analyzing performance for {symbol.upper()}"
+    })
+    
     try:
+        # Set default end date to today if not provided
         if not end_date or end_date == "":
             end_date = datetime.now().strftime('%Y-%m-%d')
+        
+        writer({
+            "type": "tool_update",
+            "tool": "calculate_investment_performance",
+            "status": "processing", 
+            "message": "🔍 Validating dates and symbol..."
+        })
+        
         # Always adjust both dates backwards to the previous trading day
         adjusted_start = adjust_for_market_days(start_date, "backward")
         adjusted_end = adjust_for_market_days(end_date, "backward")
+        
         # If after adjustment, the dates are the same, return a clear error
         if adjusted_start == adjusted_end:
+            writer({
+                "type": "tool_update",
+                "tool": "calculate_investment_performance",
+                "status": "error",
+                "message": "❌ Date range too narrow"
+            })
             return f"❌ **Error:** The selected date range only includes a single trading day: {adjusted_start}. Please select a wider range for meaningful analysis."
+        
         # Validate inputs on adjusted dates
         validation = validate_symbol_and_dates(symbol.upper(), adjusted_start, adjusted_end)
-        # Only return other errors if not the single-day case
         if 'error' in validation and 'Start date must be before end date' not in validation['error']:
+            writer({
+                "type": "tool_update",
+                "tool": "calculate_investment_performance",
+                "status": "error",
+                "message": f"❌ Validation error: {validation['error']}"
+            })
             return f"❌ **Error:** {validation['error']}"
+        
+        writer({
+            "type": "tool_update",
+            "tool": "calculate_investment_performance",
+            "status": "processing",
+            "message": f"📈 Fetching historical data for {symbol.upper()}..."
+        })
+        
         logger.info(f"[Performance Analysis] Analyzing {symbol.upper()} from {adjusted_start} to {adjusted_end}")
+        
+        # Get performance data for the target symbol
         try:
             performance_data = get_historical_prices(symbol.upper(), adjusted_start, adjusted_end, return_full_data=True)
+            
+            writer({
+                "type": "tool_update", 
+                "tool": "calculate_investment_performance",
+                "status": "processing",
+                "message": f"✅ Retrieved {performance_data.get('data_points', 'N/A')} data points"
+            })
+            
             if 'full_price_data' in performance_data:
                 vol_stats = calculate_volatility_and_variance(performance_data['full_price_data'])
                 performance_data.update(vol_stats)
+                
         except ValueError as ve:
+            writer({
+                "type": "tool_update",
+                "tool": "calculate_investment_performance", 
+                "status": "error",
+                "message": f"❌ Data error: {str(ve)}"
+            })
             return f"❌ **Data Error:** {str(ve)}\n\nPlease verify the symbol exists and has trading data for the specified period."
         except Exception as e:
             logger.error(f"[Performance Analysis] API error for {symbol}: {e}")
+            writer({
+                "type": "tool_update",
+                "tool": "calculate_investment_performance",
+                "status": "error", 
+                "message": f"❌ API error: {str(e)}"
+            })
             return f"❌ **API Error:** Could not retrieve data for {symbol.upper()}. This might be due to:\n• Invalid symbol\n• Market data service unavailable\n• Network connectivity issues\n\nPlease try again later or verify the symbol."
+        
+        # Get benchmark data if requested
         benchmark_data = None
         if compare_to_sp500:
             try:
+                writer({
+                    "type": "tool_update",
+                    "tool": "calculate_investment_performance", 
+                    "status": "processing",
+                    "message": "📊 Fetching S&P 500 benchmark data..."
+                })
+                
                 logger.info(f"[Performance Analysis] Fetching S&P 500 benchmark data")
                 benchmark_data = get_historical_prices('SPY', adjusted_start, adjusted_end)
+                
+                writer({
+                    "type": "tool_update",
+                    "tool": "calculate_investment_performance",
+                    "status": "processing", 
+                    "message": "✅ Benchmark data retrieved"
+                })
+                
             except Exception as e:
+                writer({
+                    "type": "tool_update", 
+                    "tool": "calculate_investment_performance",
+                    "status": "warning",
+                    "message": f"⚠️ Could not fetch benchmark data: {str(e)}"
+                })
                 logger.warning(f"[Performance Analysis] Could not fetch SPY benchmark data: {e}")
+                # Continue without benchmark rather than failing
+        
+        writer({
+            "type": "tool_update",
+            "tool": "calculate_investment_performance",
+            "status": "processing",
+            "message": "📋 Generating performance report..."
+        })
+        
+        # Format and return the analysis
         analysis = format_performance_analysis(performance_data, benchmark_data)
+        
+        writer({
+            "type": "tool_update",
+            "tool": "calculate_investment_performance", 
+            "status": "completed",
+            "message": "✅ Performance analysis completed"
+        })
+        
         logger.info(f"[Performance Analysis] Successfully completed analysis for {symbol.upper()}")
         return analysis
     except Exception as e:

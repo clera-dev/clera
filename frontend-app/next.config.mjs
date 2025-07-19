@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  //transpilePackages: ['@langchain/langgraph-sdk'],
   // transpilePackages: ['@alpacahq/alpaca-trade-api'], // No longer needed
   async rewrites() {
     // Add a default value for backendUrl if it's not defined in environment variables
@@ -31,10 +32,22 @@ const nextConfig = {
         source: '/api/trade/:path*',
         destination: `${backendUrl}/api/trade/:path*`,
       },
-      {
-        source: '/api/chat/:path*', // Include if chat still goes through backend
-        destination: `${backendUrl}/api/chat/:path*`,
-      },
+      // REMOVED: LangGraph API routes are now handled by Next.js API routes
+      // {
+      //   source: '/api/langgraph/:path*',
+      //   destination: `${backendUrl}/api/langgraph/:path*`,
+      // },
+      // {
+      //   source: '/api/langgraph/threads/:path*',
+      //   destination: `${backendUrl}/api/langgraph/threads/:path*`,
+      // },
+      // {
+      //   source: '/api/langgraph/threads/:thread_id/runs/:run_id/stream',
+      //   destination: `${backendUrl}/api/langgraph/threads/:thread_id/runs/:run_id/stream`,
+      // },
+      //   source: '/api/chat/:path*', // Include if chat still goes through backend
+      //   destination: `${backendUrl}/api/chat/:path*`,
+      // },
       {
         source: '/api/chat-stream/:path*', // Added for streaming
         destination: `${backendUrl}/api/chat-stream/:path*`,

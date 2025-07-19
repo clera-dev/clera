@@ -29,6 +29,20 @@ type GraphStateType = {
 // Define the expected type of the interrupt value if known, otherwise use unknown or string
 type InterruptValueType = string; // Assuming the interrupt value is the prompt string
 
+// Add interface for custom streaming updates
+interface ToolUpdate {
+  type: 'tool_update';
+  tool: string;
+  status: 'starting' | 'processing' | 'completed' | 'error' | 'cancelled' | 'awaiting_confirmation' | 'warning';
+  message: string;
+}
+
+// Update the Bag type to include our custom event type
+type CustomBag = {
+  InterruptType: string;
+  CustomEventType: ToolUpdate;
+};
+
 interface ChatProps {
   accountId: string;
   userId: string;
@@ -64,10 +78,11 @@ function convertMessageFormat(lgMsg: LangGraphMessage): Message | null {
             return null; // Filter out if not from Clera
         }
 
-        // Filter out messages with tool calls
-        if (lgMsg.tool_calls && lgMsg.tool_calls.length > 0) {
-            return null;
-        }
+        // DON'T filter out messages with tool calls during streaming
+        // This allows us to see intermediate planning steps
+        // if (lgMsg.tool_calls && lgMsg.tool_calls.length > 0) {
+        //     return null;
+        // }
 
         // Handle different content formats for Clera's messages
         let content = '';
@@ -123,28 +138,60 @@ export default function Chat({
   // State to hold the first message temporarily until threadId is set and acknowledged
   const [pendingFirstMessage, setPendingFirstMessage] = useState<string | null>(null);
   
-  // TODO: Get these from environment variables
-  const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL;
-  const apiKey = process.env.NEXT_PUBLIC_LANGGRAPH_API_KEY; // Optional, depends on backend auth
-  const assistantId = process.env.NEXT_PUBLIC_LANGGRAPH_ASSISTANT_ID || 'agent'; // The graph ID/name to run
+  // Add state for tool updates
+  const [toolUpdates, setToolUpdates] = useState<ToolUpdate[]>([]);
+  
+  // Use the API proxy routes for security and proper streaming
+  const apiUrl = process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL}/api/langgraph`
+    : "/api/langgraph";
+  const assistantId = 'agent'; // The graph ID/name to run
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
 
-  // --- LangGraph useStream Hook --- 
-  // Specify InterruptType in the hook's generics
-  const thread = useStream<GraphStateType, { InterruptType: InterruptValueType }>({
+  console.log('🔧 useStream Debug:', {
+    apiUrl,
+    assistantId,
+    threadId: currentThreadId
+  });
+
+  const thread = useStream<GraphStateType, CustomBag>({
     apiUrl, 
-    apiKey: apiKey ?? undefined, 
     assistantId, 
     threadId: currentThreadId, 
     messagesKey: 'messages',
+    onCustomEvent: (customData: ToolUpdate, options) => {
+      console.log('🎯 Custom event received:', customData); // Add for debugging
+      
+      if (customData && customData.type === 'tool_update') {
+        setToolUpdates(prev => {
+          const filtered = prev.filter(update => update.tool !== customData.tool);
+          return [...filtered, customData];
+        });
+        
+        if (customData.status === 'completed' || customData.status === 'error' || customData.status === 'cancelled') {
+          setTimeout(() => {
+            setToolUpdates(prev => prev.filter(update => 
+              !(update.tool === customData.tool && update.status === customData.status)
+            ));
+          }, 3000);
+        }
+      }
+    },
+    onUpdateEvent: (updateData: { [node: string]: Partial<GraphStateType> }) => {
+      console.log('🔄 Update event received:', updateData); // Add for debugging
+    },
     onError: (err: unknown) => {  
-        console.error("useStream Hook Error:", err);
+      console.error("useStream Hook Error:", err);
     },
   });
-  // --- End LangGraph useStream Hook --- 
+
+  // Clear tool updates when starting a new conversation
+  const clearToolUpdates = useCallback(() => {
+    setToolUpdates([]);
+  }, []);
 
   // Derived state uses the updated filter
   const messagesToDisplay: Message[] = (thread.messages || [])
@@ -170,8 +217,7 @@ export default function Chat({
           messages: [{ type: 'human' as const, content: contentToSend }],
       };
       const runConfig = {
-        configurable: { user_id: userId, account_id: accountId },
-        stream_mode: 'messages-tuple' as const
+        configurable: { user_id: userId, account_id: accountId }
       };
 
       console.log(`Submitting FIRST message via thread.submit to thread ${currentThreadId}:`, runInput, "with config:", runConfig);
@@ -213,6 +259,9 @@ export default function Chat({
 
     const contentToSend = trimmedInput;
     setInput('');
+    
+    // Clear previous tool updates when starting a new message
+    clearToolUpdates();
 
     // Reset textarea height after sending
     if (inputRef.current) {
@@ -270,8 +319,7 @@ export default function Chat({
           configurable: {
             user_id: userId,
             account_id: accountId
-          },
-          stream_mode: 'messages-tuple' as const // Ensure consistent stream mode
+          }
         };
 
         console.log(`Submitting subsequent input via thread.submit to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
@@ -323,24 +371,53 @@ export default function Chat({
     console.log("Resuming interrupt with value:", confirmationString);
     if (!isInterrupting) return;
     
-    // Pass context in config when resuming too
+    // Include config when resuming
     const runConfig = {
       configurable: {
         user_id: userId,
         account_id: accountId
-      },
-      stream_mode: 'messages-tuple' // Use messages-tuple mode for proper filtering
+      }
     };
 
     try { 
       thread.submit(undefined, { 
         command: { resume: confirmationString },
-        config: runConfig // Pass config on resume
+        config: runConfig,
       });
     } catch (err) { 
       console.error("Error calling thread.submit for resume:", err); 
     }
   }, [isInterrupting, thread, userId, accountId]); // Add userId and accountId
+
+  // --- Component for displaying tool updates ---
+  const ToolUpdateDisplay = ({ updates }: { updates: ToolUpdate[] }) => {
+    if (updates.length === 0) return null;
+
+    return (
+      <div className="space-y-2 mb-4">
+        {updates.map((update, index) => (
+          <div 
+            key={`${update.tool}-${index}`}
+            className={`flex items-center space-x-2 p-2 rounded-lg text-sm ${
+              update.status === 'completed' ? 'bg-green-50 border border-green-200' :
+              update.status === 'error' ? 'bg-red-50 border border-red-200' :
+              update.status === 'cancelled' ? 'bg-yellow-50 border border-yellow-200' :
+              update.status === 'awaiting_confirmation' ? 'bg-blue-50 border border-blue-200' :
+              'bg-gray-50 border border-gray-200'
+            }`}
+          >
+            {update.status === 'processing' && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            )}
+            <span className="text-xs font-medium text-gray-600 uppercase">
+              {update.tool.replace(/_/g, ' ')}
+            </span>
+            <span className="text-gray-700">{update.message}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   // Auto-scroll: Scroll to bottom when messages change
   useEffect(() => {
@@ -466,13 +543,12 @@ export default function Chat({
           configurable: {
             user_id: userId,
             account_id: accountId
-          },
-          stream_mode: 'messages-tuple' as const
+          }
         };
 
         console.log(`Submitting suggested question via thread.submit to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
         try {
-            thread.submit(runInput, {
+            thread.submit(runInput, { 
                 config: runConfig,
                 optimisticValues(prev) {
                     const prevMessages = prev.messages ?? [];
@@ -537,6 +613,11 @@ export default function Chat({
           />
         ))}
         
+        {/* CRITICAL: Display tool updates */}
+        {(isProcessing || toolUpdates.length > 0) && (
+          <ToolUpdateDisplay updates={toolUpdates} />
+        )}
+        
         {isInterrupting && (
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm text-center">
             <p className="text-sm text-blue-900 mb-3 whitespace-pre-wrap">{interruptMessage || 'Action Required'}</p>
@@ -562,7 +643,7 @@ export default function Chat({
           </div>
         )}
         
-        {isProcessing && !isInterrupting && <ChatSkeleton />}
+        {isProcessing && !isInterrupting && toolUpdates.length === 0 && <ChatSkeleton />}
         
         <div ref={messagesEndRef} />
       </div>

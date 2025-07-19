@@ -4,7 +4,7 @@
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 from langgraph.pregel import Pregel # Import if needed to understand config structure
-from langgraph.config import get_config # Import get_config
+from langgraph.config import get_config, get_stream_writer # Import get_config
 from langchain_core.runnables.config import RunnableConfig
 
 import os
@@ -33,7 +33,7 @@ broker_client = get_broker_client()
 
 @tool("execute_buy_market_order")
 def execute_buy_market_order(ticker: str, notional_amount: float, state=None, config=None) -> str:
-    """Execute a market order BUY trade.
+    """Execute a market order BUY trade with real-time updates.
 
     Inputs:
         ticker: str - The stock symbol (e.g., 'AAPL')
@@ -41,15 +41,37 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         state: Graph state (passed automatically).
         config: Run configuration (passed automatically).
     """
+    writer = get_stream_writer()
+    
+    writer({
+        "type": "tool_update",
+        "tool": "execute_buy_market_order",
+        "status": "starting",
+        "message": f"💰 Preparing to buy ${notional_amount:.2f} of {ticker}"
+    })
+    
     try:
         # Validate user context first
         account_id = get_account_id(config=config)
         logger.info(f"[Trade Agent] Initiating BUY for {ticker} (${notional_amount}) for account {account_id}")
 
+        writer({
+            "type": "tool_update",
+            "tool": "execute_buy_market_order",
+            "status": "processing",
+            "message": "🔍 Validating trade parameters..."
+        })
+
         # Validate notional amount
         if not isinstance(notional_amount, (int, float)) or notional_amount < 1:
             err_msg = f"Error: Invalid notional amount '{notional_amount}'. It must be a number of at least $1.00."
             logger.error(f"[Trade Agent] Validation failed: {err_msg}")
+            writer({
+                "type": "tool_update",
+                "tool": "execute_buy_market_order",
+                "status": "error",
+                "message": f"❌ Validation failed: {err_msg}"
+            })
             return err_msg
 
         # Validate ticker format (simple check)
@@ -57,10 +79,23 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         if not ticker or not ticker.isalnum(): # Basic check, might need refinement
             err_msg = f"Error: Invalid ticker symbol '{ticker}'. Please provide a valid stock symbol."
             logger.error(f"[Trade Agent] Validation failed: {err_msg}")
+            writer({
+                "type": "tool_update",
+                "tool": "execute_buy_market_order",
+                "status": "error",
+                "message": f"❌ Invalid ticker: {err_msg}"
+            })
             return err_msg
 
         # Format notional amount for confirmation message
         notional_amount_formatted = f"{notional_amount:.2f}"
+
+        writer({
+            "type": "tool_update",
+            "tool": "execute_buy_market_order",
+            "status": "processing",
+            "message": f"📈 Getting current price for {ticker}..."
+        })
 
         # --- Interrupt for Confirmation --- 
         # Let GraphInterrupt propagate if raised by interrupt()
@@ -69,7 +104,20 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         if not price or price <= 0:
             err_msg = f"Error: Unable to retrieve a valid price for {ticker}. Please try again later or check the symbol."
             logger.error(f"[Trade Agent] Invalid price for {ticker}: {price}")
+            writer({
+                "type": "tool_update",
+                "tool": "execute_buy_market_order",
+                "status": "error",
+                "message": f"❌ Could not get price for {ticker}"
+            })
             return err_msg
+        
+        writer({
+            "type": "tool_update",
+            "tool": "execute_buy_market_order",
+            "status": "awaiting_confirmation",
+            "message": f"⏳ Awaiting your confirmation to buy {ticker} at ${price}"
+        })
         
         # Calculate approximate shares
         approximate_shares = notional_amount / price
@@ -94,21 +142,54 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         # Check rejection
         if any(rejection in user_confirmation for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
             logger.info(f"[Trade Agent] Trade CANCELED by user ({ticker} ${notional_amount_formatted})")
+            writer({
+                "type": "tool_update",
+                "tool": "execute_buy_market_order",
+                "status": "cancelled",
+                "message": "🚫 Trade cancelled by user"
+            })
             return "Trade canceled: You chose not to proceed with this transaction."
 
         # Check explicit confirmation
         if not any(approval in user_confirmation for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
             logger.warning(f"[Trade Agent] Unclear trade confirmation received: '{user_confirmation}'")
+            writer({
+                "type": "tool_update",
+                "tool": "execute_buy_market_order",
+                "status": "error",
+                "message": "❌ Unclear confirmation received"
+            })
             return "Trade not executed: Unclear confirmation. Please try again with a clear 'yes' or 'no'."
+
+        writer({
+            "type": "tool_update",
+            "tool": "execute_buy_market_order",
+            "status": "processing",
+            "message": f"🚀 Executing buy order for {ticker}..."
+        })
 
         # Submit the order (This part still needs error handling for API failures)
         try:
             logger.info(f"[Trade Agent] Submitting BUY order for {ticker} (${notional_amount_formatted})")
             result = _submit_market_order(account_id, ticker, notional_amount, OrderSide.BUY)
             logger.info(f"[Trade Agent] BUY order result: {result}")
+            
+            writer({
+                "type": "tool_update",
+                "tool": "execute_buy_market_order",
+                "status": "completed",
+                "message": f"✅ Buy order executed for {ticker}"
+            })
+            
             return result
         except Exception as e:
             logger.error(f"[Trade Agent] Error submitting BUY order for {ticker}: {e}", exc_info=True)
+            writer({
+                "type": "tool_update",
+                "tool": "execute_buy_market_order",
+                "status": "error",
+                "message": f"❌ Error executing trade: {str(e)}"
+            })
             return f"❌ Error executing trade: {str(e)}. Please verify the ticker symbol and try again."
             
     except ValueError as e:

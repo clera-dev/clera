@@ -259,7 +259,7 @@ async def run_thread_stream(
 
     payload = {
         "assistant_id": assistant_id,
-        "stream_mode": ["messages", "events"] # Requesting messages and events
+        "stream_mode": ["messages", "events", "custom"] # Requesting messages, events, and custom updates
     }
     
     if resume_command is not None:

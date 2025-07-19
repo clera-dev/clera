@@ -5,6 +5,7 @@ import os
 import logging
 from dotenv import load_dotenv
 from langchain_core.tools import tool
+from langgraph.config import get_stream_writer
 
 from urllib.request import urlopen
 import certifi
@@ -220,7 +221,7 @@ def create_rebalance_instructions(positions_data: List, target_portfolio_type: O
 
 @tool("rebalance_instructions")
 def rebalance_instructions(state=None, config=None) -> str:
-    """Generate portfolio rebalancing instructions based on the user's current holdings.
+    """Generate portfolio rebalancing instructions with real-time updates based on the user's current holdings.
     
     This tool analyzes the user's current portfolio and provides specific rebalancing
     recommendations to optimize their asset allocation. All recommendations are provided
@@ -233,13 +234,43 @@ def rebalance_instructions(state=None, config=None) -> str:
              - Reasoning for each recommended change
              - Next steps for implementation
     """
+    writer = get_stream_writer()
+    
+    writer({
+        "type": "tool_update",
+        "tool": "rebalance_instructions",
+        "status": "starting",
+        "message": "⚖️ Analyzing current portfolio for rebalancing..."
+    })
+    
     try:
+        writer({
+            "type": "tool_update",
+            "tool": "rebalance_instructions",
+            "status": "processing",
+            "message": "📊 Getting current positions..."
+        })
+        
         # Get current positions
         positions = retrieve_portfolio_positions(state=state, config=config)
+        
+        writer({
+            "type": "tool_update",
+            "tool": "rebalance_instructions",
+            "status": "processing",
+            "message": "🎯 Determining target allocation strategy..."
+        })
         
         # Get user's investment strategy to determine target portfolio
         user_strategy = get_user_investment_strategy(state=state, config=config)
         target_portfolio_type = user_strategy.get('portfolio_type', 'aggressive')
+        
+        writer({
+            "type": "tool_update",
+            "tool": "rebalance_instructions",
+            "status": "processing",
+            "message": "📋 Generating rebalancing recommendations..."
+        })
         
         # Generate rebalancing instructions
         instructions = create_rebalance_instructions(
@@ -248,6 +279,13 @@ def rebalance_instructions(state=None, config=None) -> str:
             state=state, 
             config=config
         )
+        
+        writer({
+            "type": "tool_update",
+            "tool": "rebalance_instructions",
+            "status": "completed",
+            "message": "✅ Rebalancing instructions ready"
+        })
         
         return instructions
         
@@ -258,7 +296,7 @@ def rebalance_instructions(state=None, config=None) -> str:
 
 @tool("get_portfolio_summary")
 def get_portfolio_summary(state=None, config=None) -> str:
-    """Get a comprehensive summary of the user's current portfolio.
+    """Get a comprehensive summary of the user's current portfolio with real-time updates.
     
     This tool retrieves and analyzes the user's current portfolio positions,
     providing insights into allocation, performance, and key metrics.
@@ -270,13 +308,57 @@ def get_portfolio_summary(state=None, config=None) -> str:
              - Asset allocation breakdown
              - Key portfolio statistics and insights
     """
+    # Try to get stream writer, but don't fail if it's not available
+    try:
+        writer = get_stream_writer()
+        logger.info(f"🔧 DEBUG: get_stream_writer() called successfully")
+        
+        # Try to emit custom event
+        try:
+            writer({
+                "type": "tool_update",
+                "tool": "get_portfolio_summary",
+                "status": "starting",
+                "message": "📊 Retrieving your current portfolio..."
+            })
+            logger.info(f"🔧 DEBUG: Custom event emitted successfully")
+        except Exception as e:
+            logger.error(f"🔧 DEBUG: Failed to emit custom event: {e}")
+            logger.error(f"🔧 DEBUG: get_stream_writer type: {type(writer)}")
+            logger.error(f"🔧 DEBUG: get_stream_writer callable: {callable(writer)}")
+    except Exception as e:
+        logger.warning(f"🔧 DEBUG: get_stream_writer() not available: {e}")
+        writer = None
+    
     try:
         # Validate user context first
         account_id = get_account_id(config=config)
         logger.info(f"[Portfolio Agent] Generating portfolio summary for account: {account_id}")
         
+        if writer:
+            try:
+                writer({
+                    "type": "tool_update",
+                    "tool": "get_portfolio_summary",
+                    "status": "processing",
+                    "message": "💰 Getting cash balance..."
+                })
+            except Exception as e:
+                logger.warning(f"🔧 DEBUG: Failed to emit processing event: {e}")
+        
         # Get cash balance first
         cash_balance = get_account_cash_balance(config=config)
+        
+        if writer:
+            try:
+                writer({
+                    "type": "tool_update",
+                    "tool": "get_portfolio_summary",
+                    "status": "processing",
+                    "message": "📈 Analyzing portfolio positions..."
+                })
+            except Exception as e:
+                logger.warning(f"🔧 DEBUG: Failed to emit positions event: {e}")
         
         # Get all positions
         positions = retrieve_portfolio_positions(state=state, config=config)
@@ -349,6 +431,17 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         # Add first purchase dates to position details
         for pos in position_details:
             pos['first_purchase'] = first_purchases.get(pos['symbol'])
+        
+        if writer:
+            try:
+                writer({
+                    "type": "tool_update",
+                    "tool": "get_portfolio_summary",
+                    "status": "processing",
+                    "message": "📊 Calculating portfolio analytics..."
+                })
+            except Exception as e:
+                logger.warning(f"🔧 DEBUG: Failed to emit analytics event: {e}")
         
         # Calculate risk and diversification scores using the same logic as frontend
         risk_score = Decimal('0')
@@ -459,6 +552,17 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
 • Want to rebalance? Ask for rebalancing instructions
 • Need analysis? Ask about specific stock performance
 • Ready to trade? Use the trade execution agent"""
+        
+        if writer:
+            try:
+                writer({
+                    "type": "tool_update",
+                    "tool": "get_portfolio_summary",
+                    "status": "completed",
+                    "message": "✅ Portfolio summary generated"
+                })
+            except Exception as e:
+                logger.warning(f"🔧 DEBUG: Failed to emit completed event: {e}")
         
         logger.info(f"[Portfolio Agent] Successfully generated portfolio summary - Total: ${float(total_portfolio_value):,.2f} (Positions: ${float(positions_value):,.2f}, Cash: ${float(cash_balance):,.2f})")
         return summary
