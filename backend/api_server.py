@@ -419,10 +419,9 @@ save_conversation = None
 get_user_conversations = None
 get_portfolio_conversations = None
 create_chat_session = None
-get_chat_sessions = None
+get_chatsessions = None
 get_conversations_by_session = None
 delete_chat_session = None
-save_conversation_with_session = None
 get_user_alpaca_account_id = None
 create_thread = None
 run_thread_stream = None
@@ -443,16 +442,11 @@ try:
     # For ACH transfers
     from utils.alpaca.bank_funding import create_ach_transfer, create_ach_relationship_manual
     
-    # Import Supabase conversation and chat session utilities
+    # Import Supabase conversation utilities
     from utils.supabase import (
         save_conversation,
         get_user_conversations,
         get_portfolio_conversations,
-        create_chat_session,
-        get_chat_sessions,
-        get_conversations_by_session,
-        delete_chat_session,
-        save_conversation_with_session,
         get_user_alpaca_account_id
     )
     
@@ -2796,8 +2790,13 @@ async def update_account_pii(account_id: str, request: Request, api_key: str = D
         # Note: Identity fields like SSN, DOB, legal name are typically NOT updateable
         # after account creation for regulatory reasons. We should document this limitation.
         
+        # If no updateable fields are provided, return success with empty updated_fields
         if not contact_updates:
-            return {"success": False, "error": "No updateable fields provided"}
+            return {
+                "success": True,
+                "message": "No updateable fields provided",
+                "updated_fields": []
+            }
         
         # Create the update request with proper structure
         try:
