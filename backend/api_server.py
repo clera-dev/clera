@@ -2686,6 +2686,251 @@ async def check_symbol_in_watchlist(
             detail=f"Failed to check symbol in watchlist: {str(e)}"
         )
 
+# Add PII management endpoints after the existing account-related endpoints
+
+@app.get("/api/account/{account_id}/pii", response_model=dict)
+async def get_account_pii(account_id: str, api_key: str = Depends(verify_api_key)):
+    """Get all personally identifiable information for an account."""
+    try:
+        logger.info(f"Fetching PII for account: {account_id}")
+        
+        # Ensure broker client is initialized
+        if not broker_client:
+            logger.error("Broker client is not initialized.")
+            raise HTTPException(status_code=500, detail="Server configuration error: Broker client not available.")
+        
+        # Get account details from Alpaca
+        account_details = broker_client.get_account_by_id(account_id)
+        logger.info(f"Successfully retrieved account details for {account_id}")
+        
+        # Extract PII from account details
+        pii_data = {
+            "contact": {
+                "email": getattr(account_details, 'email', None),
+                "phone": getattr(account_details, 'phone', None),
+                "street_address": getattr(account_details, 'street_address', []),
+                "city": getattr(account_details, 'city', None),
+                "state": getattr(account_details, 'state', None),
+                "postal_code": getattr(account_details, 'postal_code', None),
+                "country": getattr(account_details, 'country', None),
+            },
+            "identity": {
+                "given_name": getattr(account_details, 'given_name', None),
+                "middle_name": getattr(account_details, 'middle_name', None),
+                "family_name": getattr(account_details, 'family_name', None),
+                "date_of_birth": getattr(account_details, 'date_of_birth', None),
+                "tax_id": getattr(account_details, 'tax_id', None),  # This will likely be masked
+                "tax_id_type": getattr(account_details, 'tax_id_type', None),
+                "country_of_citizenship": getattr(account_details, 'country_of_citizenship', None),
+                "country_of_birth": getattr(account_details, 'country_of_birth', None),
+                "country_of_tax_residence": getattr(account_details, 'country_of_tax_residence', None),
+                "funding_source": getattr(account_details, 'funding_source', []),
+            },
+            "disclosures": {
+                "is_control_person": getattr(account_details, 'is_control_person', None),
+                "is_affiliated_exchange_or_finra": getattr(account_details, 'is_affiliated_exchange_or_finra', None),
+                "is_politically_exposed": getattr(account_details, 'is_politically_exposed', None),
+                "immediate_family_exposed": getattr(account_details, 'immediate_family_exposed', None),
+            },
+            "account_info": {
+                "account_number": getattr(account_details, 'account_number', None),
+                "status": getattr(account_details, 'status', None),
+                "created_at": getattr(account_details, 'created_at', None),
+            },
+            "updateable_fields": [
+                "contact.email",
+                "contact.phone", 
+                "contact.street_address",
+                "contact.city",
+                "contact.state",
+                "contact.postal_code",
+                # Note: Most identity fields are typically not updateable after account creation
+                # This list should be updated based on Alpaca's specific limitations
+            ]
+        }
+        
+        return {"success": True, "data": pii_data}
+        
+    except Exception as e:
+        logger.error(f"Error fetching PII for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch account PII: {str(e)}")
+
+
+@app.patch("/api/account/{account_id}/pii", response_model=dict)
+async def update_account_pii(account_id: str, request: Request, api_key: str = Depends(verify_api_key)):
+    """Update personally identifiable information for an account."""
+    try:
+        logger.info(f"Updating PII for account: {account_id}")
+        
+        # Ensure broker client is initialized
+        if not broker_client:
+            logger.error("Broker client is not initialized.")
+            raise HTTPException(status_code=500, detail="Server configuration error: Broker client not available.")
+        
+        # Parse the request body
+        update_data = await request.json()
+        logger.info(f"PII update request data: {update_data}")
+        
+        # Import UpdateAccountRequest and related models
+        from alpaca.broker.requests import UpdateAccountRequest, UpdatableContact
+        
+        # Build the update request based on what fields are provided and allowed to be updated
+        contact_updates = {}
+        
+        # Handle contact information updates (these are typically updateable)
+        if "contact" in update_data:
+            contact_data = update_data["contact"]
+            if "email" in contact_data:
+                contact_updates["email_address"] = contact_data["email"]
+            if "phone" in contact_data:
+                contact_updates["phone_number"] = contact_data["phone"]
+            if "street_address" in contact_data:
+                contact_updates["street_address"] = contact_data["street_address"]
+            if "city" in contact_data:
+                contact_updates["city"] = contact_data["city"]
+            if "state" in contact_data:
+                contact_updates["state"] = contact_data["state"]
+            if "postal_code" in contact_data:
+                contact_updates["postal_code"] = contact_data["postal_code"]
+        
+        # Note: Identity fields like SSN, DOB, legal name are typically NOT updateable
+        # after account creation for regulatory reasons. We should document this limitation.
+        
+        if not contact_updates:
+            return {"success": False, "error": "No updateable fields provided"}
+        
+        # Create the update request with proper structure
+        try:
+            # Create UpdatableContact object if we have contact updates
+            contact = None
+            if contact_updates:
+                contact = UpdatableContact(**contact_updates)
+            
+            # Create the UpdateAccountRequest
+            update_request = UpdateAccountRequest(contact=contact)
+            
+            # Perform the update
+            updated_account = broker_client.update_account(account_id, update_request)
+            logger.info(f"Successfully updated account {account_id}")
+            
+            # After successful Alpaca update, sync to Supabase
+            try:
+                from utils.supabase.db_client import get_user_id_by_alpaca_account_id, update_user_onboarding_data
+                
+                # Get the user ID for this Alpaca account
+                user_id = get_user_id_by_alpaca_account_id(account_id)
+                
+                if user_id:
+                    # Map the updated fields back to Supabase onboarding_data format
+                    supabase_updates = {}
+                    for alpaca_field, value in contact_updates.items():
+                        # Map Alpaca field names back to Supabase field names
+                        if alpaca_field == "email_address":
+                            supabase_updates["email"] = value
+                        elif alpaca_field == "phone_number":
+                            supabase_updates["phoneNumber"] = value
+                        elif alpaca_field == "street_address":
+                            supabase_updates["streetAddress"] = value
+                        elif alpaca_field == "city":
+                            supabase_updates["city"] = value
+                        elif alpaca_field == "state":
+                            supabase_updates["state"] = value
+                        elif alpaca_field == "postal_code":
+                            supabase_updates["postalCode"] = value
+                    
+                    # Update Supabase
+                    supabase_success = update_user_onboarding_data(user_id, supabase_updates)
+                    
+                    if supabase_success:
+                        logger.info(f"Successfully synced updates to Supabase for user: {user_id}")
+                    else:
+                        logger.warning(f"Failed to sync updates to Supabase for user: {user_id}")
+                else:
+                    logger.warning(f"Could not find user ID for Alpaca account: {account_id}")
+                    
+            except Exception as supabase_error:
+                logger.error(f"Error syncing to Supabase: {supabase_error}")
+                # Don't fail the entire request if Supabase sync fails
+                # The Alpaca update was successful, so we return success
+            
+            return {
+                "success": True, 
+                "message": "Account information updated successfully",
+                "updated_fields": list(contact_updates.keys())
+            }
+            
+        except Exception as update_error:
+            logger.error(f"Alpaca API error updating account: {update_error}")
+            # Handle specific Alpaca API errors
+            error_message = str(update_error)
+            if "not allowed" in error_message.lower() or "cannot be modified" in error_message.lower():
+                return {
+                    "success": False,
+                    "error": "Some fields cannot be modified after account creation",
+                    "details": error_message
+                }
+            else:
+                raise HTTPException(status_code=500, detail=f"Failed to update account: {error_message}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating PII for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update account PII: {str(e)}")
+
+
+@app.get("/api/account/{account_id}/pii/updateable-fields", response_model=dict)
+async def get_updateable_pii_fields(account_id: str, api_key: str = Depends(verify_api_key)):
+    """Get the list of PII fields that can be updated for this account."""
+    try:
+        logger.info(f"Fetching updateable PII fields for account: {account_id}")
+        
+        # Define which fields are typically updateable vs. non-updateable
+        # This is based on regulatory requirements and Alpaca's limitations
+        updateable_fields = {
+            "contact": {
+                "email": {"updateable": True, "description": "Email address"},
+                "phone": {"updateable": True, "description": "Phone number"},
+                "street_address": {"updateable": True, "description": "Street address"},
+                "city": {"updateable": True, "description": "City"},
+                "state": {"updateable": True, "description": "State/Province"},
+                "postal_code": {"updateable": True, "description": "Postal/ZIP code"},
+                "country": {"updateable": False, "description": "Country (not updateable after account creation)"}
+            },
+            "identity": {
+                "given_name": {"updateable": False, "description": "First name (not updateable after account creation)"},
+                "middle_name": {"updateable": False, "description": "Middle name (not updateable after account creation)"},
+                "family_name": {"updateable": False, "description": "Last name (not updateable after account creation)"},
+                "date_of_birth": {"updateable": False, "description": "Date of birth (not updateable after account creation)"},
+                "tax_id": {"updateable": False, "description": "Tax ID/SSN (not updateable after account creation)"},
+                "tax_id_type": {"updateable": False, "description": "Tax ID type (not updateable after account creation)"},
+                "country_of_citizenship": {"updateable": False, "description": "Country of citizenship (not updateable after account creation)"},
+                "country_of_birth": {"updateable": False, "description": "Country of birth (not updateable after account creation)"},
+                "country_of_tax_residence": {"updateable": False, "description": "Country of tax residence (not updateable after account creation)"},
+                "funding_source": {"updateable": False, "description": "Funding sources (not updateable after account creation)"}
+            },
+            "disclosures": {
+                "is_control_person": {"updateable": False, "description": "Control person status (not updateable after account creation)"},
+                "is_affiliated_exchange_or_finra": {"updateable": False, "description": "FINRA affiliation (not updateable after account creation)"},
+                "is_politically_exposed": {"updateable": False, "description": "Political exposure (not updateable after account creation)"},
+                "immediate_family_exposed": {"updateable": False, "description": "Family political exposure (not updateable after account creation)"}
+            }
+        }
+        
+        return {
+            "success": True,
+            "data": updateable_fields,
+            "notice": "Most identity and disclosure fields cannot be updated after account creation due to regulatory requirements. Contact support if you need to make changes to non-updateable fields."
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching updateable fields for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch updateable fields: {str(e)}")
+
+@app.get("/api/debug/headers")
+async def debug_headers(request: Request):
+    return JSONResponse({k: v for k, v in request.headers.items()})
+
 if __name__ == "__main__":
     import uvicorn
     # Check if running in development or AWS environment
