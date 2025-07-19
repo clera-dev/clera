@@ -1,25 +1,11 @@
+import { configureWebpack } from './webpack.config.js';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // transpilePackages: ['@alpacahq/alpaca-trade-api'], // No longer needed
   
-  // Webpack optimizations to reduce bundle size and improve caching
-  webpack: (config, { dev, isServer }) => {
-    // Optimize bundle splitting for better caching
-    if (!dev && !isServer) {
-      config.optimization.splitChunks = {
-        chunks: 'all',
-        cacheGroups: {
-          vendor: {
-            test: /[\\/]node_modules[\\/]/,
-            name: 'vendors',
-            chunks: 'all',
-          },
-        },
-      };
-    }
-    
-    return config;
-  },
+  // Webpack configuration - extracted to separate module for maintainability
+  webpack: configureWebpack,
   
   // Enable compression for better performance
   compress: true,

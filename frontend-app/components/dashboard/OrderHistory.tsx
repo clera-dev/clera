@@ -50,19 +50,64 @@ const formatDate = (dateString: string) => {
   };
 };
 
-const formatCurrency = (amount: string | number) => {
+const formatCurrency = (amount: string | number | null | undefined) => {
+  // Handle null, undefined, or empty string
+  if (amount == null || amount === '') {
+    return '$0.00';
+  }
+  
+  // Convert to number, handling string inputs
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  
+  // Check if the result is a valid number
+  if (isNaN(num)) {
+    return '$0.00';
+  }
+  
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
   }).format(num);
 };
 
-const formatNumber = (num: string | number) => {
+const formatNumber = (num: string | number | null | undefined) => {
+  // Handle null, undefined, or empty string
+  if (num == null || num === '') {
+    return '0';
+  }
+  
+  // Convert to number, handling string inputs
   const value = typeof num === 'string' ? parseFloat(num) : num;
+  
+  // Check if the result is a valid number
+  if (isNaN(value)) {
+    return '0';
+  }
+  
   return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 8,
+  }).format(value);
+};
+
+// Optimized formatter for quantities that should always show 2 decimal places
+const formatQuantity = (num: string | number | null | undefined) => {
+  // Handle null, undefined, or empty string
+  if (num == null || num === '') {
+    return '0.00';
+  }
+  
+  // Convert to number, handling string inputs
+  const value = typeof num === 'string' ? parseFloat(num) : num;
+  
+  // Check if the result is a valid number
+  if (isNaN(value)) {
+    return '0.00';
+  }
+  
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 };
 
@@ -143,6 +188,14 @@ const getSideIcon = (side: string) => {
 
 const getSideColor = (side: string) => {
   return side.toLowerCase() === 'buy' ? 'text-green-600' : 'text-red-600';
+};
+
+// Helper function to determine if an order should show price information
+const shouldShowPriceInfo = (status: string) => {
+  status = status.toLowerCase();
+  
+  // Only show price info for filled orders
+  return status === 'filled';
 };
 
 // Date utility
@@ -443,10 +496,10 @@ const OrderItem = ({ order, onClick }: OrderItemProps) => {
               </span>
               {(order.filled_qty || order.qty) && (
                 <span className="text-sm text-muted-foreground">
-                  {formatNumber(parseFloat(order.filled_qty || order.qty || '0').toFixed(2))} shares
+                  {formatQuantity(order.filled_qty || order.qty || '0')} shares
                 </span>
               )}
-              {order.filled_avg_price && (
+              {shouldShowPriceInfo(order.status) && (
                 <span className="text-sm text-muted-foreground">
                   at {formatCurrency(order.filled_avg_price)} per share
                 </span>
@@ -502,11 +555,11 @@ const OrderDetailsModal = ({ order, isOpen, onClose }: OrderDetailsModalProps) =
               </span>
               {(order.filled_qty || order.qty) && (
                 <span className="text-sm text-muted-foreground">
-                  {formatNumber(parseFloat(order.filled_qty || order.qty || '0').toFixed(2))} shares
+                  {formatQuantity(order.filled_qty || order.qty || '0')} shares
                 </span>
               )}
             </div>
-            {order.filled_avg_price && (
+            {shouldShowPriceInfo(order.status) && (
               <div className="text-sm text-muted-foreground">
                 Avg Price: {formatCurrency(order.filled_avg_price)}
               </div>
@@ -570,33 +623,25 @@ const OrderDetailsModal = ({ order, isOpen, onClose }: OrderDetailsModalProps) =
               </div>
               
               <div className="space-y-1 text-sm">
-                {order.qty && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Quantity:</span>
-                    <span>{formatNumber(parseFloat(order.qty).toFixed(2))} shares</span>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Quantity:</span>
+                  <span>{formatQuantity(order.filled_qty || order.qty)} shares</span>
+                </div>
                 
-                {order.notional && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Notional:</span>
-                    <span>{formatCurrency(order.notional)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Notional:</span>
+                  <span>{formatCurrency(order.notional)}</span>
+                </div>
                 
-                {order.limit_price && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Limit Price:</span>
-                    <span>{formatCurrency(order.limit_price)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Limit Price:</span>
+                  <span>{formatCurrency(order.limit_price)}</span>
+                </div>
                 
-                {order.stop_price && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Stop Price:</span>
-                    <span>{formatCurrency(order.stop_price)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Stop Price:</span>
+                  <span>{formatCurrency(order.stop_price)}</span>
+                </div>
                 
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Time in Force:</span>
