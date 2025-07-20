@@ -29,14 +29,15 @@ export default function BankConnectionsCard({
 
   // Check for URL parameter to auto-open dialog
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('openAddFunds') === 'true') {
-      setIsDialogOpen(true);
-      // Clean up URL parameter
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('openAddFunds') === 'true') {
+        setIsDialogOpen(true);
+        // Clean up URL parameter using Next.js router
+        router.replace(window.location.pathname);
+      }
     }
-  }, []);
+  }, [router]);
 
   const handleOpenDialog = () => {
     setIsDialogOpen(true);

@@ -1,39 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { 
-  authenticateAndAuthorize, 
-  createBackendHeaders, 
-  handleAuthError 
-} from '@/utils/api/auth-helpers';
+import { AuthService } from '@/utils/api/auth-service';
+import { BackendService } from '@/utils/api/backend-service';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    const { accountId, backendUrl, apiKey } = await authenticateAndAuthorize(request, params);
+    const { accountId } = await params;
     
-    // Call the backend API
-    const fullBackendUrl = `${backendUrl}/api/account/${accountId}/pii`;
-    const headers = createBackendHeaders(apiKey);
+    // Step 1: Authentication and Authorization (separate concern)
+    // This ensures user is authenticated and owns the account
+    const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
     
-    const response = await fetch(fullBackendUrl, {
-      method: 'GET',
-      headers
-    });
+    // Step 2: Backend Communication (separate concern)
+    // BackendService handles API key securely without exposing it to calling code
+    const backendService = new BackendService();
+    const piiData = await backendService.getPII(authContext.accountId, authContext.user.id);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Backend API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(piiData);
 
   } catch (error) {
-    console.error('PII API: Error fetching PII:', error);
+    // Log error without exposing sensitive information
+    console.error('PII API: Error fetching PII:', error instanceof Error ? error.message : 'Unknown error');
     
-    const { error: errorMessage, status } = handleAuthError(error);
-    return NextResponse.json({ error: errorMessage }, { status });
+    // Handle different types of errors appropriately
+    if (error && typeof error === 'object' && 'status' in error) {
+      const authError = AuthService.handleAuthError(error);
+      return NextResponse.json({ error: authError.message }, { status: authError.status });
+    }
+    
+    const backendError = BackendService.handleBackendError(error);
+    return NextResponse.json({ error: backendError.message }, { status: backendError.status });
   }
 }
 
@@ -42,45 +40,34 @@ export async function PATCH(
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    const { accountId, backendUrl, apiKey } = await authenticateAndAuthorize(request, params);
+    const { accountId } = await params;
     
-    // Get the request body
+    // Step 1: Authentication and Authorization (separate concern)
+    // This ensures user is authenticated and owns the account
+    const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
+    
+    // Step 2: Get request body
     const updateData = await request.json();
-
-    // Call the backend API
-    const fullBackendUrl = `${backendUrl}/api/account/${accountId}/pii`;
-    const headers = createBackendHeaders(apiKey);
     
-    const response = await fetch(fullBackendUrl, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify(updateData)
-    });
+    // Step 3: Backend Communication (separate concern)
+    // BackendService handles API key securely without exposing it to calling code
+    const backendService = new BackendService();
+    const result = await backendService.updatePII(authContext.accountId, authContext.user.id, updateData);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      
-      // Log the detailed error for debugging (server-side only)
-      console.error('Backend API error details:', {
-        status: response.status,
-        errorText: errorText
-      });
-      
-      // Return a generic error message to the client
-      return NextResponse.json(
-        { error: 'Failed to update account information' },
-        { status: response.status }
-      );
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(result);
 
   } catch (error) {
-    console.error('PII Update API: Error updating PII:', error);
+    // Log error without exposing sensitive information
+    console.error('PII Update API: Error updating PII:', error instanceof Error ? error.message : 'Unknown error');
     
-    const { error: errorMessage, status } = handleAuthError(error);
-    return NextResponse.json({ error: errorMessage }, { status });
+    // Handle different types of errors appropriately
+    if (error && typeof error === 'object' && 'status' in error) {
+      const authError = AuthService.handleAuthError(error);
+      return NextResponse.json({ error: authError.message }, { status: authError.status });
+    }
+    
+    const backendError = BackendService.handleBackendError(error);
+    return NextResponse.json({ error: backendError.message }, { status: backendError.status });
   }
 }
 

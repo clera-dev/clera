@@ -79,11 +79,8 @@ export async function POST(request: Request) {
     if (!backendResponse.ok) {
       const errorText = await backendResponse.text();
       
-      // Log the detailed error for debugging (server-side only)
-      console.error('Backend API error details:', {
-        status: backendResponse.status,
-        errorText: errorText
-      });
+      // Log error status only to prevent PII exposure
+      console.error('Backend API error status:', backendResponse.status);
       
       // Return a generic error message to the client
       return NextResponse.json(

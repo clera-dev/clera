@@ -1,16 +1,18 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { BackendClient, createBackendClient } from './backend-client';
 
 export interface AuthResult {
   user: any;
   accountId: string;
-  backendUrl: string;
-  apiKey: string;
+  backendClient: BackendClient;
 }
 
 /**
  * Shared helper function to handle authentication, authorization, and environment setup
  * This eliminates code duplication across API route handlers
+ * 
+ * Returns a secure backend client instead of exposing sensitive credentials
  */
 export async function authenticateAndAuthorize(
   request: NextRequest,
@@ -18,13 +20,8 @@ export async function authenticateAndAuthorize(
 ): Promise<AuthResult> {
   const { accountId } = await params;
   
-  // Environment variables setup
-  const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
-  const apiKey = process.env.BACKEND_API_KEY || '';
-  
-  if (!apiKey) {
-    throw new Error('Server configuration error: API key not available');
-  }
+  // Create secure backend client (handles environment variables internally)
+  const backendClient = createBackendClient();
   
   // Create supabase server client
   const supabase = await createClient();
@@ -56,18 +53,7 @@ export async function authenticateAndAuthorize(
   return {
     user,
     accountId,
-    backendUrl,
-    apiKey
-  };
-}
-
-/**
- * Helper function to create backend API headers
- */
-export function createBackendHeaders(apiKey: string) {
-  return {
-    'Content-Type': 'application/json',
-    'X-API-Key': apiKey
+    backendClient
   };
 }
 

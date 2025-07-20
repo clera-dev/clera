@@ -100,7 +100,7 @@ def create_plaid_link_token(user_email: str, alpaca_account_id: str, user_name: 
         # Create the link token
         response = client.link_token_create(request)
         
-        logger.info(f"Successfully created link token for {user_email}")
+        logger.info(f"Successfully created link token for (redacted email)")
         return response['link_token']
     except plaid.ApiException as e:
         logger.error(f"Error creating link token: {e}")
@@ -269,7 +269,7 @@ def create_direct_plaid_link_url(alpaca_account_id: str, user_email: str, redire
     try:
         # Create a link token using our Plaid client
         link_token = create_plaid_link_token(user_email, alpaca_account_id)
-        logger.info(f"Successfully created Plaid link token for {user_email}")
+        logger.info(f"Successfully created Plaid link token for (redacted email)")
         
         # Process and validate the redirect URI
         success_redirect = None

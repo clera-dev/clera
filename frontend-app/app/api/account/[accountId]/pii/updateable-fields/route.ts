@@ -1,38 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { 
-  authenticateAndAuthorize, 
-  createBackendHeaders, 
-  handleAuthError 
-} from '@/utils/api/auth-helpers';
+import { AuthService } from '@/utils/api/auth-service';
+import { BackendService } from '@/utils/api/backend-service';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    const { accountId, backendUrl, apiKey } = await authenticateAndAuthorize(request, params);
+    const { accountId } = await params;
     
-    // Call the backend API
-    const fullBackendUrl = `${backendUrl}/api/account/${accountId}/pii/updateable-fields`;
-    const headers = createBackendHeaders(apiKey);
+    // Step 1: Authentication and Authorization (separate concern)
+    // This ensures user is authenticated and owns the account
+    const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
     
-    const response = await fetch(fullBackendUrl, {
-      method: 'GET',
-      headers
-    });
+    // Step 2: Backend Communication (separate concern)
+    // BackendService handles API key securely without exposing it to calling code
+    const backendService = new BackendService();
+    const updateableFields = await backendService.getUpdateableFields(authContext.accountId, authContext.user.id);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Backend API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(updateableFields);
 
   } catch (error) {
-    console.error('Updateable Fields API: Error fetching updateable fields:', error);
+    // Log error without exposing sensitive information
+    console.error('Updateable Fields API: Error fetching updateable fields:', error instanceof Error ? error.message : 'Unknown error');
     
-    const { error: errorMessage, status } = handleAuthError(error);
-    return NextResponse.json({ error: errorMessage }, { status });
+    // Handle different types of errors appropriately
+    if (error && typeof error === 'object' && 'status' in error) {
+      const authError = AuthService.handleAuthError(error);
+      return NextResponse.json({ error: authError.message }, { status: authError.status });
+    }
+    
+    const backendError = BackendService.handleBackendError(error);
+    return NextResponse.json({ error: backendError.message }, { status: backendError.status });
   }
 } 

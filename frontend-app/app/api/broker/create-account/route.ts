@@ -98,11 +98,8 @@ export async function POST(request: Request) {
       const errorText = await backendResponse.text();
 
       
-      // Log the detailed error for debugging (server-side only)
-      console.error('Backend API error details:', {
-        status: backendResponse.status,
-        errorText: errorText
-      });
+      // Log error status only to prevent PII exposure
+      console.error('Backend API error status:', backendResponse.status);
       
       // Special handling for 409 Conflict (email already exists)
       if (backendResponse.status === 409) {

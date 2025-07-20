@@ -125,8 +125,8 @@ export class AccountClosureService {
       const response = await fetch(`/api/account-closure/progress/${accountId}`);
       
       if (!response.ok) {
-        const responseText = await response.text();
-        console.error(`[AccountClosureService] Progress API responded with status ${response.status}:`, responseText);
+        // Don't log raw response text to prevent PII exposure
+        console.error(`[AccountClosureService] Progress API responded with status ${response.status}`);
         return null;
       }
       
@@ -159,8 +159,8 @@ export class AccountClosureService {
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[AccountClosureService] Resume endpoint failed:', response.status, errorText);
+        // Don't log raw error text to prevent PII exposure
+        console.error('[AccountClosureService] Resume endpoint failed:', response.status);
         return { success: false };
       }
       

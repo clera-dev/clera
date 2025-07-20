@@ -35,7 +35,7 @@ describe('UpdateInformationPage', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     (useRouter as jest.Mock).mockReturnValue(mockRouter);
     (createClient as jest.Mock).mockReturnValue(mockSupabaseClient);
     

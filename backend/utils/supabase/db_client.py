@@ -83,23 +83,23 @@ def get_user_alpaca_account_id(user_id: str) -> Optional[str]:
         data = response.data
         
         # Log the response structure for debugging (without sensitive data)
-        logger.info(f"Supabase response received for user {user_id}, data present: {data is not None}")
+        logger.info(f"Supabase response received for user, data present: {data is not None}")
         
         if not data or len(data) == 0:
-            logger.warning(f"No user_onboarding record found for user: {user_id}")
+            logger.warning(f"No user_onboarding record found for user")
             return None
             
         account_id = data[0].get("alpaca_account_id") if data and len(data) > 0 else None
         
         if not account_id:
-            logger.warning(f"alpaca_account_id is null or empty for user: {user_id}")
+            logger.warning(f"alpaca_account_id is null or empty for user")
             return None
         
-        logger.info(f"Successfully found Alpaca account ID for user {user_id}: {account_id}")
+        logger.info(f"Successfully found Alpaca account ID for user")
         return account_id
     
     except Exception as e:
-        logger.error(f"Error fetching Alpaca account ID for user {user_id}: {e}", exc_info=True)
+        logger.error(f"Error fetching Alpaca account ID for user: {e}", exc_info=True)
         return None
 
 
@@ -132,13 +132,13 @@ def get_user_id_from_email(email: str) -> Optional[str]:
         user_id = data[0]["id"] if isinstance(data, list) and len(data) > 0 else None
         
         if user_id:
-            logger.info(f"Found user ID for email {email}: {user_id}")
+            logger.info(f"Found user ID for email")
             return user_id
         
         return None
     
     except Exception as e:
-        logger.error(f"Error fetching user ID for email {email}: {e}")
+        logger.error(f"Error fetching user ID for email (redacted): {e}")
         return None
 
 
@@ -184,13 +184,13 @@ def get_user_data(user_id: str) -> Optional[Dict[str, Any]]:
         data = response.data
         
         if not data:
-            logger.warning(f"No onboarding data found for user: {user_id}")
+            logger.warning(f"No onboarding data found for user")
             return None
         
         return data
     
     except Exception as e:
-        logger.error(f"Error fetching user data for user {user_id}: {e}")
+        logger.error(f"Error fetching user data for user: {e}")
         return None
 
 
@@ -224,14 +224,14 @@ def save_conversation(user_id: str, portfolio_id: str, message: str, response: s
         result = supabase.table("conversations").insert(conversation_data).execute()
         
         if result.data and len(result.data) > 0:
-            logger.info(f"Saved conversation for user {user_id}")
+            logger.info(f"Saved conversation for user (redacted)")
             return result.data[0]
         else:
-            logger.warning(f"No data returned when saving conversation for user {user_id}")
+            logger.warning(f"No data returned when saving conversation for user (redacted)")
             return {}
     
     except Exception as e:
-        logger.error(f"Error saving conversation for user {user_id}: {e}")
+        logger.error(f"Error saving conversation for user (redacted): {e}")
         return {}
 
 
@@ -259,14 +259,14 @@ def get_user_conversations(user_id: str, limit: int = 50) -> List[Dict[str, Any]
             .execute()
         
         if response.data:
-            logger.info(f"Retrieved {len(response.data)} conversations for user {user_id}")
+            logger.info(f"Retrieved {len(response.data)} conversations for user (redacted)")
             return response.data
         else:
-            logger.info(f"No conversations found for user {user_id}")
+            logger.info(f"No conversations found for user (redacted)")
             return []
     
     except Exception as e:
-        logger.error(f"Error retrieving conversations for user {user_id}: {e}")
+        logger.error(f"Error retrieving conversations for user (redacted): {e}")
         return []
 
 
@@ -296,14 +296,14 @@ def get_portfolio_conversations(user_id: str, portfolio_id: str, limit: int = 50
             .execute()
         
         if response.data:
-            logger.info(f"Retrieved {len(response.data)} conversations for user {user_id} and portfolio {portfolio_id}")
+            logger.info(f"Retrieved {len(response.data)} conversations for user and portfolio")
             return response.data
         else:
-            logger.info(f"No conversations found for user {user_id} and portfolio {portfolio_id}")
+            logger.info(f"No conversations found for user and portfolio")
             return []
     
     except Exception as e:
-        logger.error(f"Error retrieving portfolio conversations for user {user_id}: {e}")
+        logger.error(f"Error retrieving portfolio conversations for user: {e}")
         return []
 
 
@@ -324,7 +324,7 @@ def update_user_onboarding_data(user_id: str, updated_fields: Dict[str, Any]) ->
         # Create Supabase client
         supabase = get_supabase_client()
         
-        logger.info(f"Updating onboarding data for user: {user_id}")
+        logger.info(f"Updating onboarding data for user")
         logger.info(f"Fields to update (keys only): {list(updated_fields.keys())}")
         
         # First, get the current onboarding data
@@ -335,13 +335,13 @@ def update_user_onboarding_data(user_id: str, updated_fields: Dict[str, Any]) ->
             .execute()
         
         if not response.data:
-            logger.error(f"No onboarding data found for user: {user_id}")
+            logger.error(f"No onboarding data found for user")
             return False
         
         current_data = response.data.get("onboarding_data", {})
         
         # Update the specific fields
-        updated_data = current_data.copy()
+        updated_data = (current_data or {}).copy()
         for field_path, new_value in updated_fields.items():
             # Handle nested field paths like "contact.email"
             if "." in field_path:
@@ -362,14 +362,14 @@ def update_user_onboarding_data(user_id: str, updated_fields: Dict[str, Any]) ->
             .execute()
         
         if update_response.data:
-            logger.info(f"Successfully updated onboarding data for user: {user_id}")
+            logger.info(f"Successfully updated onboarding data for user")
             return True
         else:
-            logger.error(f"Failed to update onboarding data for user: {user_id}")
+            logger.error(f"Failed to update onboarding data for user")
             return False
     
     except Exception as e:
-        logger.error(f"Error updating onboarding data for user {user_id}: {e}", exc_info=True)
+        logger.error(f"Error updating onboarding data for user: {e}", exc_info=True)
         return False
 
 
@@ -397,17 +397,17 @@ def get_user_id_by_alpaca_account_id(alpaca_account_id: str) -> Optional[str]:
         data = response.data
         
         if not data:
-            logger.warning(f"No user found with Alpaca account ID: {alpaca_account_id}")
+            logger.warning(f"No user found with Alpaca account ID")
             return None
         
         user_id = data.get("user_id")
         
         if user_id:
-            logger.info(f"Found user ID for Alpaca account {alpaca_account_id}: {user_id}")
+            logger.info(f"Found user ID for Alpaca account")
             return user_id
         
         return None
     
     except Exception as e:
-        logger.error(f"Error fetching user ID for Alpaca account {alpaca_account_id}: {e}")
+        logger.error(f"Error fetching user ID for Alpaca account: {e}")
         return None 

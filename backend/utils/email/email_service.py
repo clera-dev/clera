@@ -182,14 +182,14 @@ class EmailService:
             server.sendmail(self.from_email, to_email, text)
             server.quit()
             
-            logger.info(f"Account closure email sent successfully to {to_email}")
+            logger.info(f"Account closure email sent successfully to (redacted email)")
             return True
             
         except smtplib.SMTPException as e:
-            logger.error(f"SMTP error sending email to {to_email}: {e}")
+            logger.error(f"SMTP error sending email to (redacted email): {e}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error sending email to {to_email}: {e}")
+            logger.error(f"Unexpected error sending email to (redacted email): {e}")
             return False
     
     def _generate_closure_email_html(self, user_name: str, account_id: str, 

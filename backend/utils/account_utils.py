@@ -10,6 +10,8 @@ from langgraph.config import get_config
 
 # Import our Supabase helper
 from utils.supabase import get_user_alpaca_account_id
+# Import authorization service
+from utils.authorization import AuthorizationService
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +82,8 @@ def get_account_id(config: RunnableConfig = None) -> str:
     if current_user_id:
         logger.info(f"[Account Utils] Attempting Supabase lookup for user_id: {current_user_id}")
         try:
-            db_account_id = get_user_alpaca_account_id(current_user_id)
+            # Use the authorization service for consistent account lookup
+            db_account_id = AuthorizationService.get_user_account_id(current_user_id)
             if db_account_id:
                 logger.info(f"[Account Utils] Successfully found account_id via Supabase: {db_account_id}")
                 return db_account_id
@@ -109,20 +112,8 @@ def validate_account_access(account_id: str, user_id: str) -> bool:
     Returns:
         bool: True if user has access, False otherwise
     """
-    try:
-        # Look up the account ID associated with this user
-        user_account_id = get_user_alpaca_account_id(user_id)
-        
-        if user_account_id == account_id:
-            logger.info(f"[Account Utils] Access validated: user {user_id} owns account {account_id}")
-            return True
-        else:
-            logger.warning(f"[Account Utils] Access denied: user {user_id} does not own account {account_id}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"[Account Utils] Error validating account access: {e}", exc_info=True)
-        return False
+    # Use the authorization service for consistent access validation
+    return AuthorizationService.verify_account_access(user_id, account_id)
 
 
 def get_user_id_from_config(config: RunnableConfig = None) -> str:

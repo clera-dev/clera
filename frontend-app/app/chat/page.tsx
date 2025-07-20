@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { PlusIcon, Clock } from 'lucide-react';
 import { 
   Message, 
@@ -22,6 +23,7 @@ import { Terminal } from "lucide-react";
 const CURRENT_SESSION_KEY = 'cleraCurrentChatSession';
 
 export default function ChatPage() {
+  const router = useRouter();
   const [accountId, setAccountId] = useState<string | null>(null); // Can be null initially
   const [userId, setUserId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
@@ -211,7 +213,7 @@ export default function ChatPage() {
                 <AlertDescription>
                     {error}
                     <br />
-                    <Button variant="link" className="p-0 h-auto mt-2" onClick={() => window.location.reload()}>Try Reloading</Button>
+                    <Button variant="link" className="p-0 h-auto mt-2" onClick={() => router.refresh()}>Try Reloading</Button>
                 </AlertDescription>
             </Alert>
         </div>
