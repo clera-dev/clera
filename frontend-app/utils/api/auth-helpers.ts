@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
-import { BackendClient, createBackendClient } from './backend-client';
+import { BackendClient, createBackendClient } from '@/lib/server/backend-client';
+import { AuthService, AuthContext } from './auth-service';
 
 export interface AuthResult {
   user: any;
@@ -9,10 +9,12 @@ export interface AuthResult {
 }
 
 /**
- * Shared helper function to handle authentication, authorization, and environment setup
- * This eliminates code duplication across API route handlers
+ * Helper function that combines authentication via AuthService with backend client creation
+ * Uses the existing AuthService to avoid duplicating authentication logic
  * 
- * Returns a secure backend client instead of exposing sensitive credentials
+ * @param request - The incoming request
+ * @param params - Promise containing route parameters with accountId
+ * @returns AuthResult with user, accountId, and backend client
  */
 export async function authenticateAndAuthorize(
   request: NextRequest,
@@ -20,61 +22,27 @@ export async function authenticateAndAuthorize(
 ): Promise<AuthResult> {
   const { accountId } = await params;
   
+  // Use existing AuthService for authentication and authorization
+  const authContext: AuthContext = await AuthService.authenticateAndAuthorize(request, accountId);
+  
   // Create secure backend client (handles environment variables internally)
   const backendClient = createBackendClient();
   
-  // Create supabase server client
-  const supabase = await createClient();
-  
-  // Verify user is authenticated
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  
-  if (!user) {
-    throw new Error('Unauthorized');
-  }
-
-  // Verify user owns this account
-  const { data: onboardingData, error: onboardingError } = await supabase
-    .from('user_onboarding')
-    .select('alpaca_account_id')
-    .eq('user_id', user.id)
-    .single();
-
-  if (onboardingError || !onboardingData?.alpaca_account_id) {
-    throw new Error('Account not found');
-  }
-
-  if (onboardingData.alpaca_account_id !== accountId) {
-    throw new Error('Unauthorized access to account');
-  }
-
   return {
-    user,
-    accountId,
+    user: authContext.user,
+    accountId: authContext.accountId,
     backendClient
   };
 }
 
 /**
  * Helper function to handle common error responses from authentication/authorization
+ * Delegates to AuthService.handleAuthError for consistency
  */
 export function handleAuthError(error: unknown): { error: string; status: number } {
-  if (error instanceof Error) {
-    if (error.message.includes('Unauthorized')) {
-      return { error: 'Unauthorized', status: 401 };
-    }
-    if (error.message.includes('Account not found')) {
-      return { error: 'Account not found', status: 404 };
-    }
-    if (error.message.includes('Unauthorized access to account')) {
-      return { error: 'Unauthorized access to account', status: 403 };
-    }
-    if (error.message.includes('Server configuration error')) {
-      return { error: error.message, status: 500 };
-    }
-  }
-  
-  return { error: 'Internal server error', status: 500 };
+  const authError = AuthService.handleAuthError(error);
+  return {
+    error: authError.message,
+    status: authError.status
+  };
 } 

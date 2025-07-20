@@ -31,7 +31,7 @@ const nextConfig = {
   
   async rewrites() {
     // Add a default value for backendUrl if it's not defined in environment variables
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
     
     console.log(`Using backend URL for rewrites: ${backendUrl}`);
     

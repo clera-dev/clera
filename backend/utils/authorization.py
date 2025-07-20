@@ -12,7 +12,7 @@ This follows separation of concerns by extracting authorization logic from the m
 
 import logging
 from typing import Optional
-from fastapi import HTTPException, Query
+from fastapi import HTTPException
 from utils.supabase.db_client import get_user_alpaca_account_id
 
 logger = logging.getLogger(__name__)
@@ -120,23 +120,4 @@ class AuthorizationService:
             return user_account_id == account_id
         except Exception as e:
             logger.error(f"Error checking account access for user: {e}")
-            return False
-
-
-# Convenience function for backward compatibility and easy import
-def verify_user_account_ownership(account_id: str, user_id: str = Query(..., description="User ID to verify account ownership")) -> str:
-    """
-    Convenience function that delegates to AuthorizationService.
-    Maintains backward compatibility with existing code.
-    
-    Args:
-        account_id: The Alpaca account ID being accessed
-        user_id: The user ID claiming ownership of the account
-        
-    Returns:
-        The user_id if verification succeeds
-        
-    Raises:
-        HTTPException: If verification fails
-    """
-    return AuthorizationService.verify_user_account_ownership(account_id, user_id) 
+            return False 

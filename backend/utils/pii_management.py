@@ -47,7 +47,7 @@ class PIIManagementService:
         Raises:
             Exception: If account details cannot be retrieved
         """
-        logger.info(f"Fetching PII for account: {account_id}")
+        logger.info(f"Fetching PII for account: (redacted)")
         
         if not self.broker_client:
             logger.error("Broker client is not initialized.")
@@ -55,7 +55,7 @@ class PIIManagementService:
         
         # Get account details from Alpaca
         account_details = self.broker_client.get_account_by_id(account_id)
-        logger.info(f"Successfully retrieved account details for {account_id}")
+        logger.info(f"Successfully retrieved account details for account: (redacted)")
         
         # Extract PII from account details
         pii_data = {
@@ -119,7 +119,7 @@ class PIIManagementService:
         Raises:
             Exception: If update fails
         """
-        logger.info(f"Updating PII for account: {account_id}")
+        logger.info(f"Updating PII for account: (redacted)")
         # Log only the field names being updated, not the actual data
         if update_data:
             field_names = []
@@ -175,7 +175,7 @@ class PIIManagementService:
             
             # Perform the update
             updated_account = self.broker_client.update_account(account_id, update_request)
-            logger.info(f"Successfully updated account {account_id}")
+            logger.info(f"Successfully updated account: (redacted)")
             
             # After successful Alpaca update, sync to Supabase
             self._sync_to_supabase(account_id, contact_updates)
@@ -254,7 +254,7 @@ class PIIManagementService:
         Returns:
             Dictionary containing updateable fields information
         """
-        logger.info(f"Fetching updateable PII fields for account: {account_id}")
+        logger.info(f"Fetching updateable PII fields for account: (redacted)")
         
         # Define which fields are typically updateable vs. non-updateable
         # This is based on regulatory requirements and Alpaca's limitations

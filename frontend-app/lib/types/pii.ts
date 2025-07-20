@@ -3,42 +3,8 @@
  * Centralized type definitions for PII data management
  */
 
-// Onboarding data structure from Supabase
-export interface OnboardingData {
-  // Contact Information
-  email: string;
-  phoneNumber: string;
-  streetAddress: string[];
-  city: string;
-  state: string;
-  postalCode: string;
-  country: string;
-  
-  // Personal Information
-  firstName: string;
-  middleName: string;
-  lastName: string;
-  dateOfBirth: string;
-  taxIdType: string;
-  taxId: string;
-  countryOfCitizenship: string;
-  countryOfBirth: string;
-  countryOfTaxResidence: string;
-  fundingSource: string[];
-  
-  // Disclosures
-  isControlPerson: boolean;
-  isAffiliatedExchangeOrFinra: boolean;
-  isPoliticallyExposed: boolean;
-  immediateFamilyExposed: boolean;
-  
-  // Agreements accepted
-  agreementsAccepted: {
-    margin: boolean;
-    customer: boolean;
-    account: boolean;
-  };
-}
+// Import existing onboarding data structure to avoid duplication
+import { OnboardingData } from '@/components/onboarding/OnboardingTypes';
 
 // PII data structure from Alpaca API
 export interface PIIData {

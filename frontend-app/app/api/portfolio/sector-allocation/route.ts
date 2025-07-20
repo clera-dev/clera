@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Fetch from backend API
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || process.env.BACKEND_API_URL;
+  const backendUrl = process.env.BACKEND_API_URL;
   const backendApiKey = process.env.BACKEND_API_KEY;
 
   if (!backendUrl) {
