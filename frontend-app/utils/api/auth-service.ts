@@ -12,9 +12,28 @@ export interface AuthContext {
   accountId: string;
 }
 
-export interface AuthError {
+export interface AuthErrorResponse {
   message: string;
   status: number;
+}
+
+/**
+ * Custom error class for authentication and authorization errors
+ * Extends Error to preserve stack traces and follow Error contract
+ */
+export class AuthError extends Error {
+  public readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'AuthError';
+    this.status = status;
+    
+    // Maintains proper stack trace for where our error was thrown (only available on V8)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, AuthError);
+    }
+  }
 }
 
 /**
@@ -24,13 +43,13 @@ export interface AuthError {
 export class AuthService {
   /**
    * Authenticate and authorize a user for a specific account
-   * @param request - The incoming request
+   * @param _request - The incoming request (unused but required for interface consistency)
    * @param accountId - The account ID from route parameters
    * @returns AuthContext with user and account information
    * @throws AuthError if authentication/authorization fails
    */
   static async authenticateAndAuthorize(
-    request: NextRequest,
+    _request: NextRequest,
     accountId: string
   ): Promise<AuthContext> {
     // Create supabase server client
@@ -42,7 +61,7 @@ export class AuthService {
     } = await supabase.auth.getUser();
     
     if (!user) {
-      throw { message: 'Unauthorized', status: 401 };
+      throw new AuthError('Unauthorized', 401);
     }
 
     // Verify user owns this account
@@ -53,11 +72,11 @@ export class AuthService {
       .single();
 
     if (onboardingError || !onboardingData?.alpaca_account_id) {
-      throw { message: 'Account not found', status: 404 };
+      throw new AuthError('Account not found', 404);
     }
 
     if (onboardingData.alpaca_account_id !== accountId) {
-      throw { message: 'Unauthorized access to account', status: 403 };
+      throw new AuthError('Unauthorized access to account', 403);
     }
 
     return {
@@ -71,9 +90,13 @@ export class AuthService {
    * @param error - The caught error
    * @returns Formatted error response
    */
-  static handleAuthError(error: unknown): AuthError {
+  static handleAuthError(error: unknown): AuthErrorResponse {
+    if (error instanceof AuthError) {
+      return { message: error.message, status: error.status };
+    }
+    
     if (error && typeof error === 'object' && 'message' in error && 'status' in error) {
-      return error as AuthError;
+      return error as AuthErrorResponse;
     }
     
     if (error instanceof Error) {

@@ -50,6 +50,7 @@ export const PIIFormField: React.FC<PIIFormFieldProps> = ({
   // Render different input types
   const renderInput = () => {
     const commonProps = {
+      id: fieldPath, // Add id for label association
       value: value || '',
       onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => 
         handleChange(e.target.value),

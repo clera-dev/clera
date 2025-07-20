@@ -46,6 +46,9 @@ from utils.alpaca.account_closure import (
     resume_account_closure
 )
 
+# Authentication imports
+from utils.authentication import verify_account_ownership
+
 # Watchlist imports
 from utils.alpaca.watchlist import (
     get_watchlist_for_account,
@@ -2691,19 +2694,15 @@ async def check_symbol_in_watchlist(
 @app.get("/api/account/{account_id}/pii", response_model=dict)
 async def get_account_pii(
     account_id: str, 
+    broker_client = Depends(get_broker_client),
     api_key: str = Depends(verify_api_key),
-    user_id: str = Depends(verify_user_account_ownership)
+    user_id: str = Depends(verify_account_ownership)
 ):
     """Get all personally identifiable information for an account."""
     try:
         from utils.pii_management import PIIManagementService
         
-        # Ensure broker client is initialized
-        if not broker_client:
-            logger.error("Broker client is not initialized.")
-            raise HTTPException(status_code=500, detail="Server configuration error: Broker client not available.")
-        
-        # Use the PII management service
+        # Use the PII management service with injected broker client
         pii_service = PIIManagementService(broker_client)
         result = pii_service.get_account_pii(account_id)
         
@@ -2718,22 +2717,18 @@ async def get_account_pii(
 async def update_account_pii(
     account_id: str, 
     request: Request, 
+    broker_client = Depends(get_broker_client),
     api_key: str = Depends(verify_api_key),
-    user_id: str = Depends(verify_user_account_ownership)
+    user_id: str = Depends(verify_account_ownership)
 ):
     """Update personally identifiable information for an account."""
     try:
         from utils.pii_management import PIIManagementService
         
-        # Ensure broker client is initialized
-        if not broker_client:
-            logger.error("Broker client is not initialized.")
-            raise HTTPException(status_code=500, detail="Server configuration error: Broker client not available.")
-        
         # Parse the request body
         update_data = await request.json()
         
-        # Use the PII management service
+        # Use the PII management service with injected broker client
         pii_service = PIIManagementService(broker_client)
         result = pii_service.update_account_pii(account_id, update_data)
         
@@ -2749,19 +2744,15 @@ async def update_account_pii(
 @app.get("/api/account/{account_id}/pii/updateable-fields", response_model=dict)
 async def get_updateable_pii_fields(
     account_id: str, 
+    broker_client = Depends(get_broker_client),
     api_key: str = Depends(verify_api_key),
-    user_id: str = Depends(verify_user_account_ownership)
+    user_id: str = Depends(verify_account_ownership)
 ):
     """Get the list of PII fields that can be updated for this account."""
     try:
         from utils.pii_management import PIIManagementService
         
-        # Ensure broker client is initialized
-        if not broker_client:
-            logger.error("Broker client is not initialized.")
-            raise HTTPException(status_code=500, detail="Server configuration error: Broker client not available.")
-        
-        # Use the PII management service
+        # Use the PII management service with injected broker client
         pii_service = PIIManagementService(broker_client)
         result = pii_service.get_updateable_fields(account_id)
         

@@ -4,7 +4,7 @@
  * Follows single responsibility principle
  */
 
-import { BackendClient, createBackendClient } from './backend-client';
+import { BackendClient, createBackendClient } from '@/lib/server/backend-client';
 
 export interface BackendServiceConfig {
   endpoint: string;
@@ -96,7 +96,7 @@ export class BackendService {
    */
   async getPII(accountId: string, userId: string) {
     return this.request({
-      endpoint: `/api/account/${accountId}/pii?user_id=${encodeURIComponent(userId)}`,
+      endpoint: `/api/account/${encodeURIComponent(accountId)}/pii?user_id=${encodeURIComponent(userId)}`,
       method: 'GET'
     });
   }
@@ -110,7 +110,7 @@ export class BackendService {
    */
   async updatePII(accountId: string, userId: string, updateData: any) {
     return this.request({
-      endpoint: `/api/account/${accountId}/pii?user_id=${encodeURIComponent(userId)}`,
+      endpoint: `/api/account/${encodeURIComponent(accountId)}/pii?user_id=${encodeURIComponent(userId)}`,
       method: 'PATCH',
       body: updateData
     });

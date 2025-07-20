@@ -302,7 +302,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # Backend API Configuration
-NEXT_PUBLIC_BACKEND_API_URL=http://localhost:8000
+BACKEND_API_URL=http://localhost:8000
 
 # Plaid Configuration
 PLAID_CLIENT_ID=your-plaid-client-id
@@ -404,7 +404,7 @@ The frontend is configured in Vercel with the following settings:
    ```
    NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-   NEXT_PUBLIC_BACKEND_API_URL=https://api.clera.ai
+   BACKEND_API_URL=https://api.clera.ai
    PLAID_ENV=production
    NEXT_PUBLIC_BASE_URL=https://app.clera.ai
    ```
@@ -413,7 +413,7 @@ The frontend is configured in Vercel with the following settings:
    ```
    NEXT_PUBLIC_SUPABASE_URL=https://your-staging-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-staging-anon-key
-   NEXT_PUBLIC_BACKEND_API_URL=https://api-staging.clera.ai
+   BACKEND_API_URL=https://api-staging.clera.ai
    PLAID_ENV=sandbox
    NEXT_PUBLIC_BASE_URL=https://staging.clera.ai
    ```
@@ -461,7 +461,7 @@ The frontend connects to both backend components:
    - Authentication via API keys
    - Handles broker account creation and management
    - Manages ACH funding through Plaid integration
-   - Environment-specific configuration with `NEXT_PUBLIC_BACKEND_API_URL`
+   - Environment-specific configuration with `BACKEND_API_URL`
 
 2. **LangGraph AI Services**:
    - Communicates with AI agents hosted on LangGraph

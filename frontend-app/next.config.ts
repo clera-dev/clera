@@ -3,7 +3,6 @@ const nextConfig = {
   // Ensure server-side environment variables are accessible
   env: {
     BACKEND_API_URL: process.env.BACKEND_API_URL,
-    BACKEND_API_KEY: process.env.BACKEND_API_KEY,
   },
   // Add PostHog rewrites
   async rewrites() {

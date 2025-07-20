@@ -40,29 +40,12 @@ export const usePIIData = (): UsePIIDataReturn => {
   const [success, setSuccess] = useState<string | null>(null);
   const [alpacaAccountId, setAlpacaAccountId] = useState<string | null>(null);
 
+  // Create Supabase client once to prevent infinite re-renders
   const supabase = createClient();
 
-  // Fetch PII data from backend
+  // Fetch PII data from Next.js API route
   const fetchPIIData = async (accountId: string): Promise<PIIData> => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    const apiKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
-    
-    if (!backendUrl || !apiKey) {
-      throw new Error('Backend configuration missing');
-    }
-
-    // Get current user for authorization
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      throw new Error('User not authenticated');
-    }
-
-    const response = await fetch(`${backendUrl}/api/account/${accountId}/pii?user_id=${encodeURIComponent(user.id)}`, {
-      headers: {
-        'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
+    const response = await fetch(`/api/account/${accountId}/pii`);
 
     if (!response.ok) {
       // Don't log raw error text to prevent PII exposure
@@ -78,27 +61,9 @@ export const usePIIData = (): UsePIIDataReturn => {
     return result.data;
   };
 
-  // Fetch updateable fields from backend
+  // Fetch updateable fields from Next.js API route
   const fetchUpdateableFields = async (accountId: string): Promise<UpdateableFieldsData> => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    const apiKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
-    
-    if (!backendUrl || !apiKey) {
-      throw new Error('Backend configuration missing');
-    }
-
-    // Get current user for authorization
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      throw new Error('User not authenticated');
-    }
-
-    const response = await fetch(`${backendUrl}/api/account/${accountId}/pii/updateable-fields?user_id=${encodeURIComponent(user.id)}`, {
-      headers: {
-        'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
+    const response = await fetch(`/api/account/${accountId}/pii/updateable-fields`);
 
     if (!response.ok) {
       // Don't log raw error text to prevent PII exposure
@@ -127,18 +92,18 @@ export const usePIIData = (): UsePIIDataReturn => {
           throw new Error('User not authenticated');
         }
 
-        // Get user's account information
-        const { data: accountData, error: accountError } = await supabase
-          .from('accounts')
-          .select('alpaca_account_id, alpaca_account_number, alpaca_account_status, created_at')
+        // Get user's account information from user_onboarding table
+        const { data: onboardingData, error: onboardingError } = await supabase
+          .from('user_onboarding')
+          .select('alpaca_account_id')
           .eq('user_id', user.id)
           .single();
 
-        if (accountError || !accountData?.alpaca_account_id) {
+        if (onboardingError || !onboardingData?.alpaca_account_id) {
           throw new Error('Account not found');
         }
 
-        const accountId = accountData.alpaca_account_id;
+        const accountId = onboardingData.alpaca_account_id;
         setAlpacaAccountId(accountId);
 
         // Fetch PII data and updateable fields in parallel
@@ -160,7 +125,7 @@ export const usePIIData = (): UsePIIDataReturn => {
     };
 
     fetchData();
-  }, [supabase.auth]);
+  }, []); // Remove supabase.auth from dependencies to prevent infinite loop
 
   // Check for changes when edited data changes
   useEffect(() => {
@@ -193,23 +158,9 @@ export const usePIIData = (): UsePIIDataReturn => {
       setError(null);
       setSuccess(null);
 
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-      const apiKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
-      
-      if (!backendUrl || !apiKey) {
-        throw new Error('Backend configuration missing');
-      }
-
-      // Get current user for authorization
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('User not authenticated');
-      }
-
-      const response = await fetch(`${backendUrl}/api/account/${alpacaAccountId}/pii?user_id=${encodeURIComponent(user.id)}`, {
+      const response = await fetch(`/api/account/${alpacaAccountId}/pii`, {
         method: 'PATCH',
         headers: {
-          'X-API-Key': apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(editedData),

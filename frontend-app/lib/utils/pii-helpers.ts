@@ -3,7 +3,8 @@
  * Helper functions for formatting and converting PII data
  */
 
-import { OnboardingData, PIIData } from '@/lib/types/pii';
+import { OnboardingData } from '@/components/onboarding/OnboardingTypes';
+import { PIIData } from '@/lib/types/pii';
 
 // Convert Supabase onboarding data to PII format
 export const convertOnboardingToPII = (onboardingData: OnboardingData, accountInfo: any): PIIData => {
@@ -46,12 +47,25 @@ export const convertOnboardingToPII = (onboardingData: OnboardingData, accountIn
 // Format SSN for display (mask sensitive parts)
 export const formatSSN = (ssn: string): string => {
   if (!ssn) return '';
-  // Show only last 4 digits, mask the rest
+  
+  // Remove all non-digit characters
   const cleaned = ssn.replace(/\D/g, '');
-  if (cleaned.length >= 4) {
-    return `***-**-${cleaned.slice(-4)}`;
+  
+  if (cleaned.length === 0) {
+    return '';
   }
-  return ssn;
+  
+  // Always mask sensitive parts, even for partial SSNs
+  if (cleaned.length >= 4) {
+    // Full SSN: show only last 4 digits
+    return `***-**-${cleaned.slice(-4)}`;
+  } else if (cleaned.length >= 2) {
+    // Partial SSN: show only last 2 digits, mask the rest
+    return `***-${cleaned.slice(-2)}`;
+  } else {
+    // Very short SSN: show only last digit, mask the rest
+    return `***-*-${cleaned}`;
+  }
 };
 
 // Format field values for display
@@ -103,7 +117,12 @@ export const getFieldDescription = (
 
 // Deep compare two objects to detect changes
 export const hasChanges = (original: any, current: any): boolean => {
-  if (!original || !current) return false;
+  // If one is undefined/null and the other isn't, there's a change
+  if (!original && current) return true;
+  if (original && !current) return true;
+  
+  // If both are undefined/null, no change
+  if (!original && !current) return false;
   
   const stringify = (obj: any) => JSON.stringify(obj, Object.keys(obj).sort());
   return stringify(original) !== stringify(current);
