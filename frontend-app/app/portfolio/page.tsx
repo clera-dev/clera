@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ArrowUpRight, ArrowDownRight, DollarSign, BarChart2, Percent, RefreshCw, AlertCircle, LockIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -125,6 +126,7 @@ interface AssetDetails {
   };
 
 export default function PortfolioPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioData, setPortfolioData] = useState({
     totalValue: 68395.63,
@@ -188,8 +190,8 @@ export default function PortfolioPage() {
     
     // Refresh portfolio data after successful trade
     if (shouldRefresh) {
-      // Trigger a reload of positions and portfolio data
-      window.location.reload();
+      // Trigger a refresh of positions and portfolio data using Next.js router
+      router.refresh();
     }
   };
 
@@ -522,7 +524,7 @@ export default function PortfolioPage() {
        <Alert variant="destructive">
          <AlertCircle className="h-4 w-4" />
          <AlertTitle>Error</AlertTitle>
-         <AlertDescription>{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload Page</Button></AlertDescription>
+         <AlertDescription>{error} <Button variant="link" size="sm" onClick={() => router.refresh()}>Reload Page</Button></AlertDescription>
        </Alert>
      </div>
    );

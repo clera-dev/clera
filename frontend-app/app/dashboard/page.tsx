@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import UserDashboard from "@/components/dashboard/UserDashboard";
 import BankAccountDetails from "@/components/dashboard/BankAccountDetails";
@@ -21,6 +22,7 @@ interface FetchedAccountDetails {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userData, setUserData] = useState<{ 
@@ -42,7 +44,7 @@ export default function DashboardPage() {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
           console.log("User not authenticated, redirecting to sign-in");
-          window.location.href = "/sign-in";
+          router.push("/sign-in");
           return; 
         }
         
@@ -230,7 +232,7 @@ export default function DashboardPage() {
                 <AlertDescription>
                     {error}
                     <br />
-                    <Button variant="link" className="p-0 h-auto mt-2" onClick={() => window.location.reload()}>Try Reloading</Button>
+                    <Button variant="link" className="p-0 h-auto mt-2" onClick={() => router.refresh()}>Try Reloading</Button>
                 </AlertDescription>
             </Alert>
         </div>

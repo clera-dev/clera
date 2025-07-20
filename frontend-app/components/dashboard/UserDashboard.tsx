@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Terminal, User, Mail, Shield, Clock } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ export default function UserDashboard({
   email,
   accountDetails
 }: UserDashboardProps) {
+  const router = useRouter();
   const [alpacaAccountId, setAlpacaAccountId] = useState<string | null>(null);
   const [isLoadingAccountId, setIsLoadingAccountId] = useState(true);
   const [accountIdError, setAccountIdError] = useState<string | null>(null);
@@ -184,7 +186,7 @@ export default function UserDashboard({
           <div className="pt-4 border-t">
             <Button 
               variant="outline" 
-              onClick={() => window.location.href = '/account/update-information'}
+              onClick={() => router.push('/account/update-information')}
               className="w-full md:w-auto"
             >
               Update Information

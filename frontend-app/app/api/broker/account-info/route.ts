@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
           'Content-Type': 'application/json',
           'X-API-Key': process.env.BACKEND_API_KEY || '',
         },
+        cache: 'no-store' // Disable caching for sensitive account data
       });
       
       if (!response.ok) {

@@ -1225,10 +1225,10 @@ def initiate_account_closure(account_id: str, ach_relationship_id: str, sandbox:
                         detailed_logger.log_email_notification("INITIATION_EMAIL", user_email, email_sent)
                     
                     if email_sent:
-                        logger.info(f"Account closure initiation email sent to {user_email}")
+                        logger.info(f"Account closure initiation email sent to (redacted email)")
                         result["email_notification_sent"] = True
                     else:
-                        logger.warning(f"Failed to send account closure initiation email to {user_email}")
+                        logger.warning(f"Failed to send account closure initiation email to (redacted email)")
                         result["email_notification_sent"] = False
                 else:
                     if detailed_logger:
