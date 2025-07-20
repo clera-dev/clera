@@ -2926,9 +2926,6 @@ async def get_updateable_pii_fields(account_id: str, api_key: str = Depends(veri
         logger.error(f"Error fetching updateable fields for account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch updateable fields: {str(e)}")
 
-@app.get("/api/debug/headers")
-async def debug_headers(request: Request):
-    return JSONResponse({k: v for k, v in request.headers.items()})
 
 if __name__ == "__main__":
     import uvicorn

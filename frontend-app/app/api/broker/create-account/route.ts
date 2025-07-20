@@ -96,32 +96,39 @@ export async function POST(request: Request) {
     
     if (!backendResponse.ok) {
       const errorText = await backendResponse.text();
-      let errorDetail;
-      try {
-        const errorData = JSON.parse(errorText);
-        
-        // Special handling for 409 Conflict (email already exists)
-        if (backendResponse.status === 409 && errorData.detail && errorData.detail.code === "EMAIL_EXISTS") {
-          return NextResponse.json(
-            { 
-              error: errorData.detail.message,
-              code: errorData.detail.code,
-              accountExists: true
-            },
-            { status: 409 }
-          );
+
+      
+      // Log the detailed error for debugging (server-side only)
+      console.error('Backend API error details:', {
+        status: backendResponse.status,
+        errorText: errorText
+      });
+      
+      // Special handling for 409 Conflict (email already exists)
+      if (backendResponse.status === 409) {
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.detail && errorData.detail.code === "EMAIL_EXISTS") {
+            return NextResponse.json(
+              { 
+                error: 'An account with this email already exists',
+                code: 'EMAIL_EXISTS',
+                accountExists: true
+              },
+              { status: 409 }
+            );
+          }
+        } catch (parseError) {
+          // If we can't parse the error, still return a generic 409 message
+          console.error('Error parsing 409 response:', parseError);
         }
-        
-        errorDetail = errorData.detail || 'Failed to create Alpaca account';
-      } catch (parseError) {
-        console.error('Error parsing error response:', parseError);
-        errorDetail = `Failed to create Alpaca account: ${errorText}`;
       }
       
-      console.error('Backend API Error:', errorDetail);
-      console.error('Status:', backendResponse.status);
-      
-      throw new Error(errorDetail);
+      // Return a generic error message to the client
+      return NextResponse.json(
+        { error: 'Failed to create account' },
+        { status: backendResponse.status }
+      );
     }
     
     const data = await backendResponse.json();
