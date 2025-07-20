@@ -6,6 +6,7 @@ import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -577,7 +578,7 @@ export default function UpdateInformationPage() {
                   )}
                 </Label>
                 {field === 'street_address' ? (
-                  <Input
+                  <Textarea
                     id={field}
                     value={Array.isArray(editedData.contact?.[field as keyof typeof editedData.contact]) 
                       ? (editedData.contact?.[field as keyof typeof editedData.contact] as string[])?.join('\n') || ''
@@ -588,7 +589,8 @@ export default function UpdateInformationPage() {
                     className={`${!fieldInfo.updateable ? "bg-muted" : ""} ${
                       validationErrors[`contact.${field}`] ? "border-red-500" : ""
                     }`}
-                    placeholder={field === 'street_address' ? "Enter street address (one line per address line)" : ""}
+                    placeholder="Enter street address (one line per address line)"
+                    rows={3}
                   />
                 ) : (
                   <Input

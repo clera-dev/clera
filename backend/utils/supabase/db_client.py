@@ -72,9 +72,7 @@ def get_user_alpaca_account_id(user_id: str) -> Optional[str]:
     try:
         # Create Supabase client
         supabase = get_supabase_client()
-        
-        logger.info(f"Fetching alpaca_account_id for user: {user_id}")
-        
+                
         # Query the user_onboarding table
         response = supabase.table("user_onboarding") \
             .select("alpaca_account_id") \
@@ -84,8 +82,8 @@ def get_user_alpaca_account_id(user_id: str) -> Optional[str]:
         # Extract the Alpaca account ID
         data = response.data
         
-        # Log the raw response data for debugging
-        logger.info(f"Supabase response data: {data}")
+        # Log the response structure for debugging (without sensitive data)
+        logger.info(f"Supabase response received for user {user_id}, data present: {data is not None}")
         
         if not data or len(data) == 0:
             logger.warning(f"No user_onboarding record found for user: {user_id}")
@@ -327,7 +325,7 @@ def update_user_onboarding_data(user_id: str, updated_fields: Dict[str, Any]) ->
         supabase = get_supabase_client()
         
         logger.info(f"Updating onboarding data for user: {user_id}")
-        logger.info(f"Fields to update: {updated_fields}")
+        logger.info(f"Fields to update (keys only): {list(updated_fields.keys())}")
         
         # First, get the current onboarding data
         response = supabase.table("user_onboarding") \
