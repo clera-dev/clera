@@ -175,8 +175,7 @@ if (path.startsWith('/api/') && !allowedApiPaths.some(p => path.startsWith(p))) 
 
 #### Environment Variables Not Loading
 - Check `frontend-app/.env.local` for correct variable names
-- Ensure variables are prefixed correctly (`BACKEND_API_URL`, not `
-D_API_URL` for server-side)
+- Ensure variables are prefixed correctly (`BACKEND_API_URL`, not `NEXT_PUBLIC_BACEKEND_API_URL` for server-side)
 - Restart Next.js dev server after environment changes
 
 ### Debugging Steps

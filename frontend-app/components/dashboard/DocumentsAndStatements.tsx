@@ -67,7 +67,21 @@ const getDocumentTypeColor = (type: string) => {
 };
 
 const getDocumentTypeIcon = (type: string) => {
-  return <FileText className="h-5 w-5 text-blue-600" />;
+  switch (type) {
+    case 'account_statement':
+      return <FileText className="h-5 w-5 text-blue-600" />;
+    case 'trade_confirmation':
+      return <CheckCircle className="h-5 w-5 text-green-600" />;
+    case 'tax_statement':
+    case 'tax_1099_b_form':
+    case 'tax_1099_div_form':
+    case 'tax_1099_int_form':
+      return <FileText className="h-5 w-5 text-purple-600" />;
+    case 'account_application':
+      return <FileText className="h-5 w-5 text-orange-600" />;
+    default:
+      return <FileText className="h-5 w-5 text-gray-500" />;
+  }
 };
 
 const getDisplayType = (type: string) => {

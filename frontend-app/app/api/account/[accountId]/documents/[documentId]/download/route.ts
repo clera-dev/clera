@@ -39,37 +39,26 @@ export async function GET(
     const backendResponse = await fetch(targetUrl, {
       method: 'GET',
       headers,
+      cache: 'no-store', // Prevent caching of sensitive documents
     });
 
     if (!backendResponse.ok) {
-      let errorDetail = `Backend request failed with status: ${backendResponse.status}`;
-      try {
-        const errorText = await backendResponse.text();
-        const errorJson = JSON.parse(errorText);
-        errorDetail = errorJson.detail || errorDetail;
-      } catch (e) { /* ignore */ }
-      return NextResponse.json({ error: errorDetail }, { status: backendResponse.status >= 500 ? 502 : backendResponse.status });
+      // Do not expose backend error details to the client
+      const isServerError = backendResponse.status >= 500;
+      const status = isServerError ? 502 : backendResponse.status;
+      const genericMessage = isServerError
+        ? 'Document download failed due to a server error.'
+        : 'Document download failed.';
+      return NextResponse.json({ error: genericMessage }, { status });
     }
 
     // Stream the file response
-    const fileBuffer = await backendResponse.arrayBuffer();
-    let filename = `document_${documentId}.pdf`;
-    const contentDisposition = backendResponse.headers.get('Content-Disposition');
-    if (contentDisposition && contentDisposition.includes('filename=')) {
-      const filenameMatch = contentDisposition.match(/filename=([^;]+)/);
-      if (filenameMatch) {
-        filename = filenameMatch[1].replace(/['"]/g, '');
-      }
-    }
-    return new NextResponse(fileBuffer, {
-      status: 200,
+    return new NextResponse(backendResponse.body, {
+      status: backendResponse.status,
       headers: {
         'Content-Type': backendResponse.headers.get('Content-Type') || 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': fileBuffer.byteLength.toString(),
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
+        'Content-Disposition': backendResponse.headers.get('Content-Disposition') || 'attachment',
+        // Add any other headers as needed
       },
     });
   } catch (error) {

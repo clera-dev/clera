@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
 
     let data;
     try {
-      data = JSON.parse(responseBody);
+      data = responseBody ? JSON.parse(responseBody) : null;
     } catch (e) {
       console.error("Portfolio Documents API Route: Failed to parse backend JSON response.", e);
       return NextResponse.json(

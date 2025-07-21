@@ -2921,12 +2921,18 @@ async def download_trade_document(
         # Create a temporary file with automatic cleanup scheduled
         temp_fd, temp_file_path = tempfile.mkstemp(
             suffix='.pdf', 
-            prefix=f'trade_doc_{document_id}_'
+            prefix=f'trade_doc_{document_id}_',
+            dir='/tmp'  # Ensure file is created in /tmp for security
         )
         os.close(temp_fd)  # Close the file descriptor since we only need the path
         
         # Generate safe filename for download
-        safe_name = document_metadata.get('display_name', 'document').replace(' ', '_').replace('/', '_')
+        import re
+        raw_name = document_metadata.get('display_name', 'document')
+        # Only allow alphanumerics, underscore, dash, and dot; replace others with underscore
+        safe_name = re.sub(r'[^A-Za-z0-9._-]', '_', raw_name)
+        # Limit length to 100 characters
+        safe_name = safe_name[:100] or 'document'
         download_filename = f"{safe_name}_{document_id}.pdf"
         
         # Download the document to the temporary file
