@@ -7,6 +7,7 @@ import UserDashboard from "@/components/dashboard/UserDashboard";
 import BankAccountDetails from "@/components/dashboard/BankAccountDetails";
 import BankConnectionsCard from "@/components/dashboard/BankConnectionsCard";
 import OrderHistory from "@/components/dashboard/OrderHistory";
+import DocumentsAndStatements from "@/components/dashboard/DocumentsAndStatements";
 import DangerZone from "@/components/account/DangerZone";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -285,6 +286,11 @@ export default function DashboardPage() {
       {/* Order History */}
       <div className="mt-6">
         <OrderHistory />
+      </div>
+      
+      {/* Documents and Statements */}
+      <div className="mt-6">
+        <DocumentsAndStatements />
       </div>
       
       {/* Danger Zone - Account Closure */}
