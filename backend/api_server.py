@@ -29,7 +29,7 @@ import httpx
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from pydantic import BaseModel, Field
 
 from langgraph.errors import GraphInterrupt
@@ -2760,6 +2760,195 @@ async def get_updateable_pii_fields(
     except Exception as e:
         logger.error(f"Error fetching updateable fields for account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch updateable fields: {str(e)}")
+
+
+# === TRADE DOCUMENTS ENDPOINTS ===
+
+@app.get("/api/account/{account_id}/documents")
+async def get_trade_documents(
+    account_id: str,
+    start_date: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
+    document_type: Optional[str] = Query(None, description="Document type filter"),
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get all trade documents and statements for an account.
+    
+    Supports filtering by date range and document type.
+    """
+    try:
+        from utils.alpaca.trade_documents import get_trade_documents_for_account
+        from alpaca.broker.enums import TradeDocumentType
+        from datetime import datetime
+        
+        logger.info(f"Fetching trade documents for account {account_id}")
+        
+        # Parse date filters if provided
+        parsed_start_date = None
+        parsed_end_date = None
+        
+        if start_date:
+            try:
+                parsed_start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+        
+        if end_date:
+            try:
+                parsed_end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+        
+        # Parse document type filter if provided
+        parsed_document_type = None
+        if document_type:
+            try:
+                # Map string to enum value
+                parsed_document_type = TradeDocumentType(document_type)
+            except ValueError:
+                valid_types = [dt.value for dt in TradeDocumentType]
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid document_type. Valid options: {valid_types}"
+                )
+        
+        # Fetch documents using the utility function
+        documents = get_trade_documents_for_account(
+            account_id=account_id,
+            start_date=parsed_start_date,
+            end_date=parsed_end_date,
+            document_type=parsed_document_type,
+            broker_client=broker_client
+        )
+        
+        return {
+            "account_id": account_id,
+            "documents": documents,
+            "count": len(documents),
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "document_type": document_type
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trade documents for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to fetch trade documents: {str(e)}"
+        )
+
+
+@app.get("/api/account/{account_id}/documents/{document_id}")
+async def get_trade_document_by_id(
+    account_id: str,
+    document_id: str,
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get a specific trade document by its ID.
+    """
+    try:
+        from utils.alpaca.trade_documents import get_trade_document_by_id
+        
+        logger.info(f"Fetching trade document {document_id} for account {account_id}")
+        
+        # Fetch document using the utility function
+        document = get_trade_document_by_id(
+            account_id=account_id,
+            document_id=document_id,
+            broker_client=broker_client
+        )
+        
+        return {
+            "account_id": account_id,
+            "document": document
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trade document {document_id} for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to fetch trade document: {str(e)}"
+        )
+
+
+@app.get("/api/account/{account_id}/documents/{document_id}/download")
+async def download_trade_document(
+    account_id: str,
+    document_id: str,
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Download a trade document as a file.
+    
+    Returns the document content with appropriate headers for file download.
+    """
+    import tempfile
+    import os
+    from fastapi.responses import FileResponse
+    
+    try:
+        from utils.alpaca.trade_documents import download_trade_document, get_trade_document_by_id
+        
+        logger.info(f"Downloading trade document {document_id} for account {account_id}")
+        
+        # First, get document metadata to determine filename
+        document_metadata = get_trade_document_by_id(
+            account_id=account_id,
+            document_id=document_id,
+            broker_client=broker_client
+        )
+        
+        # Create a temporary file for the download
+        temp_dir = tempfile.gettempdir()
+        
+        # Generate safe filename
+        safe_name = document_metadata.get('display_name', 'document').replace(' ', '_').replace('/', '_')
+        temp_filename = f"{safe_name}_{document_id}.pdf"
+        temp_file_path = os.path.join(temp_dir, temp_filename)
+        
+        # Download the document to the temporary file
+        download_trade_document(
+            account_id=account_id,
+            document_id=document_id,
+            file_path=temp_file_path,
+            broker_client=broker_client
+        )
+        
+        # Return the file as a download response
+        return FileResponse(
+            path=temp_file_path,
+            filename=temp_filename,
+            media_type='application/pdf',
+            headers={
+                "Content-Disposition": f"attachment; filename={temp_filename}"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading trade document {document_id} for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to download trade document: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

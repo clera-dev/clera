@@ -27,6 +27,38 @@
 
 ---
 
+## Software Engineering Principles: SOLID, Modularity, and Testability
+
+Clera’s codebase is designed with **modern software engineering best practices** to ensure maintainability, modularity, and testability:
+
+- **SOLID Principles:** Both backend and frontend code follow SOLID principles:
+  - **Single Responsibility:** Each module, service, and utility class handles a single concern (e.g., authentication, authorization, PII management, API communication).
+  - **Open/Closed & Liskov Substitution:** Service abstractions and interfaces allow for easy extension and safe substitution in tests.
+  - **Interface Segregation & Dependency Inversion:** Business logic is decoupled from framework code, and dependencies are injected for easier testing.
+
+- **Separation of Concerns:** 
+  - **Backend:** All business logic is extracted from the main API server into dedicated modules under `backend/utils/` (e.g., `authentication.py`, `authorization.py`, `alpaca/`, `supabase/`, `email/`).
+  - **Frontend:** API communication, authentication, and business logic are separated into service classes and hooks under `frontend-app/utils/` and `frontend-app/lib/`.
+
+- **Modularity:** 
+  - Shared logic and helpers are placed in `utils/` and `lib/` directories, making code reusable and easy to test.
+  - Each feature (e.g., account closure, PII management, bank funding) has its own service or utility module.
+
+- **Testability:** 
+  - Both backend and frontend are designed for testability, with extensive use of dependency injection, mocking, and isolated unit/integration tests.
+  - Tests avoid anti-patterns like direct path modification and instead use proper package structure and fixtures.
+
+- **Dependency Injection:** 
+  - Factory functions and service classes are used to inject dependencies, making it easy to swap implementations for testing.
+
+**Example Patterns:**
+- Backend: `PIIManagementService`, `AuthenticationService`, and `AuthorizationService` are each in their own files and tested in isolation.
+- Frontend: `AuthService` and `BackendService` are separated, and API routes use factory functions for dependency injection.
+
+This approach is enforced throughout the codebase and is a key part of Clera's maintainability and reliability.
+
+---
+
 ## Frontend–Backend Integration: API Proxy Pattern
 
 ### How the Frontend Talks to the Backend
@@ -143,7 +175,8 @@ if (path.startsWith('/api/') && !allowedApiPaths.some(p => path.startsWith(p))) 
 
 #### Environment Variables Not Loading
 - Check `frontend-app/.env.local` for correct variable names
-- Ensure variables are prefixed correctly (`BACKEND_API_URL`, not `NEXT_PUBLIC_BACKEND_API_URL` for server-side)
+- Ensure variables are prefixed correctly (`BACKEND_API_URL`, not `
+D_API_URL` for server-side)
 - Restart Next.js dev server after environment changes
 
 ### Debugging Steps
@@ -174,6 +207,8 @@ clera/
 │   └── .env             # Backend environment variables
 └── docs/                # Documentation
 ```
+
+---
 
 ## Core Features & Flows
 

@@ -6,7 +6,7 @@ module.exports = {
     '**/*.(test|spec).{js,ts,tsx}'
   ],
   transform: {
-    '^.+\\.(js|ts)$': 'babel-jest',
+    '^.+\\.(js|ts|tsx)$': 'babel-jest',
   },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
