@@ -22,16 +22,17 @@ global.URL.createObjectURL = jest.fn(() => 'mocked-blob-url');
 global.URL.revokeObjectURL = jest.fn();
 
 // Mock document.createElement for download tests
-const mockAnchorElement = {
-  click: jest.fn(),
-  style: {},
-  href: '',
-  download: '',
-};
 const originalCreateElement = document.createElement;
-document.createElement = jest.fn((tagName) => {
+document.createElement = jest.fn((tagName: string) => {
   if (tagName === 'a') {
-    return mockAnchorElement;
+    // Create a real anchor element and mock its methods/properties
+    const anchor = document.createElement.call(document, 'a') as HTMLAnchorElement;
+    anchor.click = jest.fn();
+    anchor.style = {} as any;
+    anchor.href = '';
+    anchor.download = '';
+    (global as any).lastCreatedAnchor = anchor;
+    return anchor;
   }
   return originalCreateElement.call(document, tagName);
 });
@@ -422,7 +423,7 @@ describe('DocumentsAndStatements Component', () => {
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('/api/portfolio/documents/doc-1/download'),
+          expect.stringContaining(`/api/account/test-account-id/documents/doc-1/download`),
           expect.objectContaining({
             method: 'GET'
           })
@@ -483,7 +484,7 @@ describe('DocumentsAndStatements Component', () => {
 
       await waitFor(() => {
         expect(global.URL.createObjectURL).toHaveBeenCalledWith(mockBlob);
-        expect(mockAnchorElement.click).toHaveBeenCalled();
+        expect((global as any).lastCreatedAnchor.click).toHaveBeenCalled();
         expect(document.body.appendChild).toHaveBeenCalled();
         expect(document.body.removeChild).toHaveBeenCalled();
         expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('mocked-blob-url');
