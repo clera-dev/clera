@@ -80,7 +80,16 @@ export class AuthService {
       .eq('user_id', user.id)
       .single();
 
-    if (onboardingError || !onboardingData?.alpaca_account_id) {
+    if (onboardingError) {
+      // Database/server error: propagate as 500 Internal Server Error
+      throw new AuthError(
+        `Database error: ${onboardingError.message || 'Unknown error'}`,
+        500
+      );
+    }
+
+    if (!onboardingData?.alpaca_account_id) {
+      // Account not found for this user
       throw new AuthError('Account not found', 404);
     }
 
@@ -110,14 +119,14 @@ export class AuthService {
     }
     
     if (error instanceof Error) {
+      if (error.message.includes('Unauthorized access to account')) {
+        return { message: error.message, status: 403 };
+      }
       if (error.message.includes('Unauthorized')) {
-        return { message: 'Unauthorized', status: 401 };
+        return { message: error.message, status: 401 };
       }
       if (error.message.includes('Account not found')) {
         return { message: 'Account not found', status: 404 };
-      }
-      if (error.message.includes('Unauthorized access to account')) {
-        return { message: 'Unauthorized access to account', status: 403 };
       }
     }
     

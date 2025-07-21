@@ -25,6 +25,25 @@ interface PIIFormFieldProps {
   onToggleSSN?: () => void;
 }
 
+// Format phone number as user types
+const formatPhoneNumber = (value: string): string => {
+  const digits = value.replace(/\D/g, '');
+  const match = digits.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
+  if (!match) return value;
+  
+  const [, area, exchange, number] = match;
+  if (digits.length <= 3) return area;
+  if (digits.length <= 6) return `(${area}) ${exchange}`;
+  return `(${area}) ${exchange}-${number}`;
+};
+
+// Format postal code to support both 5-digit and 9-digit ZIP codes
+const formatPostalCode = (value: string): string => {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 9)}`;
+};
+
 export const PIIFormField: React.FC<PIIFormFieldProps> = ({
   section,
   field,
@@ -41,16 +60,27 @@ export const PIIFormField: React.FC<PIIFormFieldProps> = ({
   const error = validationErrors[fieldPath];
   const isReadOnly = !isUpdateable;
 
-  // Handle input change
+  // Handle input change with validation and formatting
   const handleChange = (newValue: any) => {
     if (isReadOnly) return;
-    onChange(section, field, newValue);
+    
+    let formattedValue = newValue;
+    
+    // Apply formatting based on field type
+    if (field === 'phone') {
+      formattedValue = formatPhoneNumber(newValue);
+    } else if (field === 'postal_code') {
+      formattedValue = formatPostalCode(newValue);
+    }
+    
+    // Call the parent onChange handler
+    onChange(section, field, formattedValue);
   };
 
   // Render different input types
   const renderInput = () => {
     const commonProps = {
-      id: fieldPath, // Add id for label association
+      id: fieldPath,
       value: value || '',
       onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => 
         handleChange(e.target.value),
@@ -81,6 +111,41 @@ export const PIIFormField: React.FC<PIIFormFieldProps> = ({
       );
     }
 
+    // Special handling for email field
+    if (field === 'email') {
+      return (
+        <Input
+          {...commonProps}
+          type="email"
+          placeholder="you@example.com"
+        />
+      );
+    }
+
+    // Special handling for phone field with formatting
+    if (field === 'phone') {
+      return (
+        <Input
+          {...commonProps}
+          type="tel"
+          placeholder="(555) 123-4567"
+          maxLength={14} // (xxx) xxx-xxxx
+        />
+      );
+    }
+
+    // Special handling for postal code with formatting
+    if (field === 'postal_code') {
+      return (
+        <Input
+          {...commonProps}
+          type="text"
+          placeholder="12345 or 12345-6789"
+          maxLength={10} // xxxxx-xxxx
+        />
+      );
+    }
+
     // Special handling for street address (array)
     if (field === 'street_address') {
       const addressValue = Array.isArray(value) ? value.join('\n') : value || '';
@@ -88,7 +153,14 @@ export const PIIFormField: React.FC<PIIFormFieldProps> = ({
         <Textarea
           {...commonProps}
           value={addressValue}
-          onChange={(e) => handleChange(e.target.value.split('\n').filter(line => line.trim()))}
+          onChange={(e) =>
+            handleChange(
+              e.target.value
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line)
+            )
+          }
           rows={3}
           placeholder="Enter street address"
         />
@@ -151,12 +223,6 @@ export const PIIFormField: React.FC<PIIFormFieldProps> = ({
       
       {error && (
         <p className="text-sm text-red-500">{error}</p>
-      )}
-      
-      {isReadOnly && (
-        <p className="text-xs text-gray-500">
-          This field cannot be modified after account creation
-        </p>
       )}
     </div>
   );

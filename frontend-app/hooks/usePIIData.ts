@@ -154,23 +154,47 @@ export const usePIIData = (): UsePIIDataReturn => {
   // Check for changes when edited data changes
   useEffect(() => {
     if (piiData && editedData) {
-      const stringify = (obj: any) => JSON.stringify(obj, Object.keys(obj).sort());
-      const hasDataChanges = stringify(piiData) !== stringify(editedData);
+
+      // More robust deep comparison
+      const hasDataChanges = !isEqual(piiData, editedData);
       setHasChanges(hasDataChanges);
+    } else {
+      setHasChanges(false);
     }
   }, [piiData, editedData]);
+
+  // Helper function for deep equality check
+  const isEqual = (obj1: any, obj2: any): boolean => {
+    if (obj1 === obj2) return true;
+    if (!obj1 || !obj2) return false;
+    if (typeof obj1 !== 'object' || typeof obj2 !== 'object') return obj1 === obj2;
+    
+    const keys1 = Object.keys(obj1);
+    const keys2 = Object.keys(obj2);
+    
+    if (keys1.length !== keys2.length) return false;
+    
+    for (const key of keys1) {
+      if (!keys2.includes(key)) return false;
+      if (!isEqual(obj1[key], obj2[key])) return false;
+    }
+    
+    return true;
+  };
 
   // Handle input changes
   const handleInputChange = (section: string, field: string, value: any) => {
     if (!editedData) return;
 
-    setEditedData({
+    const updatedData = {
       ...editedData,
       [section]: {
         ...editedData[section as keyof PIIData],
         [field]: value,
       },
-    });
+    };
+
+    setEditedData(updatedData);
   };
 
   // Handle save

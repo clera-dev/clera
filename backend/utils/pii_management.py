@@ -246,15 +246,12 @@ class PIIManagementService:
     
     def get_updateable_fields(self, account_id: str) -> Dict[str, Any]:
         """
-        Get the list of PII fields that can be updated for this account.
+        Get the list of PII fields that can be updated.
         
-        Args:
-            account_id: The Alpaca account ID
-            
         Returns:
             Dictionary containing updateable fields information
         """
-        logger.info(f"Fetching updateable PII fields for account: (redacted)")
+        logger.info(f"Fetching updateable PII fields")
         
         # Define which fields are typically updateable vs. non-updateable
         # This is based on regulatory requirements and Alpaca's limitations

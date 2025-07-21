@@ -1,4 +1,4 @@
-import { OnboardingData, FundingSource } from "@/components/onboarding/OnboardingTypes";
+import { OnboardingData, FundingSource } from "@/lib/types/onboarding";
 
 type ApiResponse<T> = {
   data?: T;

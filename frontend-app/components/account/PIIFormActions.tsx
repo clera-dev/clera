@@ -28,7 +28,7 @@ export const PIIFormActions: React.FC<PIIFormActionsProps> = ({
         type="button"
         variant="outline"
         onClick={onCancel}
-        disabled={saving || !hasChanges}
+        disabled={saving}
       >
         <X className="h-4 w-4 mr-2" />
         Cancel
@@ -38,7 +38,7 @@ export const PIIFormActions: React.FC<PIIFormActionsProps> = ({
         type="button"
         onClick={onSave}
         disabled={saving || !hasChanges || hasValidationErrors}
-        className="min-w-[120px]"
+        className={`min-w-[120px] ${hasChanges && !hasValidationErrors ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}`}
       >
         {saving ? (
           <>

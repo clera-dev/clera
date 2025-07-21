@@ -12,7 +12,17 @@ This follows separation of concerns by extracting authorization logic from the m
 
 import logging
 from typing import Optional
-from fastapi import HTTPException
+
+# Custom exception for authorization errors
+class AuthorizationError(Exception):
+    """
+    Exception raised for authorization failures in the business logic layer.
+    This decouples core logic from FastAPI and allows for framework-agnostic error handling.
+    """
+    def __init__(self, message, status_code=403):
+        super().__init__(message)
+        self.status_code = status_code
+
 from utils.supabase.db_client import get_user_alpaca_account_id
 
 logger = logging.getLogger(__name__)
@@ -38,7 +48,7 @@ class AuthorizationService:
             The user_id if verification succeeds
             
         Raises:
-            HTTPException: If verification fails
+            AuthorizationError: If verification fails
         """
         try:
             # Get the account ID that this user actually owns
@@ -46,21 +56,21 @@ class AuthorizationService:
             
             if not user_account_id:
                 logger.warning(f"User has no associated Alpaca account")
-                raise HTTPException(status_code=404, detail="User account not found")
+                raise AuthorizationError(message="User account not found", status_code=404)
             
             # Verify that the requested account ID matches the user's account ID
             if user_account_id != account_id:
                 logger.warning(f"User attempted to access account but owns account")
-                raise HTTPException(status_code=403, detail="Unauthorized access to account")
+                raise AuthorizationError(message="Unauthorized access to account", status_code=403)
             
             logger.info(f"Successfully verified user owns account")
             return user_id
             
-        except HTTPException:
+        except AuthorizationError:
             raise
         except Exception as e:
             logger.error(f"Error verifying user account ownership: {e}")
-            raise HTTPException(status_code=500, detail="Error verifying account ownership")
+            raise AuthorizationError(message="Error verifying account ownership", status_code=500)
     
     @staticmethod
     def get_user_account_id(user_id: str) -> Optional[str]:
@@ -91,13 +101,13 @@ class AuthorizationService:
             The user's Alpaca account ID if found
             
         Raises:
-            HTTPException: If user has no associated account
+            AuthorizationError: If user has no associated account
         """
         account_id = AuthorizationService.get_user_account_id(user_id)
         
         if not account_id:
             logger.warning(f"User has no associated Alpaca account")
-            raise HTTPException(status_code=404, detail="User account not found")
+            raise AuthorizationError(message="User account not found", status_code=404)
         
         return account_id
     

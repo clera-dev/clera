@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuthService } from '@/utils/api/auth-service';
+import { AuthService, AuthError } from '@/utils/api/auth-service';
 import { BackendService } from '@/utils/api/backend-service';
 
 /**
@@ -37,13 +37,12 @@ export async function GET(
     // Log error without exposing sensitive information
     console.error('Updateable Fields API: Error fetching updateable fields:', error instanceof Error ? error.message : 'Unknown error');
     
-    // Handle different types of errors appropriately
-    if (error && typeof error === 'object' && 'status' in error) {
-      const authError = authService.handleAuthError(error);
-      return NextResponse.json({ error: authError.message }, { status: authError.status });
+    // Handle AuthError responses specifically
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.status });
     }
-    
-    const backendError = BackendService.handleBackendError(error);
-    return NextResponse.json({ error: backendError.message }, { status: backendError.status });
+
+    // All other errors: treat as backend/server error
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 } 
