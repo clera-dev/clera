@@ -47,15 +47,16 @@ Clera uses a **proxy pattern** for all frontend-to-backend communication:
 
 | Frontend API Route                              | Backend Endpoint                                 | Purpose                                 |
 |------------------------------------------------|--------------------------------------------------|-----------------------------------------|
-| `/api/portfolio/positions`                     | `/api/portfolio/{account_id}/positions`          | Get user’s portfolio positions          |
-| `/api/portfolio/orders`                        | `/api/portfolio/{account_id}/orders`             | Get user’s order history                |
+| `/api/portfolio/positions`                     | `/api/portfolio/{account_id}/positions`          | Get user's portfolio positions          |
+| `/api/portfolio/orders`                        | `/api/portfolio/{account_id}/orders`             | Get user's order history                |
 | `/api/portfolio/analytics`                     | `/api/portfolio/{account_id}/analytics`          | Get portfolio analytics                 |
 | `/api/portfolio/history`                       | `/api/portfolio/{account_id}/history`            | Get portfolio value history             |
 | `/api/portfolio/sector-allocation`             | `/api/portfolio/sector-allocation`               | Get sector allocation                   |
 | `/api/assets/[assetId]`                        | `/api/assets/{symbol_or_asset_id}`               | Get asset details                       |
-| `/api/watchlist/[accountId]`                   | `/api/watchlist/{account_id}`                    | Get user’s watchlist                    |
+| `/api/watchlist/[accountId]`                   | `/api/watchlist/{account_id}`                    | Get user's watchlist                    |
 | `/api/watchlist/[accountId]/add`/`/remove`     | `/api/watchlist/{account_id}/add`/`/remove`      | Add/remove symbol from watchlist        |
 | `/api/account/[accountId]/balance`             | `/get-account-balance/{account_id}`              | Get account balance                     |
+| `/api/account/[accountId]/pii`                 | `/api/account/{account_id}/pii`                  | Get/update PII data                     |
 | `/api/broker/account-summary`                  | `/get-ach-relationships`                         | Get ACH relationships                   |
 | `/api/account-closure/check-readiness/[accountId]` | `/account-closure/check-readiness/{account_id}` | Check if account can be closed          |
 | `/api/account-closure/initiate/[accountId]`    | `/account-closure/initiate/{account_id}`         | Initiate account closure                |
@@ -80,7 +81,7 @@ Clera uses a **proxy pattern** for all frontend-to-backend communication:
 ### Authentication & Authorization Flow
 - **Frontend API routes** use Supabase Auth to verify the user and check account ownership before proxying.
 - **Backend endpoints** require an API key (passed from the Next.js API route, never exposed to the browser).
-- **WebSocket connections** are proxied through a Next.js API route for auth, then connect to the backend’s WebSocket service.
+- **WebSocket connections** are proxied through a Next.js API route for auth, then connect to the backend's WebSocket service.
 
 ### Adding a New API Feature
 1. **Implement the backend endpoint** in FastAPI (`backend/api_server.py`).
@@ -89,6 +90,69 @@ Clera uses a **proxy pattern** for all frontend-to-backend communication:
    - Proxy the request to the backend (using env vars for URL and API key)
 3. **Call the new API route** from your React component or hook.
 4. **Test end-to-end** (frontend → Next.js API route → backend → response).
+
+---
+
+## Troubleshooting: API Errors & Configuration Issues
+
+### When You Get 404/401/500 API Errors
+
+**ALWAYS check these configuration files first:**
+
+1. **`frontend-app/next.config.mjs`** - Check for problematic rewrite rules
+   - **Problem**: Rewrite rules can bypass Next.js API routes entirely
+   - **Example**: `/api/account/:path*` → `backend/api/account/:path*` would bypass authentication
+   - **Solution**: Remove or modify rewrite rules that conflict with API routes
+
+2. **`frontend-app/middleware.ts`** - Check authentication and routing logic
+   - **Problem**: Middleware can block API routes or redirect incorrectly
+   - **Check**: Route configurations, authentication logic, onboarding status checks
+   - **Solution**: Ensure API routes are properly configured in middleware
+
+3. **`frontend-app/next.config.ts`** - Check for duplicate configurations
+   - **Problem**: Multiple config files can cause conflicts
+   - **Solution**: Use only one config file (prefer `.mjs` for rewrites)
+
+### Common Configuration Issues
+
+#### Rewrite Rules Bypassing API Routes
+```javascript
+// ❌ PROBLEMATIC - bypasses Next.js API routes
+{
+  source: '/api/account/:path*',
+  destination: `${backendUrl}/api/account/:path*`,
+}
+
+// ✅ CORRECT - let Next.js handle API routes
+// Remove or comment out problematic rewrites
+```
+
+#### Middleware Blocking API Routes
+```typescript
+// ❌ PROBLEMATIC - blocks all API routes
+if (path.startsWith('/api/')) {
+  return new NextResponse({ error: 'Blocked' }, { status: 403 });
+}
+
+// ✅ CORRECT - allow specific API routes
+const allowedApiPaths = ['/api/portfolio', '/api/broker'];
+if (path.startsWith('/api/') && !allowedApiPaths.some(p => path.startsWith(p))) {
+  // Handle appropriately
+}
+```
+
+#### Environment Variables Not Loading
+- Check `frontend-app/.env.local` for correct variable names
+- Ensure variables are prefixed correctly (`BACKEND_API_URL`, not `NEXT_PUBLIC_BACKEND_API_URL` for server-side)
+- Restart Next.js dev server after environment changes
+
+### Debugging Steps
+
+1. **Check Next.js API route logs** in the frontend terminal
+2. **Check backend logs** for incoming requests
+3. **Verify rewrite rules** aren't bypassing API routes
+4. **Test with curl** to isolate frontend vs backend issues
+5. **Check middleware logs** for authentication/authorization issues
 
 ---
 
@@ -175,7 +239,7 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 
 # Backend API
-NEXT_PUBLIC_BACKEND_API_URL=
+BACKEND_API_URL=
 
 # Plaid
 PLAID_CLIENT_ID=
@@ -350,6 +414,7 @@ copilot svc deploy --name websocket-service --env production
 ### Frontend Core Files
 - `frontend-app/app/layout.tsx` - Root layout
 - `frontend-app/middleware.ts` - Auth middleware
+- `frontend-app/next.config.mjs` - Next.js configuration (rewrites, etc.)
 - `frontend-app/components/onboarding/OnboardingFlow.tsx` - Account creation
 - `frontend-app/app/dashboard/page.tsx` - Main dashboard
 
@@ -396,5 +461,5 @@ This guide provides the essential knowledge needed to effectively work on the Cl
 Here are the functions available to Alpaca's python broker API:
 ``` bash
 cd backend && python -c "from alpaca.broker import BrokerClient; print(dir(Brokecd backend && python -c "from alpaca.broker import BrokerClient; print(dir(BrokerClient))"
-['__abstractmethods__', '__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__getstate__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__slots__', '__str__', '__subclasshook__', '__weakref__', '_abc_impl', '_get_account_activities_iterator', '_get_auth_headers', '_get_default_headers', '_get_marketdata', '_get_sse_headers', '_get_transfers_iterator', '_iterate_over_pages', '_one_request', '_parse_activity', '_request', '_return_paginated_result', '_validate_credentials', '_validate_pagination', 'add_asset_to_watchlist_for_account_by_id', 'cancel_journal_by_id', 'cancel_order_for_account_by_id', 'cancel_orders_for_account', 'cancel_run_by_id', 'cancel_transfer_for_account', 'close_account', 'close_all_positions_for_account', 'close_position_for_account', 'create_account', 'create_ach_relationship_for_account', 'create_bank_for_account', 'create_batch_journal', 'create_journal', 'create_manual_run', 'create_portfolio', 'create_reverse_batch_journal', 'create_subscription', 'create_transfer_for_account', 'create_watchlist_for_account', 'delete', 'delete_account', 'delete_ach_relationship_for_account', 'delete_bank_for_account', 'delete_watchlist_from_account_by_id', 'download_trade_document_for_account_by_id', 'exercise_options_position_for_account_by_id', 'get', 'get_account_activities', 'get_account_by_id', 'get_account_status_events', 'get_ach_relationships_for_account', 'get_all_accounts_positions', 'get_all_assets', 'get_all_portfolios', 'get_all_positions_for_account', 'get_all_runs', 'get_all_subscriptions', 'get_asset', 'get_banks_for_account', 'get_calendar', 'get_cip_data_for_account_by_id', 'get_clock', 'get_corporate_announcement_by_id', 'get_corporate_announcements', 'get_journal_by_id', 'get_journal_events', 'get_journals', 'get_non_trading_activity_events', 'get_open_position_for_account', 'get_order_for_account_by_client_id', 'get_order_for_account_by_id', 'get_orders_for_account', 'get_portfolio_by_id', 'get_portfolio_history_for_account', 'get_run_by_id', 'get_subscription_by_id', 'get_trade_account_by_id', 'get_trade_configuration_for_account', 'get_trade_document_for_account_by_id', 'get_trade_documents_for_account', 'get_trade_events', 'get_transfer_events', 'get_transfers_for_account', 'get_watchlist_for_account_by_id', 'get_watchlists_for_account', 'inactivate_portfolio_by_id', 'list_accounts', 'patch', 'post', 'put', 'remove_asset_from_watchlist_for_account_by_id', 'replace_order_for_account_by_id', 'response_wrapper', 'submit_order_for_account', 'unsubscribe_account', 'update_account', 'update_portfolio_by_id', 'update_trade_configuration_for_account', 'update_watchlist_for_account_by_id', 'upload_cip_data_for_account_by_id', 'upload_documents_to_account']
+['__abstractmethods__', '__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__getstate__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', '_abc_impl', '_get_account_activities_iterator', '_get_auth_headers', '_get_default_headers', '_get_marketdata', '_get_sse_headers', '_get_transfers_iterator', '_iterate_over_pages', '_one_request', '_parse_activity', '_request', '_validate_credentials', '_validate_pagination', 'add_asset_to_watchlist_for_account_by_id', 'cancel_journal_by_id', 'cancel_order_for_account_by_id', 'cancel_orders_for_account', 'cancel_run_by_id', 'cancel_transfer_for_account', 'close_account', 'close_all_positions_for_account', 'close_position_for_account', 'create_account', 'create_ach_relationship_for_account', 'create_bank_for_account', 'create_batch_journal', 'create_journal', 'create_manual_run', 'create_portfolio', 'create_reverse_batch_journal', 'create_subscription', 'create_transfer_for_account', 'create_watchlist_for_account', 'delete', 'delete_account', 'delete_ach_relationship_for_account', 'delete_bank_for_account', 'delete_watchlist_from_account_by_id', 'download_trade_document_for_account_by_id', 'exercise_options_position_for_account_by_id', 'get', 'get_account_activities', 'get_account_by_id', 'get_account_status_events', 'get_ach_relationships_for_account', 'get_all_accounts_positions', 'get_all_assets', 'get_all_portfolios', 'get_all_positions_for_account', 'get_all_runs', 'get_all_subscriptions', 'get_asset', 'get_banks_for_account', 'get_calendar', 'get_cip_data_for_account_by_id', 'get_clock', 'get_corporate_announcement_by_id', 'get_corporate_announcements', 'get_journal_by_id', 'get_journal_events', 'get_journals', 'get_non_trading_activity_events', 'get_open_position_for_account', 'get_order_for_account_by_client_id', 'get_order_for_account_by_id', 'get_orders_for_account', 'get_portfolio_by_id', 'get_portfolio_history_for_account', 'get_run_by_id', 'get_subscription_by_id', 'get_trade_account_by_id', 'get_trade_configuration_for_account', 'get_trade_document_for_account_by_id', 'get_trade_documents_for_account', 'get_trade_events', 'get_transfer_events', 'get_transfers_for_account', 'get_watchlist_for_account_by_id', 'get_watchlists_for_account', 'inactivate_portfolio_by_id', 'list_accounts', 'patch', 'post', 'put', 'remove_asset_from_watchlist_for_account_by_id', 'replace_order_for_account_by_id', 'response_wrapper', 'submit_order_for_account', 'unsubscribe_account', 'update_account', 'update_portfolio_by_id', 'update_trade_configuration_for_account', 'update_watchlist_for_account_by_id', 'upload_cip_data_for_account_by_id', 'upload_documents_to_account']
 ```

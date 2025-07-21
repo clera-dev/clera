@@ -1,6 +1,6 @@
 "use client";
 
-import { OnboardingData } from "@/components/onboarding/OnboardingTypes";
+import { OnboardingData } from "@/lib/types/onboarding";
 import { saveOnboardingDataAction, getOnboardingDataAction, OnboardingStatus } from "@/app/actions";
 
 // Client-side wrapper for saving onboarding data

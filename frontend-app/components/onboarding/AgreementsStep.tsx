@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { OnboardingData } from "./OnboardingTypes";
+import { OnboardingData } from "@/lib/types/onboarding";
 import AgreementViewer from "./AgreementViewer";
 
 // Agreement PDF URLs

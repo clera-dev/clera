@@ -24,7 +24,7 @@ export async function GET(
   }
 
   if (!BACKEND_URL) {
-    console.error('Error: BACKEND_API_URL or NEXT_PUBLIC_BACKEND_URL environment variable is not set.');
+    console.error('Error: BACKEND_API_URL environment variable is not set.');
     return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
   }
 

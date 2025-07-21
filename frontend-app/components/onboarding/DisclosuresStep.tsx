@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { OnboardingData } from "./OnboardingTypes";
+import { OnboardingData } from "@/lib/types/onboarding";
 
 interface DisclosuresStepProps {
   data: OnboardingData;

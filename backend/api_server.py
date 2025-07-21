@@ -46,6 +46,9 @@ from utils.alpaca.account_closure import (
     resume_account_closure
 )
 
+# Authentication imports
+from utils.authentication import verify_account_ownership
+
 # Watchlist imports
 from utils.alpaca.watchlist import (
     get_watchlist_for_account,
@@ -422,7 +425,6 @@ create_chat_session = None
 get_chat_sessions = None
 get_conversations_by_session = None
 delete_chat_session = None
-save_conversation_with_session = None
 get_user_alpaca_account_id = None
 create_thread = None
 run_thread_stream = None
@@ -443,16 +445,11 @@ try:
     # For ACH transfers
     from utils.alpaca.bank_funding import create_ach_transfer, create_ach_relationship_manual
     
-    # Import Supabase conversation and chat session utilities
+    # Import Supabase conversation utilities
     from utils.supabase import (
         save_conversation,
         get_user_conversations,
         get_portfolio_conversations,
-        create_chat_session,
-        get_chat_sessions,
-        get_conversations_by_session,
-        delete_chat_session,
-        save_conversation_with_session,
         get_user_alpaca_account_id
     )
     
@@ -491,6 +488,10 @@ def verify_api_key(x_api_key: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid API key")
     
     return x_api_key
+
+
+
+
 
 # --- Other Models (moved here for clarity) ---
 class FundingSourceEnum(str, Enum):
@@ -814,9 +815,10 @@ async def create_alpaca_account(
             account_details, is_new_account = create_or_get_alpaca_account(alpaca_data)
             
             if not is_new_account:
-                logger.info(f"Found existing account for email {alpaca_data['contact']['email_address']}")
+                # Log only that an existing account was found, not the email
+                logger.info(f"Found existing account for email")
             else:
-                logger.info(f"Successfully created new Alpaca account: {account_details}")
+                logger.info(f"Successfully created new Alpaca account")
                 
             # Return account information
             return {
@@ -859,9 +861,9 @@ async def create_ach_relationship_link(
         user_email = request.email
         redirect_uri = request.redirectUri
         
-        # Log the request data for debugging
+        # Log the request data for debugging (redacting sensitive information)
         logger.info(f"Creating ACH relationship link for account_id: {alpaca_account_id}")
-        logger.info(f"Using email: {user_email}")
+        logger.info(f"Using email: (redacted)")
         logger.info(f"Redirect URI: {redirect_uri}")
         
         # Create the Plaid Link URL using Alpaca's integrated Plaid flow
@@ -2685,6 +2687,80 @@ async def check_symbol_in_watchlist(
             status_code=500,
             detail=f"Failed to check symbol in watchlist: {str(e)}"
         )
+
+# Add PII management endpoints after the existing account-related endpoints
+
+@app.get("/api/account/{account_id}/pii", response_model=dict)
+async def get_account_pii(
+    account_id: str, 
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(verify_account_ownership)
+):
+    """Get all personally identifiable information for an account."""
+    try:
+        from utils.pii_management import PIIManagementService
+        
+        # Use the PII management service with injected broker client
+        pii_service = PIIManagementService(broker_client)
+        result = pii_service.get_account_pii(account_id)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error fetching PII for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch account PII: {str(e)}")
+
+
+@app.patch("/api/account/{account_id}/pii", response_model=dict)
+async def update_account_pii(
+    account_id: str, 
+    request: Request, 
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(verify_account_ownership)
+):
+    """Update personally identifiable information for an account."""
+    try:
+        from utils.pii_management import PIIManagementService
+        
+        # Parse the request body
+        update_data = await request.json()
+        
+        # Use the PII management service with injected broker client
+        pii_service = PIIManagementService(broker_client)
+        result = pii_service.update_account_pii(account_id, update_data)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating PII for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update account PII: {str(e)}")
+
+
+@app.get("/api/account/{account_id}/pii/updateable-fields", response_model=dict)
+async def get_updateable_pii_fields(
+    account_id: str, 
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(verify_account_ownership)
+):
+    """Get the list of PII fields that can be updated for this account."""
+    try:
+        from utils.pii_management import PIIManagementService
+        
+        # Use the PII management service with injected broker client
+        pii_service = PIIManagementService(broker_client)
+        result = pii_service.get_updateable_fields(account_id)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error fetching updateable fields for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch updateable fields: {str(e)}")
+
 
 if __name__ == "__main__":
     import uvicorn

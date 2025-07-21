@@ -78,19 +78,15 @@ export async function POST(request: Request) {
     
     if (!backendResponse.ok) {
       const errorText = await backendResponse.text();
-      let errorDetail;
-      try {
-        const errorData = JSON.parse(errorText);
-        errorDetail = errorData.detail || 'Failed to create Plaid link';
-      } catch (parseError) {
-        console.error('Error parsing error response:', parseError);
-        errorDetail = `Failed to create Plaid link: ${errorText}`;
-      }
       
-      console.error('Backend API Error:', errorDetail);
-      console.error('Status:', backendResponse.status);
+      // Log error status only to prevent PII exposure
+      console.error('Backend API error status:', backendResponse.status);
       
-      throw new Error(errorDetail);
+      // Return a generic error message to the client
+      return NextResponse.json(
+        { error: 'Failed to connect bank account' },
+        { status: backendResponse.status }
+      );
     }
     
     const data = await backendResponse.json();
