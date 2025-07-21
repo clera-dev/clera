@@ -18,6 +18,20 @@ from api_server import app
 
 client = TestClient(app)
 
+import jwt
+from datetime import datetime, timedelta
+
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "test-secret")
+
+def generate_jwt(user_id, exp_minutes=60):
+    payload = {
+        "sub": user_id,
+        "aud": "authenticated",
+        "exp": datetime.utcnow() + timedelta(minutes=exp_minutes),
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, SUPABASE_JWT_SECRET, algorithm="HS256")
+
 class TestPIIEndpoints:
     
     @pytest.fixture
@@ -467,3 +481,118 @@ class TestPIIEndpointsSecurity:
             # Verify appropriate data IS included
             assert pii_data["identity"]["given_name"] == "John"
             assert pii_data["contact"]["email"] == "john@example.com" 
+
+class TestPIIEndpointsJWT:
+    @pytest.fixture
+    def sample_account_id(self):
+        return str(uuid.uuid4())
+
+    @pytest.fixture
+    def user_id(self):
+        return "user-1234"
+
+    @pytest.fixture
+    def other_user_id(self):
+        return "user-5678"
+
+    @pytest.fixture
+    def valid_jwt(self, user_id):
+        return generate_jwt(user_id)
+
+    @pytest.fixture
+    def other_jwt(self, other_user_id):
+        return generate_jwt(other_user_id)
+
+    @pytest.fixture
+    def expired_jwt(self, user_id):
+        return generate_jwt(user_id, exp_minutes=-1)
+
+    @pytest.fixture
+    def mock_account_ownership(self, user_id, sample_account_id):
+        # Patch get_user_alpaca_account_id to return the correct account for user_id
+        with patch("utils.supabase.db_client.get_user_alpaca_account_id") as mock_get:
+            def get_account(uid):
+                if uid == user_id:
+                    return sample_account_id
+                return None
+            mock_get.side_effect = get_account
+            yield mock_get
+
+    def test_get_account_pii_jwt_success(self, mock_broker_client, mock_account_ownership, valid_jwt, sample_account_id):
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"Authorization": f"Bearer {valid_jwt}"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "data" in data
+
+    def test_get_account_pii_jwt_wrong_user(self, mock_broker_client, mock_account_ownership, other_jwt, sample_account_id):
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"Authorization": f"Bearer {other_jwt}"}
+        )
+        # Should be forbidden (user does not own this account)
+        assert response.status_code == 403
+
+    def test_get_account_pii_jwt_missing(self, sample_account_id):
+        response = client.get(f"/api/account/{sample_account_id}/pii")
+        assert response.status_code == 401
+
+    def test_get_account_pii_jwt_expired(self, mock_broker_client, mock_account_ownership, expired_jwt, sample_account_id):
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"Authorization": f"Bearer {expired_jwt}"}
+        )
+        assert response.status_code == 401
+
+    def test_patch_account_pii_jwt_success(self, mock_broker_client, mock_account_ownership, valid_jwt, sample_account_id):
+        update_data = {"contact": {"phone": "+15555555555"}}
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json=update_data,
+            headers={"Authorization": f"Bearer {valid_jwt}"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_patch_account_pii_jwt_wrong_user(self, mock_broker_client, mock_account_ownership, other_jwt, sample_account_id):
+        update_data = {"contact": {"phone": "+15555555555"}}
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json=update_data,
+            headers={"Authorization": f"Bearer {other_jwt}"}
+        )
+        assert response.status_code == 403
+
+    def test_patch_account_pii_jwt_expired(self, mock_broker_client, mock_account_ownership, expired_jwt, sample_account_id):
+        update_data = {"contact": {"phone": "+15555555555"}}
+        response = client.patch(
+            f"/api/account/{sample_account_id}/pii",
+            json=update_data,
+            headers={"Authorization": f"Bearer {expired_jwt}"}
+        )
+        assert response.status_code == 401
+
+    def test_get_updateable_fields_jwt_success(self, mock_broker_client, mock_account_ownership, valid_jwt, sample_account_id):
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii/updateable-fields",
+            headers={"Authorization": f"Bearer {valid_jwt}"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "data" in data
+
+    def test_api_key_and_jwt_mutual_exclusion(self, mock_broker_client, mock_account_ownership, valid_jwt, api_key_setup, sample_account_id):
+        # If both are present, JWT should take precedence (or test expected behavior)
+        response = client.get(
+            f"/api/account/{sample_account_id}/pii",
+            headers={"Authorization": f"Bearer {valid_jwt}", "x-api-key": api_key_setup}
+        )
+        # Should succeed as JWT is valid
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True 

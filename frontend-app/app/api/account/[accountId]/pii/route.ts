@@ -16,7 +16,7 @@ export async function GET(
     // Step 2: Backend Communication (separate concern)
     // BackendService handles API key securely without exposing it to calling code
     const backendService = new BackendService();
-    const piiData = await backendService.getPII(authContext.accountId, authContext.user.id);
+    const piiData = await backendService.getPII(authContext.accountId, authContext.user.id, authContext.authToken);
 
     return NextResponse.json(piiData);
 
@@ -52,7 +52,7 @@ export async function PATCH(
     // Step 3: Backend Communication (separate concern)
     // BackendService handles API key securely without exposing it to calling code
     const backendService = new BackendService();
-    const result = await backendService.updatePII(authContext.accountId, authContext.user.id, updateData);
+    const result = await backendService.updatePII(authContext.accountId, authContext.user.id, updateData, authContext.authToken);
 
     return NextResponse.json(result);
 

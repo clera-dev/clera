@@ -45,7 +45,19 @@ export const usePIIData = (): UsePIIDataReturn => {
 
   // Fetch PII data from Next.js API route
   const fetchPIIData = async (accountId: string): Promise<PIIData> => {
-    const response = await fetch(`/api/account/${accountId}/pii`);
+    // Get the user's session token
+    const { data: { session } } = await supabase.auth.getSession();
+    const authToken = session?.access_token;
+    
+    if (!authToken) {
+      throw new Error('Authentication token not available');
+    }
+
+    const response = await fetch(`/api/account/${accountId}/pii`, {
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+      },
+    });
 
     if (!response.ok) {
       // Don't log raw error text to prevent PII exposure
@@ -63,7 +75,19 @@ export const usePIIData = (): UsePIIDataReturn => {
 
   // Fetch updateable fields from Next.js API route
   const fetchUpdateableFields = async (accountId: string): Promise<UpdateableFieldsData> => {
-    const response = await fetch(`/api/account/${accountId}/pii/updateable-fields`);
+    // Get the user's session token
+    const { data: { session } } = await supabase.auth.getSession();
+    const authToken = session?.access_token;
+    
+    if (!authToken) {
+      throw new Error('Authentication token not available');
+    }
+
+    const response = await fetch(`/api/account/${accountId}/pii/updateable-fields`, {
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+      },
+    });
 
     if (!response.ok) {
       // Don't log raw error text to prevent PII exposure
@@ -158,10 +182,19 @@ export const usePIIData = (): UsePIIDataReturn => {
       setError(null);
       setSuccess(null);
 
+      // Get the user's session token
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token;
+      
+      if (!authToken) {
+        throw new Error('Authentication token not available');
+      }
+
       const response = await fetch(`/api/account/${alpacaAccountId}/pii`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
         },
         body: JSON.stringify(editedData),
       });

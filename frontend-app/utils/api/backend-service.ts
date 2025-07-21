@@ -10,6 +10,7 @@ export interface BackendServiceConfig {
   endpoint: string;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: any;
+  authToken?: string;
 }
 
 export interface BackendServiceError {
@@ -36,7 +37,7 @@ export class BackendService {
    * @throws BackendServiceError if the request fails
    */
   async request<T = any>(config: BackendServiceConfig): Promise<T> {
-    const { endpoint, method = 'GET', body } = config;
+    const { endpoint, method = 'GET', body, authToken } = config;
 
     // Validate endpoint to prevent potential security issues
     if (!endpoint || typeof endpoint !== 'string') {
@@ -48,22 +49,28 @@ export class BackendService {
       throw { message: 'Invalid endpoint format', status: 400 };
     }
 
+    // Prepare headers with authentication token if provided
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
     let response;
     switch (method) {
       case 'GET':
-        response = await this.client.get<T>(endpoint);
+        response = await this.client.get<T>(endpoint, headers);
         break;
       case 'POST':
-        response = await this.client.post<T>(endpoint, body);
+        response = await this.client.post<T>(endpoint, body, headers);
         break;
       case 'PUT':
-        response = await this.client.put<T>(endpoint, body);
+        response = await this.client.put<T>(endpoint, body, headers);
         break;
       case 'PATCH':
-        response = await this.client.patch<T>(endpoint, body);
+        response = await this.client.patch<T>(endpoint, body, headers);
         break;
       case 'DELETE':
-        response = await this.client.delete<T>(endpoint);
+        response = await this.client.delete<T>(endpoint, headers);
         break;
       default:
         throw { message: 'Unsupported HTTP method', status: 400 };
@@ -91,41 +98,47 @@ export class BackendService {
   /**
    * Get PII data for an account
    * @param accountId - The account ID
-   * @param userId - The user ID for authorization
+   * @param userId - The user ID for authorization (not sent to backend, used for logging only)
+   * @param authToken - The user's authentication token
    * @returns PII data
    */
-  async getPII(accountId: string, userId: string) {
+  async getPII(accountId: string, userId: string, authToken?: string) {
     return this.request({
-      endpoint: `/api/account/${encodeURIComponent(accountId)}/pii?user_id=${encodeURIComponent(userId)}`,
-      method: 'GET'
+      endpoint: `/api/account/${encodeURIComponent(accountId)}/pii`,
+      method: 'GET',
+      authToken
     });
   }
 
   /**
    * Update PII data for an account
    * @param accountId - The account ID
-   * @param userId - The user ID for authorization
+   * @param userId - The user ID for authorization (not sent to backend, used for logging only)
    * @param updateData - The data to update
+   * @param authToken - The user's authentication token
    * @returns Update result
    */
-  async updatePII(accountId: string, userId: string, updateData: any) {
+  async updatePII(accountId: string, userId: string, updateData: any, authToken?: string) {
     return this.request({
-      endpoint: `/api/account/${encodeURIComponent(accountId)}/pii?user_id=${encodeURIComponent(userId)}`,
+      endpoint: `/api/account/${encodeURIComponent(accountId)}/pii`,
       method: 'PATCH',
-      body: updateData
+      body: updateData,
+      authToken
     });
   }
 
   /**
    * Get updateable fields for an account
    * @param accountId - The account ID
-   * @param userId - The user ID for authorization
+   * @param userId - The user ID for authorization (not sent to backend, used for logging only)
+   * @param authToken - The user's authentication token
    * @returns Updateable fields configuration
    */
-  async getUpdateableFields(accountId: string, userId: string) {
+  async getUpdateableFields(accountId: string, userId: string, authToken?: string) {
     return this.request({
-      endpoint: `/api/account/${accountId}/pii/updateable-fields?user_id=${encodeURIComponent(userId)}`,
-      method: 'GET'
+      endpoint: `/api/account/${accountId}/pii/updateable-fields`,
+      method: 'GET',
+      authToken
     });
   }
 

@@ -29,7 +29,7 @@ export async function GET(
     
     // Step 2: Backend Communication (separate concern)
     // BackendService handles API key securely without exposing it to calling code
-    const updateableFields = await backendService.getUpdateableFields(authContext.accountId, authContext.user.id);
+    const updateableFields = await backendService.getUpdateableFields(authContext.accountId, authContext.user.id, authContext.authToken);
 
     return NextResponse.json(updateableFields);
 
