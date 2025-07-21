@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { OnboardingData, FundingSource } from "@/lib/types/onboarding";
+import { OnboardingData } from "@/lib/types/onboarding";
 import { initialOnboardingData } from "./OnboardingTypes";
 import ProgressBar from "./ProgressBar";
 import WelcomePage from "./WelcomePage";

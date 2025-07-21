@@ -62,7 +62,16 @@ export const validateAllFields = (data: any, requiredFields: string[]): Validati
   const errors: ValidationErrors = {};
   
   requiredFields.forEach(fieldPath => {
-    const [section, field] = fieldPath.split('.');
+    // Support nested fields and avoid undefined field
+    let section: string, field: string;
+    const parts = fieldPath.split('.');
+    if (parts.length === 1) {
+      section = parts[0];
+      field = parts[0];
+    } else {
+      section = parts[0];
+      field = parts.slice(1).join('.'); // Handles deeper nesting
+    }
     const value = data[section]?.[field];
     const error = validateField(section, field, value);
     if (error) {

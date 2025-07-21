@@ -327,7 +327,11 @@ def update_user_onboarding_data(user_id: str, updated_fields: Dict[str, Any]) ->
         logger.info(f"Updating onboarding data for user")
         logger.info(f"Fields to update (keys only): {list(updated_fields.keys())}")
         
-        # First, get the current onboarding data
+        if not updated_fields:
+            logger.warning("No fields to update provided")
+            return True
+        
+        # Get the current onboarding data
         response = supabase.table("user_onboarding") \
             .select("onboarding_data") \
             .eq("user_id", user_id) \
@@ -355,9 +359,12 @@ def update_user_onboarding_data(user_id: str, updated_fields: Dict[str, Any]) ->
             else:
                 updated_data[field_path] = new_value
         
-        # Update the onboarding_data column
+        # Update the onboarding_data column with timestamp
         update_response = supabase.table("user_onboarding") \
-            .update({"onboarding_data": updated_data}) \
+            .update({
+                "onboarding_data": updated_data,
+                "updated_at": "now()"
+            }) \
             .eq("user_id", user_id) \
             .execute()
         

@@ -60,7 +60,7 @@ class AuthorizationService:
             
             # Verify that the requested account ID matches the user's account ID
             if user_account_id != account_id:
-                logger.warning(f"User attempted to access account but owns account")
+                logger.warning(f"Unauthorized access attempt: user tried to access account_id, but DOES NOT own account_id")
                 raise AuthorizationError(message="Unauthorized access to account", status_code=403)
             
             logger.info(f"Successfully verified user owns account")

@@ -35,8 +35,6 @@ export default function UpdateInformationPage() {
     handleInputChange,
     handleSave,
     handleCancel,
-    clearError,
-    clearSuccess,
   } = usePIIData();
 
   // Handle form validation - run validation whenever editedData changes
