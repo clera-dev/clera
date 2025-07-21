@@ -183,6 +183,8 @@ class TradeDocumentService:
             logger.error(f"Error downloading trade document {document_id} for account {account_id}: {str(e)}")
             raise
     
+
+    
     def _get_display_name(self, document: TradeDocument) -> str:
         """
         Generate a user-friendly display name for a document.
@@ -323,3 +325,5 @@ def download_trade_document(
     """
     service = create_trade_document_service(broker_client)
     service.download_document(account_id, document_id, file_path) 
+
+ 

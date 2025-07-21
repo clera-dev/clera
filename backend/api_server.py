@@ -2891,6 +2891,7 @@ async def get_trade_document_by_id(
 async def download_trade_document(
     account_id: str,
     document_id: str,
+    background_tasks: BackgroundTasks,
     broker_client = Depends(get_broker_client),
     api_key: str = Depends(verify_api_key)
 ):
@@ -2898,11 +2899,13 @@ async def download_trade_document(
     Download a trade document as a file.
     
     Returns the document content with appropriate headers for file download.
+    Uses background tasks to automatically clean up temporary files after serving.
     """
     import tempfile
     import os
     from fastapi.responses import FileResponse
     
+    temp_file_path = None
     try:
         from utils.alpaca.trade_documents import download_trade_document, get_trade_document_by_id
         
@@ -2915,13 +2918,16 @@ async def download_trade_document(
             broker_client=broker_client
         )
         
-        # Create a temporary file for the download
-        temp_dir = tempfile.gettempdir()
+        # Create a temporary file with automatic cleanup scheduled
+        temp_fd, temp_file_path = tempfile.mkstemp(
+            suffix='.pdf', 
+            prefix=f'trade_doc_{document_id}_'
+        )
+        os.close(temp_fd)  # Close the file descriptor since we only need the path
         
-        # Generate safe filename
+        # Generate safe filename for download
         safe_name = document_metadata.get('display_name', 'document').replace(' ', '_').replace('/', '_')
-        temp_filename = f"{safe_name}_{document_id}.pdf"
-        temp_file_path = os.path.join(temp_dir, temp_filename)
+        download_filename = f"{safe_name}_{document_id}.pdf"
         
         # Download the document to the temporary file
         download_trade_document(
@@ -2931,24 +2937,57 @@ async def download_trade_document(
             broker_client=broker_client
         )
         
+        # Schedule cleanup of the temporary file after response is sent
+        background_tasks.add_task(cleanup_temp_file, temp_file_path)
+        
         # Return the file as a download response
         return FileResponse(
             path=temp_file_path,
-            filename=temp_filename,
+            filename=download_filename,
             media_type='application/pdf',
             headers={
-                "Content-Disposition": f"attachment; filename={temp_filename}"
+                "Content-Disposition": f"attachment; filename={download_filename}"
             }
         )
         
     except HTTPException:
+        # Clean up temp file immediately if we have an HTTP exception
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except OSError:
+                pass
         raise
     except Exception as e:
+        # Clean up temp file immediately on any other exception
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except OSError:
+                pass
         logger.error(f"Error downloading trade document {document_id} for account {account_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to download trade document: {str(e)}"
         )
+
+
+def cleanup_temp_file(file_path: str):
+    """
+    Background task to clean up temporary files.
+    
+    Args:
+        file_path: Path to the temporary file to delete
+    """
+    try:
+        if os.path.exists(file_path):
+            os.unlink(file_path)
+            logger.info(f"Successfully cleaned up temporary file: {file_path}")
+    except OSError as e:
+        logger.warning(f"Failed to clean up temporary file {file_path}: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error cleaning up temporary file {file_path}: {e}")
+
 
 
 if __name__ == "__main__":
