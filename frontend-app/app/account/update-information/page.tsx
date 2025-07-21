@@ -15,6 +15,7 @@ import { PIISection } from "@/components/account/PIISection";
 import { PIIFormActions } from "@/components/account/PIIFormActions";
 import { validateAllFields, hasValidationErrors, ValidationErrors } from "@/lib/validation";
 import { getRequiredFields } from "@/lib/utils/pii-helpers";
+import React from "react"; // Added missing import for React
 
 export default function UpdateInformationPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function UpdateInformationPage() {
     clearSuccess,
   } = usePIIData();
 
-  // Handle form validation
+  // Handle form validation - run validation whenever editedData changes
   const validateForm = () => {
     if (!editedData) return false;
     
@@ -47,6 +48,20 @@ export default function UpdateInformationPage() {
     setValidationErrors(errors);
     
     return !hasValidationErrors(errors);
+  };
+
+  // Run validation whenever editedData changes
+  React.useEffect(() => {
+    if (editedData) {
+      validateForm();
+    }
+  }, [editedData]);
+
+  // Enhanced input change handler with immediate validation
+  const handleInputChangeWithValidation = (section: string, field: string, value: any) => {
+    // Call the original handler
+    handleInputChange(section, field, value);
+    
   };
 
   // Handle save with validation
@@ -66,9 +81,8 @@ export default function UpdateInformationPage() {
 
   // Handle cancel
   const handleCancelWithReset = () => {
-    handleCancel();
-    setValidationErrors({});
-    setShowSSN(false);
+    // Navigate back to dashboard
+    router.push('/dashboard');
   };
 
   // Show loading state
@@ -98,8 +112,8 @@ export default function UpdateInformationPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <Toaster position="top-right" />
+    <div className="max-w-3xl mx-auto py-8">
+      <Toaster position="bottom-center" />
       
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
@@ -154,7 +168,7 @@ export default function UpdateInformationPage() {
             data={editedData}
             updateableFields={updateableFields}
             validationErrors={validationErrors}
-            onChange={handleInputChange}
+            onChange={handleInputChangeWithValidation}
           />
 
           {/* Identity Information Section */}
@@ -164,7 +178,7 @@ export default function UpdateInformationPage() {
             data={editedData}
             updateableFields={updateableFields}
             validationErrors={validationErrors}
-            onChange={handleInputChange}
+            onChange={handleInputChangeWithValidation}
             showSSN={showSSN}
             onToggleSSN={() => setShowSSN(!showSSN)}
           />
@@ -176,7 +190,7 @@ export default function UpdateInformationPage() {
             data={editedData}
             updateableFields={updateableFields}
             validationErrors={validationErrors}
-            onChange={handleInputChange}
+            onChange={handleInputChangeWithValidation}
           />
 
           {/* Form Actions */}

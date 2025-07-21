@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
-import { OnboardingData } from "./OnboardingTypes";
+import { OnboardingData } from "@/lib/types/onboarding";
 import { Check as CheckIcon, XCircle as XCircleIcon, Link as LinkIcon } from "lucide-react";
 import { usePostOnboardingNavigation } from "@/utils/navigation";
 

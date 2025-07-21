@@ -3,7 +3,7 @@
  * Helper functions for formatting and converting PII data
  */
 
-import { OnboardingData } from '@/components/onboarding/OnboardingTypes';
+import { OnboardingData } from '@/lib/types/onboarding';
 import { PIIData } from '@/lib/types/pii';
 
 // Convert Supabase onboarding data to PII format

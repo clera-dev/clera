@@ -51,9 +51,9 @@ export const validateField = (section: string, field: string, value: any): strin
           ? null 
           : 'Street address is required';
       }
-      return validateRequired(value) ? null : 'Street address is required';
+      return validateRequired(String(value ?? "")) ? null : 'Street address is required';
     default:
-      return validateRequired(value) ? null : `${formatFieldName(field)} is required`;
+      return validateRequired(String(value ?? "")) ? null : `${formatFieldName(field)} is required`;
   }
 };
 

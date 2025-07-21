@@ -13,10 +13,18 @@ export interface BackendServiceConfig {
   authToken?: string;
 }
 
-export interface BackendServiceError {
-  message: string;
+export class BackendServiceError extends Error {
   status: number;
   details?: any;
+
+  constructor(message: string, status: number, details?: any) {
+    super(message);
+    this.name = 'BackendServiceError';
+    this.status = status;
+    this.details = details;
+    // Set the prototype explicitly for ES5 targets
+    Object.setPrototypeOf(this, BackendServiceError.prototype);
+  }
 }
 
 /**
@@ -41,12 +49,12 @@ export class BackendService {
 
     // Validate endpoint to prevent potential security issues
     if (!endpoint || typeof endpoint !== 'string') {
-      throw { message: 'Invalid endpoint', status: 400 };
+      throw new BackendServiceError('Invalid endpoint', 400);
     }
 
     // Ensure endpoint starts with / to prevent potential path traversal
     if (!endpoint.startsWith('/')) {
-      throw { message: 'Invalid endpoint format', status: 400 };
+      throw new BackendServiceError('Invalid endpoint format', 400);
     }
 
     // Prepare headers with authentication token if provided
@@ -73,23 +81,20 @@ export class BackendService {
         response = await this.client.delete<T>(endpoint, headers);
         break;
       default:
-        throw { message: 'Unsupported HTTP method', status: 400 };
+        throw new BackendServiceError('Unsupported HTTP method', 400);
     }
 
     if (!response.success) {
-      throw {
-        message: response.error || 'Backend request failed',
-        status: response.status,
-        details: response.data
-      };
+      throw new BackendServiceError(
+        response.error || 'Backend request failed',
+        response.status,
+        response.data
+      );
     }
 
     // Ensure response.data exists before returning
     if (response.data === undefined) {
-      throw {
-        message: 'Backend response missing data',
-        status: response.status
-      };
+      throw new BackendServiceError('Backend response missing data', response.status);
     }
 
     return response.data;
@@ -136,7 +141,7 @@ export class BackendService {
    */
   async getUpdateableFields(accountId: string, userId: string, authToken?: string) {
     return this.request({
-      endpoint: `/api/account/${accountId}/pii/updateable-fields`,
+      endpoint: `/api/account/${encodeURIComponent(accountId)}/pii/updateable-fields`,
       method: 'GET',
       authToken
     });
@@ -148,20 +153,20 @@ export class BackendService {
    * @returns Formatted error response
    */
   static handleBackendError(error: unknown): BackendServiceError {
+    if (error instanceof BackendServiceError) {
+      return error;
+    }
     if (error && typeof error === 'object' && 'message' in error && 'status' in error) {
-      return error as BackendServiceError;
+      // Convert plain object to BackendServiceError
+      return new BackendServiceError(
+        (error as any).message,
+        (error as any).status,
+        (error as any).details
+      );
     }
-    
     if (error instanceof Error) {
-      return {
-        message: error.message,
-        status: 500
-      };
+      return new BackendServiceError(error.message, 500);
     }
-    
-    return {
-      message: 'Backend service error',
-      status: 500
-    };
+    return new BackendServiceError('Backend service error', 500);
   }
 } 

@@ -27,25 +27,9 @@ class AuthenticationService:
     
     @staticmethod
     def get_user_id_from_api_key(api_key: str) -> Optional[str]:
-        """
-        Derive user ID from API key.
-        This is a trusted source as API keys are issued by the system.
-        
-        Args:
-            api_key: The API key from the request
-            
-        Returns:
-            User ID if API key is valid, None otherwise
-        """
-        # TODO: Implement API key to user ID mapping
-        # This should query a secure database or cache to map API keys to user IDs
-        # For now, this is a placeholder that needs to be implemented based on your auth system
-        
-        # Example implementation (replace with your actual logic):
-        # user_id = cache.get(f"api_key:{api_key}")
-        # return user_id
-        
-        logger.warning("API key to user ID mapping not implemented - this needs to be implemented based on your auth system")
+        # PRODUCTION: Implement real mapping here. Remove test/dev logic before deploying.
+        # raise NotImplementedError("API key to user ID mapping must be implemented for production use.")
+        logger.error("API key to user ID mapping not implemented - this must be implemented for production use.")
         return None
     
     @staticmethod
@@ -124,7 +108,7 @@ class AuthenticationService:
 
 def get_authenticated_user_id(
     request: Request,
-    api_key: str = Depends(lambda x_api_key: x_api_key),
+    api_key: str = Header(None, alias="X-API-Key"),
     auth_token: Optional[str] = Header(None, alias="Authorization"),
 ) -> str:
     """
@@ -212,7 +196,7 @@ def verify_account_ownership(
         
         # Verify that the requested account ID matches the user's account ID
         if user_account_id != account_id:
-            logger.warning(f"User attempted to access account but owns account")
+            logger.warning("User attempted to access an account they do not own")
             raise HTTPException(status_code=403, detail="Unauthorized access to account")
         
         logger.info(f"Successfully verified user owns account")

@@ -72,8 +72,8 @@ export class BackendClient {
     
     const headers = {
       'Content-Type': 'application/json',
-      'X-API-Key': this.apiKey,
-      ...options.headers,
+      ...(options.headers || {}),
+      'X-API-Key': this.apiKey, // Always set last to prevent overwrite
     };
 
     try {

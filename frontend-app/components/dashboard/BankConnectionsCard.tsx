@@ -33,8 +33,8 @@ export default function BankConnectionsCard({
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('openAddFunds') === 'true') {
         setIsDialogOpen(true);
-        // Clean up URL parameter using Next.js router
-        router.replace(window.location.pathname);
+        // Clean up URL parameter without navigation
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
   }, [router]);

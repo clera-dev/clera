@@ -11,8 +11,8 @@ import { ValidationErrors } from '@/lib/validation';
 
 interface PIISectionProps {
   title: string;
-  section: keyof PIIData;
-  data: any;
+  section: 'contact' | 'identity' | 'disclosures';
+  data: PIIData;
   updateableFields: UpdateableFieldsData | null;
   validationErrors: ValidationErrors;
   onChange: (section: string, field: string, value: any) => void;
@@ -35,7 +35,12 @@ export const PIISection: React.FC<PIISectionProps> = ({
   const sectionData = data[section];
   if (!sectionData) return null;
 
-  const fields = Object.keys(sectionData);
+  const updateable = updateableFields?.[section] || {};
+  const fields = Object.keys(sectionData).filter(
+    (field) => updateable[field]?.updateable
+  );
+
+  if (fields.length === 0) return null;
 
   return (
     <Card>

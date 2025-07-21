@@ -3,12 +3,12 @@
  * Centralized type definitions for PII data management
  */
 
-// Import existing onboarding data structure to avoid duplication
-import { OnboardingData } from '@/components/onboarding/OnboardingTypes';
+// OnboardingData import removed or updated to '@/lib/types/onboarding' if needed
 
 // PII data structure from Alpaca API
 export interface PIIData {
   contact: {
+    [key: string]: string | string[] | undefined;
     email?: string;
     phone?: string;
     street_address?: string[];
@@ -18,6 +18,7 @@ export interface PIIData {
     country?: string;
   };
   identity: {
+    [key: string]: string | string[] | undefined;
     given_name?: string;
     middle_name?: string;
     family_name?: string;
@@ -30,12 +31,14 @@ export interface PIIData {
     funding_source?: string[];
   };
   disclosures: {
+    [key: string]: boolean | undefined;
     is_control_person?: boolean;
     is_affiliated_exchange_or_finra?: boolean;
     is_politically_exposed?: boolean;
     immediate_family_exposed?: boolean;
   };
   account_info: {
+    [key: string]: string | undefined;
     account_number?: string;
     status?: string;
     created_at?: string;
