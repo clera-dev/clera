@@ -13,8 +13,8 @@ import os
 import jwt
 from typing import Optional
 from fastapi import HTTPException, Depends, Header, Request
-from utils.supabase.db_client import get_user_alpaca_account_id
 from decouple import config
+from utils.authorization import AuthorizationService, AuthorizationError
 
 logger = logging.getLogger(__name__)
 
@@ -172,38 +172,12 @@ def verify_account_ownership(
 ) -> str:
     """
     Verify that the authenticated user owns the specified account.
-    
-    This function uses the securely derived user ID to verify account ownership,
-    preventing account takeover attacks.
-    
-    Args:
-        account_id: The Alpaca account ID being accessed
-        user_id: The user ID derived from trusted sources (not user-supplied)
-        
-    Returns:
-        The user_id if verification succeeds
-        
-    Raises:
-        HTTPException: If verification fails
+    Delegates to AuthorizationService for business logic.
     """
     try:
-        # Get the account ID that this user actually owns
-        user_account_id = get_user_alpaca_account_id(user_id)
-        
-        if not user_account_id:
-            logger.warning(f"User has no associated Alpaca account")
-            raise HTTPException(status_code=404, detail="User account not found")
-        
-        # Verify that the requested account ID matches the user's account ID
-        if user_account_id != account_id:
-            logger.warning("User attempted to access an account they do not own")
-            raise HTTPException(status_code=403, detail="Unauthorized access to account")
-        
-        logger.info(f"Successfully verified user owns account")
-        return user_id
-        
-    except HTTPException:
-        raise
+        return AuthorizationService.verify_user_account_ownership(account_id, user_id)
+    except AuthorizationError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     except Exception as e:
         logger.error(f"Error verifying user account ownership: {e}")
         raise HTTPException(status_code=500, detail="Error verifying account ownership") 

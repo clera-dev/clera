@@ -35,6 +35,7 @@ export const PIISection: React.FC<PIISectionProps> = ({
   const sectionData = data[section];
   if (!sectionData) return null;
 
+  // Only show fields that are updateable. If none, hide the section/card.
   const updateable = updateableFields?.[section] || {};
   const fields = Object.keys(sectionData).filter(
     (field) => updateable[field]?.updateable

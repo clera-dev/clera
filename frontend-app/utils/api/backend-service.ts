@@ -34,8 +34,8 @@ export class BackendServiceError extends Error {
 export class BackendService {
   private client: BackendClient;
 
-  constructor() {
-    this.client = createBackendClient();
+  constructor(client?: BackendClient) {
+    this.client = client ?? createBackendClient();
   }
 
   /**

@@ -18,7 +18,7 @@ export async function GET(
     const backendService = new BackendService();
     const piiData = await backendService.getPII(authContext.accountId, authContext.user.id, authContext.authToken);
 
-    return NextResponse.json(piiData);
+    return NextResponse.json(piiData, { headers: { 'Cache-Control': 'no-store' } });
 
   } catch (error) {
     // Log error without exposing sensitive information
