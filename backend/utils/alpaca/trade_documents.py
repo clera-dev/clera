@@ -154,9 +154,9 @@ class TradeDocumentService:
             account_id: Alpaca account ID
             document_id: Trade document ID
             file_path: Local file path to save the document
-            
+        
         Raises:
-            ValueError: If any required parameter is missing
+            ValueError: If any required parameter is missing or file_path is unsafe
             Exception: If Alpaca API call fails
         """
         try:
@@ -167,7 +167,18 @@ class TradeDocumentService:
                 raise ValueError("Document ID is required")
             if not file_path:
                 raise ValueError("File path is required")
-            
+
+            # Security: Prevent path traversal and restrict to /tmp or configured temp dir
+            allowed_dir = os.environ.get("TRADE_DOCS_TMP_DIR", "/tmp")
+            abs_allowed_dir = os.path.abspath(allowed_dir)
+            abs_file_path = os.path.abspath(file_path)
+            if not abs_file_path.startswith(abs_allowed_dir + os.sep):
+                raise ValueError(f"Unsafe file path: must be within {abs_allowed_dir}")
+            if os.path.isabs(file_path) and not abs_file_path.startswith(abs_allowed_dir + os.sep):
+                raise ValueError("Absolute file paths outside the allowed directory are not permitted")
+            if ".." in os.path.relpath(abs_file_path, abs_allowed_dir).split(os.sep):
+                raise ValueError("Path traversal detected in file path")
+
             logger.info(f"Downloading trade document {document_id} for account {account_id} to {file_path}")
             
             # Download document from Alpaca

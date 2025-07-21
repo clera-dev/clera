@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
 export async function GET(
-  request: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ documentId: string }> }
 ) {
   try {
@@ -21,7 +21,8 @@ export async function GET(
       );
     }
 
-    const searchParams = request.nextUrl.searchParams;
+    const url = new URL(request.url);
+    const searchParams = url.searchParams;
     const accountId = searchParams.get('accountId');
 
     if (!accountId) {
@@ -111,30 +112,14 @@ export async function GET(
       );
     }
 
-    // Get the file content as an ArrayBuffer
-    const fileBuffer = await backendResponse.arrayBuffer();
-    
-    // Get filename from Content-Disposition header or use default
-    let filename = `document_${documentId}.pdf`;
-    const contentDisposition = backendResponse.headers.get('Content-Disposition');
-    if (contentDisposition && contentDisposition.includes('filename=')) {
-      const filenameMatch = contentDisposition.match(/filename=([^;]+)/);
-      if (filenameMatch) {
-        filename = filenameMatch[1].replace(/['"]/g, ''); // Remove quotes
-      }
-    }
-
-    // Return the file with appropriate headers
-    return new NextResponse(fileBuffer, {
-      status: 200,
+    // Stream the file response
+    return new NextResponse(backendResponse.body, {
+      status: backendResponse.status,
       headers: {
         'Content-Type': backendResponse.headers.get('Content-Type') || 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': fileBuffer.byteLength.toString(),
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      }
+        'Content-Disposition': backendResponse.headers.get('Content-Disposition') || 'attachment',
+        // Add any other headers as needed
+      },
     });
 
   } catch (error) {
