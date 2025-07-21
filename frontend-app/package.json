@@ -58,13 +58,16 @@
     "sentiment": "^5.0.2"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.28.0",
+    "@babel/preset-react": "^7.27.1",
+    "@babel/preset-typescript": "^7.27.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@types/jest": "^30.0.0",
     "@types/node": "22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "19.0.2",
-    "jest": "^30.0.3",
+    "jest": "^29.7.0",
     "jest-environment-jsdom": "^30.0.4",
     "postcss": "8.4.49",
     "tailwind-merge": "^2.6.0",

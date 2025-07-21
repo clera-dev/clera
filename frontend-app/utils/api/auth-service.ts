@@ -10,6 +10,7 @@ import { createClient } from '@/utils/supabase/server';
 export interface AuthContext {
   user: any;
   accountId: string;
+  authToken: string;
 }
 
 export interface AuthErrorResponse {
@@ -43,13 +44,13 @@ export class AuthError extends Error {
 export class AuthService {
   /**
    * Authenticate and authorize a user for a specific account
-   * @param _request - The incoming request (unused but required for interface consistency)
+   * @param request - The incoming request
    * @param accountId - The account ID from route parameters
    * @returns AuthContext with user and account information
    * @throws AuthError if authentication/authorization fails
    */
   static async authenticateAndAuthorize(
-    _request: NextRequest,
+    request: NextRequest,
     accountId: string
   ): Promise<AuthContext> {
     // Create supabase server client
@@ -62,6 +63,14 @@ export class AuthService {
     
     if (!user) {
       throw new AuthError('Unauthorized', 401);
+    }
+
+    // Extract the authentication token from the request
+    const authHeader = request.headers.get('authorization');
+    const authToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+    
+    if (!authToken) {
+      throw new AuthError('Authentication token required', 401);
     }
 
     // Verify user owns this account
@@ -81,7 +90,8 @@ export class AuthService {
 
     return {
       user,
-      accountId
+      accountId,
+      authToken
     };
   }
 
