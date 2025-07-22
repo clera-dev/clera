@@ -20,91 +20,82 @@ class TestAlpacaAccountStatusService:
     
     def test_service_initialization(self):
         """Test that the service initializes correctly."""
-        with patch('utils.alpaca.account_status_service.get_broker_client') as mock_broker, \
-             patch('utils.alpaca.account_status_service.get_supabase_client') as mock_supabase:
-            
-            service = AlpacaAccountStatusService()
-            
-            assert service.monitored_accounts == set()
-            assert service.is_running == False
-            assert service.reconnect_attempts == 0
-            assert service.reconnect_delay == 30
-            assert service.max_reconnect_attempts == 10
-            
-            mock_broker.assert_called_once()
-            mock_supabase.assert_called_once()
-    
-    def test_add_remove_accounts(self):
+        mock_broker = Mock()
+        mock_supabase = Mock()
+        
+        service = AlpacaAccountStatusService(
+            broker_client=mock_broker,
+            supabase_client=mock_supabase
+        )
+        
+        assert service.broker_client == mock_broker
+        assert service.supabase == mock_supabase
+        assert service.monitored_accounts == set()
+        assert service.is_running is False
+        assert service.reconnect_attempts == 0
+        assert service.reconnect_delay == 30
+        assert service.max_reconnect_attempts == 10
+
+    def test_add_remove_account(self):
         """Test adding and removing accounts from monitoring."""
-        with patch('utils.alpaca.account_status_service.get_broker_client'), \
-             patch('utils.alpaca.account_status_service.get_supabase_client'):
-            
-            service = AlpacaAccountStatusService()
-            
-            # Test adding accounts
-            service.add_account("account1")
-            service.add_account("account2")
-            
-            assert "account1" in service.monitored_accounts
-            assert "account2" in service.monitored_accounts
-            assert len(service.monitored_accounts) == 2
-            
-            # Test removing accounts
-            service.remove_account("account1")
-            
-            assert "account1" not in service.monitored_accounts
-            assert "account2" in service.monitored_accounts
-            assert len(service.monitored_accounts) == 1
-    
+        service = AlpacaAccountStatusService(broker_client=Mock(), supabase_client=Mock())
+        
+        service.add_account("account1")
+        assert "account1" in service.monitored_accounts
+        
+        service.add_account("account2")
+        assert {"account1", "account2"} == service.monitored_accounts
+        
+        service.remove_account("account1")
+        assert "account1" not in service.monitored_accounts
+        assert "account2" in service.monitored_accounts
+        
+        service.remove_account("non_existent")
+        assert "account2" in service.monitored_accounts
+
     def test_load_accounts_from_supabase(self):
         """Test loading accounts from Supabase."""
         mock_supabase = Mock()
         mock_response = Mock()
         mock_response.data = [
-            {"alpaca_account_id": "account1"},
-            {"alpaca_account_id": "account2"},
-            {"alpaca_account_id": None}  # Should be ignored
+            {"alpaca_account_id": "acc_1"},
+            {"alpaca_account_id": "acc_2"},
+            {"alpaca_account_id": None}, # Should be ignored
         ]
+        mock_supabase.table.return_value.select.return_value.not_.return_value.is_.return_value.execute.return_value = mock_response
         
-        # Set up the full chain of mocked method calls
-        mock_table = Mock()
-        mock_select = Mock()
-        mock_not = Mock()
-        mock_execute = Mock()
+        service = AlpacaAccountStatusService(broker_client=Mock(), supabase_client=mock_supabase)
+        service.load_accounts_from_supabase()
         
-        mock_supabase.table.return_value = mock_table
-        mock_table.select.return_value = mock_select
-        mock_select.not_ = mock_not
-        mock_not.is_.return_value.execute.return_value = mock_response
-        
-        with patch('utils.alpaca.account_status_service.get_broker_client'), \
-             patch('utils.alpaca.account_status_service.get_supabase_client', return_value=mock_supabase):
-            
-            service = AlpacaAccountStatusService()
-            service.load_accounts_from_supabase()
-            
-            assert "account1" in service.monitored_accounts
-            assert "account2" in service.monitored_accounts
-            assert len(service.monitored_accounts) == 2
-    
-    def test_update_account_status_in_supabase(self):
+        assert service.monitored_accounts == {"acc_1", "acc_2"}
+
+    async def test_update_account_status_in_supabase(self):
         """Test updating account status in Supabase."""
         mock_supabase = Mock()
         
         # Mock getting current onboarding_data
         mock_select_response = Mock()
         mock_select_response.data = [{"onboarding_data": {"existing": "data"}}]
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_select_response
         
         # Mock update response
         mock_update_response = Mock()
         mock_update_response.data = [{"updated": True}]
-        mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = mock_update_response
+
+        async def mock_execute_select(*args, **kwargs):
+            return mock_select_response
+
+        async def mock_execute_update(*args, **kwargs):
+            return mock_update_response
         
-        with patch('utils.alpaca.account_status_service.get_broker_client'), \
-             patch('utils.alpaca.account_status_service.get_supabase_client', return_value=mock_supabase):
-            
-            service = AlpacaAccountStatusService()
+        # When mocking to_thread, we need to handle the chained calls
+        mock_supabase.table.return_value.select.return_value.eq.return_value.execute = mock_execute_select
+        mock_supabase.table.return_value.update.return_value.eq.return_value.execute = mock_execute_update
+
+        with patch('asyncio.to_thread', new_callable=AsyncMock) as mock_to_thread:
+             # Make to_thread return the result of execute
+            mock_to_thread.side_effect = lambda func, *args, **kwargs: func()
+
+            service = AlpacaAccountStatusService(broker_client=Mock(), supabase_client=mock_supabase)
             
             event_data = {
                 "status_from": "APPROVED",
@@ -114,7 +105,7 @@ class TestAlpacaAccountStatusService:
                 "at": "2023-01-01T00:00:00Z"
             }
             
-            service._update_account_status_in_supabase("account1", "ACTIVE", event_data)
+            await service._update_account_status_in_supabase("account1", "ACTIVE", event_data)
             
             # Verify the update was called with correct data
             mock_supabase.table.return_value.update.assert_called_once()
@@ -123,70 +114,58 @@ class TestAlpacaAccountStatusService:
             assert update_call_args["alpaca_account_status"] == "ACTIVE"
             assert "updated_at" in update_call_args
             assert "onboarding_data" in update_call_args
+            assert len(update_call_args["onboarding_data"]["account_status_events"]) == 1
     
-    def test_process_sse_event(self):
-        """Test processing SSE events."""
-        mock_supabase = Mock()
+    async def test_process_sse_event_monitored(self):
+        """Test processing an SSE event for a monitored account."""
+        service = AlpacaAccountStatusService(broker_client=Mock(), supabase_client=Mock())
+        service.add_account("test_account")
         
-        with patch('utils.alpaca.account_status_service.get_broker_client'), \
-             patch('utils.alpaca.account_status_service.get_supabase_client', return_value=mock_supabase):
-            
-            service = AlpacaAccountStatusService()
-            service.add_account("account1")
-            
-            # Mock the update method
-            service._update_account_status_in_supabase = Mock()
-            
-            # Test with status change event
-            event_data = {
-                "account_id": "account1",
-                "status_from": "APPROVED",
-                "status_to": "ACTIVE"
-            }
-            
-            service._process_sse_event(event_data)
-            
-            service._update_account_status_in_supabase.assert_called_once_with(
-                "account1", "ACTIVE", event_data
-            )
-    
-    def test_process_sse_event_unmonitored_account(self):
-        """Test that events for unmonitored accounts are ignored."""
-        with patch('utils.alpaca.account_status_service.get_broker_client'), \
-             patch('utils.alpaca.account_status_service.get_supabase_client'):
-            
-            service = AlpacaAccountStatusService()
-            service._update_account_status_in_supabase = Mock()
-            
-            # Test with unmonitored account
-            event_data = {
-                "account_id": "unmonitored_account",
-                "status_from": "APPROVED", 
-                "status_to": "ACTIVE"
-            }
-            
-            service._process_sse_event(event_data)
-            
-            # Should not call update
-            service._update_account_status_in_supabase.assert_not_called()
-    
+        # Mock the update function
+        service._update_account_status_in_supabase = AsyncMock()
+        
+        event_data = {
+            "account_id": "test_account",
+            "status_from": "SUBMITTED",
+            "status_to": "APPROVED"
+        }
+        
+        await service._process_sse_event(event_data)
+        
+        service._update_account_status_in_supabase.assert_called_once_with(
+            "test_account", "APPROVED", event_data
+        )
+
+    async def test_process_sse_event_unmonitored(self):
+        """Test ignoring an SSE event for an unmonitored account."""
+        service = AlpacaAccountStatusService(broker_client=Mock(), supabase_client=Mock())
+        service.add_account("another_account")
+        
+        service._update_account_status_in_supabase = AsyncMock()
+        
+        event_data = {
+            "account_id": "unmonitored_account",
+            "status_to": "ACTIVE"
+        }
+        
+        await service._process_sse_event(event_data)
+        
+        service._update_account_status_in_supabase.assert_not_called()
+
     def test_get_status(self):
         """Test getting service status."""
-        with patch('utils.alpaca.account_status_service.get_broker_client'), \
-             patch('utils.alpaca.account_status_service.get_supabase_client'):
-            
-            service = AlpacaAccountStatusService()
-            service.add_account("account1")
-            service.add_account("account2")
-            service.is_running = True
-            service.reconnect_attempts = 2
-            
-            status = service.get_status()
-            
-            assert status["is_running"] == True
-            assert status["monitored_accounts"] == 2
-            assert status["reconnect_attempts"] == 2
-            assert status["max_reconnect_attempts"] == 10
+        service = AlpacaAccountStatusService(broker_client=Mock(), supabase_client=Mock())
+        service.add_account("account1")
+        service.add_account("account2")
+        service.is_running = True
+        service.reconnect_attempts = 2
+        
+        status = service.get_status()
+        
+        assert status["is_running"] is True
+        assert status["monitored_accounts"] == 2
+        assert status["reconnect_attempts"] == 2
+        assert status["max_reconnect_attempts"] == 10
 
 
 class TestAccountStatusUtilityFunctions:
@@ -237,7 +216,7 @@ class TestAccountStatusUtilityFunctions:
             
             result = sync_account_status_to_supabase("account1")
             
-            assert result == True
+            assert result is True
             mock_supabase.table.return_value.update.assert_called_once()
     
     def test_sync_account_status_to_supabase_no_status(self):
@@ -245,12 +224,15 @@ class TestAccountStatusUtilityFunctions:
         with patch('utils.alpaca.account_status_service.get_current_account_status', return_value=None):
             result = sync_account_status_to_supabase("account1")
             
-            assert result == False
+            assert result is False
     
     def test_create_account_status_service_factory(self):
         """Test the factory function for creating the service."""
-        with patch('utils.alpaca.account_status_service.get_broker_client'), \
-             patch('utils.alpaca.account_status_service.get_supabase_client'):
+        mock_broker = Mock()
+        mock_supabase = Mock()
+        
+        with patch('utils.alpaca.account_status_service.get_broker_client', return_value=mock_broker), \
+             patch('utils.alpaca.account_status_service.get_supabase_client', return_value=mock_supabase):
             
             callback = Mock()
             service = create_account_status_service(
@@ -260,6 +242,8 @@ class TestAccountStatusUtilityFunctions:
             )
             
             assert isinstance(service, AlpacaAccountStatusService)
+            assert service.broker_client == mock_broker
+            assert service.supabase == mock_supabase
             assert service.reconnect_delay == 60
             assert service.max_reconnect_attempts == 5
             assert service.status_change_callback == callback
@@ -384,32 +368,40 @@ class TestAccountStatusIntegration:
             
             # Test syncing to Supabase
             sync_result = sync_account_status_to_supabase("test_account")
-            assert sync_result == True
+            assert sync_result is True
             
             # Verify calls were made
             mock_broker_client.get_account_by_id.assert_called_with("test_account")
             mock_supabase.table.return_value.update.assert_called()
     
-    def test_service_event_processing_integration(self):
+    async def test_service_event_processing_integration(self):
         """Test the service processing events and updating Supabase."""
-        mock_supabase = Mock()
+        mock_broker = Mock()
+        mock_supabase = MagicMock() # Use MagicMock for easier mocking of chained calls
+
+        # Set up the mock for the Supabase call chain
+        select_mock = MagicMock()
+        select_mock.eq.return_value.execute.return_value = MagicMock(data=[{"onboarding_data": {}}])
         
-        # Mock getting current onboarding_data
-        mock_select_response = Mock()
-        mock_select_response.data = [{"onboarding_data": {}}]
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_select_response
+        update_mock = MagicMock()
+        update_mock.eq.return_value.execute.return_value = MagicMock(data=[{"updated": True}])
         
-        # Mock update response
-        mock_update_response = Mock()
-        mock_update_response.data = [{"updated": True}]
-        mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = mock_update_response
+        table_mock = MagicMock()
+        table_mock.select.return_value = select_mock
+        table_mock.update.return_value = update_mock
+        mock_supabase.table.return_value = table_mock
         
         callback_mock = Mock()
         
-        with patch('utils.alpaca.account_status_service.get_broker_client'), \
-             patch('utils.alpaca.account_status_service.get_supabase_client', return_value=mock_supabase):
-            
-            service = AlpacaAccountStatusService(status_change_callback=callback_mock)
+        # Patch to_thread to execute the function directly
+        with patch('asyncio.to_thread', new_callable=AsyncMock) as mock_to_thread:
+            mock_to_thread.side_effect = lambda func, *args, **kwargs: func()
+
+            service = AlpacaAccountStatusService(
+                broker_client=mock_broker,
+                supabase_client=mock_supabase,
+                status_change_callback=callback_mock
+            )
             service.add_account("test_account")
             
             # Simulate an SSE event
@@ -420,11 +412,11 @@ class TestAccountStatusIntegration:
                 "event_id": 12345
             }
             
-            service._process_sse_event(event_data)
+            await service._process_sse_event(event_data)
             
             # Verify Supabase was updated
-            mock_supabase.table.return_value.update.assert_called()
-            update_call_args = mock_supabase.table.return_value.update.call_args[0][0]
+            table_mock.update.assert_called()
+            update_call_args = table_mock.update.call_args[0][0]
             assert update_call_args["alpaca_account_status"] == "ACTIVE"
             
             # Verify callback was called
