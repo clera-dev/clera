@@ -168,8 +168,9 @@ class TradeDocumentService:
             if not file_path:
                 raise ValueError("File path is required")
 
-            # Security: Prevent path traversal and restrict to /tmp or configured temp dir
-            allowed_dir = os.environ.get("TRADE_DOCS_TMP_DIR", "/tmp")
+            # Security: Prevent path traversal and restrict to system temp dir or configured temp dir
+            import tempfile
+            allowed_dir = os.environ.get("TRADE_DOCS_TMP_DIR", tempfile.gettempdir())
             abs_allowed_dir = os.path.abspath(allowed_dir)
             abs_file_path = os.path.abspath(file_path)
             if not abs_file_path.startswith(abs_allowed_dir + os.sep):
