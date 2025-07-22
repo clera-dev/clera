@@ -51,6 +51,13 @@ from .trade_documents import (
     download_trade_document
 )
 
+from .account_status_service import (
+    AlpacaAccountStatusService,
+    create_account_status_service,
+    get_current_account_status,
+    sync_account_status_to_supabase
+)
+
 __all__ = [
     'get_broker_client',
     'create_alpaca_account',
@@ -84,4 +91,8 @@ __all__ = [
     'get_trade_documents_for_account',
     'get_trade_document_by_id',
     'download_trade_document',
+    'AlpacaAccountStatusService',
+    'create_account_status_service',
+    'get_current_account_status',
+    'sync_account_status_to_supabase',
 ] 
