@@ -166,7 +166,8 @@ export default function DashboardPage() {
         lastName={userData.lastName}
         email={userData.email}
         // Pass accountDetails directly, let the component handle null/undefined fields
-        accountDetails={accountDetails || {}} 
+        accountDetails={accountDetails || {}}
+        alpacaAccountId={alpacaAccountId}
       />
     </div>
   );

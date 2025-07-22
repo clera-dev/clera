@@ -62,6 +62,12 @@ from utils.alpaca.watchlist import (
 
 from utils.alpaca.portfolio_mapping import map_alpaca_position_to_portfolio_position, map_order_to_response, map_position_to_response
 
+# Account Status imports
+from utils.alpaca.account_status_service import (
+    get_current_account_status,
+    sync_account_status_to_supabase
+)
+
 # Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
 logger.setLevel(logging.INFO) # Changed to INFO for less verbose startup in prod
@@ -1309,6 +1315,94 @@ async def get_account_funding_status(
     except Exception as e:
         logger.error(f"Error checking funding status for account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to check funding status: {str(e)}")
+
+# === ACCOUNT STATUS ENDPOINTS ===
+
+@app.get("/api/account/{account_id}/status")
+async def get_account_status(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get the current account status from Alpaca.
+    
+    This endpoint fetches the real-time account status directly from Alpaca's API.
+    The status is also cached in Supabase for real-time frontend updates.
+    """
+    try:
+        logger.info(f"Getting account status for account: {account_id}")
+        
+        # Get current status from Alpaca API
+        current_status = get_current_account_status(account_id)
+        
+        if current_status is None:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Account {account_id} not found or status unavailable"
+            )
+        
+        # Sync status to Supabase for real-time updates
+        sync_success = sync_account_status_to_supabase(account_id)
+        if not sync_success:
+            logger.warning(f"Failed to sync account status to Supabase for account {account_id}")
+        
+        return {
+            "success": True,
+            "data": {
+                "account_id": account_id,
+                "status": current_status,
+                "timestamp": datetime.now().isoformat(),
+                "synced_to_database": sync_success
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting account status for {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get account status: {str(e)}")
+
+@app.post("/api/account/{account_id}/status/sync")
+async def sync_account_status(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Manually sync account status from Alpaca to Supabase.
+    
+    This endpoint forces a sync of the current account status from Alpaca API 
+    to the Supabase database, which will trigger real-time updates to the frontend.
+    """
+    try:
+        logger.info(f"Manually syncing account status for account: {account_id}")
+        
+        # Sync status to Supabase
+        sync_success = sync_account_status_to_supabase(account_id)
+        
+        if not sync_success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to sync account status to database"
+            )
+        
+        # Get the current status for response
+        current_status = get_current_account_status(account_id)
+        
+        return {
+            "success": True,
+            "data": {
+                "account_id": account_id,
+                "status": current_status,
+                "synced_at": datetime.now().isoformat(),
+                "message": "Account status successfully synced to database"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing account status for {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to sync account status: {str(e)}")
 
 @app.get("/api/account/{account_id}/transfers")
 async def get_account_transfers(

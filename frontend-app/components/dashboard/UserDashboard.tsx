@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Terminal, User, Mail, Shield, Clock } from "lucide-react";
+import { Terminal, User, Mail, Shield, Clock, Loader2 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -10,6 +10,8 @@ import {
 } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { createClient } from "@/utils/supabase/client";
+import { formatAccountStatus, getAccountStatusColor, getAccountStatusTooltip } from "@/lib/utils/accountStatus";
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface UserDashboardProps {
   firstName: string;
@@ -21,68 +23,111 @@ interface UserDashboardProps {
     latestTransferAmount?: number | null; 
     latestTransferStatus?: string | null;
   } | null;
+  alpacaAccountId: string | null;
 }
 
 export default function UserDashboard({
   firstName,
   lastName,
   email,
-  accountDetails
+  accountDetails,
+  alpacaAccountId
 }: UserDashboardProps) {
   const router = useRouter();
-  const [alpacaAccountId, setAlpacaAccountId] = useState<string | null>(null);
-  const [isLoadingAccountId, setIsLoadingAccountId] = useState(true);
-  const [accountIdError, setAccountIdError] = useState<string | null>(null);
   const [accountCreated, setAccountCreated] = useState<string | null>(null);
+  const [accountStatus, setAccountStatus] = useState<string | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  
+  const supabase = createClient();
 
+  // Fetch account status from API
+  const fetchAccountStatus = useCallback(async () => {
+    if (!alpacaAccountId) {
+      setStatusError("No account ID available");
+      setIsLoadingStatus(false);
+      return;
+    }
+
+    try {
+      setStatusError(null);
+      
+      const response = await fetch(`/api/account/${alpacaAccountId}/status`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch account status');
+      }
+
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        setAccountStatus(result.data.status);
+      } else {
+        throw new Error(result.error || 'Invalid response format');
+      }
+
+    } catch (err) {
+      console.error('Error fetching account status:', err);
+      setStatusError(err instanceof Error ? err.message : 'Failed to fetch account status');
+      // Fallback to a default status
+      setAccountStatus('ACTIVE');
+    } finally {
+      setIsLoadingStatus(false);
+    }
+  }, [alpacaAccountId]);
+
+  // Get account created date
   useEffect(() => {
-    const fetchAccountInfo = async () => {
-      setIsLoadingAccountId(true);
-      setAccountIdError(null);
+    const fetchAccountCreated = async () => {
       try {
-        // Try to get the Alpaca Account ID using the utility function
-        const fetchedId = await getAlpacaAccountId();
-        
-        if (fetchedId) {
-          setAlpacaAccountId(fetchedId);
-        } else {
-          // Fallback: Try to directly fetch from Supabase if the utility function fails
-          console.log("Attempting direct DB fallback for Alpaca ID");
-          const supabase = createClient();
-          const { data: { user } } = await supabase.auth.getUser();
-          
-          if (user) {
-            setAccountCreated(user.created_at);
-            
-            const { data: onboardingData } = await supabase
-              .from('user_onboarding')
-              .select('alpaca_account_id, onboarding_data')
-              .eq('user_id', user.id)
-              .single();
-              
-            if (onboardingData?.alpaca_account_id) {
-              console.log("Direct DB fetch successful:", onboardingData.alpaca_account_id);
-              setAlpacaAccountId(onboardingData.alpaca_account_id);
-              // Store for future use
-              try {
-                localStorage.setItem('alpacaAccountId', onboardingData.alpaca_account_id);
-              } catch (e) { console.error("LocalStorage Error:", e); }
-            } else {
-              setAccountIdError("Could not retrieve your Alpaca Account ID. Portfolio and Chat features may be unavailable.");
-            }
-          } else {
-            setAccountIdError("User authentication required. Please sign in again.");
-          }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setAccountCreated(user.created_at);
         }
       } catch (err) {
-        console.error("Error fetching Alpaca Account ID in UserDashboard:", err);
-        setAccountIdError("Failed to load account details. Please try refreshing.");
-      } finally {
-        setIsLoadingAccountId(false);
+        console.error("Error fetching account created date:", err);
       }
     };
-    fetchAccountInfo();
-  }, []);
+    fetchAccountCreated();
+  }, [supabase]);
+
+  // Set up account status monitoring
+  useEffect(() => {
+    if (!alpacaAccountId) return;
+
+    // Initial fetch
+    fetchAccountStatus();
+
+    // Set up real-time subscription for account status changes
+    const subscription = supabase
+      .channel('account-status-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_onboarding',
+          filter: `alpaca_account_id=eq.${alpacaAccountId}`
+        },
+        (payload) => {
+          console.log('Account status updated via real-time subscription:', payload);
+          
+          if (payload.new && payload.new.alpaca_account_status) {
+            setAccountStatus(payload.new.alpaca_account_status);
+            setStatusError(null);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('Account status subscription status:', status);
+      });
+
+    // Cleanup subscription on unmount
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [alpacaAccountId, fetchAccountStatus, supabase]);
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return 'N/A';
@@ -93,20 +138,7 @@ export default function UserDashboard({
     });
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status.toUpperCase()) {
-      case 'ACTIVE':
-        return 'bg-green-500';
-      case 'SUBMITTED':
-      case 'PENDING':
-        return 'bg-yellow-500';
-      case 'INACTIVE':
-      case 'CLOSED':
-        return 'bg-red-500';
-      default:
-        return 'bg-gray-500';
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -115,12 +147,12 @@ export default function UserDashboard({
         <p className="text-muted-foreground">Welcome to your account dashboard.</p>
       </div>
       
-      {accountIdError && (
+      {statusError && (
           <Alert variant="default" className="mb-4">
               <Terminal className="h-4 w-4" />
-              <AlertTitle>Account Access Issue</AlertTitle>
+              <AlertTitle>Account Status Issue</AlertTitle>
               <AlertDescription>
-                  {accountIdError}
+                  {statusError}
               </AlertDescription>
           </Alert>
       )}
@@ -164,11 +196,29 @@ export default function UserDashboard({
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-1">Account Status</p>
               <div className="flex items-center gap-2">
-                <span className={`inline-block h-2 w-2 rounded-full ${getStatusColor('ACTIVE')}`} />
-                <p className="text-base font-medium flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-muted-foreground" />
-                  ACTIVE
-                </p>
+                {isLoadingStatus ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    <span className="text-base font-medium">Loading...</span>
+                  </div>
+                ) : (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2 cursor-help">
+                          <span className={`inline-block h-2 w-2 rounded-full ${getAccountStatusColor(accountStatus)}`} />
+                          <p className="text-base font-medium flex items-center gap-2">
+                            <Shield className="h-4 w-4 text-muted-foreground" />
+                            {formatAccountStatus(accountStatus)}
+                          </p>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {getAccountStatusTooltip(accountStatus)}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </div>
             </div>
 

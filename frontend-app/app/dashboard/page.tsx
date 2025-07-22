@@ -265,6 +265,7 @@ export default function DashboardPage() {
         lastName={userData.lastName}
         email={userEmail || ""}
         accountDetails={accountDetails || {}}
+        alpacaAccountId={alpacaAccountId}
       />
       
       {/* Bank Account Details */}
