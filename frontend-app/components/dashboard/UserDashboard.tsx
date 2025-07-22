@@ -26,8 +26,6 @@ interface UserDashboardProps {
   alpacaAccountId: string | null;
 }
 
-const supabase = createClient();
-
 export default function UserDashboard({
   firstName,
   lastName,
@@ -35,6 +33,7 @@ export default function UserDashboard({
   accountDetails,
   alpacaAccountId
 }: UserDashboardProps) {
+  const supabase = createClient();
   const router = useRouter();
   const [accountCreated, setAccountCreated] = useState<string | null>(null);
   const [accountStatus, setAccountStatus] = useState<string | null>(null);
