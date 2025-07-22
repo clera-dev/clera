@@ -26,6 +26,8 @@ interface UserDashboardProps {
   alpacaAccountId: string | null;
 }
 
+const supabase = createClient();
+
 export default function UserDashboard({
   firstName,
   lastName,
@@ -39,8 +41,6 @@ export default function UserDashboard({
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
   
-  const supabase = createClient();
-
   // Fetch account status from API
   const fetchAccountStatus = useCallback(async () => {
     if (!alpacaAccountId) {
@@ -90,7 +90,7 @@ export default function UserDashboard({
       }
     };
     fetchAccountCreated();
-  }, [supabase]);
+  }, []);
 
   // Set up account status monitoring
   useEffect(() => {
@@ -127,7 +127,7 @@ export default function UserDashboard({
     return () => {
       subscription.unsubscribe();
     };
-  }, [alpacaAccountId, fetchAccountStatus, supabase]);
+  }, [alpacaAccountId, fetchAccountStatus]);
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return 'N/A';

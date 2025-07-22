@@ -1333,7 +1333,7 @@ async def get_account_status(
         logger.info(f"Getting account status for account: {account_id}")
         
         # Get current status from Alpaca API
-        current_status = get_current_account_status(account_id)
+        current_status = await asyncio.to_thread(get_current_account_status, account_id)
         
         if current_status is None:
             raise HTTPException(
@@ -1342,7 +1342,7 @@ async def get_account_status(
             )
         
         # Sync status to Supabase for real-time updates
-        sync_success = sync_account_status_to_supabase(account_id)
+        sync_success = await asyncio.to_thread(sync_account_status_to_supabase, account_id)
         if not sync_success:
             logger.warning(f"Failed to sync account status to Supabase for account {account_id}")
         
@@ -1377,7 +1377,7 @@ async def sync_account_status(
         logger.info(f"Manually syncing account status for account: {account_id}")
         
         # Sync status to Supabase
-        sync_success = sync_account_status_to_supabase(account_id)
+        sync_success = await asyncio.to_thread(sync_account_status_to_supabase, account_id)
         
         if not sync_success:
             raise HTTPException(
@@ -1386,7 +1386,7 @@ async def sync_account_status(
             )
         
         # Get the current status for response
-        current_status = get_current_account_status(account_id)
+        current_status = await asyncio.to_thread(get_current_account_status, account_id)
         
         return {
             "success": True,

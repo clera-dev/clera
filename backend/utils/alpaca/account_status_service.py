@@ -10,6 +10,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional, Set, Callable
 from urllib.parse import urlencode
 
+from alpaca.broker.client import BrokerClient
+from supabase import Client as SupabaseClient
+
 from .broker_client_factory import get_broker_client
 from ..supabase.db_client import get_supabase_client
 
@@ -26,6 +29,8 @@ class AlpacaAccountStatusService:
     """
     
     def __init__(self, 
+                 broker_client: BrokerClient,
+                 supabase_client: SupabaseClient,
                  reconnect_delay: int = 30,
                  max_reconnect_attempts: int = 10,
                  status_change_callback: Optional[Callable[[str, str, str], None]] = None):
@@ -37,8 +42,8 @@ class AlpacaAccountStatusService:
             max_reconnect_attempts: Maximum number of reconnection attempts
             status_change_callback: Optional callback function for status changes
         """
-        self.broker_client = get_broker_client()
-        self.supabase = get_supabase_client()
+        self.broker_client = broker_client
+        self.supabase = supabase_client
         
         # Configuration
         self.reconnect_delay = reconnect_delay
@@ -109,7 +114,7 @@ class AlpacaAccountStatusService:
         except Exception as e:
             logger.error(f"Error loading accounts from Supabase: {e}")
     
-    def _update_account_status_in_supabase(self, account_id: str, new_status: str, event_data: Dict[str, Any]) -> None:
+    async def _update_account_status_in_supabase(self, account_id: str, new_status: str, event_data: Dict[str, Any]) -> None:
         """Update account status in Supabase."""
         try:
             # Update the alpaca_account_status column
@@ -121,10 +126,12 @@ class AlpacaAccountStatusService:
             # Also store additional event data in the onboarding_data jsonb field
             if event_data:
                 # Get current onboarding_data
-                response = self.supabase.table("user_onboarding") \
-                    .select("onboarding_data") \
-                    .eq("alpaca_account_id", account_id) \
-                    .execute()
+                response = await asyncio.to_thread(
+                    self.supabase.table("user_onboarding")
+                    .select("onboarding_data")
+                    .eq("alpaca_account_id", account_id)
+                    .execute
+                )
                 
                 if response.data and len(response.data) > 0:
                     current_data = response.data[0].get("onboarding_data", {}) or {}
@@ -151,10 +158,12 @@ class AlpacaAccountStatusService:
                     update_data["onboarding_data"] = current_data
             
             # Update the record
-            update_response = self.supabase.table("user_onboarding") \
-                .update(update_data) \
-                .eq("alpaca_account_id", account_id) \
-                .execute()
+            update_response = await asyncio.to_thread(
+                self.supabase.table("user_onboarding")
+                .update(update_data)
+                .eq("alpaca_account_id", account_id)
+                .execute
+            )
             
             if update_response.data:
                 logger.info(f"Successfully updated account status for {account_id}: {new_status}")
@@ -171,7 +180,7 @@ class AlpacaAccountStatusService:
         except Exception as e:
             logger.error(f"Error updating account status in Supabase for {account_id}: {e}")
     
-    def _process_sse_event(self, event_data: Dict[str, Any]) -> None:
+    async def _process_sse_event(self, event_data: Dict[str, Any]) -> None:
         """Process a single SSE event."""
         try:
             account_id = event_data.get("account_id")
@@ -190,7 +199,7 @@ class AlpacaAccountStatusService:
             
             if status_to:
                 logger.info(f"Account {account_id} status changed from {status_from} to {status_to}")
-                self._update_account_status_in_supabase(account_id, status_to, event_data)
+                await self._update_account_status_in_supabase(account_id, status_to, event_data)
             else:
                 # Log other types of events for debugging
                 event_type = "unknown"
@@ -222,47 +231,35 @@ class AlpacaAccountStatusService:
             async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream("GET", url, headers=headers) as response:
                     if response.status_code != 200:
-                        raise Exception(f"SSE connection failed with status {response.status_code}: {response.text}")
+                        raise Exception(f"SSE connection failed with status {response.status_code}: {await response.aread()}")
                     
                     logger.info("Successfully connected to Alpaca account status SSE")
-                    self.reconnect_attempts = 0  # Reset on successful connection
+                    self.reconnect_attempts = 0
                     
                     async for line in response.aiter_lines():
                         if not self.is_running:
-                            logger.info("Service stopped, closing SSE connection")
                             break
-                        
-                        line = line.strip()
-                        if not line:
-                            continue
-                        
-                        # Parse SSE format
-                        if line.startswith("data: "):
-                            data = line[6:]  # Remove "data: " prefix
-                            if data == "[DONE]":
-                                logger.info("Received SSE end marker")
-                                break
                             
+                        if line.startswith("data:"):
                             try:
-                                # Parse JSON data
+                                data = line[len("data:"):].strip()
+                                
+                                # Handle potential array of events in a single data message
                                 if data.startswith("[") and data.endswith("]"):
-                                    # Array of events
                                     events = json.loads(data)
                                     for event in events:
-                                        self._process_sse_event(event)
+                                        await self._process_sse_event(event)
                                 else:
                                     # Single event
                                     event = json.loads(data)
-                                    self._process_sse_event(event)
+                                    await self._process_sse_event(event)
                                     
                             except json.JSONDecodeError as e:
-                                logger.warning(f"Failed to parse SSE data as JSON: {data[:100]}... Error: {e}")
-                        
-                        elif line.startswith("event: ") or line.startswith("id: "):
-                            # SSE metadata, ignore for now
-                            continue
-                        else:
-                            logger.debug(f"Received SSE line: {line[:100]}...")
+                                logger.warning(f"Could not decode SSE data: {data}, error: {e}")
+                            except Exception as e:
+                                logger.error(f"Error processing SSE data: {data}, error: {e}", exc_info=True)
+                        elif line:
+                            logger.debug(f"Received non-data line from SSE: {line}")
                             
         except Exception as e:
             logger.error(f"SSE connection error: {e}")
@@ -341,7 +338,12 @@ def create_account_status_service(
     Returns:
         AlpacaAccountStatusService: Configured service instance
     """
+    broker_client = get_broker_client()
+    supabase_client = get_supabase_client()
+    
     return AlpacaAccountStatusService(
+        broker_client=broker_client,
+        supabase_client=supabase_client,
         reconnect_delay=reconnect_delay,
         max_reconnect_attempts=max_reconnect_attempts,
         status_change_callback=status_change_callback
