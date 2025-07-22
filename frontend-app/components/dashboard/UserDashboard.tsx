@@ -11,7 +11,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { createClient } from "@/utils/supabase/client";
 import { formatAccountStatus, getAccountStatusColor, getAccountStatusTooltip } from "@/lib/utils/accountStatus";
-import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface UserDashboardProps {
   firstName: string;
@@ -202,22 +202,20 @@ export default function UserDashboard({
                     <span className="text-base font-medium">Loading...</span>
                   </div>
                 ) : (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center gap-2 cursor-help">
-                          <span className={`inline-block h-2 w-2 rounded-full ${getAccountStatusColor(accountStatus)}`} />
-                          <p className="text-base font-medium flex items-center gap-2">
-                            <Shield className="h-4 w-4 text-muted-foreground" />
-                            {formatAccountStatus(accountStatus)}
-                          </p>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {getAccountStatusTooltip(accountStatus)}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-2 cursor-help">
+                        <span className={`inline-block h-2 w-2 rounded-full ${getAccountStatusColor(accountStatus)}`} />
+                        <p className="text-base font-medium flex items-center gap-2">
+                          <Shield className="h-4 w-4 text-muted-foreground" />
+                          {formatAccountStatus(accountStatus)}
+                        </p>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {getAccountStatusTooltip(accountStatus)}
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             </div>
