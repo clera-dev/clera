@@ -160,9 +160,12 @@ class TestTradeDocumentService:
     
     def test_download_document_success(self, trade_document_service, mock_broker_client):
         """Test successful document download."""
+        import tempfile
+        import os
         account_id = str(uuid.uuid4())
         document_id = str(uuid.uuid4())
-        file_path = "/tmp/test_document.pdf"
+        temp_dir = os.environ.get("TRADE_DOCS_TMP_DIR", tempfile.gettempdir())
+        file_path = os.path.join(temp_dir, "test_document.pdf")
         
         trade_document_service.download_document(account_id, document_id, file_path)
         
@@ -172,11 +175,16 @@ class TestTradeDocumentService:
     
     def test_download_document_empty_params(self, trade_document_service):
         """Test error handling for download with empty parameters."""
+        import tempfile
+        import os
+        temp_dir = os.environ.get("TRADE_DOCS_TMP_DIR", tempfile.gettempdir())
+        temp_file_path = os.path.join(temp_dir, "file.pdf")
+        
         with pytest.raises(ValueError, match="Account ID is required"):
-            trade_document_service.download_document("", "doc_id", "/tmp/file.pdf")
+            trade_document_service.download_document("", "doc_id", temp_file_path)
         
         with pytest.raises(ValueError, match="Document ID is required"):
-            trade_document_service.download_document("account_id", "", "/tmp/file.pdf")
+            trade_document_service.download_document("account_id", "", temp_file_path)
         
         with pytest.raises(ValueError, match="File path is required"):
             trade_document_service.download_document("account_id", "doc_id", "")
@@ -361,7 +369,11 @@ class TestTradeDocumentsAPI:
             # is called correctly by testing the utility function directly
             from utils.alpaca.trade_documents import download_trade_document
             
-            temp_file = "/tmp/test_document.pdf"
+            # Use a proper temp file path that will pass validation
+            import tempfile
+            import os
+            temp_dir = os.environ.get("TRADE_DOCS_TMP_DIR", tempfile.gettempdir())
+            temp_file = os.path.join(temp_dir, "test_document.pdf")
             
             # Test the utility function directly
             download_trade_document(
@@ -445,10 +457,13 @@ class TestTradeDocumentsUtilityFunctions:
     def test_download_trade_document_function(self, mock_broker_client):
         """Test the convenience function for downloading a document."""
         from utils.alpaca.trade_documents import download_trade_document
+        import tempfile
+        import os
         
         account_id = str(uuid.uuid4())
         document_id = str(uuid.uuid4())
-        file_path = "/tmp/test_file.pdf"
+        temp_dir = os.environ.get("TRADE_DOCS_TMP_DIR", tempfile.gettempdir())
+        file_path = os.path.join(temp_dir, "test_file.pdf")
         
         download_trade_document(
             account_id, document_id, file_path, broker_client=mock_broker_client
@@ -536,8 +551,11 @@ class TestTradeDocumentsIntegration:
             # We test the download logic through the utility function since
             # FileResponse causes recursion issues in the test environment
             from utils.alpaca.trade_documents import download_trade_document
+            import tempfile
+            import os
             
-            temp_file = "/tmp/test_document.pdf"
+            temp_dir = os.environ.get("TRADE_DOCS_TMP_DIR", tempfile.gettempdir())
+            temp_file = os.path.join(temp_dir, "test_document.pdf")
             
             # Test the utility function directly
             download_trade_document(

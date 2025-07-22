@@ -2919,10 +2919,12 @@ async def download_trade_document(
         )
         
         # Create a temporary file with automatic cleanup scheduled
+        # Use the same directory resolution as the utility function to avoid path validation errors
+        temp_dir = os.environ.get("TRADE_DOCS_TMP_DIR", tempfile.gettempdir())
         temp_fd, temp_file_path = tempfile.mkstemp(
             suffix='.pdf', 
             prefix=f'trade_doc_{document_id}_',
-            dir='/tmp'  # Ensure file is created in /tmp for security
+            dir=temp_dir  # Use configurable temp directory for cross-platform compatibility
         )
         os.close(temp_fd)  # Close the file descriptor since we only need the path
         
