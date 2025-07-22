@@ -43,6 +43,14 @@ from .watchlist import (
     get_watchlist_details
 )
 
+from .trade_documents import (
+    TradeDocumentService,
+    create_trade_document_service,
+    get_trade_documents_for_account,
+    get_trade_document_by_id,
+    download_trade_document
+)
+
 __all__ = [
     'get_broker_client',
     'create_alpaca_account',
@@ -71,4 +79,9 @@ __all__ = [
     'is_symbol_in_watchlist',
     'get_watchlist_symbols',
     'get_watchlist_details',
+    'TradeDocumentService',
+    'create_trade_document_service',
+    'get_trade_documents_for_account',
+    'get_trade_document_by_id',
+    'download_trade_document',
 ] 
