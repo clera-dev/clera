@@ -33,8 +33,7 @@ export function usePostOnboardingNavigation() {
   const router = useRouter();
   
   const navigateAfterOnboarding = () => {
-    const redirectUrl = getIntendedRedirect();
-    router.replace(redirectUrl);
+    router.refresh();
   };
   
   return { navigateAfterOnboarding };
