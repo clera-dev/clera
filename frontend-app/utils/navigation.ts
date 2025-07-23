@@ -27,12 +27,22 @@ export function getIntendedRedirect(): string {
 }
 
 /**
+ * Clears the intended_redirect cookie after it has been used.
+ */
+export function clearIntendedRedirectCookie(): void {
+  if (typeof document !== 'undefined') {
+    document.cookie = 'intended_redirect=; Path=/; Max-Age=0; SameSite=Strict';
+  }
+}
+
+/**
  * Hook for handling post-onboarding navigation with proper redirect handling
  */
 export function usePostOnboardingNavigation() {
   const router = useRouter();
   
   const navigateAfterOnboarding = () => {
+    clearIntendedRedirectCookie();
     router.refresh();
   };
   
