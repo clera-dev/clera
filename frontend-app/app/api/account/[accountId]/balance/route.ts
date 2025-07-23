@@ -46,7 +46,7 @@ export async function GET(
 
     // Call backend API to get account balance
     console.log(`Fetching balance for account ${accountId} from backend`);
-    const response = await fetch(`${backendUrl}/get-account-balance/${accountId}`, {
+    const response = await fetch(`${backendUrl}/api/account/${accountId}/balance`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -71,16 +71,25 @@ export async function GET(
 
     const balanceData = await response.json();
     
-    // Format and return the response
-    return NextResponse.json({
-      success: true,
-      data: {
-        buying_power: parseFloat(balanceData.buying_power || 0),
-        cash: parseFloat(balanceData.cash || 0),
-        portfolio_value: parseFloat(balanceData.portfolio_value || 0),
-        currency: balanceData.currency || 'USD'
-      }
-    });
+    // The backend now returns a structured response: { success: true, data: { ... } }
+    // We need to pass that nested data object to the frontend
+    if (balanceData.success && balanceData.data) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          buying_power: parseFloat(balanceData.data.buying_power || 0),
+          cash: parseFloat(balanceData.data.cash || 0),
+          portfolio_value: parseFloat(balanceData.data.portfolio_value || 0),
+          currency: balanceData.data.currency || 'USD'
+        }
+      });
+    } else {
+      // Handle cases where the backend call was successful but the operation failed
+      return NextResponse.json(
+        { success: false, message: balanceData.message || 'Failed to get balance data' },
+        { status: 200 } // Or an appropriate error code
+      );
+    }
 
   } catch (error) {
     console.error('Error fetching account balance:', error);
