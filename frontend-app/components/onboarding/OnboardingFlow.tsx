@@ -160,14 +160,14 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           
           setAccountCreated(true);
           setSubmitting(false);
-          nextStep();
+          navigateAfterOnboarding();
           return;
         }
         
         // Handle other errors
         setSubmissionError(result.error);
         setSubmitting(false);
-        nextStep();
+        navigateAfterOnboarding();
         return;
       }
       
@@ -185,12 +185,12 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
       
       setAccountCreated(true);
       setSubmitting(false);
-      nextStep();
+      navigateAfterOnboarding();
     } catch (error) {
       console.error("Error in onboarding submission:", error);
       setSubmissionError(error instanceof Error ? error.message : "An unknown error occurred");
       setSubmitting(false);
-      nextStep();
+      navigateAfterOnboarding();
     }
   };
 
@@ -244,17 +244,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           />
         );
       case "success":
-        return (
-          <SubmissionSuccessStep 
-            data={onboardingData}
-            accountCreated={accountCreated}
-            accountExists={accountExists}
-            errorMessage={submissionError || undefined} 
-            onBack={prevStep}
-            onReset={resetOnboarding}
-            onComplete={navigateAfterOnboarding}
-          />
-        );
+        return null;
       default:
         return <WelcomePage onContinue={nextStep} />;
     }
