@@ -9,9 +9,7 @@ import AgreementViewer from "./AgreementViewer";
 
 // Agreement PDF URLs
 const AGREEMENT_URLS = {
-  customer: "https://files.alpaca.markets/disclosures/library/AcctAppMarginAndCustAgmt.pdf",
-  account: "https://files.alpaca.markets/disclosures/library/TermsAndConditions.pdf",
-  margin: "https://files.alpaca.markets/disclosures/library/AcctAppMarginAndCustAgmt.pdf" // This is actually Appendix A in customer agreement
+  customer: "https://files.alpaca.markets/disclosures/library/AcctAppMarginAndCustAgmt.pdf"
 };
 
 interface AgreementsStepProps {
@@ -30,26 +28,9 @@ export default function AgreementsStep({
   isSubmitting = false
 }: AgreementsStepProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
-  
-  // Update agreements list to remove crypto
-  const agreements = [
-    {
-      id: "customer",
-      label: "Customer Agreement",
-      description: "Terms governing your account relationship with us."
-    },
-    {
-      id: "account",
-      label: "Account Agreement",
-      description: "Specific terms for your brokerage account."
-    },
-    {
-      id: "margin",
-      label: "Margin Agreement",
-      description: "Terms for using margin in your account (optional)."
-    }
-    // Removed crypto agreement as it's not supported in California
-  ];
+
+  const allRequiredAgreementsAccepted = 
+    data.agreementsAccepted.customer && data.agreementsAccepted.account;
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -83,25 +64,25 @@ export default function AgreementsStep({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-lg mx-auto">
-      <h2 className="text-2xl font-bold mb-6">Agreements</h2>
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-8">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Agreements</h2>
+        <p className="text-muted-foreground">Please review and accept the following agreements to complete your account setup.</p>
+      </div>
       
-      <div className="space-y-6">
-        <p className="text-sm text-muted-foreground mb-4">
-          Please review and accept the following agreements to complete your account setup.
-        </p>
+      <div className="space-y-6 bg-card/50 p-6 rounded-lg border border-border/30 shadow-sm">
         
-        <div className="space-y-6">
-          <div className="border rounded-md p-4 space-y-4">
-            <h3 className="font-medium">Customer Agreement</h3>
-            <p className="text-sm text-muted-foreground">
-              This agreement governs the relationship between you and Alpaca Securities LLC. It outlines your rights, obligations, and the terms under which services will be provided.
-            </p>
-            <AgreementViewer 
-              agreementUrl={AGREEMENT_URLS.customer}
-              title="Customer Agreement"
-            />
-            <div className="flex items-start space-x-3 mt-4">
+        {/* Alpaca Customer Agreement */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-lg">Alpaca Customer Agreement</h3>
+          <AgreementViewer 
+            agreementUrl={AGREEMENT_URLS.customer}
+            title="Alpaca Customer Agreement"
+          />
+          
+          {/* Customer Agreement Acknowledgment - Exact Text Required by Alpaca */}
+          <div className="space-y-4 border border-border/30 rounded-lg p-4 bg-muted/20">
+            <div className="flex items-start space-x-3">
               <Checkbox 
                 id="customer-agreement"
                 checked={data.agreementsAccepted.customer}
@@ -109,57 +90,43 @@ export default function AgreementsStep({
                   handleAgreementChange('customer', checked as boolean)
                 }
               />
-              <div>
+              <div className="flex-1">
                 <Label 
                   htmlFor="customer-agreement"
-                  className="cursor-pointer"
+                  className="cursor-pointer text-sm leading-relaxed"
                 >
-                  I have read and agree to the Customer Agreement
+                  I have read, understood, and agree to be bound by Alpaca Securities LLC and Clera account terms, and all other terms, disclosures and disclaimers applicable to me, as referenced in the Alpaca Customer Agreement. I also acknowledge that the Alpaca Customer Agreement contains a pre-dispute arbitration clause in Section 43.
                 </Label>
                 {errors.customer && <p className="text-red-500 text-sm mt-1">{errors.customer}</p>}
               </div>
             </div>
           </div>
-          
-          <div className="border rounded-md p-4 space-y-4">
-            <h3 className="font-medium">Account Agreement</h3>
-            <p className="text-sm text-muted-foreground">
-              This agreement contains important information about your brokerage account, including information on handling of funds, securities, and other assets.
-            </p>
-            <AgreementViewer 
-              agreementUrl={AGREEMENT_URLS.account}
-              title="Account Agreement"
-            />
-            <div className="flex items-start space-x-3 mt-4">
+
+          {/* Digital Signature Acknowledgment - Exact Text Required by Alpaca */}
+          <div className="space-y-4 border border-border/30 rounded-lg p-4 bg-muted/20">
+            <div className="flex items-start space-x-3">
               <Checkbox 
-                id="account-agreement"
+                id="digital-signature"
                 checked={data.agreementsAccepted.account}
                 onCheckedChange={(checked) => 
                   handleAgreementChange('account', checked as boolean)
                 }
               />
-              <div>
+              <div className="flex-1">
                 <Label 
-                  htmlFor="account-agreement"
-                  className="cursor-pointer"
+                  htmlFor="digital-signature"
+                  className="cursor-pointer text-sm leading-relaxed"
                 >
-                  I have read and agree to the Account Agreement
+                  I understand I am signing this agreement electronically, and that my electronic signature will have the same effect as physically signing and returning the Application Agreement.
                 </Label>
                 {errors.account && <p className="text-red-500 text-sm mt-1">{errors.account}</p>}
               </div>
             </div>
           </div>
-          
-          <div className="border rounded-md p-4 space-y-4">
-            <h3 className="font-medium">Margin Agreement (Optional)</h3>
-            <p className="text-sm text-muted-foreground">
-              This agreement allows you to borrow funds from Alpaca Securities LLC for the purpose of purchasing securities. Trading on margin involves additional risks.
-            </p>
-            <AgreementViewer 
-              agreementUrl={AGREEMENT_URLS.margin}
-              title="Margin Agreement"
-            />
-            <div className="flex items-start space-x-3 mt-4">
+
+          {/* Margin Agreement (Optional) */}
+          <div className="space-y-4 border border-border/30 rounded-lg p-4 bg-muted/10">
+            <div className="flex items-start space-x-3">
               <Checkbox 
                 id="margin-agreement"
                 checked={data.agreementsAccepted.margin}
@@ -167,27 +134,25 @@ export default function AgreementsStep({
                   handleAgreementChange('margin', checked as boolean)
                 }
               />
-              <div>
+              <div className="flex-1">
                 <Label 
                   htmlFor="margin-agreement"
-                  className="cursor-pointer"
+                  className="cursor-pointer text-sm leading-relaxed"
                 >
-                  I have read and agree to the Margin Agreement (optional)
+                  <span className="font-medium">Margin Agreement (Optional):</span> I agree to the Margin Agreement which allows me to borrow funds from Alpaca Securities LLC for the purpose of purchasing securities. I understand that trading on margin involves additional risks.
                 </Label>
               </div>
             </div>
           </div>
-          
-          {/* Removed crypto agreement section as it's not supported in California */}
         </div>
       </div>
 
-      <div className="flex gap-4">
+      <div className="flex gap-4 pt-4">
         <Button 
           type="button" 
           variant="outline" 
           onClick={onBack} 
-          className="flex-1"
+          className="px-6 py-2 border-border/40"
           disabled={isSubmitting}
         >
           Back
@@ -195,8 +160,8 @@ export default function AgreementsStep({
 
         <Button
           type="submit"
-          className="flex-1"
-          disabled={isSubmitting}
+          className="px-8 py-2 ml-auto bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg transition-all"
+          disabled={!allRequiredAgreementsAccepted || isSubmitting}
         >
           {isSubmitting ? (
             <>
@@ -205,7 +170,7 @@ export default function AgreementsStep({
               </span>
               Submitting...
             </>
-          ) : "Continue"}
+          ) : "Submit"}
         </Button>
 
       </div>

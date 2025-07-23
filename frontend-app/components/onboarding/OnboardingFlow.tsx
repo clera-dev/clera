@@ -8,6 +8,7 @@ import ProgressBar from "./ProgressBar";
 import WelcomePage from "./WelcomePage";
 import ContactInfoStep from "./ContactInfoStep";
 import PersonalInfoStep from "./PersonalInfoStep";
+import FinancialProfileStep from "./FinancialProfileStep";
 import DisclosuresStep from "./DisclosuresStep";
 import AgreementsStep from "./AgreementsStep";
 import SubmissionSuccessStep from "./SubmissionSuccessStep";
@@ -18,15 +19,16 @@ import { Button } from "@/components/ui/button";
 import { usePostOnboardingNavigation } from "@/utils/navigation";
 
 // Define the Step type
-type Step = "welcome" | "contact" | "personal" | "disclosures" | "agreements" | "success";
+type Step = "welcome" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "success";
 // Define an enum for numeric step indices
 enum StepIndex {
   Welcome = 0,
   Contact = 1,
   Personal = 2,
-  Disclosures = 3,
-  Agreements = 4,
-  Success = 5
+  Financial = 3,
+  Disclosures = 4,
+  Agreements = 5,
+  Success = 6
 }
 
 interface OnboardingFlowProps {
@@ -51,17 +53,18 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
     "welcome": StepIndex.Welcome,
     "contact": StepIndex.Contact,
     "personal": StepIndex.Personal,
+    "financial": StepIndex.Financial,
     "disclosures": StepIndex.Disclosures,
     "agreements": StepIndex.Agreements,
     "success": StepIndex.Success
   };
 
-  const totalSteps = 5; // Welcome + Contact + Personal + Disclosures + Agreements
+  const totalSteps = 5; // Contact + Personal + Financial + Disclosures + Agreements
 
   // Save progress to Supabase when steps change
   useEffect(() => {
     const currentStepIndex = stepToIndex[currentStep];
-    if (currentStepIndex > 0 && currentStepIndex < totalSteps) {
+    if (currentStepIndex > 0 && currentStepIndex <= totalSteps) {
       saveOnboardingProgress();
     }
   }, [currentStep, onboardingData]);
@@ -86,7 +89,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
   };
 
   const nextStep = () => {
-    const steps: Step[] = ["welcome", "contact", "personal", "disclosures", "agreements", "success"];
+    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "success"];
     const currentIndex = steps.indexOf(currentStep);
     
     if (currentIndex < steps.length - 1) {
@@ -95,7 +98,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
   };
 
   const prevStep = () => {
-    const steps: Step[] = ["welcome", "contact", "personal", "disclosures", "agreements", "success"];
+    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "success"];
     const currentIndex = steps.indexOf(currentStep);
     
     if (currentIndex > 0) {
@@ -212,6 +215,15 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
             onBack={prevStep}
           />
         );
+      case "financial":
+        return (
+          <FinancialProfileStep 
+            data={onboardingData} 
+            onUpdate={updateData} 
+            onContinue={handleStepCompletion} 
+            onBack={prevStep}
+          />
+        );
       case "disclosures":
         return (
           <DisclosuresStep 
@@ -258,7 +270,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
     }
     
     // For other steps, calculate percentage based on step index
-    return Math.round((currentStepIndex / (totalSteps - 1)) * 100);
+    return Math.round((currentStepIndex / totalSteps) * 100);
   };
 
   return (

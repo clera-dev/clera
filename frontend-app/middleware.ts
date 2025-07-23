@@ -237,10 +237,15 @@ export async function middleware(request: NextRequest) {
     
     // Check authentication requirement
     if (config.requiresAuth && !user) {
-      return new NextResponse(
-        JSON.stringify({ error: 'Authentication required' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      if (path.startsWith('/api/')) {
+        return new NextResponse(
+          JSON.stringify({ error: 'Authentication required' }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      } else {
+        const redirectUrl = new URL('/', request.url);
+        return NextResponse.redirect(redirectUrl);
+      }
     }
 
     // Check onboarding requirement
