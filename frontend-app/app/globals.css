@@ -95,10 +95,9 @@ aside button svg {
   z-index: 50 !important;
 }
 
-/* Hide any unexpected floating elements */
-body > *:not([id^="root"]):not([class*="Toaster"]):not([role="dialog"]) {
-  position: relative !important;
-}
+/* Removed overly-aggressive rule that forced position: relative on all body children.
+   This was breaking Radix UI portals (Select, Dropdown, etc.) by overriding their
+   fixed/absolute positioning and causing menus to render at the bottom of the page. */
 
 /* Hide any React DevTools or debug elements */
 [id*="react-devtools"],
@@ -283,24 +282,23 @@ body > div:last-child:not([id]):not([class]) {
 
 /* Tooltip z-index and solid background */
 [data-radix-tooltip-content] {
-  z-index: 1000 !important;
-  background: hsl(var(--popover)) !important;
-  border: 1px solid hsl(var(--border)) !important;
-  backdrop-filter: none !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  z-index: 1000;
+  background: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 /* Dark mode tooltip */
 .dark [data-radix-tooltip-content] {
-  background: hsl(var(--popover)) !important;
-  color: hsl(var(--popover-foreground)) !important;
-  border: 1px solid hsl(var(--border)) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 /* Tooltip portal container */
 [data-radix-tooltip-portal] {
-  z-index: 1000 !important;
+  z-index: 1000;
 }
 
 /* General positioning fixes for Clera Assist */
@@ -316,13 +314,13 @@ body > div:last-child:not([id]):not([class]) {
 
 /* Fix for any components that might create stacking contexts */
 [data-clera-assist] {
-  z-index: 11 !important;
+  z-index: 11;
   position: relative;
 }
 
 /* Specific fixes for tooltip content */
 .clera-assist-button + [data-radix-tooltip-content] {
-  z-index: 1001 !important;
+  z-index: 1001;
 }
 
 /* Mobile optimizations */
@@ -339,15 +337,15 @@ body > div:last-child:not([id]):not([class]) {
 
 /* Enhanced dialog backdrop for better contrast */
 [data-radix-dialog-overlay] {
-  background-color: rgba(0, 0, 0, 0.75) !important;
-  backdrop-filter: blur(4px) !important;
-  z-index: 90 !important;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 90;
 }
 
 /* Ensure dialog content stays prominent */
 [data-radix-dialog-content] {
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
-  z-index: 100 !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  z-index: 100;
 }
 
 /* Ensure main content doesn't overlap sidebar on mobile */

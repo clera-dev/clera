@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { accountClosureService, ClosureData, ClosureState } from '@/utils/services/accountClosureService';
+import { createClient } from '@/utils/supabase/client';
 
 export interface UseAccountClosureReturn {
   closureData: ClosureData | null;
@@ -22,7 +23,43 @@ export function useAccountClosure(): UseAccountClosureReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchClosureData = async (): Promise<void> => {
+  useEffect(() => {
+    const fetchClosureDataWrapper = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const data = await accountClosureService.fetchClosureData();
+        setClosureData(data);
+        
+      } catch (err) {
+        console.error('[useAccountClosure] Error fetching closure data:', err);
+        setError('Failed to load closure data');
+        setClosureData(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchClosureDataWrapper();
+  }, []);
+
+  const refetch = async (): Promise<void> => {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -30,12 +67,8 @@ export function useAccountClosure(): UseAccountClosureReturn {
       const data = await accountClosureService.fetchClosureData();
       setClosureData(data);
       
-      // CRITICAL FIX: Don't set error when data is null
-      // null now indicates "no closure activity" (normal state), not an error
-      // The service will return null for users without closure activity
-      
     } catch (err) {
-      console.error('[useAccountClosure] Error fetching closure data:', err);
+      console.error('[useAccountClosure] Error refetching closure data:', err);
       setError('Failed to load closure data');
       setClosureData(null);
     } finally {
@@ -43,14 +76,10 @@ export function useAccountClosure(): UseAccountClosureReturn {
     }
   };
 
-  useEffect(() => {
-    fetchClosureData();
-  }, []);
-
   return {
     closureData,
     loading,
     error,
-    refetch: fetchClosureData
+    refetch
   };
 } 

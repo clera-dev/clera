@@ -213,26 +213,35 @@ export default function ManualBankForm({
   };
 
   const isFormValid = () => {
+    const accountNumber = bankAccountNumber.trim();
+    // U.S. bank account numbers are typically between 8 and 17 digits.
+    const isLengthValid = accountNumber.length >= 8 && accountNumber.length <= 17;
+    
+    // Ensure it contains only digits
+    const areCharsValid = /^\d+$/.test(accountNumber);
+
     return (
       bankAccountType &&
-      bankAccountNumber.trim().length >= 9 &&
+      isLengthValid &&
+      areCharsValid &&
       bankRoutingNumber === "121000358"
     );
+  };
+
+  const handleBankAccountNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const digitsOnly = value.replace(/\D/g, '');
+    setBankAccountNumber(digitsOnly);
   };
 
   const handleConnectBank = async (e: React.FormEvent) => {
     e.preventDefault();
     
       if (!isFormValid()) {
-        setConnectionError("Please fill out all fields correctly. Use routing number 121000358 for testing.");
+        setConnectionError("Please fill out all fields correctly. Account numbers must be between 8 and 17 digits. Use routing number 121000358 for testing.");
         return;
       }
       
-      if (bankAccountNumber.trim().length < 9) {
-        setConnectionError("Bank account number must be at least 9 characters long");
-        return;
-    }
-    
     try {
       setIsConnecting(true);
       setConnectionError(null);
@@ -496,8 +505,11 @@ export default function ManualBankForm({
             placeholder="Enter account number"
             className="bg-card border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-blue-500 focus-visible:border-blue-500 h-12"
             value={bankAccountNumber}
-            onChange={(e) => setBankAccountNumber(e.target.value)}
+            onChange={handleBankAccountNumberChange}
             required
+            inputMode="numeric"
+            minLength={8}
+            maxLength={17}
           />
         </div>
         
