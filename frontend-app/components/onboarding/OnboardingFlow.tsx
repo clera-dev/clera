@@ -11,7 +11,6 @@ import PersonalInfoStep from "./PersonalInfoStep";
 import FinancialProfileStep from "./FinancialProfileStep";
 import DisclosuresStep from "./DisclosuresStep";
 import AgreementsStep from "./AgreementsStep";
-import SubmissionSuccessStep from "./SubmissionSuccessStep";
 import { createAlpacaAccount } from "@/utils/api/alpaca";
 import { saveOnboardingData } from "@/utils/api/onboarding-client";
 import { OnboardingStatus } from "@/app/actions";
@@ -167,7 +166,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
         // Handle other errors
         setSubmissionError(result.error);
         setSubmitting(false);
-        navigateAfterOnboarding();
+        // Do not navigate away on error
         return;
       }
       
@@ -190,7 +189,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
       console.error("Error in onboarding submission:", error);
       setSubmissionError(error instanceof Error ? error.message : "An unknown error occurred");
       setSubmitting(false);
-      navigateAfterOnboarding();
+      // Do not navigate away on error
     }
   };
 
@@ -241,9 +240,11 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
             onContinue={handleStepCompletion} 
             onBack={prevStep}
             isSubmitting={submitting}
+            submissionError={submissionError}
           />
         );
       case "success":
+        // This step is no longer used, navigation happens directly
         return null;
       default:
         return <WelcomePage onContinue={nextStep} />;
@@ -273,9 +274,9 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
               currentStep={stepToIndex[currentStep]} 
               totalSteps={totalSteps}
               stepNames={[
-                "Welcome",
                 "Contact Info",
                 "Personal Info",
+                "Financial Profile",
                 "Disclosures",
                 "Agreements"
               ]}

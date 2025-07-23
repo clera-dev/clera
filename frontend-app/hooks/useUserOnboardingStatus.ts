@@ -24,7 +24,11 @@ export function useUserOnboardingStatus(): UserOnboardingStatus {
         
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         
-        if (userError || !user) {
+        if (userError) {
+          throw new Error(`Failed to get user: ${userError.message}`);
+        }
+        
+        if (!user) {
           // This is not an error, it just means the user is not logged in.
           // The hook should not throw an error in this case.
           setStatus(null);
