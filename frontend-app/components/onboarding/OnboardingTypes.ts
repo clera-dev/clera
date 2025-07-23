@@ -1,10 +1,11 @@
-import { FundingSource, OnboardingData } from '@/lib/types/onboarding';
+import { FundingSource, OnboardingData, CitizenshipStatus, EmploymentStatus, LiquidNetWorthRange } from '@/lib/types/onboarding';
 
 export const initialOnboardingData: OnboardingData = {
   // Contact Information
   email: '',
   phoneNumber: '',
   streetAddress: [''],
+  unit: '',
   city: '',
   state: '',
   postalCode: '',
@@ -17,10 +18,24 @@ export const initialOnboardingData: OnboardingData = {
   dateOfBirth: '',
   taxIdType: 'USA_SSN',
   taxId: '',
+  countryOfTaxResidence: 'USA',
+  
+  // Citizenship Information
+  citizenshipStatus: CitizenshipStatus.US_CITIZEN,
   countryOfCitizenship: 'USA',
   countryOfBirth: 'USA',
-  countryOfTaxResidence: 'USA',
-  fundingSource: [FundingSource.EMPLOYMENT_INCOME],
+  permanentResident: false,
+  visaType: undefined,
+  visaExpirationDate: '',
+  dateOfDepartureFromUsa: '',
+  
+  // Financial Profile
+  liquidNetWorthRange: undefined,
+  fundingSource: [],
+  employmentStatus: undefined,
+  employerName: '',
+  employerAddress: '',
+  employmentPosition: '',
   
   // Disclosures
   isControlPerson: false,

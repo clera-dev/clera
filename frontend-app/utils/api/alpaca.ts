@@ -1,4 +1,4 @@
-import { OnboardingData, FundingSource } from "@/lib/types/onboarding";
+import { OnboardingData, FundingSource, LiquidNetWorthRange } from "@/lib/types/onboarding";
 
 type ApiResponse<T> = {
   data?: T;
@@ -6,6 +6,30 @@ type ApiResponse<T> = {
   code?: string;
   accountExists?: boolean;
 };
+
+function getLiquidNetWorthMin(range: LiquidNetWorthRange): number {
+  const rangeMap: Record<LiquidNetWorthRange, number> = {
+    [LiquidNetWorthRange.RANGE_0_20K]: 0,
+    [LiquidNetWorthRange.RANGE_20K_50K]: 20000,
+    [LiquidNetWorthRange.RANGE_50K_100K]: 50000,
+    [LiquidNetWorthRange.RANGE_100K_500K]: 100000,
+    [LiquidNetWorthRange.RANGE_500K_1M]: 500000,
+    [LiquidNetWorthRange.RANGE_1M_PLUS]: 1000000
+  };
+  return rangeMap[range] || 0;
+}
+
+function getLiquidNetWorthMax(range: LiquidNetWorthRange): number {
+  const rangeMap: Record<LiquidNetWorthRange, number> = {
+    [LiquidNetWorthRange.RANGE_0_20K]: 20000,
+    [LiquidNetWorthRange.RANGE_20K_50K]: 49999,
+    [LiquidNetWorthRange.RANGE_50K_100K]: 99999,
+    [LiquidNetWorthRange.RANGE_100K_500K]: 499999,
+    [LiquidNetWorthRange.RANGE_500K_1M]: 999999,
+    [LiquidNetWorthRange.RANGE_1M_PLUS]: 9999999
+  };
+  return rangeMap[range] || 20000;
+}
 
 export async function createAlpacaAccount(userData: OnboardingData): Promise<ApiResponse<any>> {
   try {
@@ -37,6 +61,7 @@ export async function createAlpacaAccount(userData: OnboardingData): Promise<Api
         email_address: userData.email,
         phone_number: userData.phoneNumber,
         street_address: userData.streetAddress.filter(line => line.trim()),
+        unit: userData.unit || "",
         city: userData.city,
         state: userData.state,
         postal_code: userData.postalCode,
@@ -44,7 +69,7 @@ export async function createAlpacaAccount(userData: OnboardingData): Promise<Api
       },
       identity: {
         given_name: userData.firstName,
-        middle_name: userData.middleName || "", // Include middle name, default to empty string if not provided
+        middle_name: userData.middleName || "",
         family_name: userData.lastName,
         date_of_birth: userData.dateOfBirth,
         tax_id_type: userData.taxIdType,
@@ -52,13 +77,23 @@ export async function createAlpacaAccount(userData: OnboardingData): Promise<Api
         country_of_citizenship: userData.countryOfCitizenship,
         country_of_birth: userData.countryOfBirth,
         country_of_tax_residence: userData.countryOfTaxResidence,
+        permanent_resident: userData.permanentResident || false,
+        visa_type: userData.visaType || "",
+        visa_expiration_date: userData.visaExpirationDate || "",
+        date_of_departure_from_usa: userData.dateOfDepartureFromUsa || "",
+        liquid_net_worth_min: userData.liquidNetWorthRange ? getLiquidNetWorthMin(userData.liquidNetWorthRange) : undefined,
+        liquid_net_worth_max: userData.liquidNetWorthRange ? getLiquidNetWorthMax(userData.liquidNetWorthRange) : undefined,
         funding_source: userData.fundingSource
       },
       disclosures: {
         is_control_person: userData.isControlPerson,
         is_affiliated_exchange_or_finra: userData.isAffiliatedExchangeOrFinra,
         is_politically_exposed: userData.isPoliticallyExposed,
-        immediate_family_exposed: userData.immediateFamilyExposed
+        immediate_family_exposed: userData.immediateFamilyExposed,
+        employment_status: userData.employmentStatus,
+        employer_name: userData.employerName || "",
+        employer_address: userData.employerAddress || "",
+        employment_position: userData.employmentPosition || ""
       },
       agreements: [
         ...(userData.agreementsAccepted.customer ? [{
@@ -77,7 +112,12 @@ export async function createAlpacaAccount(userData: OnboardingData): Promise<Api
           ip_address: userIpAddress
         }] : [])
         // Removed crypto agreement which is not supported in California
-      ]
+      ],
+      documents: userData.account_approval_letter ? [{
+        document_type: 'account_approval_letter',
+        content: (userData.account_approval_letter.split(',')[1] ?? userData.account_approval_letter), // Remove the data URI prefix when present
+        mime_type: 'application/pdf',
+      }] : [],
     };
 
     console.log('Sending data to broker/create-account:', JSON.stringify(alpacaData));

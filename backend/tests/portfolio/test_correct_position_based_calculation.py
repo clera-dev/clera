@@ -106,24 +106,24 @@ class TestCorrectPositionBasedCalculation(unittest.TestCase):
                     # Get yesterday's closing price from mock data
                     if symbol in mock_bars_data and len(mock_bars_data[symbol]) > 0:
                         yesterday_close = float(mock_bars_data[symbol][0].close)
-                else:
-                    # Fallback: use current price (no change calculation)
-                yesterday_close = current_price
+                    else:
+                        # Fallback: use current price (no change calculation)
+                        yesterday_close = current_price
             
-            # Calculate values
-            position_current_value = qty * current_price
-            position_previous_value = qty * yesterday_close
-            position_pnl = position_current_value - position_previous_value
-                    
+                    # Calculate values
+                    position_current_value = qty * current_price
+                    position_previous_value = qty * yesterday_close
+                    position_pnl = position_current_value - position_previous_value
+                            
                     # Safe percentage calculation
                     if position_previous_value > 0:
                         position_pnl_pct = (position_pnl / position_previous_value * 100)
                     else:
                         position_pnl_pct = 0
-            
-            total_current_value += position_current_value
-            total_previous_value += position_previous_value
-            
+                    
+                    total_current_value += position_current_value
+                    total_previous_value += position_previous_value
+                    
                     # Assert realistic position-level returns
                     self.assertLess(
                         abs(position_pnl_pct), 
@@ -132,7 +132,7 @@ class TestCorrectPositionBasedCalculation(unittest.TestCase):
                     )
         
         # Add cash (cash doesn't change in value)
-                account = calc.broker_client.get_trade_account_by_id(self.account_id)
+        account = calc.broker_client.get_trade_account_by_id(self.account_id)
         cash = float(account.cash)
         total_current_value += cash
         total_previous_value += cash
@@ -140,39 +140,39 @@ class TestCorrectPositionBasedCalculation(unittest.TestCase):
         # Calculate total return
         total_return = total_current_value - total_previous_value
                 
-                # Safe percentage calculation
-                if total_previous_value > 0:
-                    total_return_pct = (total_return / total_previous_value * 100)
-                else:
-                    total_return_pct = 0
-                
-                # Assert realistic portfolio-level returns
-                self.assertLess(
-                    abs(total_return_pct), 
-                    self.max_realistic_daily_return_percent,
-                    f"Portfolio return {total_return_pct:.2f}% should be less than {self.max_realistic_daily_return_percent}%"
-                )
-                
-                # Assert positive total values
-                self.assertGreater(total_current_value, 0, "Total current value should be positive")
-                self.assertGreater(total_previous_value, 0, "Total previous value should be positive")
-                
-                # Verify the calculation is more accurate than broken approach
+        # Safe percentage calculation
+        if total_previous_value > 0:
+            total_return_pct = (total_return / total_previous_value * 100)
+        else:
+            total_return_pct = 0
+        
+        # Assert realistic portfolio-level returns
+        self.assertLess(
+            abs(total_return_pct), 
+            self.max_realistic_daily_return_percent,
+            f"Portfolio return {total_return_pct:.2f}% should be less than {self.max_realistic_daily_return_percent}%"
+        )
+        
+        # Assert positive total values
+        self.assertGreater(total_current_value, 0, "Total current value should be positive")
+        self.assertGreater(total_previous_value, 0, "Total previous value should be positive")
+        
+        # Verify the calculation is more accurate than broken approach
         current_equity = float(account.equity)
         last_equity = float(account.last_equity) if account.last_equity else 0
         broken_return = current_equity - last_equity
                 
-                if last_equity > 0:
-                    broken_return_pct = (broken_return / last_equity * 100)
-                else:
-                    broken_return_pct = 0
-                
-                # Position-based approach should be more realistic than broken approach
-                self.assertLess(
-                    abs(total_return_pct), 
-                    abs(broken_return_pct),
-                    f"Position-based return {total_return_pct:.2f}% should be more realistic than broken return {broken_return_pct:.2f}%"
-                )
+        if last_equity > 0:
+            broken_return_pct = (broken_return / last_equity * 100)
+        else:
+            broken_return_pct = 0
+        
+        # Position-based approach should be more realistic than broken approach
+        self.assertLess(
+            abs(total_return_pct), 
+            abs(broken_return_pct),
+            f"Position-based return {total_return_pct:.2f}% should be more realistic than broken return {broken_return_pct:.2f}%"
+        )
     
     def test_handles_missing_historical_data(self):
         """Test handling of missing historical data gracefully"""

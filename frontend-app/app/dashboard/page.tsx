@@ -294,6 +294,86 @@ export default function DashboardPage() {
         <DocumentsAndStatements />
       </div>
       
+      {/* Required Disclosures */}
+      <div className="mt-6">
+        <div className="bg-card border border-border rounded-lg p-6">
+          <h3 className="text-lg font-semibold mb-4">Required Disclosures</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            The following disclosures are provided for your reference and regulatory compliance.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <a 
+                href="https://files.alpaca.markets/disclosures/library/UseAndRisk.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-sm text-primary hover:underline"
+              >
+                Use and Risk Disclosures
+              </a>
+              <a 
+                href="https://files.alpaca.markets/disclosures/library/TermsAndConditions.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-sm text-primary hover:underline"
+              >
+                Terms and Conditions
+              </a>
+              <a 
+                href="https://files.alpaca.markets/disclosures/library/PrivacyNotice.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-sm text-primary hover:underline"
+              >
+                Privacy Notice
+              </a>
+              <a 
+                href="https://files.alpaca.markets/disclosures/library/PFOF.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-sm text-primary hover:underline"
+              >
+                Payment for Order Flow Disclosure
+              </a>
+            </div>
+            <div className="space-y-2">
+              <a 
+                href="https://files.alpaca.markets/disclosures/library/MarginDiscStmt.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-sm text-primary hover:underline"
+              >
+                Margin Disclosure Statement
+              </a>
+              <a 
+                href="https://files.alpaca.markets/disclosures/library/ExtHrsRisk.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-sm text-primary hover:underline"
+              >
+                Extended Hours Risk Disclosure
+              </a>
+              <a 
+                href="https://files.alpaca.markets/disclosures/library/BCPSummary.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-sm text-primary hover:underline"
+              >
+                Business Continuity Plan Summary
+              </a>
+              <a 
+                href="https://files.alpaca.markets/disclosures/library/FormCRS.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block text-sm text-primary hover:underline"
+              >
+                Form CRS
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       {/* Danger Zone - Account Closure */}
       <div className="mt-6">
         <DangerZone 

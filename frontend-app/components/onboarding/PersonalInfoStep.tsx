@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { OnboardingData, FundingSource } from "@/lib/types/onboarding";
+// import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { OnboardingData, CitizenshipStatus, VisaType, VISA_TYPE_DESCRIPTIONS } from "@/lib/types/onboarding";
 import { InfoIcon } from "lucide-react";
 import {
   Tooltip,
@@ -21,16 +22,6 @@ interface PersonalInfoStepProps {
   onBack: () => void;
 }
 
-// Descriptions for each funding source
-const fundingSourceDescriptions: Record<FundingSource, string> = {
-  [FundingSource.EMPLOYMENT_INCOME]: "Money earned from your job, salary, wages, or employment compensation",
-  [FundingSource.INVESTMENTS]: "Money from stocks, bonds, mutual funds, or other financial investment returns",
-  [FundingSource.INHERITANCE]: "Money or assets received from someone who has passed away",
-  [FundingSource.BUSINESS_INCOME]: "Money earned from a business you own or operate, including self-employment income",
-  [FundingSource.SAVINGS]: "Money accumulated from past income that has been set aside",
-  [FundingSource.FAMILY]: "Money received as a gift or support from family members",
-};
-
 export default function PersonalInfoStep({ 
   data, 
   onUpdate, 
@@ -38,49 +29,6 @@ export default function PersonalInfoStep({
   onBack 
 }: PersonalInfoStepProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [openTooltip, setOpenTooltip] = useState<FundingSource | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
-
-  // Detect screen size for responsive tooltip positioning
-  useEffect(() => {
-    const checkScreenSize = () => {
-      setIsMobile(window.innerWidth < 768); // Tailwind's md breakpoint
-    };
-
-    // Check on mount
-    checkScreenSize();
-
-    // Listen for resize events
-    window.addEventListener('resize', checkScreenSize);
-
-    return () => window.removeEventListener('resize', checkScreenSize);
-  }, []);
-
-  // Close tooltip when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Element;
-      
-      // Check if the click is on a tooltip trigger button or inside a tooltip
-      const isTooltipTrigger = target.closest('[data-tooltip-trigger]');
-      const isTooltipContent = target.closest('[data-radix-tooltip-content]');
-      
-      // If click is outside both the trigger and content, close the tooltip
-      if (!isTooltipTrigger && !isTooltipContent && openTooltip) {
-        setOpenTooltip(null);
-      }
-    };
-
-    // Only add listener if a tooltip is open
-    if (openTooltip) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    // Cleanup
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [openTooltip]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -110,9 +58,44 @@ export default function PersonalInfoStep({
     else if (!/^\d{3}-\d{2}-\d{4}$/.test(data.taxId)) {
       newErrors.taxId = "Please enter a valid SSN (e.g., 123-45-6789)";
     }
-    
-    if (data.fundingSource.length === 0) {
-      newErrors.fundingSource = "Please select at least one funding source";
+
+    // Validate citizenship-related fields
+    if (!data.citizenshipStatus) {
+      newErrors.citizenshipStatus = "Please select your citizenship status";
+    }
+
+    // Validate permanent resident fields
+    if (data.citizenshipStatus === CitizenshipStatus.PERMANENT_RESIDENT) {
+      if (!data.countryOfBirth) newErrors.countryOfBirth = "Country of birth is required";
+      else if (!/^[A-Z]{3}$/.test(data.countryOfBirth)) newErrors.countryOfBirth = "Must be a 3-letter ISO code";
+      if (!data.countryOfCitizenship) newErrors.countryOfCitizenship = "Country of citizenship is required";
+      else if (!/^[A-Z]{3}$/.test(data.countryOfCitizenship)) newErrors.countryOfCitizenship = "Must be a 3-letter ISO code";
+    }
+
+    // Validate visa holder fields
+    if (data.citizenshipStatus === CitizenshipStatus.VISA_HOLDER) {
+      if (!data.visaType) newErrors.visaType = "Visa type is required";
+      if (!data.visaExpirationDate) {
+        newErrors.visaExpirationDate = "Visa expiration date is required";
+      } else {
+        // Check if visa expiration is more than 90 days from now
+        const expirationDate = new Date(data.visaExpirationDate);
+        const today = new Date();
+        const diffTime = expirationDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays < 90) {
+          newErrors.visaExpirationDate = "Visa must be valid for at least 90 days";
+        }
+      }
+      if (!data.countryOfBirth) newErrors.countryOfBirth = "Country of birth is required";
+      else if (!/^[A-Z]{3}$/.test(data.countryOfBirth)) newErrors.countryOfBirth = "Must be a 3-letter ISO code";
+      if (!data.countryOfCitizenship) newErrors.countryOfCitizenship = "Country of citizenship is required";
+      else if (!/^[A-Z]{3}$/.test(data.countryOfCitizenship)) newErrors.countryOfCitizenship = "Must be a 3-letter ISO code";
+      
+      // Check if B1/B2 visa requires departure date
+      if ((data.visaType === VisaType.B1 || data.visaType === VisaType.B2) && !data.dateOfDepartureFromUsa) {
+        newErrors.dateOfDepartureFromUsa = "Date of departure from USA is required for B1/B2 visas";
+      }
     }
     
     setErrors(newErrors);
@@ -126,22 +109,16 @@ export default function PersonalInfoStep({
     }
   };
 
-  const handleFundingSourceChange = (source: FundingSource, checked: boolean) => {
-    let updatedSources = [...data.fundingSource];
-    
-    if (checked) {
-      if (!updatedSources.includes(source)) {
-        updatedSources.push(source);
-      }
-    } else {
-      updatedSources = updatedSources.filter(s => s !== source);
-    }
-    
-    onUpdate({ fundingSource: updatedSources });
-  };
+  const handleCountryCodeBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { id, value } = e.target;
+    const newErrors = { ...errors };
 
-  const handleTooltipToggle = (source: FundingSource) => {
-    setOpenTooltip(openTooltip === source ? null : source);
+    if (value && !/^[A-Z]{3}$/.test(value)) {
+      newErrors[id] = "Must be a 3-letter ISO code";
+    } else {
+      delete newErrors[id];
+    }
+    setErrors(newErrors);
   };
 
   const formatSSN = (value: string) => {
@@ -158,11 +135,27 @@ export default function PersonalInfoStep({
     }
   };
 
+  const handleCitizenshipChange = (value: CitizenshipStatus) => {
+    onUpdate({ 
+      citizenshipStatus: value,
+      // Reset related fields when citizenship status changes
+      permanentResident: value === CitizenshipStatus.PERMANENT_RESIDENT,
+      visaType: undefined,
+      visaExpirationDate: '',
+      dateOfDepartureFromUsa: '',
+      countryOfBirth: value === CitizenshipStatus.US_CITIZEN ? 'USA' : '',
+      countryOfCitizenship: value === CitizenshipStatus.US_CITIZEN ? 'USA' : ''
+    });
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-lg mx-auto">
-      <h2 className="text-2xl font-bold mb-6">Personal Information</h2>
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-8">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Personal Information</h2>
+        <p className="text-muted-foreground">Please provide your personal details and citizenship information.</p>
+      </div>
       
-      <div className="space-y-4">
+      <div className="space-y-6 bg-card/50 p-6 rounded-lg border border-border/30 shadow-sm">
         <div className="grid grid-cols-3 gap-4">
           <div className="grid grid-rows-[auto_1fr] gap-1">
             <Label htmlFor="firstName" className="text-sm font-medium min-h-[2.5rem] flex items-end">First Name</Label>
@@ -170,7 +163,7 @@ export default function PersonalInfoStep({
               id="firstName"
               value={data.firstName}
               onChange={(e) => onUpdate({ firstName: e.target.value })}
-              className={errors.firstName ? "border-red-500" : ""}
+              className={`${errors.firstName ? "border-red-500" : "border-border/40"} rounded-md h-11`}
             />
             {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
           </div>
@@ -181,6 +174,7 @@ export default function PersonalInfoStep({
               id="middleName"
               value={data.middleName}
               onChange={(e) => onUpdate({ middleName: e.target.value })}
+              className="border-border/40 rounded-md h-11"
             />
           </div>
           
@@ -190,13 +184,13 @@ export default function PersonalInfoStep({
               id="lastName"
               value={data.lastName}
               onChange={(e) => onUpdate({ lastName: e.target.value })}
-              className={errors.lastName ? "border-red-500" : ""}
+              className={`${errors.lastName ? "border-red-500" : "border-border/40"} rounded-md h-11`}
             />
             {errors.lastName && <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="grid grid-rows-[auto_1fr] gap-1">
             <Label htmlFor="dateOfBirth" className="text-sm font-medium min-h-[2.5rem] flex items-end">Date of Birth</Label>
             <Input
@@ -204,7 +198,7 @@ export default function PersonalInfoStep({
               type="date"
               value={data.dateOfBirth}
               onChange={(e) => onUpdate({ dateOfBirth: e.target.value })}
-              className={errors.dateOfBirth ? "border-red-500" : ""}
+              className={`${errors.dateOfBirth ? "border-red-500" : "border-border/40"} rounded-md h-11`}
             />
             {errors.dateOfBirth && <p className="text-red-500 text-sm mt-1">{errors.dateOfBirth}</p>}
           </div>
@@ -215,86 +209,181 @@ export default function PersonalInfoStep({
               id="taxId"
               value={data.taxId}
               onChange={(e) => onUpdate({ taxId: formatSSN(e.target.value) })}
-              className={errors.taxId ? "border-red-500" : ""}
+              className={`${errors.taxId ? "border-red-500" : "border-border/40"} rounded-md h-11`}
               maxLength={11}
               placeholder="123-45-6789"
             />
             {errors.taxId && <p className="text-red-500 text-sm mt-1">{errors.taxId}</p>}
           </div>
+
+          <div className="grid grid-rows-[auto_1fr] gap-1">
+            <div className="flex items-center gap-2 min-h-[2.5rem]">
+              <Label className="text-sm font-medium">Country of Tax Residence</Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>We are currently only available in the USA.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Input
+              value={data.countryOfTaxResidence}
+              disabled
+              className="border-border/40 bg-muted/50 rounded-md h-11"
+            />
+          </div>
         </div>
 
-        <div>
-          <div className="flex items-center mb-2">
-            <Label>Funding Sources (select all that apply)</Label>
+        <div className="space-y-4">
+          <Label className="text-sm font-medium">Are you a citizen of the United States?</Label>
+          <div className="grid grid-cols-1 gap-2">
+            <div className="flex items-center space-x-2">
+              <input
+                type="radio"
+                id="us-citizen"
+                name="citizenshipStatus"
+                value={CitizenshipStatus.US_CITIZEN}
+                checked={data.citizenshipStatus === CitizenshipStatus.US_CITIZEN}
+                onChange={(e) => handleCitizenshipChange(e.target.value as CitizenshipStatus)}
+                className="h-4 w-4 text-primary border-border/40 focus:ring-primary"
+              />
+              <Label htmlFor="us-citizen" className="font-normal cursor-pointer">Yes</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="radio"
+                id="permanent-resident"
+                name="citizenshipStatus"
+                value={CitizenshipStatus.PERMANENT_RESIDENT}
+                checked={data.citizenshipStatus === CitizenshipStatus.PERMANENT_RESIDENT}
+                onChange={(e) => handleCitizenshipChange(e.target.value as CitizenshipStatus)}
+                className="h-4 w-4 text-primary border-border/40 focus:ring-primary"
+              />
+              <Label htmlFor="permanent-resident" className="font-normal cursor-pointer">No - Green Card / Permanent Resident</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="radio"
+                id="visa-holder"
+                name="citizenshipStatus"
+                value={CitizenshipStatus.VISA_HOLDER}
+                checked={data.citizenshipStatus === CitizenshipStatus.VISA_HOLDER}
+                onChange={(e) => handleCitizenshipChange(e.target.value as CitizenshipStatus)}
+                className="h-4 w-4 text-primary border-border/40 focus:ring-primary"
+              />
+              <Label htmlFor="visa-holder" className="font-normal cursor-pointer">No - Visa</Label>
+            </div>
           </div>
-          <div className="space-y-2">
-            <TooltipProvider>
-              {Object.values(FundingSource).map((source) => (
-                <div key={source} className="flex items-center space-x-2">
-                  <Checkbox 
-                    id={`source-${source}`}
-                    checked={data.fundingSource.includes(source)}
-                    onCheckedChange={(checked) => 
-                      handleFundingSourceChange(source, checked as boolean)
-                    }
-                  />
-                  <div className="flex items-center space-x-1">
-                    <Label 
-                      htmlFor={`source-${source}`}
-                      className="font-normal cursor-pointer"
-                    >
-                      {source.split('_').map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      ).join(' ')}
-                    </Label>
-                    <Tooltip open={openTooltip === source} onOpenChange={() => {}}>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="cursor-help p-1 hover:bg-muted rounded-sm transition-colors ml-1"
-                          onClick={() => handleTooltipToggle(source)}
-                          data-tooltip-trigger
-                          aria-label={`Information about ${source.split('_').map(word => 
-                            word.charAt(0).toUpperCase() + word.slice(1)
-                          ).join(' ')}`}
-                        >
-                          <InfoIcon 
-                            className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" 
-                          />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent 
-                        side={isMobile ? "top" : "right"}
-                        className={isMobile 
-                          ? "max-w-[280px] text-xs z-50" 
-                          : "max-w-[320px] text-sm z-50"
-                        }
-                        sideOffset={8}
-                      >
-                        <p>{fundingSourceDescriptions[source]}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              ))}
-            </TooltipProvider>
-          </div>
-          {errors.fundingSource && (
-            <p className="text-red-500 text-sm mt-1">{errors.fundingSource}</p>
-          )}
+          {errors.citizenshipStatus && <p className="text-red-500 text-sm mt-1">{errors.citizenshipStatus}</p>}
         </div>
+
+        {/* Conditional fields for non-US citizens */}
+        {(data.citizenshipStatus === CitizenshipStatus.PERMANENT_RESIDENT || data.citizenshipStatus === CitizenshipStatus.VISA_HOLDER) && (
+          <div className="space-y-4 border-t border-border/30 pt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="countryOfBirth" className="text-sm font-medium">Country of Birth</Label>
+                <Input
+                  id="countryOfBirth"
+                  value={data.countryOfBirth}
+                  onChange={(e) => onUpdate({ countryOfBirth: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') })}
+                  onBlur={handleCountryCodeBlur}
+                  maxLength={3}
+                  className={`mt-1 ${errors.countryOfBirth ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                  placeholder="3-letter ISO country code (e.g., CAN)"
+                />
+                {errors.countryOfBirth && <p className="text-red-500 text-sm mt-1">{errors.countryOfBirth}</p>}
+              </div>
+
+              <div>
+                <Label htmlFor="countryOfCitizenship" className="text-sm font-medium">Country of Citizenship</Label>
+                <Input
+                  id="countryOfCitizenship"
+                  value={data.countryOfCitizenship}
+                  onChange={(e) => onUpdate({ countryOfCitizenship: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') })}
+                  onBlur={handleCountryCodeBlur}
+                  maxLength={3}
+                  className={`mt-1 ${errors.countryOfCitizenship ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                  placeholder="3-letter ISO country code (e.g., CAN)"
+                />
+                {errors.countryOfCitizenship && <p className="text-red-500 text-sm mt-1">{errors.countryOfCitizenship}</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Visa-specific fields */}
+        {data.citizenshipStatus === CitizenshipStatus.VISA_HOLDER && (
+          <div className="space-y-4 border-t border-border/30 pt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="visaType" className="text-sm font-medium">Visa Type</Label>
+                <Select value={data.visaType} onValueChange={(value: string) => onUpdate({ visaType: value as VisaType })}>
+                  <SelectTrigger className={`mt-1 ${errors.visaType ? "border-red-500" : "border-border/40"} rounded-md h-11`}>
+                    <SelectValue placeholder="Select visa type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.values(VisaType).map((visa) => (
+                      <SelectItem key={visa} value={visa}>
+                        {VISA_TYPE_DESCRIPTIONS[visa]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.visaType && <p className="text-red-500 text-sm mt-1">{errors.visaType}</p>}
+              </div>
+
+              <div>
+                <Label htmlFor="visaExpirationDate" className="text-sm font-medium">Visa Expiration Date</Label>
+                <Input
+                  id="visaExpirationDate"
+                  type="date"
+                  value={data.visaExpirationDate}
+                  onChange={(e) => onUpdate({ visaExpirationDate: e.target.value })}
+                  className={`mt-1 ${errors.visaExpirationDate ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                />
+                {errors.visaExpirationDate && <p className="text-red-500 text-sm mt-1">{errors.visaExpirationDate}</p>}
+              </div>
+            </div>
+
+            {/* B1/B2 specific field */}
+            {(data.visaType === VisaType.B1 || data.visaType === VisaType.B2) && (
+              <div>
+                <Label htmlFor="dateOfDepartureFromUsa" className="text-sm font-medium">Date of Departure from USA</Label>
+                <Input
+                  id="dateOfDepartureFromUsa"
+                  type="date"
+                  value={data.dateOfDepartureFromUsa}
+                  onChange={(e) => onUpdate({ dateOfDepartureFromUsa: e.target.value })}
+                  className={`mt-1 ${errors.dateOfDepartureFromUsa ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                />
+                {errors.dateOfDepartureFromUsa && <p className="text-red-500 text-sm mt-1">{errors.dateOfDepartureFromUsa}</p>}
+                <p className="text-xs text-muted-foreground mt-1">Required for B1/B2 visa holders</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="flex gap-4">
+      <div className="flex gap-4 pt-4">
         <Button 
           type="button" 
           variant="outline" 
           onClick={onBack} 
-          className="flex-1"
+          className="px-6 py-2 border-border/40"
         >
           Back
         </Button>
-        <Button type="submit" className="flex-1">Continue</Button>
+        <Button 
+          type="submit" 
+          className="px-8 py-2 ml-auto bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg transition-all"
+        >
+          Continue
+        </Button>
       </div>
     </form>
   );

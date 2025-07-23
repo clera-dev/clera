@@ -7,6 +7,13 @@ import { Label } from "@/components/ui/label";
 import { OnboardingData } from "@/lib/types/onboarding";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhoneNumber } from "react-phone-number-input";
+import { InfoIcon } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ContactInfoStepProps {
   data: OnboardingData;
@@ -26,7 +33,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
     if (!data.phoneNumber) newErrors.phoneNumber = "Phone number is required";
     else if (!isValidPhoneNumber(data.phoneNumber)) newErrors.phoneNumber = "Please enter a valid phone number";
     
-    if (!data.streetAddress[0]) newErrors.streetAddress = "Street address is required";
+    if (!data.streetAddress[0]) newErrors.streetAddress = "Permanent residential address is required";
     if (!data.city) newErrors.city = "City is required";
     if (!data.state) newErrors.state = "State is required";
     if (!data.postalCode) newErrors.postalCode = "Postal code is required";
@@ -77,16 +84,29 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
           </div>
         </div>
 
-        <div>
-          <Label htmlFor="streetAddress" className="text-sm font-medium">Street Address</Label>
-          <Input
-            id="streetAddress"
-            value={data.streetAddress[0]}
-            onChange={(e) => onUpdate({ streetAddress: [e.target.value] })}
-            className={`mt-1 ${errors.streetAddress ? "border-red-500" : "border-border/40"} rounded-md h-11`}
-            placeholder="123 Main St"
-          />
-          {errors.streetAddress && <p className="text-red-500 text-sm mt-1">{errors.streetAddress}</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="sm:col-span-2">
+            <Label htmlFor="streetAddress" className="text-sm font-medium">Permanent Residential Address</Label>
+            <Input
+              id="streetAddress"
+              value={data.streetAddress[0]}
+              onChange={(e) => onUpdate({ streetAddress: [e.target.value] })}
+              className={`mt-1 ${errors.streetAddress ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              placeholder="123 Main St"
+            />
+            {errors.streetAddress && <p className="text-red-500 text-sm mt-1">{errors.streetAddress}</p>}
+          </div>
+          
+          <div>
+            <Label htmlFor="unit" className="text-sm font-medium">Unit / Apt #</Label>
+            <Input
+              id="unit"
+              value={data.unit || ''}
+              onChange={(e) => onUpdate({ unit: e.target.value })}
+              className="mt-1 border-border/40 rounded-md h-11"
+              placeholder="Apt 4B"
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -129,7 +149,19 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
           </div>
           
           <div>
-            <Label htmlFor="country" className="text-sm font-medium">Country</Label>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="country" className="text-sm font-medium">Country</Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InfoIcon tabIndex={0} className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>We are currently only available in the USA.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
             <Input
               id="country"
               value={data.country}
