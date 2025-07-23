@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { X, File as FileIcon } from 'lucide-react';
@@ -14,6 +14,8 @@ interface FileUploadProps {
 export function FileUpload({ onFileChange, acceptedFileType = "application/pdf", label }: FileUploadProps) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const id = useId();
 
   const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -46,19 +48,19 @@ export function FileUpload({ onFileChange, acceptedFileType = "application/pdf",
   const handleClearFile = useCallback(() => {
     setFileName(null);
     onFileChange(null);
-    const input = document.getElementById('file-upload') as HTMLInputElement;
-    if (input) {
-      input.value = '';
+    if (inputRef.current) {
+      inputRef.current.value = '';
     }
   }, [onFileChange]);
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="file-upload" className="font-medium">{label}</Label>
+      <Label htmlFor={id} className="font-medium">{label}</Label>
       <div className="flex items-center space-x-2">
         <div className="relative flex-grow min-w-0">
           <input
-            id="file-upload"
+            id={id}
+            ref={inputRef}
             type="file"
             accept={acceptedFileType}
             onChange={handleFileChange}

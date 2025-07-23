@@ -81,8 +81,8 @@ export async function createAlpacaAccount(userData: OnboardingData): Promise<Api
         visa_type: userData.visaType || "",
         visa_expiration_date: userData.visaExpirationDate || "",
         date_of_departure_from_usa: userData.dateOfDepartureFromUsa || "",
-        liquid_net_worth_min: getLiquidNetWorthMin(userData.liquidNetWorthRange),
-        liquid_net_worth_max: getLiquidNetWorthMax(userData.liquidNetWorthRange),
+        liquid_net_worth_min: userData.liquidNetWorthRange ? getLiquidNetWorthMin(userData.liquidNetWorthRange) : undefined,
+        liquid_net_worth_max: userData.liquidNetWorthRange ? getLiquidNetWorthMax(userData.liquidNetWorthRange) : undefined,
         funding_source: userData.fundingSource
       },
       disclosures: {
@@ -115,9 +115,9 @@ export async function createAlpacaAccount(userData: OnboardingData): Promise<Api
       ],
       documents: userData.account_approval_letter ? [{
         document_type: 'account_approval_letter',
-        content: userData.account_approval_letter.split(',')[1], // Remove the data URI prefix
+        content: (userData.account_approval_letter.split(',')[1] ?? userData.account_approval_letter), // Remove the data URI prefix when present
         mime_type: 'application/pdf',
-      }] : []
+      }] : [],
     };
 
     console.log('Sending data to broker/create-account:', JSON.stringify(alpacaData));

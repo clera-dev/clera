@@ -75,9 +75,9 @@ export interface OnboardingData {
   dateOfDepartureFromUsa?: string;
   
   // Financial Profile
-  liquidNetWorthRange: LiquidNetWorthRange;
+  liquidNetWorthRange?: LiquidNetWorthRange;
   fundingSource: FundingSource[];
-  employmentStatus: EmploymentStatus;
+  employmentStatus?: EmploymentStatus;
   employerName?: string;
   employerAddress?: string;
   employmentPosition?: string;

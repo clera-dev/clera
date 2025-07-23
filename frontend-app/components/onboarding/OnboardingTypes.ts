@@ -30,9 +30,9 @@ export const initialOnboardingData: OnboardingData = {
   dateOfDepartureFromUsa: '',
   
   // Financial Profile
-  liquidNetWorthRange: LiquidNetWorthRange.RANGE_0_20K,
-  fundingSource: [FundingSource.EMPLOYMENT_INCOME],
-  employmentStatus: EmploymentStatus.EMPLOYED,
+  liquidNetWorthRange: undefined,
+  fundingSource: [],
+  employmentStatus: undefined,
   employerName: '',
   employerAddress: '',
   employmentPosition: '',

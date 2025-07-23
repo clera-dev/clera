@@ -154,7 +154,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
+                    <InfoIcon tabIndex={0} className="h-4 w-4 text-muted-foreground cursor-help" />
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>We are currently only available in the USA.</p>

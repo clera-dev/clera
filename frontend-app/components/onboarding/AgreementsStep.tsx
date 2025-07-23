@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { OnboardingData } from "@/lib/types/onboarding";
 import AgreementViewer from "./AgreementViewer";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 // Agreement PDF URLs
 const AGREEMENT_URLS = {
@@ -18,6 +17,7 @@ interface AgreementsStepProps {
   onContinue: () => void;
   onBack: () => void;
   isSubmitting?: boolean;
+  submissionError?: string | null;
 }
 
 export default function AgreementsStep({
@@ -25,40 +25,26 @@ export default function AgreementsStep({
   onUpdate,
   onContinue,
   onBack,
-  isSubmitting = false
+  isSubmitting = false,
+  submissionError = null
 }: AgreementsStepProps) {
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const allRequiredAgreementsAccepted = 
     data.agreementsAccepted.customer && data.agreementsAccepted.account;
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-    
-    if (!data.agreementsAccepted.customer) {
-      newErrors.customer = "You must accept the Customer Agreement to continue";
-    }
-    
-    if (!data.agreementsAccepted.account) {
-      newErrors.account = "You must accept the Account Agreement to continue";
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (validateForm()) {
+    if (allRequiredAgreementsAccepted) {
       onContinue();
     }
   };
 
-  const handleAgreementChange = (agreement: keyof typeof data.agreementsAccepted, checked: boolean) => {
+  const handleAgreementChange = (accepted: boolean) => {
     onUpdate({
       agreementsAccepted: {
         ...data.agreementsAccepted,
-        [agreement]: checked
+        customer: accepted,
+        account: accepted,
       }
     });
   };
@@ -80,72 +66,34 @@ export default function AgreementsStep({
             title="Alpaca Customer Agreement"
           />
           
-          {/* Customer Agreement Acknowledgment - Exact Text Required by Alpaca */}
+          {/* Combined Agreement Section */}
           <div className="space-y-4 border border-border/30 rounded-lg p-4 bg-muted/20">
-            <div className="flex items-start space-x-3">
-              <Checkbox 
-                id="customer-agreement"
-                checked={data.agreementsAccepted.customer}
-                onCheckedChange={(checked) => 
-                  handleAgreementChange('customer', checked as boolean)
-                }
-              />
-              <div className="flex-1">
-                <Label 
-                  htmlFor="customer-agreement"
-                  className="cursor-pointer text-sm leading-relaxed"
-                >
-                  I have read, understood, and agree to be bound by Alpaca Securities LLC and Clera account terms, and all other terms, disclosures and disclaimers applicable to me, as referenced in the Alpaca Customer Agreement. I also acknowledge that the Alpaca Customer Agreement contains a pre-dispute arbitration clause in Section 43.
-                </Label>
-                {errors.customer && <p className="text-red-500 text-sm mt-1">{errors.customer}</p>}
-              </div>
-            </div>
+            <p className="text-sm leading-relaxed">
+              I have read, understood, and agree to be bound by Alpaca Securities LLC and Clera account terms, and all other terms, disclosures and disclaimers applicable to me, as referenced in the Alpaca Customer Agreement. I also acknowledge that the Alpaca Customer Agreement contains a pre-dispute arbitration clause in Section 43.
+            </p>
+            <p className="text-sm leading-relaxed mt-4">
+            By clicking 'I agree' I understand that I am signing signing this agreement electronically, and that my electronic signature will have the same effect as physically signing and returning the Application Agreement.
+            </p>
           </div>
-
-          {/* Digital Signature Acknowledgment - Exact Text Required by Alpaca */}
-          <div className="space-y-4 border border-border/30 rounded-lg p-4 bg-muted/20">
-            <div className="flex items-start space-x-3">
-              <Checkbox 
-                id="digital-signature"
-                checked={data.agreementsAccepted.account}
-                onCheckedChange={(checked) => 
-                  handleAgreementChange('account', checked as boolean)
-                }
-              />
-              <div className="flex-1">
-                <Label 
-                  htmlFor="digital-signature"
-                  className="cursor-pointer text-sm leading-relaxed"
-                >
-                  I understand I am signing this agreement electronically, and that my electronic signature will have the same effect as physically signing and returning the Application Agreement.
-                </Label>
-                {errors.account && <p className="text-red-500 text-sm mt-1">{errors.account}</p>}
-              </div>
-            </div>
-          </div>
-
-          {/* Margin Agreement (Optional) */}
-          <div className="space-y-4 border border-border/30 rounded-lg p-4 bg-muted/10">
-            <div className="flex items-start space-x-3">
-              <Checkbox 
-                id="margin-agreement"
-                checked={data.agreementsAccepted.margin}
-                onCheckedChange={(checked) => 
-                  handleAgreementChange('margin', checked as boolean)
-                }
-              />
-              <div className="flex-1">
-                <Label 
-                  htmlFor="margin-agreement"
-                  className="cursor-pointer text-sm leading-relaxed"
-                >
-                  <span className="font-medium">Margin Agreement (Optional):</span> I agree to the Margin Agreement which allows me to borrow funds from Alpaca Securities LLC for the purpose of purchasing securities. I understand that trading on margin involves additional risks.
-                </Label>
-              </div>
-            </div>
+          
+          <div className="flex items-center space-x-2 pt-2">
+            <Checkbox 
+              id="agree-to-terms" 
+              checked={allRequiredAgreementsAccepted}
+              onCheckedChange={(checked) => handleAgreementChange(!!checked)}
+            />
+            <Label htmlFor="agree-to-terms" className="cursor-pointer">I agree to the terms and conditions outlined above.</Label>
           </div>
         </div>
       </div>
+
+      {submissionError && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-center">
+          <p className="text-sm text-red-800">
+            <strong>Submission Failed:</strong> {submissionError}
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-4 pt-4">
         <Button 

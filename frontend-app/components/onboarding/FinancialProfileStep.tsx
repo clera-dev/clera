@@ -166,12 +166,12 @@ export default function FinancialProfileStep({
             onValueChange={(value: string) => onUpdate({ liquidNetWorthRange: value as LiquidNetWorthRange })}
           >
             <SelectTrigger className={`${errors.liquidNetWorthRange ? "border-red-500" : "border-border/40"} rounded-md h-11`}>
-              <SelectValue placeholder="Select your liquid net worth range" />
+              <SelectValue placeholder="Select your investible / liquid assets" />
             </SelectTrigger>
             <SelectContent>
-              {Object.values(LiquidNetWorthRange).map((range) => (
-                <SelectItem key={range} value={range}>
-                  {LIQUID_NET_WORTH_DESCRIPTIONS[range]}
+              {Object.entries(LiquidNetWorthRange).map(([key, value]) => (
+                <SelectItem key={key} value={value}>
+                  {LIQUID_NET_WORTH_DESCRIPTIONS[value]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -229,9 +229,9 @@ export default function FinancialProfileStep({
               <SelectValue placeholder="Select your employment status" />
             </SelectTrigger>
             <SelectContent>
-              {Object.values(EmploymentStatus).map((status) => (
-                <SelectItem key={status} value={status}>
-                  {EMPLOYMENT_STATUS_DESCRIPTIONS[status]}
+              {Object.entries(EmploymentStatus).map(([key, value]) => (
+                <SelectItem key={key} value={value}>
+                  {EMPLOYMENT_STATUS_DESCRIPTIONS[value]}
                 </SelectItem>
               ))}
             </SelectContent>
