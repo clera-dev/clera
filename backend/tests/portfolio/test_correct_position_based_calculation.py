@@ -106,30 +106,30 @@ class TestCorrectPositionBasedCalculation(unittest.TestCase):
                     # Get yesterday's closing price from mock data
                     if symbol in mock_bars_data and len(mock_bars_data[symbol]) > 0:
                         yesterday_close = float(mock_bars_data[symbol][0].close)
-                else:
-                    # Fallback: use current price (no change calculation)
-                    yesterday_close = current_price
+                    else:
+                        # Fallback: use current price (no change calculation)
+                        yesterday_close = current_price
             
-            # Calculate values
-            position_current_value = qty * current_price
-            position_previous_value = qty * yesterday_close
-            position_pnl = position_current_value - position_previous_value
+                    # Calculate values
+                    position_current_value = qty * current_price
+                    position_previous_value = qty * yesterday_close
+                    position_pnl = position_current_value - position_previous_value
+                            
+                    # Safe percentage calculation
+                    if position_previous_value > 0:
+                        position_pnl_pct = (position_pnl / position_previous_value * 100)
+                    else:
+                        position_pnl_pct = 0
                     
-            # Safe percentage calculation
-            if position_previous_value > 0:
-                position_pnl_pct = (position_pnl / position_previous_value * 100)
-            else:
-                position_pnl_pct = 0
-            
-            total_current_value += position_current_value
-            total_previous_value += position_previous_value
-            
-            # Assert realistic position-level returns
-            self.assertLess(
-                abs(position_pnl_pct), 
-                self.max_realistic_daily_return_percent,
-                f"Position {symbol} return {position_pnl_pct:.2f}% should be less than {self.max_realistic_daily_return_percent}%"
-            )
+                    total_current_value += position_current_value
+                    total_previous_value += position_previous_value
+                    
+                    # Assert realistic position-level returns
+                    self.assertLess(
+                        abs(position_pnl_pct), 
+                        self.max_realistic_daily_return_percent,
+                        f"Position {symbol} return {position_pnl_pct:.2f}% should be less than {self.max_realistic_daily_return_percent}%"
+                    )
         
         # Add cash (cash doesn't change in value)
         account = calc.broker_client.get_trade_account_by_id(self.account_id)
