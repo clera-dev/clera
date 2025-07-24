@@ -543,6 +543,16 @@ class PortfolioCalculator:
         Solution: Use actual daily movement from positions or conservative estimates.
         """
         try:
+            # --- FIX: Check for positions before calculating return ---
+            positions = self.broker_client.get_all_positions_for_account(account_id)
+            if not positions:
+                # If no positions, there's no investment return, so return 0.0
+                logger.info(f"Account {account_id} has no positions. Today's return is $0.00.")
+                account = self.broker_client.get_trade_account_by_id(account_id)
+                current_equity = float(account.equity)
+                return 0.0, current_equity
+            # --- END FIX ---
+            
             # Get account data
             account = self.broker_client.get_trade_account_by_id(account_id)
             current_equity = float(account.equity)

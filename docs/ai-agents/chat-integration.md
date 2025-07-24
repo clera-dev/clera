@@ -12,7 +12,7 @@ The primary change involves the frontend application interacting directly with t
 
 1.  **LangGraph Client**:
     *   A configured LangGraph `Client` instance is created in the frontend (e.g., in `frontend-app/utils/api/chat-client.ts` via `getLangGraphClient`).
-    *   This client handles authentication using environment variables (`NEXT_PUBLIC_LANGGRAPH_API_URL`, `NEXT_PUBLIC_LANGGRAPH_API_KEY`).
+    *   This client handles authentication using environment variables (`LANGGRAPH_API_URL`, `LANGGRAPH_API_KEY`).
 
 2.  **Thread Management (Frontend SDK)**:
     *   **Creation**: New chat sessions (threads) are created using `client.threads.create()`.
@@ -287,8 +287,8 @@ Remain the same (Portfolio Analysis, Market Insights, Trade Execution).
 
 1.  **LangGraph Configuration**:
     *   Frontend environment variables (`.env.local`):
-        *   `NEXT_PUBLIC_LANGGRAPH_API_URL`
-        *   `NEXT_PUBLIC_LANGGRAPH_API_KEY`
+        *   `LANGGRAPH_API_URL`
+        *   `LANGGRAPH_API_KEY`
 2.  **Supabase Configuration**:
     *   Backend environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 3.  **Database Setup**:
@@ -307,7 +307,7 @@ Remain the same (Portfolio Analysis, Market Insights, Trade Execution).
 
 2.  **LangGraph Connection Errors**:
     *   **Symptom**: Errors connecting to LangGraph API in the browser console.
-    *   **Causes**: Incorrect `NEXT_PUBLIC_LANGGRAPH_API_URL` or `_KEY`; Network issues; LangGraph service down.
+    *   **Causes**: Incorrect `LANGGRAPH_API_URL` or `_KEY`; Network issues; LangGraph service down.
     *   **Solution**: Verify `.env.local` variables; Check network connection; Check LangGraph service status.
 
 3.  **Interrupt Handling Failures**:

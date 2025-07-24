@@ -20,12 +20,7 @@ interface SidebarChatProps {
 export default function SidebarChat({ accountId, userId, onClose, width = 350 }: SidebarChatProps) {
   const [queryCount, setQueryCount] = useState<number>(0);
   const [isLimitReached, setIsLimitReached] = useState<boolean>(false);
-  const [initialMessages, setInitialMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: "Hello, I'm Clera. How can I help you with your portfolio today?"
-    }
-  ]);
+  const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -62,12 +57,7 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
 
   const handleNewChat = () => {
     setCurrentSessionId(undefined);
-    setInitialMessages([
-      {
-        role: 'assistant',
-        content: "Hello, I'm Clera. How can I help you with your portfolio today?"
-      }
-    ]);
+    setInitialMessages([]);
     setRefreshTrigger(prev => prev + 1);
   };
 

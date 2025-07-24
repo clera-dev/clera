@@ -1946,6 +1946,28 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
         # Get account information
         account = broker_client.get_trade_account_by_id(accountId)
         current_equity = float(account.equity)
+        
+        # Check for positions before calculating return
+        try:
+            positions = broker_client.get_all_positions_for_account(accountId)
+            if not positions:
+                # If no positions, there's no investment return, so return $0.00
+                logger.info(f"API: Account {accountId} has no positions. Returning $0.00 for today's return.")
+                return {
+                    "account_id": accountId,
+                    "total_value": f"${current_equity:.2f}",
+                    "today_return": "+$0.00 (0.00%)",
+                    "raw_value": current_equity,
+                    "raw_return": 0.0,
+                    "raw_return_percent": 0.0,
+                    "timestamp": datetime.now().isoformat()
+                }
+        except Exception as pos_err:
+            logger.error(f"API: Could not fetch positions for account {accountId} to check for cash-only status. Error: {pos_err}")
+            # Fall through to existing logic, but this indicates a potential issue
+            pass
+        # --- END FIX ---
+        
         last_equity = float(account.last_equity) if account.last_equity else current_equity
         cash_balance = float(account.cash)
         
@@ -2012,8 +2034,13 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
         # Calculate percentage
         return_percent = (todays_return / base_value * 100) if base_value > 0 else 0
         
-        # Format return
-        return_formatted = f"+${todays_return:.2f}" if todays_return >= 0 else f"-${abs(todays_return):.2f}"
+        # --- FIX: Ensure zero return for purely cash accounts ---
+        if not positions and cash_balance == current_equity:
+             return_formatted = "+$0.00"
+             return_percent = 0.0
+        else:
+             return_formatted = f"+${todays_return:.2f}" if todays_return >= 0 else f"-${abs(todays_return):.2f}"
+        # --- END FIX ---
         
         return {
             "account_id": accountId,

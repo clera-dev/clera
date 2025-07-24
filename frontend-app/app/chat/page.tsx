@@ -85,13 +85,8 @@ export default function ChatPage() {
             setInitialMessages([]);
           } else {
             console.log("ChatPage: No session ID found in localStorage.");
-             // Start with default welcome message if no session restored
-            setInitialMessages([
-                {
-                  role: 'assistant',
-                  content: "Hello, I'm Clera, your personal financial advisor. How can I help you with your portfolio today?"
-                }
-            ]);
+             // Start with empty messages to show suggested questions
+            setInitialMessages([]);
           }
         }
 
@@ -127,12 +122,7 @@ export default function ChatPage() {
       setCurrentSessionId(undefined); // Clear state
       
       // Reset messages immediately for responsiveness
-      setInitialMessages([
-        {
-          role: 'assistant',
-          content: "Hello, I'm Clera, your personal financial advisor. How can I help you with your portfolio today?"
-        }
-      ]);
+      setInitialMessages([]);
       
       // Create a new chat session in the background
       // The Chat component will handle showing the actual session once created

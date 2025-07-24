@@ -31,6 +31,16 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/broker/delete-ach-relationship": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/portfolio/history": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/portfolio/positions": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
+  
+  // Conversation API routes - require auth but not onboarding for basic chat functionality
+  "/api/conversations/create-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/get-sessions": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/get-thread-messages": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/update-thread-title": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/delete-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/stream-chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/submit-message": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/handle-interrupt": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {

@@ -60,7 +60,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       // If system date appears to be in the future (beyond reasonable market data availability),
       // fall back to a known good date range
       const currentYear = now.getFullYear();
-      const isUnreasonableFutureDate = currentYear > 2024; // Adjust this as needed
+      const isUnreasonableFutureDate = currentYear > 2030; // Updated for 2025+ compatibility
       
       let toDate: Date;
       let fromDate: Date;
@@ -71,11 +71,15 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
         // System clock seems wrong - use a recent known good date range
         console.warn(`[MiniChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
         
-        // Use a recent date that should have market data (e.g., last week of 2024)
-        toDate = new Date('2024-12-20'); // Known trading day
-        fromDate = new Date('2024-12-20'); // Same day for 1D chart
+        // Use a reasonable fallback date (30 days ago) and find the most recent trading day
+        const fallbackDate = new Date();
+        fallbackDate.setDate(fallbackDate.getDate() - 30);
+        const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(fallbackDate);
+        
+        toDate = new Date(mostRecentTradingDay);
+        fromDate = new Date(mostRecentTradingDay); // Same day for 1D chart
         isMarketClosed = true; // Treat as market closed for processing logic
-        easternToday = new Date('2024-12-20');
+        easternToday = new Date(mostRecentTradingDay);
       } else {
         // System date seems reasonable - use normal logic
         // Check if markets are currently closed using proper Eastern Time
@@ -140,9 +144,12 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
           let widerToDate: Date;
           
           if (isUnreasonableFutureDate) {
-            // Use a wider range of known good dates
-            widerFromDate = new Date('2024-12-13'); // Week before
-            widerToDate = new Date('2024-12-20');
+            // Use a wider range based on recent trading days
+            const fallbackDate = new Date();
+            fallbackDate.setDate(fallbackDate.getDate() - 30);
+            widerToDate = MarketHolidayUtil.getLastTradingDay(fallbackDate);
+            widerFromDate = new Date(widerToDate);
+            widerFromDate.setDate(widerFromDate.getDate() - 7);
           } else {
             widerFromDate = new Date(now);
             widerFromDate.setDate(widerFromDate.getDate() - 7);

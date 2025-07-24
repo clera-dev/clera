@@ -115,7 +115,7 @@ export default function StockChart({ symbol }: StockChartProps) {
       // If system date appears to be in the future (beyond reasonable market data availability),
       // fall back to a known good date range
       const currentYear = now.getFullYear();
-      const isUnreasonableFutureDate = currentYear > 2024; // Adjust this as needed
+      const isUnreasonableFutureDate = currentYear > 2030; // Updated for 2025+ compatibility
       
       let toDate: Date;
       let fromDate: Date;
@@ -125,14 +125,19 @@ export default function StockChart({ symbol }: StockChartProps) {
         // System clock seems wrong - use a recent known good date range
         console.warn(`[StockChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
         
+        // Use a reasonable fallback date (30 days ago) and find the most recent trading day
+        const fallbackDate = new Date();
+        fallbackDate.setDate(fallbackDate.getDate() - 30);
+        const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(fallbackDate);
+        
         if (intervalConfig.interval.includes('min') || intervalConfig.interval.includes('hour')) {
           useIntraday = true;
-          // Use a recent date that should have intraday data
-          toDate = new Date('2024-12-20'); // Known trading day
-          fromDate = new Date('2024-12-20'); // Same day for intraday
+          // Use the most recent trading day for intraday data
+          toDate = new Date(mostRecentTradingDay);
+          fromDate = new Date(mostRecentTradingDay); // Same day for intraday
         } else {
           // For daily/weekly/monthly data, use a reasonable range
-          toDate = new Date('2024-12-20');
+          toDate = new Date(mostRecentTradingDay);
           fromDate = new Date(toDate);
           fromDate.setDate(fromDate.getDate() - intervalConfig.days);
         }

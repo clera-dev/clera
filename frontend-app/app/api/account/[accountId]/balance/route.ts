@@ -87,7 +87,7 @@ export async function GET(
       // Handle cases where the backend call was successful but the operation failed
       return NextResponse.json(
         { success: false, message: balanceData.message || 'Failed to get balance data' },
-        { status: 200 } // Or an appropriate error code
+        { status: 500 }
       );
     }
 

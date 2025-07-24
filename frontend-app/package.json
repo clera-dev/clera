@@ -55,7 +55,8 @@
     "react-phone-number-input": "^3.4.12",
     "react-use-websocket": "^4.13.0",
     "recharts": "^2.10.3",
-    "sentiment": "^5.0.2"
+    "sentiment": "^5.0.2",
+    "sse.js": "^2.6.0"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.28.0",
