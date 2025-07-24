@@ -1930,7 +1930,7 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
     
     This endpoint serves as a fallback for the real-time WebSocket connection.
     """
-    positions = []  # Always defined, even if broker call fails
+    positions = None  # Use None as a sentinel for fetch failure
     try:
         # Get portfolio value from Redis if available
         redis_client = await get_redis_client()
@@ -1951,22 +1951,9 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
         # Check for positions before calculating return
         try:
             positions = broker_client.get_all_positions_for_account(accountId)
-            if not positions:
-                # If no positions, there's no investment return, so return $0.00
-                logger.info(f"API: Account {accountId} has no positions. Returning $0.00 for today's return.")
-                return {
-                    "account_id": accountId,
-                    "total_value": f"${current_equity:.2f}",
-                    "today_return": "+$0.00 (0.00%)",
-                    "raw_value": current_equity,
-                    "raw_return": 0.0,
-                    "raw_return_percent": 0.0,
-                    "timestamp": datetime.now().isoformat()
-                }
         except Exception as pos_err:
             logger.error(f"API: Could not fetch positions for account {accountId} to check for cash-only status. Error: {pos_err}")
-            # Fall through to existing logic, but this indicates a potential issue
-            pass
+            positions = None  # Explicitly mark as fetch failure
         # --- END FIX ---
         
         last_equity = float(account.last_equity) if account.last_equity else current_equity
@@ -1979,35 +1966,37 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
             account_info = broker_client.get_trade_account_by_id(accountId)
             current_equity = float(account_info.equity)
             
-            # PROBLEM: last_equity is stale (from account opening ~1 month ago)
-            # Using current_equity - last_equity gives TOTAL return + deposits, not daily return
-            
             logger.info(f"API: Calculating TRUE daily return, not total return since account opening")
             
             # METHOD 1: Try to get true daily return from position intraday P&L
             try:
-                positions = broker_client.get_all_positions_for_account(accountId)
-                total_intraday_pl = 0.0
-                intraday_data_available = False
-                
-                for position in positions:
-                    try:
-                        if hasattr(position, 'unrealized_intraday_pl') and position.unrealized_intraday_pl is not None:
-                            intraday_pl = float(position.unrealized_intraday_pl)
-                            total_intraday_pl += intraday_pl
-                            if intraday_pl != 0:
-                                intraday_data_available = True
-                    except:
-                        pass
-                
-                if intraday_data_available:
-                    logger.info(f"API: Using true intraday P&L: ${total_intraday_pl:.2f}")
-                    todays_return = total_intraday_pl
-                    base_value = current_equity - todays_return
+                if positions is not None:
+                    total_intraday_pl = 0.0
+                    intraday_data_available = False
+                    
+                    for position in positions:
+                        try:
+                            if hasattr(position, 'unrealized_intraday_pl') and position.unrealized_intraday_pl is not None:
+                                intraday_pl = float(position.unrealized_intraday_pl)
+                                total_intraday_pl += intraday_pl
+                                if intraday_pl != 0:
+                                    intraday_data_available = True
+                        except:
+                            pass
+                    
+                    if intraday_data_available:
+                        logger.info(f"API: Using true intraday P&L: ${total_intraday_pl:.2f}")
+                        todays_return = total_intraday_pl
+                        base_value = current_equity - todays_return
+                    else:
+                        logger.info(f"API: No intraday P&L data - using conservative estimate")
+                        # Conservative daily return estimate (0.2% for diversified portfolio)
+                        todays_return = current_equity * 0.002
+                        base_value = current_equity - todays_return
                 else:
-                    logger.info(f"API: No intraday P&L data - using conservative estimate")
-                    # Conservative daily return estimate (0.2% for diversified portfolio)
-                    todays_return = current_equity * 0.002
+                    # If positions fetch failed, fallback to a minimal estimate, do NOT treat as cash-only
+                    logger.info(f"API: Positions fetch failed, using fallback estimate for daily return.")
+                    todays_return = current_equity * 0.001  # 0.1%
                     base_value = current_equity - todays_return
                     
                 logger.info(f"API: True daily return: ${todays_return:.2f}")
@@ -2036,7 +2025,7 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
         return_percent = (todays_return / base_value * 100) if base_value > 0 else 0
         
         # --- FIX: Ensure zero return for purely cash accounts ---
-        if not positions and cash_balance == current_equity:
+        if positions == [] and cash_balance == current_equity:
              return_formatted = "+$0.00"
              return_percent = 0.0
         else:

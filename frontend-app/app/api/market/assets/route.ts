@@ -52,8 +52,13 @@ export async function GET(request: NextRequest) {
         const errorJson = JSON.parse(responseBody);
         errorDetail = errorJson.detail || errorDetail;
       } catch (e) { /* Ignore if not JSON */ }
+      // Log detailed error for server-side debugging
       console.error(`Market Assets API Route: Backend Error - ${errorDetail}`);
-      return NextResponse.json({ detail: errorDetail }, { status: backendResponse.status >= 500 ? 502 : backendResponse.status });
+      // Return only a generic error message to the client
+      return NextResponse.json(
+        { error: 'Failed to fetch market assets. Please try again later.' },
+        { status: backendResponse.status >= 500 ? 502 : backendResponse.status }
+      );
     }
 
     let data;

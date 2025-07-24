@@ -88,9 +88,8 @@ export async function POST(request: NextRequest) {
 
           for await (const chunk of streamIterator) {
             // SECURITY: Never log sensitive user content or PII. Logging full chunk data is prohibited.
-            // console.log('Received LangGraph chunk:', { event: (chunk as any).event, data: (chunk as any).data });
             // Optionally, log only non-sensitive metadata for debugging:
-            // console.log('Received LangGraph chunk event:', (chunk as any).event);
+            // console.log('Processing LangGraph event:', event, 'with data keys:', Object.keys(data || {}));
             
             let chunkData: {
               type: string;
@@ -154,7 +153,8 @@ export async function POST(request: NextRequest) {
               chunkData = { type: 'metadata', data: data };
             }
 
-            console.log('Sending chunk to client:', chunkData);
+            // SECURITY: Never log sensitive user content or PII. Logging full chunk data is prohibited.
+            // console.log('Sending chunk to client:', chunkData);
 
             // Send chunk to client
             const chunkText = `data: ${JSON.stringify(chunkData)}\n\n`;

@@ -83,7 +83,6 @@ export async function POST(request: NextRequest) {
       };
     });
     
-    console.log(`Found ${sessions.length} LangGraph sessions for portfolio: ${portfolio_id}`);
     
     return NextResponse.json({ sessions });
   } catch (error: any) {

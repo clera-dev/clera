@@ -84,18 +84,23 @@ export async function GET(
         }
       });
     } else {
-      // Handle cases where the backend call was successful but the operation failed
-      // Use 400 for known validation errors, 500 for unknown/unexpected errors
-      let status = 500;
-      const msg = balanceData.message || 'Failed to get balance data';
-      if (msg.toLowerCase().includes('not found')) status = 404;
-      else if (msg.toLowerCase().includes('forbidden')) status = 403;
-      else if (msg.toLowerCase().includes('unauthorized')) status = 401;
-      else if (msg.toLowerCase().includes('required') || msg.toLowerCase().includes('invalid')) status = 400;
-      return NextResponse.json(
-        { success: false, message: msg },
-        { status }
-      );
+      // Use the backend's HTTP status code if available, otherwise default to 500
+      // Do not derive status from error message strings (anti-pattern)
+      const status = response.status && response.status !== 200 ? response.status : 500;
+      // Ensure msg is always a string to prevent TypeError
+      let msg = balanceData.message;
+      if (typeof msg !== 'string') {
+        if (msg !== undefined && msg !== null) {
+          try {
+            msg = JSON.stringify(msg);
+          } catch {
+            msg = 'Failed to get balance data';
+          }
+        } else {
+          msg = 'Failed to get balance data';
+        }
+      }
+      return NextResponse.json({ success: false, error: msg }, { status });
     }
 
   } catch (error) {

@@ -5,11 +5,12 @@ import { Client } from '@langchain/langgraph-sdk';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { account_id, user_id, title } = body;
+    // Remove user_id from destructuring, as we use the authenticated user
+    const { account_id, title } = body;
 
-    if (!account_id || !user_id) {
+    if (!account_id) {
       return NextResponse.json(
-        { error: 'Account ID and User ID are required' },
+        { error: 'Account ID is required' },
         { status: 400 }
       );
     }
@@ -52,13 +53,14 @@ export async function POST(request: NextRequest) {
     // Create thread using LangGraph SDK
     const thread = await langGraphClient.threads.create({
       metadata: {
-        user_id: user_id,
+        user_id: user.id, // Always use the authenticated user's ID
         account_id: account_id,
         title: title || 'New Conversation',
       }
     });
     
-    console.log(`Created LangGraph thread: ${thread.thread_id} for account: ${account_id}`);
+    // Avoid logging sensitive account_id to protect user privacy
+    console.log(`Created LangGraph thread: ${thread.thread_id} for account: [REDACTED]`);
     
     return NextResponse.json({ id: thread.thread_id });
   } catch (error: any) {

@@ -388,6 +388,12 @@ copilot svc deploy --name websocket-service --env production
 - **Environment Variables**: Sensitive data in SSM/Vercel
 - **HTTPS/WSS**: Encrypted communication in production
 
+### LangGraph Integration Security
+- **CRITICAL**: Never trust client-supplied config objects in LangGraph endpoints
+- **Required**: Always construct config server-side using authenticated values only
+- **Reference**: See `docs/architecture/security-patterns.md` for detailed implementation requirements
+- **Compliance**: All LangGraph endpoints must follow secure config construction patterns
+
 ## Debugging & Monitoring
 
 ### Development

@@ -3,8 +3,19 @@ import { createClient } from '@/utils/supabase/server';
 import { Client } from '@langchain/langgraph-sdk';
 
 export async function POST(request: NextRequest) {
+  let body;
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: 'Invalid or empty JSON body' },
+        { status: 400 }
+      );
+    }
+    throw err;
+  }
+  try {
     const { thread_id, title } = body;
 
     if (!thread_id || !title) {

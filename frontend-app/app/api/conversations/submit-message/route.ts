@@ -5,11 +5,13 @@ import { Client } from '@langchain/langgraph-sdk';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { thread_id, input, user_id, account_id, config } = body;
+    // Remove user_id from destructuring, as we use the authenticated user
+    const { thread_id, input, account_id, config } = body;
 
-    if (!thread_id || !input || !user_id || !account_id) {
+    // Only require thread_id, input, and account_id
+    if (!thread_id || !input || !account_id) {
       return NextResponse.json(
-        { error: 'Thread ID, input, user ID, and account ID are required' },
+        { error: 'Thread ID, input, and account ID are required' },
         { status: 400 }
       );
     }
@@ -49,11 +51,12 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.LANGGRAPH_API_KEY,
     });
 
-    // Submit message to thread
-    const runConfig = config || {
+    // SECURITY: Always construct config server-side using only authenticated values
+    // Never trust client-supplied config to prevent privilege escalation attacks
+    const runConfig = {
       configurable: { 
-        user_id: user.id, // Use authenticated user ID only
-        account_id: account_id 
+        user_id: user.id, // Always use authenticated user ID
+        account_id: account_id // Use validated account ID from authorization check
       },
       stream_mode: 'messages-tuple' as const
     };

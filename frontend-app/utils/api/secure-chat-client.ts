@@ -13,12 +13,14 @@ export interface ChatState {
 }
 
 export interface SecureChatClient {
-  state: ChatState;
+  readonly state: ChatState;
   handleInterrupt: (threadId: string, runId: string, response: any) => Promise<void>;
   startStream: (threadId: string, input: any, userId: string, accountId: string) => Promise<void>;
   clearError: () => void;
   setMessages: (messages: Message[]) => void;
   addMessagesWithStatus: (userMessage: Message) => void;
+  subscribe: (listener: () => void) => () => void;
+  cleanup: () => void;
 }
 
 export class SecureChatClientImpl implements SecureChatClient {
@@ -34,8 +36,17 @@ export class SecureChatClientImpl implements SecureChatClient {
   private isStreaming: boolean = false;
   private hasReceivedRealContent: boolean = false; // Track if real content has been received
 
+  /**
+   * Returns an immutable copy of the current state
+   * Prevents external mutation and maintains encapsulation
+   */
   get state(): ChatState {
-    return this._state;
+    return {
+      messages: [...this._state.messages], // Shallow copy of messages array
+      isLoading: this._state.isLoading,
+      error: this._state.error,
+      interrupt: this._state.interrupt ? { ...this._state.interrupt } : null // Deep copy of interrupt object
+    };
   }
 
   private setState(newState: Partial<ChatState>) {
@@ -53,7 +64,7 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   setMessages(messages: Message[]) {
-    this.setState({ messages });
+    this.setState({ messages: [...messages] }); // Create defensive copy
   }
 
   addMessagesWithStatus(userMessage: Message) {
