@@ -307,7 +307,7 @@ Remain the same (Portfolio Analysis, Market Insights, Trade Execution).
 
 2.  **LangGraph Connection Errors**:
     *   **Symptom**: Errors connecting to LangGraph API in the browser console.
-    *   **Causes**: Incorrect `LANGGRAPH_API_URL` or `_KEY`; Network issues; LangGraph service down.
+    *   **Causes**: Incorrect `LANGGRAPH_API_URL` or `LANGGRAPH_API_KEY`; Network issues; LangGraph service down.
     *   **Solution**: Verify `.env.local` variables; Check network connection; Check LangGraph service status.
 
 3.  **Interrupt Handling Failures**:

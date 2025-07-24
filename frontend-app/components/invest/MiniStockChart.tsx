@@ -56,11 +56,10 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       // ROBUST DATE LOGIC - Handle system clock issues and future dates
       const now = new Date();
       
-      // CRITICAL FIX: Validate system date and use reasonable bounds
-      // If system date appears to be in the future (beyond reasonable market data availability),
-      // fall back to a known good date range
+      // Use a fixed, known-good trading day as fallback if system clock is unreasonable
+      const FALLBACK_DATE = new Date("2024-12-31T16:00:00-05:00"); // Last trading day of 2024, 4pm ET
       const currentYear = now.getFullYear();
-      const isUnreasonableFutureDate = currentYear > 2030; // Updated for 2025+ compatibility
+      const isUnreasonableFutureDate = currentYear > 2030;
       
       let toDate: Date;
       let fromDate: Date;
@@ -70,16 +69,14 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       if (isUnreasonableFutureDate) {
         // System clock seems wrong - use a recent known good date range
         console.warn(`[MiniChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
-        
-        // Use a reasonable fallback date (30 days ago) and find the most recent trading day
-        const fallbackDate = new Date();
-        fallbackDate.setDate(fallbackDate.getDate() - 30);
-        const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(fallbackDate);
-        
-        toDate = new Date(mostRecentTradingDay);
-        fromDate = new Date(mostRecentTradingDay); // Same day for 1D chart
-        isMarketClosed = true; // Treat as market closed for processing logic
-        easternToday = new Date(mostRecentTradingDay);
+        // Use the fallback date as the anchor
+        easternToday = new Date(FALLBACK_DATE);
+        isMarketClosed = true; // Always treat fallback as closed for safety
+        // Set fromDate and toDate to the fallback trading day (start and end of day)
+        fromDate = new Date(FALLBACK_DATE);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate = new Date(FALLBACK_DATE);
+        toDate.setHours(23, 59, 59, 999);
       } else {
         // System date seems reasonable - use normal logic
         // Check if markets are currently closed using proper Eastern Time

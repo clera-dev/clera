@@ -13,33 +13,22 @@ const nextConfig = {
     
     return [
       // PostHog analytics rewrites
+      // IMPORTANT: Place specific rules before generic catch-alls to avoid unreachable code
       {
         source: "/ingest/static/:path*",
         destination: "https://us-assets.i.posthog.com/static/:path*",
       },
       {
-        source: "/ingest/:path*",
-        destination: "https://us.i.posthog.com/:path*",
-      },
-      {
         source: "/ingest/decide",
         destination: "https://us.i.posthog.com/decide",
+      },
+      {
+        source: "/ingest/:path*",
+        destination: "https://us.i.posthog.com/:path*",
       },
       // Add any specific rewrites here if needed
       // Most API calls should go through Next.js API routes for security
     ];
-  },
-
-  // Ensure proper tree shaking for the LangGraph SDK
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      // Ensure LangGraph SDK is properly bundled server-side
-      config.externals = config.externals || [];
-      if (Array.isArray(config.externals)) {
-        config.externals.push('@langchain/langgraph-sdk');
-      }
-    }
-    return config;
   },
 };
 

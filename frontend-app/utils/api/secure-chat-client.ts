@@ -74,8 +74,6 @@ export class SecureChatClientImpl implements SecureChatClient {
     const currentInterrupt = this._state.interrupt;
     
     try {
-      console.log('Handling interrupt:', { threadId, runId, response });
-      
       // Optimistically clear interrupt and show processing state
       this.setState({ 
         isLoading: true, 
@@ -85,6 +83,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       
       // Reset content flag for interrupt continuation
       this.hasReceivedRealContent = false;
+      this.isStreaming = true; // Ensure streaming flag is set for token aggregation
       
       const userId = localStorage.getItem('userId');
       const accountId = localStorage.getItem('alpacaAccountId');
@@ -99,57 +98,47 @@ export class SecureChatClientImpl implements SecureChatClient {
         this.eventSource = null;
       }
 
-      // Handle interrupt API now returns a stream, so we need to listen for it
-      const queryParams = new URLSearchParams({
-        thread_id: threadId,
-        run_id: runId,
-        response: JSON.stringify(response),
-        user_id: userId,
-        account_id: accountId,
+      // Use fetch + ReadableStream for SSE, sending PII in POST body
+      const responseStream = await fetch('/api/conversations/handle-interrupt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          thread_id: threadId,
+          run_id: runId,
+          response,
+          user_id: userId,
+          account_id: accountId,
+        }),
       });
 
-      console.log('Starting EventSource for interrupt handling...');
-      
-      // Create EventSource to listen for the streaming interrupt handling response
-      this.eventSource = new EventSource('/api/conversations/handle-interrupt?' + queryParams.toString());
+      if (!responseStream.body) throw new Error('No response body for SSE stream');
 
-      this.eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('Received interrupt continuation chunk:', data);
-          
-          // Handle the continuation stream just like regular streaming
-          this.handleStreamChunk(data);
-        } catch (error) {
-          console.error('Error parsing interrupt continuation data:', error);
+      const reader = responseStream.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let done = false;
+
+      while (!done) {
+        const { value, done: streamDone } = await reader.read();
+        done = streamDone;
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                this.handleStreamChunk(data);
+              } catch (err) {
+                console.error('Error parsing SSE chunk:', err);
+              }
+            }
+          }
         }
-      };
-
-      this.eventSource.onerror = (error) => {
-        // Only show error if the stream hasn't completed successfully
-        // Check if we have received content - if so, this might just be normal stream end
-        if (!this.hasReceivedRealContent) {
-          console.error('EventSource error during interrupt continuation:', error);
-          this.setState({ 
-            error: 'Lost connection during interrupt handling', 
-            isLoading: false 
-          });
-        } else {
-          // Stream completed successfully, just clean up silently
-          console.log('EventSource closed after successful interrupt completion');
-          this.setState({ isLoading: false });
-        }
-        
-        this.eventSource?.close();
-        this.eventSource = null;
-      };
-
-      this.eventSource.onopen = () => {
-        console.log('Interrupt continuation stream connected successfully');
-      };
-
-      console.log('Interrupt handling initiated with streaming response');
-
+      }
+      this.setState({ isLoading: false });
+      this.isStreaming = false; // Unset streaming flag when done
     } catch (error: any) {
       console.error('Error handling interrupt:', error);
       this.setState({ 
@@ -157,6 +146,7 @@ export class SecureChatClientImpl implements SecureChatClient {
         isLoading: false,
         interrupt: currentInterrupt // Restore interrupt on error
       });
+      this.isStreaming = false; // Unset streaming flag on error
     }
   }
 

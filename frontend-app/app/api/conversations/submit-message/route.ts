@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     // Submit message to thread
     const runConfig = config || {
       configurable: { 
-        user_id: user_id, 
+        user_id: user.id, // Use authenticated user ID only
         account_id: account_id 
       },
       stream_mode: 'messages-tuple' as const

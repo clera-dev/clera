@@ -2,14 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { Client } from '@langchain/langgraph-sdk';
 
+// Limit constants to prevent resource exhaustion
+const MIN_LIMIT = 1;
+const MAX_LIMIT = 100; // Industry-standard for paginated APIs
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { portfolio_id, user_id, limit = 20 } = body;
+    const { portfolio_id } = body;
+    let limit = body.limit ?? 20;
 
-    if (!portfolio_id || !user_id) {
+    // Clamp client-supplied limit to prevent resource exhaustion and abuse.
+    // If the client requests more than MAX_LIMIT, only MAX_LIMIT will be returned.
+    if (typeof limit !== 'number' || isNaN(limit)) {
+      limit = 20;
+    }
+    limit = Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, limit));
+
+    if (!portfolio_id) {
       return NextResponse.json(
-        { error: 'Portfolio ID and User ID are required' },
+        { error: 'Portfolio ID is required' },
         { status: 400 }
       );
     }
@@ -49,10 +61,11 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.LANGGRAPH_API_KEY,
     });
 
-    // Search threads using LangGraph SDK - filter by both user_id and account_id for proper isolation
+    // Always use the authenticated user ID for downstream queries. Never trust user_id from the client.
+    // This prevents privilege escalation and data leaks.
     const threads = await langGraphClient.threads.search({
       metadata: {
-        user_id: user_id,
+        user_id: user.id,
         account_id: portfolio_id
       },
       limit: limit

@@ -35,6 +35,15 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.LANGGRAPH_API_KEY,
     });
 
+    // Authorization check: ensure the thread belongs to the authenticated user
+    const thread = await langGraphClient.threads.get(thread_id);
+    if (!thread || !thread.metadata || thread.metadata.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
     // Get thread state to extract messages
     const threadState = await langGraphClient.threads.getState(thread_id);
     

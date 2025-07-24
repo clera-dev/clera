@@ -43,10 +43,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate required environment variables for LangGraph
+    const langGraphApiUrl = process.env.LANGGRAPH_API_URL;
+    const langGraphApiKey = process.env.LANGGRAPH_API_KEY;
+    if (!langGraphApiUrl || !langGraphApiKey) {
+      console.error('Missing required LangGraph environment variables:', {
+        LANGGRAPH_API_URL: langGraphApiUrl,
+        LANGGRAPH_API_KEY: langGraphApiKey ? '***set***' : undefined
+      });
+      return NextResponse.json(
+        { error: 'Server misconfiguration: LangGraph API credentials are missing.' },
+        { status: 500 }
+      );
+    }
+
     // Create LangGraph client (server-side only)
     const langGraphClient = new Client({
-      apiUrl: process.env.LANGGRAPH_API_URL,
-      apiKey: process.env.LANGGRAPH_API_KEY,
+      apiUrl: langGraphApiUrl,
+      apiKey: langGraphApiKey,
     });
 
     console.log(`Starting LangGraph stream for thread ${thread_id} with account ${account_id}`);
@@ -63,7 +77,7 @@ export async function POST(request: NextRequest) {
               input: input,
               config: {
                 configurable: { 
-                  user_id: user_id, 
+                  user_id: user.id, // Use authenticated user ID only
                   account_id: account_id 
                 }
               },
@@ -73,7 +87,10 @@ export async function POST(request: NextRequest) {
           );
 
           for await (const chunk of streamIterator) {
-            console.log('Received LangGraph chunk:', { event: (chunk as any).event, data: (chunk as any).data });
+            // SECURITY: Never log sensitive user content or PII. Logging full chunk data is prohibited.
+            // console.log('Received LangGraph chunk:', { event: (chunk as any).event, data: (chunk as any).data });
+            // Optionally, log only non-sensitive metadata for debugging:
+            // console.log('Received LangGraph chunk event:', (chunk as any).event);
             
             let chunkData: {
               type: string;

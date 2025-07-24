@@ -543,7 +543,7 @@ class PortfolioCalculator:
         Solution: Use actual daily movement from positions or conservative estimates.
         """
         try:
-            # --- FIX: Check for positions before calculating return ---
+            # --- FIX: Fetch positions once and reuse to avoid redundant API calls ---
             positions = self.broker_client.get_all_positions_for_account(account_id)
             if not positions:
                 # If no positions, there's no investment return, so return 0.0
@@ -559,7 +559,6 @@ class PortfolioCalculator:
             
             # METHOD 1: Try to get true daily return from position intraday P&L
             try:
-                positions = self.broker_client.get_all_positions_for_account(account_id)
                 total_intraday_pl = 0.0
                 intraday_data_available = False
                 

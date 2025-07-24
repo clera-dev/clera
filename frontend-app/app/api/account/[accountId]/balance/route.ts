@@ -85,9 +85,16 @@ export async function GET(
       });
     } else {
       // Handle cases where the backend call was successful but the operation failed
+      // Use 400 for known validation errors, 500 for unknown/unexpected errors
+      let status = 500;
+      const msg = balanceData.message || 'Failed to get balance data';
+      if (msg.toLowerCase().includes('not found')) status = 404;
+      else if (msg.toLowerCase().includes('forbidden')) status = 403;
+      else if (msg.toLowerCase().includes('unauthorized')) status = 401;
+      else if (msg.toLowerCase().includes('required') || msg.toLowerCase().includes('invalid')) status = 400;
       return NextResponse.json(
-        { success: false, message: balanceData.message || 'Failed to get balance data' },
-        { status: 500 }
+        { success: false, message: msg },
+        { status }
       );
     }
 

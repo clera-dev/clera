@@ -1930,6 +1930,7 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
     
     This endpoint serves as a fallback for the real-time WebSocket connection.
     """
+    positions = []  # Always defined, even if broker call fails
     try:
         # Get portfolio value from Redis if available
         redis_client = await get_redis_client()
