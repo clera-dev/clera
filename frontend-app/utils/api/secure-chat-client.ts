@@ -362,11 +362,9 @@ export class SecureChatClientImpl implements SecureChatClient {
           console.error('[SecureChatClient] CRITICAL ERROR: Stream completed with no response - neither chunk processing nor fallback detected valid content');
           console.error('[SecureChatClient] Current message state:', this._state.messages.map(m => ({ role: m.role, contentLength: m.content?.length, isStatus: m.isStatus })));
           
-          // CRITICAL FIX: Clean up message state to prevent corrupting subsequent requests
-          // Remove any potentially corrupted status messages but preserve valid user messages
-          const cleanMessages = this._state.messages.filter(msg => 
-            msg.role === 'user' && msg.content && msg.content.trim() !== ''
-          );
+          // CRITICAL FIX: Clean up message state to prevent corrupting subsequent requests.
+          // Remove any temporary status messages, preserving the rest of the chat history.
+          const cleanMessages = this._state.messages.filter(msg => !msg.isStatus);
           
           console.error('[SecureChatClient] Cleaning message state - Before:', this._state.messages.length, 'After:', cleanMessages.length);
           

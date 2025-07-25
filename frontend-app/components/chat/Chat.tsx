@@ -135,6 +135,10 @@ export default function Chat({
       //console.log(`useEffect detected new threadId ${currentThreadId} and pending message "${contentToSend}". Submitting...`);
       setPendingFirstMessage(null);
 
+      // NEW: Store message content for potential retry before attempting to send
+      setLastFailedMessage(contentToSend);
+      setLastFailedThreadId(currentThreadId);
+
       // Submit message through secure client
       const runInput = {
         messages: [{ type: 'human' as const, content: contentToSend }],
@@ -143,6 +147,10 @@ export default function Chat({
       //console.log(`Submitting FIRST message via secure client to thread ${currentThreadId}`);
       
       chatClient.startStream(currentThreadId, runInput, userId, accountId).then(() => {
+        // Clear retry state on successful submission
+        setLastFailedMessage(null);
+        setLastFailedThreadId(null);
+        
         // Callbacks for the first message submission
         onMessageSent?.();
         if (onQuerySent) {
@@ -153,6 +161,7 @@ export default function Chat({
         // BUG FIX: If the stream fails to start, reset the flag to allow a retry.
         // This prevents the user from being stuck if the first message fails.
         setIsFirstMessageSent(false);
+        // Keep retry state for potential retry (don't clear lastFailedMessage)
       });
     }
   }, [currentThreadId, pendingFirstMessage, chatClient, userId, accountId, onMessageSent, onQuerySent, isProcessing, isFirstMessageSent]); // Add isFirstMessageSent to dependency array
@@ -296,6 +305,8 @@ export default function Chat({
     setLastFailedMessage(null);
     setLastFailedThreadId(null);
     chatClient.clearModelProviderError();
+    // Reset first message flag to allow retry for first messages
+    setIsFirstMessageSent(false);
   }, [chatClient]);
 
   // Handle suggested question selection
@@ -369,8 +380,16 @@ export default function Chat({
 
         // console.log(`Submitting suggested question via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
         
+        // NEW: Store message content for potential retry before attempting to send
+        setLastFailedMessage(trimmedQuestion);
+        setLastFailedThreadId(targetThreadId);
+        
         try {
             await chatClient.startStream(targetThreadId, runInput, userId, accountId);
+
+            // Clear retry state on successful submission
+            setLastFailedMessage(null);
+            setLastFailedThreadId(null);
 
             // Callbacks after successful submission initiation
             onMessageSent?.();
@@ -378,6 +397,7 @@ export default function Chat({
 
         } catch (err) {
             console.error("Error submitting suggested question:", err);
+            // Keep retry state for potential retry (don't clear lastFailedMessage)
         }
     }
   }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent]);
