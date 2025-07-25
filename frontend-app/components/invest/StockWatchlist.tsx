@@ -71,44 +71,74 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         toDate = new Date(latestTradingDay);
         toDate.setHours(23, 59, 59, 999);
       } else {
-        // System date seems reasonable - use normal logic
-        const easternFormatter = new Intl.DateTimeFormat('en-US', {
-          timeZone: 'America/New_York',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
+        // PRODUCTION-GRADE: Use proper market days logic for brokerage platform
+        // Business Rules:
+        // - Before 9:30 AM ET: Show previous trading day's complete data  
+        // - After 9:30 AM ET on trading day: Show current trading day (intraday)
+        // - Non-trading days (weekends/holidays): Show most recent trading day
+        
+        // Get market timing in Eastern timezone
+        const easternHour = parseInt(now.toLocaleString("en-US", {
+          timeZone: "America/New_York",
+          hour: "2-digit",
           hour12: false
-        });
-        const easternParts = easternFormatter.formatToParts(now);
-        const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
-        const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
-        const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
-        const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
-        const { createEasternDate } = await import("@/lib/timezone");
-        easternToday = createEasternDate(`${easternYear}-${String(easternMonth).padStart(2,'0')}-${String(easternDay).padStart(2,'0')}`);
-        const easternDayOfWeek = easternToday.getDay();
-        const isAfterHours = easternHour >= 16 || easternHour < 9;
-        const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
-        isMarketClosed = isAfterHours || isWeekend;
-        console.log(`[Watchlist ${symbol}] Market status: closed=${isMarketClosed}, hour=${easternHour}`);
-        if (isMarketClosed) {
-          const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
-          fromDate = new Date(mostRecentTradingDay);
-          fromDate.setHours(0, 0, 0, 0);
-          toDate = new Date(mostRecentTradingDay);
-          toDate.setHours(23, 59, 59, 999);
+        }));
+        
+        const easternMinute = parseInt(now.toLocaleString("en-US", {
+          timeZone: "America/New_York", 
+          minute: "2-digit"
+        }));
+        
+        // Convert to market timezone date for trading day validation
+        const marketDate = new Date(now.toLocaleString("en-US", {
+          timeZone: "America/New_York"
+        }));
+        
+        // Check if current market date is a valid trading day
+        const isValidTradingDay = MarketHolidayUtil.isMarketOpen(marketDate);
+        
+        // Market timing logic (9:30 AM ET = market open)
+        const isPreMarket = easternHour < 9 || (easternHour === 9 && easternMinute < 30);
+        
+        let chartDate: Date;
+        
+        if (isPreMarket || !isValidTradingDay) {
+          // CASE 1: Before market open OR non-trading day
+          // → Show COMPLETE previous trading day data
+          chartDate = MarketHolidayUtil.getLastTradingDay(marketDate, isValidTradingDay ? 1 : 0);
+          isMarketClosed = true;
+          console.log(`[Watchlist ${symbol}] Pre-market or non-trading day - using previous trading day: ${chartDate.toDateString()}`);
         } else {
-          const { getStartOfTodayInUserTimezone } = await import("@/lib/timezone");
-          const startOfToday = getStartOfTodayInUserTimezone();
-          fromDate = startOfToday;
-          toDate = now;
+          // CASE 2: Market hours or after hours on valid trading day  
+          // → Show CURRENT trading day data (intraday)
+          chartDate = new Date(marketDate);
+          chartDate.setHours(0, 0, 0, 0);
+          isMarketClosed = false;
+          console.log(`[Watchlist ${symbol}] Valid trading day after 9:30 AM ET - using current trading day: ${chartDate.toDateString()}`);
         }
+        
+        // Set date range for the selected trading day
+        fromDate = new Date(chartDate);
+        fromDate.setHours(0, 0, 0, 0);
+        
+        toDate = new Date(chartDate);
+        toDate.setHours(23, 59, 59, 999);
+        
+        // For continuity with existing variable naming
+        easternToday = chartDate;
       }
       
-      const fromStr = fromDate.toISOString().split('T')[0];
-      const toStr = toDate.toISOString().split('T')[0];
+      // FIX: Use timezone-safe date string conversion instead of toISOString() 
+      // which can shift dates when converting to UTC
+      const formatDateSafe = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      const fromStr = formatDateSafe(fromDate);
+      const toStr = formatDateSafe(toDate);
       
       console.log(`[Watchlist ${symbol}] Fetching chart data from ${fromStr} to ${toStr} (system date: ${now.toISOString()})`);
       

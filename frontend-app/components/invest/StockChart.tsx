@@ -139,34 +139,40 @@ export default function StockChart({ symbol }: StockChartProps) {
         if (intervalConfig.interval.includes('min') || intervalConfig.interval.includes('hour')) {
           useIntraday = true;
           
-          // Check if markets are currently closed using proper Eastern Time
-          const easternFormatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/New_York',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
+          // PRODUCTION-GRADE: Use proper market days logic for brokerage platform
+          // Business Rules:
+          // - Before 9:30 AM ET: Show previous trading day's complete data  
+          // - After 9:30 AM ET on trading day: Show current trading day (intraday)
+          // - Non-trading days (weekends/holidays): Show most recent trading day
+          
+          // Get market timing in Eastern timezone
+          const easternHour = parseInt(now.toLocaleString("en-US", {
+            timeZone: "America/New_York",
+            hour: "2-digit",
             hour12: false
-          });
+          }));
           
-          const easternParts = easternFormatter.formatToParts(now);
-          const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
-          const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
-          const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
-          const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
+          const easternMinute = parseInt(now.toLocaleString("en-US", {
+            timeZone: "America/New_York", 
+            minute: "2-digit"
+          }));
           
-          const easternToday = new Date(easternYear, easternMonth - 1, easternDay);
-          const easternDayOfWeek = easternToday.getDay();
+          // Convert to market timezone date for trading day validation
+          const marketDate = new Date(now.toLocaleString("en-US", {
+            timeZone: "America/New_York"
+          }));
           
-          const isAfterHours = easternHour >= 16 || easternHour < 9;
-          const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
-          const isMarketClosed = isAfterHours || isWeekend;
+          // Check if current market date is a valid trading day
+          const isValidTradingDay = MarketHolidayUtil.isMarketOpen(marketDate);
+          
+          // Market timing logic (9:30 AM ET = market open)
+          const isPreMarket = easternHour < 9 || (easternHour === 9 && easternMinute < 30);
+          const isMarketClosed = isPreMarket || !isValidTradingDay;
           
           if (selectedInterval === '1D') {
             if (isMarketClosed) {
               // If markets are closed, use the most recent trading day
-              const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
+              const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(marketDate, isValidTradingDay ? 1 : 0);
               
               // FIXED: Show ONLY the most recent trading day for proper 1D calculation
               // This ensures 1D performance represents that single trading day's open-to-close movement
@@ -197,8 +203,17 @@ export default function StockChart({ symbol }: StockChartProps) {
         }
       }
 
-      const fromStr = fromDate.toISOString().split('T')[0];
-      const toStr = toDate.toISOString().split('T')[0];
+      // FIX: Use timezone-safe date string conversion instead of toISOString() 
+      // which can shift dates when converting to UTC
+      const formatDateSafe = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      const fromStr = formatDateSafe(fromDate);
+      const toStr = formatDateSafe(toDate);
       
       // Add comprehensive debugging for the current issue
       if (process.env.NODE_ENV === 'development') {
@@ -399,7 +414,7 @@ export default function StockChart({ symbol }: StockChartProps) {
         // If still no data, try extending the date range to get recent data
         const extendedFromDate = new Date(fromDate);
         extendedFromDate.setDate(extendedFromDate.getDate() - 7); // Go back 7 more days
-        const extendedFromStr = extendedFromDate.toISOString().split('T')[0];
+        const extendedFromStr = formatDateSafe(extendedFromDate);
         
         const extendedResponse = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${extendedFromStr}&to=${toStr}`);
         if (extendedResponse.ok) {

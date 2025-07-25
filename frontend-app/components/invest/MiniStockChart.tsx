@@ -78,53 +78,76 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
         toDate = new Date(latestTradingDay);
         toDate.setHours(23, 59, 59, 999);
       } else {
-        // System date seems reasonable - use normal logic
-        // Check if markets are currently closed using proper Eastern Time
-        const easternFormatter = new Intl.DateTimeFormat('en-US', {
-          timeZone: 'America/New_York',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
+        // PRODUCTION-GRADE: Use proper market days logic for brokerage platform
+        // Business Rules:
+        // - Before 9:30 AM ET: Show previous trading day's complete data  
+        // - After 9:30 AM ET on trading day: Show current trading day (intraday)
+        // - Non-trading days (weekends/holidays): Show most recent trading day
+        
+        // Get market timing in Eastern timezone
+        const easternHour = parseInt(now.toLocaleString("en-US", {
+          timeZone: "America/New_York",
+          hour: "2-digit",
           hour12: false
-        });
+        }));
         
-        const easternParts = easternFormatter.formatToParts(now);
-        const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
-        const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
-        const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
-        const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
+        const easternMinute = parseInt(now.toLocaleString("en-US", {
+          timeZone: "America/New_York", 
+          minute: "2-digit"
+        }));
         
-        easternToday = new Date(easternYear, easternMonth - 1, easternDay);
-        const easternDayOfWeek = easternToday.getDay();
+        // Convert to market timezone date for trading day validation
+        const marketDate = new Date(now.toLocaleString("en-US", {
+          timeZone: "America/New_York"
+        }));
         
-        const isAfterHours = easternHour >= 16 || easternHour < 9;
-        const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
-        isMarketClosed = isAfterHours || isWeekend;
+        // Check if current market date is a valid trading day
+        const isValidTradingDay = MarketHolidayUtil.isMarketOpen(marketDate);
         
-        if (isMarketClosed) {
-          // If markets are closed, use the most recent trading day (handles holidays properly)
-          const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
-          
-          // FIXED: Show ONLY the most recent trading day for proper 1D calculation
-          // This ensures 1D performance represents that single trading day's open-to-close movement
-          fromDate = new Date(mostRecentTradingDay);
-          fromDate.setHours(0, 0, 0, 0); // Start of the trading day
-          
-          toDate = new Date(mostRecentTradingDay);
-          toDate.setHours(23, 59, 59, 999); // End of the same trading day
+        // Market timing logic (9:30 AM ET = market open)
+        const isPreMarket = easternHour < 9 || (easternHour === 9 && easternMinute < 30);
+        
+        let chartDate: Date;
+        
+        if (isPreMarket || !isValidTradingDay) {
+          // CASE 1: Before market open OR non-trading day
+          // → Show COMPLETE previous trading day data
+          chartDate = MarketHolidayUtil.getLastTradingDay(marketDate, isValidTradingDay ? 1 : 0);
+          isMarketClosed = true;
+          console.log(`[MiniChart ${symbol}] Pre-market or non-trading day - using previous trading day: ${chartDate.toDateString()}`);
         } else {
-          // Markets are open - get current trading day data
-          // Use the exact same logic as main chart
-          const startOfToday = getStartOfTodayInUserTimezone();
-          fromDate = startOfToday;
-          toDate = now;
+          // CASE 2: Market hours or after hours on valid trading day  
+          // → Show CURRENT trading day data (intraday)
+          chartDate = new Date(marketDate);
+          chartDate.setHours(0, 0, 0, 0);
+          isMarketClosed = false;
+          console.log(`[MiniChart ${symbol}] Valid trading day after 9:30 AM ET - using current trading day: ${chartDate.toDateString()}`);
         }
+        
+        // Set date range for the selected trading day
+        fromDate = new Date(chartDate);
+        fromDate.setHours(0, 0, 0, 0);
+        
+        toDate = new Date(chartDate);
+        toDate.setHours(23, 59, 59, 999);
+        
+        // For continuity with existing variable naming
+        easternToday = chartDate;
       }
       
-      const fromStr = fromDate.toISOString().split('T')[0];
-      const toStr = toDate.toISOString().split('T')[0];
+      // FIX: Use timezone-safe date string conversion instead of toISOString() 
+      // which can shift dates when converting to UTC
+      const formatDateSafe = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      const fromStr = formatDateSafe(fromDate);
+      const toStr = formatDateSafe(toDate);
+      
+      console.log(`[MiniChart ${symbol}] Using date range: ${fromStr} to ${toStr} (market closed: ${isMarketClosed})`);
             
       // Try 5-minute data first (same as main chart)
       let response = await fetch(`/api/fmp/chart/${symbol}?interval=5min&from=${fromStr}&to=${toStr}`);
@@ -149,8 +172,8 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
             widerToDate = toDate;
           }
           
-          const widerFromStr = widerFromDate.toISOString().split('T')[0];
-          const widerToStr = widerToDate.toISOString().split('T')[0];
+          const widerFromStr = formatDateSafe(widerFromDate);
+          const widerToStr = formatDateSafe(widerToDate);
           
           console.warn(`[MiniChart ${symbol}] Daily data failed, trying wider range: ${widerFromStr} to ${widerToStr}`);
           response = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${widerFromStr}&to=${widerToStr}`);
