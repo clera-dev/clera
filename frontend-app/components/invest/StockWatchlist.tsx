@@ -63,7 +63,8 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         // System clock seems wrong - use a hardcoded, known-good recent trading day
         console.warn(`[Watchlist ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
         // Use a fixed fallback date (e.g., last trading day of 2024)
-        const FALLBACK_DATE = new Date("2024-12-31T16:00:00-05:00"); // 4pm ET
+        const { createEasternDate } = await import("@/lib/timezone");
+        const FALLBACK_DATE = createEasternDate("2024-12-31", "16:00:00"); // 4pm ET
         const { default: MarketHolidayUtil } = await import("@/lib/marketHolidays");
         const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(FALLBACK_DATE);
         toDate = new Date(mostRecentTradingDay);
@@ -89,7 +90,8 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         
         // Instead of using new Date(easternYear, easternMonth - 1, easternDay),
         // construct the date string in ET to avoid local timezone issues
-        const easternToday = new Date(`${easternYear}-${String(easternMonth).padStart(2,'0')}-${String(easternDay).padStart(2,'0')}T00:00:00-05:00`);
+        const { createEasternDate } = await import("@/lib/timezone");
+        const easternToday = createEasternDate(`${easternYear}-${String(easternMonth).padStart(2,'0')}-${String(easternDay).padStart(2,'0')}`);
         const easternDayOfWeek = easternToday.getDay();
         
         const isAfterHours = easternHour >= 16 || easternHour < 9;

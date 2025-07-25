@@ -112,7 +112,11 @@ export default function Chat({
     };
 
     loadMessages();
-  }, [currentThreadId, initialMessages, chatClient, initialSessionId]);
+    // The chatClient instance is stable and does not need to be a dependency.
+    // Including it can cause re-renders when the client's internal state changes,
+    // leading to potential infinite loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentThreadId, initialMessages, chatClient.setMessages, initialSessionId]);
 
 
   // --- Effect to handle submitting the *first* message ---
@@ -139,6 +143,9 @@ export default function Chat({
         }
       }).catch(err => {
         console.error("Error submitting first message:", err);
+        // BUG FIX: If the stream fails to start, reset the flag to allow a retry.
+        // This prevents the user from being stuck if the first message fails.
+        setIsFirstMessageSent(false);
       });
     }
   }, [currentThreadId, pendingFirstMessage, chatClient, userId, accountId, onMessageSent, onQuerySent, isProcessing, isFirstMessageSent]); // Add isFirstMessageSent to dependency array

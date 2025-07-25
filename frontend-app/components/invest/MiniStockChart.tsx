@@ -57,7 +57,8 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       const now = new Date();
       
       // Use a fixed, known-good trading day as fallback if system clock is unreasonable
-      const FALLBACK_DATE = new Date("2024-12-31T16:00:00-05:00"); // Last trading day of 2024, 4pm ET
+      const { createEasternDate } = await import("@/lib/timezone");
+      const FALLBACK_DATE = createEasternDate("2024-12-31", "16:00:00"); // Last trading day of 2024, 4pm ET
       const currentYear = now.getFullYear();
       const isUnreasonableFutureDate = currentYear > (new Date().getFullYear() + 1);
       
