@@ -128,7 +128,7 @@ export class LangGraphStreamingService {
           
           const errorChunk = {
             type: 'error',
-            data: { error: error.message || 'Unknown streaming error' }
+            data: { error: 'An unexpected error occurred. Please try again later.' }
           };
           
           const errorText = `data: ${JSON.stringify(errorChunk)}\n\n`;

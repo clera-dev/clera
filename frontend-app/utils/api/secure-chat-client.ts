@@ -14,7 +14,7 @@ export interface ChatState {
 }
 
 export interface SecureChatClient {
-  state: ChatState;
+  readonly state: ChatState;
   handleInterrupt: (threadId: string, runId: string, response: any) => Promise<void>;
   startStream: (threadId: string, input: any, userId: string, accountId: string) => Promise<void>;
   clearError: () => void;
@@ -543,8 +543,12 @@ export class SecureChatClientImpl implements SecureChatClient {
             };
             
             newMessages.push(newMessage);
-          } else if (messageData.name === 'Clera') {
-            // CRITICAL FIX: Detect empty Clera responses (Anthropic model provider issue)
+          } else if (messageData.name === 'Clera' && 
+                     (!messageData.content || 
+                      (typeof messageData.content === 'string' && messageData.content.trim() === '') ||
+                      (Array.isArray(messageData.content) && messageData.content.length === 0))) {
+            // CRITICAL FIX: Detect truly empty Clera responses (Anthropic model provider issue)
+            // Only trigger for messages that have no content at all, not for valid non-textual content
             console.log('[SecureChatClient] Detected empty Clera response - setting graceful model provider error');
             
             // Set graceful error state and mark as handled to prevent harsh error message
