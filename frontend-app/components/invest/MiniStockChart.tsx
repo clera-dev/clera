@@ -68,7 +68,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       
       if (isUnreasonableFutureDate) {
         // System clock seems wrong - use a recent known good date range
-        console.warn(`[MiniChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
+        // console.warn(`[MiniChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
         // Use the latest trading day as the anchor
         easternToday = new Date(latestTradingDay);
         isMarketClosed = true; // Always treat fallback as closed for safety
@@ -97,9 +97,20 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
         }));
         
         // Convert to market timezone date for trading day validation
-        const marketDate = new Date(now.toLocaleString("en-US", {
-          timeZone: "America/New_York"
-        }));
+        // FIXED: Properly extract Eastern timezone date components to avoid timezone interpretation bug
+        const easternParts = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/New_York',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).formatToParts(now);
+        
+        const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
+        const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
+        const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
+        
+        // Create date with Eastern date components for accurate trading day validation
+        const marketDate = new Date(easternYear, easternMonth - 1, easternDay);
         
         // Check if current market date is a valid trading day
         const isValidTradingDay = MarketHolidayUtil.isMarketOpen(marketDate);
@@ -114,14 +125,14 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
           // → Show COMPLETE previous trading day data
           chartDate = MarketHolidayUtil.getLastTradingDay(marketDate, isValidTradingDay ? 1 : 0);
           isMarketClosed = true;
-          console.log(`[MiniChart ${symbol}] Pre-market or non-trading day - using previous trading day: ${chartDate.toDateString()}`);
+          // console.log(`[MiniChart ${symbol}] Pre-market or non-trading day - using previous trading day: ${chartDate.toDateString()}`);
         } else {
           // CASE 2: Market hours or after hours on valid trading day  
           // → Show CURRENT trading day data (intraday)
           chartDate = new Date(marketDate);
           chartDate.setHours(0, 0, 0, 0);
           isMarketClosed = false;
-          console.log(`[MiniChart ${symbol}] Valid trading day after 9:30 AM ET - using current trading day: ${chartDate.toDateString()}`);
+          // console.log(`[MiniChart ${symbol}] Valid trading day after 9:30 AM ET - using current trading day: ${chartDate.toDateString()}`);
         }
         
         // Set date range for the selected trading day
@@ -146,14 +157,14 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       
       const fromStr = formatDateSafe(fromDate);
       const toStr = formatDateSafe(toDate);
-      
-      console.log(`[MiniChart ${symbol}] Using date range: ${fromStr} to ${toStr} (market closed: ${isMarketClosed})`);
+
+      // console.log(`[MiniChart ${symbol}] Using date range: ${fromStr} to ${toStr} (market closed: ${isMarketClosed})`);
             
       // Try 5-minute data first (same as main chart)
       let response = await fetch(`/api/fmp/chart/${symbol}?interval=5min&from=${fromStr}&to=${toStr}`);
       
       if (!response.ok) {
-        console.warn(`[MiniChart ${symbol}] 5min data failed, trying daily`);
+        // console.warn(`[MiniChart ${symbol}] 5min data failed, trying daily`);
         // Fallback to daily data if intraday fails
         response = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${fromStr}&to=${toStr}`);
         if (!response.ok) {
@@ -175,7 +186,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
           const widerFromStr = formatDateSafe(widerFromDate);
           const widerToStr = formatDateSafe(widerToDate);
           
-          console.warn(`[MiniChart ${symbol}] Daily data failed, trying wider range: ${widerFromStr} to ${widerToStr}`);
+          // console.warn(`[MiniChart ${symbol}] Daily data failed, trying wider range: ${widerFromStr} to ${widerToStr}`);
           response = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${widerFromStr}&to=${widerToStr}`);
           if (!response.ok) {
             throw new Error(`Failed to fetch chart data: ${response.status}`);
@@ -187,7 +198,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       processChartData(rawData, isMarketClosed, easternToday);
       
     } catch (error) {
-      console.error(`[MiniChart ${symbol}] Error fetching data:`, error);
+      // console.error(`[MiniChart ${symbol}] Error fetching data:`, error);
       setError(error instanceof Error ? error.message : 'Failed to load chart');
     } finally {
       setLoading(false);
@@ -196,7 +207,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
 
   const processChartData = (rawData: ChartDataPoint[], isMarketClosed: boolean, easternToday: Date) => {
     if (!rawData || rawData.length === 0) {
-      console.warn(`[MiniChart ${symbol}] No raw data received`);
+      // console.warn(`[MiniChart ${symbol}] No raw data received`);
       setData([]);
       setPriceChangePercent(null);
       return;
@@ -258,7 +269,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
             price
           };
         } catch (error) {
-          console.warn(`[MiniChart ${symbol}] Failed to parse timestamp:`, fmpTimestamp);
+          // console.warn(`[MiniChart ${symbol}] Failed to parse timestamp:`, fmpTimestamp);
           return null;
         }
       })
@@ -273,7 +284,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       setPriceChangePercent(changePercent);
     } else {
       setPriceChangePercent(null);
-      console.warn(`[MiniChart ${symbol}] Insufficient data for percentage calculation`);
+      // console.warn(`[MiniChart ${symbol}] Insufficient data for percentage calculation`);
     }
 
     setData(processedData);

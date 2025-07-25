@@ -223,6 +223,41 @@ export class MarketHolidayUtil {
     
     return true;
   }
+
+  /**
+   * Get the date that is n trading days before a given date.
+   * This is the production-grade replacement for simple calendar day subtraction.
+   * 
+   * @param fromDate The starting date.
+   * @param tradingDaysBack The number of trading days to go back.
+   * @param exchange The exchange to check for holidays.
+   * @returns The date that is n trading days in the past.
+   */
+  static getTradingDaysBefore(fromDate: Date, tradingDaysBack: number, exchange: string = 'NYSE'): Date {
+    let currentDate = new Date(fromDate);
+    let tradingDaysFound = 0;
+    let attempts = 0;
+    const maxAttempts = tradingDaysBack * 3; // Safety break for long holiday periods
+
+    // We start from the day *before* fromDate
+    currentDate.setDate(currentDate.getDate() - 1);
+    
+    while (tradingDaysFound < tradingDaysBack && attempts < maxAttempts) {
+      if (this.isMarketOpen(currentDate, exchange)) {
+        tradingDaysFound++;
+      }
+      
+      // If we haven't found enough days yet, go back one more day
+      if (tradingDaysFound < tradingDaysBack) {
+        currentDate.setDate(currentDate.getDate() - 1);
+      }
+      
+      attempts++;
+    }
+    
+    // After the loop, currentDate is the start of our range
+    return currentDate;
+  }
 }
 
 export default MarketHolidayUtil; 

@@ -2,77 +2,47 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
+/**
+ * API route to get a list of tradable market assets.
+ * This route is a proxy to the backend service.
+ */
 export async function GET(request: NextRequest) {
   try {
-    // Authenticate user
+    // 1. Authenticate user
     const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
+
     if (userError || !user) {
-      console.error('Market Assets API: User authentication failed:', userError);
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
     }
 
-    // --- Fetch from actual backend ---
+    // 2. Proxy the request to backend
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
 
-    if (!backendUrl) {
-      console.error("Market Assets API Route Error: Backend URL not configured.");
-      return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
+    if (!backendUrl || !backendApiKey) {
+      console.error('[API Proxy] Backend API URL or Key is not configured.');
+      return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
     }
 
     const targetUrl = `${backendUrl}/api/market/assets`;
-    console.log(`Proxying request to: ${targetUrl}`);
 
-    // Prepare headers
-    const headers: HeadersInit = {
-      'Accept': 'application/json'
-    };
-    
-    // Add API key if available
-    if (backendApiKey) {
-      headers['x-api-key'] = backendApiKey;
-    }
-    
-    const backendResponse = await fetch(targetUrl, {
+    const response = await fetch(targetUrl, {
       method: 'GET',
-      headers,
-      cache: 'no-store' // Ensure fresh data
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-KEY': backendApiKey,
+        'X-User-ID': user.id,
+      },
     });
 
-    const responseBody = await backendResponse.text();
+    const responseText = await response.text();
+    const responseData = responseText ? JSON.parse(responseText) : {};
 
-    if (!backendResponse.ok) {
-      let errorDetail = `Backend request failed with status: ${backendResponse.status}`;
-      try {
-        const errorJson = JSON.parse(responseBody);
-        errorDetail = errorJson.detail || errorDetail;
-      } catch (e) { /* Ignore if not JSON */ }
-      // Log detailed error for server-side debugging
-      console.error(`Market Assets API Route: Backend Error - ${errorDetail}`);
-      // Return only a generic error message to the client
-      return NextResponse.json(
-        { error: 'Failed to fetch market assets. Please try again later.' },
-        { status: backendResponse.status >= 500 ? 502 : backendResponse.status }
-      );
-    }
+    return NextResponse.json(responseData, { status: response.status });
 
-    let data;
-    try {
-        data = JSON.parse(responseBody);
-    } catch (e) {
-        console.error("Market Assets API Route: Failed to parse backend JSON response.", e);
-        return NextResponse.json({ detail: 'Invalid response from backend service' }, { status: 502 });
-    }
-
-    return NextResponse.json(data, { status: 200 });
-
-  } catch (error) {
-    console.error("Market Assets API Route: Unexpected error", error);
-    return NextResponse.json({ detail: 'Internal server error' }, { status: 500 });
+  } catch (error: any) {
+    console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });
+    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 } 

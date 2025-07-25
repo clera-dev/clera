@@ -62,9 +62,20 @@ export function getChartTradingDay(
   });
   
   // Convert to market timezone date for trading day validation
-  const marketDate = new Date(inputDate.toLocaleString("en-US", {
-    timeZone: "America/New_York"
-  }));
+  // FIXED: Properly extract Eastern timezone date components to avoid timezone interpretation bug
+  const easternParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(inputDate);
+  
+  const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
+  const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
+  const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
+  
+  // Create date with Eastern date components for accurate trading day validation
+  const marketDate = new Date(easternYear, easternMonth - 1, easternDay);
   
   // Check if current market date is a valid trading day
   const isValidTradingDay = MarketHolidayUtil.isMarketOpen(marketDate, exchange);
@@ -152,13 +163,13 @@ export function getChartDateRange(
       
     case '5D': 
       // Get 5 trading days back
-      startDate = MarketHolidayUtil.getLastTradingDay(endDate, 5);
+      startDate = MarketHolidayUtil.getTradingDaysBefore(endDate, 4); // 4 days before to make a total of 5 trading days
       break;
       
     case '1M':
       startDate = new Date(endDate);
       startDate.setMonth(startDate.getMonth() - 1);
-      // Adjust to valid trading day
+      // Adjust to a valid trading day to start the period
       startDate = MarketHolidayUtil.getLastTradingDay(startDate, 0);
       break;
       

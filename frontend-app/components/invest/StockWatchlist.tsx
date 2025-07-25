@@ -90,9 +90,20 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         }));
         
         // Convert to market timezone date for trading day validation
-        const marketDate = new Date(now.toLocaleString("en-US", {
-          timeZone: "America/New_York"
-        }));
+        // FIXED: Properly extract Eastern timezone date components to avoid timezone interpretation bug
+        const easternParts = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/New_York',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).formatToParts(now);
+        
+        const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
+        const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
+        const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
+        
+        // Create date with Eastern date components for accurate trading day validation
+        const marketDate = new Date(easternYear, easternMonth - 1, easternDay);
         
         // Check if current market date is a valid trading day
         const isValidTradingDay = MarketHolidayUtil.isMarketOpen(marketDate);
@@ -107,14 +118,14 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
           // → Show COMPLETE previous trading day data
           chartDate = MarketHolidayUtil.getLastTradingDay(marketDate, isValidTradingDay ? 1 : 0);
           isMarketClosed = true;
-          console.log(`[Watchlist ${symbol}] Pre-market or non-trading day - using previous trading day: ${chartDate.toDateString()}`);
+          // console.log(`[Watchlist ${symbol}] Pre-market or non-trading day - using previous trading day: ${chartDate.toDateString()}`);
         } else {
           // CASE 2: Market hours or after hours on valid trading day  
           // → Show CURRENT trading day data (intraday)
           chartDate = new Date(marketDate);
           chartDate.setHours(0, 0, 0, 0);
           isMarketClosed = false;
-          console.log(`[Watchlist ${symbol}] Valid trading day after 9:30 AM ET - using current trading day: ${chartDate.toDateString()}`);
+          // console.log(`[Watchlist ${symbol}] Valid trading day after 9:30 AM ET - using current trading day: ${chartDate.toDateString()}`);
         }
         
         // Set date range for the selected trading day
@@ -140,7 +151,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
       const fromStr = formatDateSafe(fromDate);
       const toStr = formatDateSafe(toDate);
       
-      console.log(`[Watchlist ${symbol}] Fetching chart data from ${fromStr} to ${toStr} (system date: ${now.toISOString()})`);
+      // console.log(`[Watchlist ${symbol}] Fetching chart data from ${fromStr} to ${toStr} (system date: ${now.toISOString()})`);
       
       // Try to get chart data
       const response = await fetch(`/api/fmp/chart/${symbol}?interval=5min&from=${fromStr}&to=${toStr}`);
@@ -152,12 +163,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
       
       const rawData = await response.json();
       
-      if (!rawData || rawData.length === 0) {
-        console.warn(`[Watchlist ${symbol}] No chart data received`);
-        return undefined;
-      }
-      
-      console.log(`[Watchlist ${symbol}] Received ${rawData.length} raw data points`);
+      // console.log(`[Watchlist ${symbol}] Received ${rawData.length} raw data points`);
       
       // Process the data to calculate 1D percentage
       const { parseFMPEasternTimestamp } = await import("@/lib/timezone");
@@ -185,7 +191,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         .filter((item: any) => item !== null)
         .sort((a: any, b: any) => a.timestamp - b.timestamp);
       
-      console.log(`[Watchlist ${symbol}] Processed ${processedData.length} data points after filtering`);
+      // console.log(`[Watchlist ${symbol}] Processed ${processedData.length} data points after filtering`);
       
       // Filter for only the most recent trading day to get true 1D percentage
       if (processedData.length > 0) {
@@ -201,23 +207,23 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
           return itemDate.getTime() === mostRecentTradingDay.getTime();
         });
         
-        console.log(`[Watchlist ${symbol}] Filtered to ${singleDayData.length} data points for most recent trading day`);
+        // console.log(`[Watchlist ${symbol}] Filtered to ${singleDayData.length} data points for most recent trading day`);
         
         if (singleDayData.length >= 2) {
           const openingPrice = singleDayData[0].price; // First data point of the day
           const closingPrice = singleDayData[singleDayData.length - 1].price; // Last data point of the day
           const changePercent = ((closingPrice - openingPrice) / openingPrice) * 100;
           
-          console.log(`[Watchlist ${symbol}] Single-day calculation: ${openingPrice} -> ${closingPrice} = ${changePercent.toFixed(2)}%`);
+          // console.log(`[Watchlist ${symbol}] Single-day calculation: ${openingPrice} -> ${closingPrice} = ${changePercent.toFixed(2)}%`);
           
           return changePercent;
         }
       }
       
-      console.warn(`[Watchlist ${symbol}] Insufficient data for single-day percentage calculation`);
+      // console.warn(`[Watchlist ${symbol}] Insufficient data for single-day percentage calculation`);
       return undefined;
     } catch (error) {
-      console.error(`[Watchlist] Failed to calculate chart-based percentage for ${symbol}:`, error);
+      // console.error(`[Watchlist] Failed to calculate chart-based percentage for ${symbol}:`, error);
       return undefined;
     }
   };
@@ -262,7 +268,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
                           // Get 1D percentage from chart data (for consistency with main chart)
               const chartBasedPercent = await calculateChartBasedPercentage(symbol);
               
-              console.log(`[Watchlist] Final percentage for ${symbol}: ${chartBasedPercent}`);
+              // console.log(`[Watchlist] Final percentage for ${symbol}: ${chartBasedPercent}`);
               
               return {
                 symbol,
@@ -319,13 +325,13 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
               // Get 1D percentage from chart data (for consistency with main chart)
               const chartBasedPercent = await calculateChartBasedPercentage(symbol);
               
-              console.log(`[Watchlist] Final percentage for ${symbol}: ${chartBasedPercent}`);
+              // console.log(`[Watchlist] Final percentage for ${symbol}: ${chartBasedPercent}`);
               
               // If chart-based calculation failed, try to get percentage from quote API as fallback
               let finalPercentage = chartBasedPercent;
               if (chartBasedPercent === undefined && quoteData) {
                 finalPercentage = quoteData.changesPercentage;
-                console.log(`[Watchlist] Using quote API fallback for ${symbol}: ${finalPercentage}%`);
+                // console.log(`[Watchlist] Using quote API fallback for ${symbol}: ${finalPercentage}%`);
               }
               
               return {
