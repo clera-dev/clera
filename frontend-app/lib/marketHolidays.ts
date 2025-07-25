@@ -237,25 +237,27 @@ export class MarketHolidayUtil {
     let currentDate = new Date(fromDate);
     let tradingDaysFound = 0;
     let attempts = 0;
-    const maxAttempts = tradingDaysBack * 3; // Safety break for long holiday periods
+    const maxAttempts = Math.max(10, tradingDaysBack * 3); // Safety break for long holiday periods
 
-    // We start from the day *before* fromDate
-    currentDate.setDate(currentDate.getDate() - 1);
-    
+    // If tradingDaysBack is 0, return fromDate if it's a trading day, else find the most recent prior trading day
+    if (tradingDaysBack === 0) {
+      if (this.isMarketOpen(currentDate, exchange)) {
+        return currentDate;
+      } else {
+        // Use getLastTradingDay to find the most recent trading day before fromDate
+        return this.getLastTradingDay(currentDate, 1, exchange);
+      }
+    }
+
+    // For tradingDaysBack > 0, go back n trading days
     while (tradingDaysFound < tradingDaysBack && attempts < maxAttempts) {
+      currentDate.setDate(currentDate.getDate() - 1);
       if (this.isMarketOpen(currentDate, exchange)) {
         tradingDaysFound++;
       }
-      
-      // If we haven't found enough days yet, go back one more day
-      if (tradingDaysFound < tradingDaysBack) {
-        currentDate.setDate(currentDate.getDate() - 1);
-      }
-      
       attempts++;
     }
-    
-    // After the loop, currentDate is the start of our range
+
     return currentDate;
   }
 }
