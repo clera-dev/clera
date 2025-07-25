@@ -244,8 +244,8 @@ export class MarketHolidayUtil {
       if (this.isMarketOpen(currentDate, exchange)) {
         return currentDate;
       } else {
-        // Use getLastTradingDay to find the most recent trading day before fromDate
-        return this.getLastTradingDay(currentDate, 1, exchange);
+        // FIXED: Use 0 instead of 1 to find the most recent trading day on or before fromDate
+        return this.getLastTradingDay(currentDate, 0, exchange);
       }
     }
 
@@ -256,6 +256,11 @@ export class MarketHolidayUtil {
         tradingDaysFound++;
       }
       attempts++;
+    }
+
+    // FIXED: Ensure we found the correct number of trading days
+    if (tradingDaysFound < tradingDaysBack) {
+      throw new Error(`Unable to find ${tradingDaysBack} trading days before ${fromDate.toDateString()}. Only found ${tradingDaysFound} trading days within ${maxAttempts} attempts.`);
     }
 
     return currentDate;
