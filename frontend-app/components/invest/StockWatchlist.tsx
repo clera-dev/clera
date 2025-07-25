@@ -24,6 +24,12 @@ interface WatchlistItem {
   logo?: string;
 }
 
+interface ProcessedDataItem {
+  timestamp: number;
+  price: number;
+  utcDate: Date;
+}
+
 interface StockWatchlistProps {
   accountId: string | null;
   onStockSelect?: (symbol: string) => void;
@@ -164,12 +170,18 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
       const rawData = await response.json();
       
       // console.log(`[Watchlist ${symbol}] Received ${rawData.length} raw data points`);
+
+      // Add validation check to prevent runtime errors with malformed API responses
+      if (!rawData || !Array.isArray(rawData)) {
+        console.warn(`[Watchlist ${symbol}] Invalid chart data received from API.`);
+        return undefined;
+      }
       
       // Process the data to calculate 1D percentage
       const { parseFMPEasternTimestamp } = await import("@/lib/timezone");
       
       const processedData = rawData
-        .map((item: any) => {
+        .map((item: any): ProcessedDataItem | null => {
           const fmpTimestamp = item.date || item.datetime || item.timestamp;
           if (!fmpTimestamp) return null;
           
@@ -188,8 +200,8 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
             return null;
           }
         })
-        .filter((item: any) => item !== null)
-        .sort((a: any, b: any) => a.timestamp - b.timestamp);
+        .filter((item): item is ProcessedDataItem => item !== null)
+        .sort((a, b) => a.timestamp - b.timestamp);
       
       // console.log(`[Watchlist ${symbol}] Processed ${processedData.length} data points after filtering`);
       
@@ -201,7 +213,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         mostRecentTradingDay.setUTCHours(0, 0, 0, 0); // Start of day in UTC
         
         // Filter data for only the most recent trading day
-        const singleDayData = processedData.filter((item: any) => {
+        const singleDayData = processedData.filter((item) => {
           const itemDate = new Date(item.utcDate);
           itemDate.setUTCHours(0, 0, 0, 0);
           return itemDate.getTime() === mostRecentTradingDay.getTime();
@@ -212,6 +224,11 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         if (singleDayData.length >= 2) {
           const openingPrice = singleDayData[0].price; // First data point of the day
           const closingPrice = singleDayData[singleDayData.length - 1].price; // Last data point of the day
+
+          if (openingPrice === 0) {
+            return closingPrice > 0 ? Infinity : 0;
+          }
+
           const changePercent = ((closingPrice - openingPrice) / openingPrice) * 100;
           
           // console.log(`[Watchlist ${symbol}] Single-day calculation: ${openingPrice} -> ${closingPrice} = ${changePercent.toFixed(2)}%`);
