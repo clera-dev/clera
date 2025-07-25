@@ -20,7 +20,7 @@ type ApiRouteContext<T> = {
 export function handleApiRoute<T extends Record<string, string | string[] | undefined>>(
   serverFunction: (user: any, context: ApiRouteContext<T>) => Promise<NextResponse>
 ) {
-  return async (request: NextRequest, { params }: { params: T }) => {
+  return async (request: NextRequest, { params }: { params: T | Promise<T> }) => {
     try {
       // 1. Authenticate user
       const supabase = await createClient();
@@ -41,8 +41,14 @@ export function handleApiRoute<T extends Record<string, string | string[] | unde
         }
       }
 
+      // --- FIX: Support params as Promise or direct object ---
+      let resolvedParams = params as T;
+      if (params && typeof (params as any).then === 'function') {
+        resolvedParams = await (params as Promise<T>);
+      }
+
       // 3. Execute the specific server function with full context
-      return await serverFunction(user, { params, body, request });
+      return await serverFunction(user, { params: resolvedParams, body, request });
 
     } catch (error: any) {
       // 4. Centralized error handling
