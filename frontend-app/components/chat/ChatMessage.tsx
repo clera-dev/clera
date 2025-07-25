@@ -13,19 +13,27 @@ export interface ChatMessageProps {
 }
 
 export default function ChatMessage({ message, isLast }: ChatMessageProps) {
-  const [showCursor, setShowCursor] = useState(false);
   const isUser = message.role === 'user';
-  
-  // Create typing indicator effect for latest assistant message
-  useEffect(() => {
-    if (!isUser && isLast) {
-      setShowCursor(true);
-      const timeout = setTimeout(() => {
-        setShowCursor(false);
-      }, 500);
-      return () => clearTimeout(timeout);
-    }
-  }, [isUser, isLast, message.content]);
+  const isStatus = message.isStatus;
+
+  // Special styling for status messages
+  if (isStatus) {
+    return (
+      <div className="flex w-full items-start gap-4">
+        <CleraAvatar />
+        <div className="rounded-lg px-4 py-2 max-w-[85%] bg-blue-50 border border-blue-200 dark:bg-blue-950 dark:border-blue-800">
+          <div className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+            </div>
+            <span className="italic">{message.content}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn(
@@ -35,16 +43,33 @@ export default function ChatMessage({ message, isLast }: ChatMessageProps) {
       {isUser ? <UserAvatar /> : <CleraAvatar />}
       
       <div className={cn(
-        "rounded-lg px-4 py-3 max-w-[85%]",
+        "max-w-[85%]",
         isUser 
-          ? "bg-primary text-primary-foreground" 
-          : "bg-muted",
+          ? "rounded-lg px-4 py-3 bg-primary text-primary-foreground"
+          : "px-2 py-1", // Minimal padding for assistant, no background
       )}>
-        <div className="prose dark:prose-invert prose-sm break-words whitespace-pre-wrap">
-          <ReactMarkdown>{message.content}</ReactMarkdown>
-          {showCursor && (
-            <span className="animate-pulse ml-1">▏</span>
-          )}
+        <div className={cn(
+          "text-sm leading-relaxed break-words",
+          isUser 
+            ? "prose-invert" 
+            : "text-foreground"
+        )}>
+          <ReactMarkdown
+            components={{
+              p: ({children}) => <p className="mb-3 last:mb-0">{children}</p>,
+              h1: ({children}) => <h1 className="text-base font-semibold mb-2 mt-4 first:mt-0">{children}</h1>,
+              h2: ({children}) => <h2 className="text-base font-semibold mb-2 mt-3 first:mt-0">{children}</h2>,
+              h3: ({children}) => <h3 className="text-sm font-semibold mb-2 mt-3 first:mt-0">{children}</h3>,
+              ul: ({children}) => <ul className="mb-3 space-y-1 pl-0">{children}</ul>,
+              ol: ({children}) => <ol className="mb-3 space-y-1 pl-0">{children}</ol>,
+              li: ({children}) => <li className="relative pl-4 before:content-['-'] before:absolute before:left-0">{children}</li>,
+              strong: ({children}) => <strong className="font-semibold">{children}</strong>,
+              em: ({children}) => <em className="italic">{children}</em>,
+              code: ({children}) => <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">{children}</code>,
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
         </div>
       </div>
     </div>

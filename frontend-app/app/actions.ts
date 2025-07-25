@@ -88,7 +88,7 @@ export const signUpAction = async (formData: FormData) => {
     console.error("Sign-up error details:", error.code, error.message, error);
     return encodedRedirect("error", "/sign-up", error.message);
   } else {
-    console.log("Sign-up successful, user data:", data);
+    console.log("Sign-up successful");
     
     // Since email verification is not enforced, automatically sign in after signup
     const { error: signInError } = await supabase.auth.signInWithPassword({

@@ -135,13 +135,11 @@ export async function middleware(request: NextRequest) {
           
           // Allow account closure API calls (needed for progress updates)
           if (path.startsWith('/api/account-closure/')) {
-            console.log(`[Middleware] Allowing account closure API call: ${path}`);
             return response;
           }
           
           // Allow PostHog ingest calls (analytics)
           if (path.startsWith('/ingest/')) {
-            console.log(`[Middleware] Allowing PostHog ingest call: ${path}`);
             return response;
           }
           
@@ -329,7 +327,6 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    console.log(`[Middleware] Allowing access to: ${path}`);
     return response;
 
   } catch (error) {

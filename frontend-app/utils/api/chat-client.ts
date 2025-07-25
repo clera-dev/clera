@@ -1,12 +1,13 @@
 // Chat API client for interacting with the Clera backend
 
-import { Client } from '@langchain/langgraph-sdk';
-import { Message as LangGraphMessage } from '@langchain/langgraph-sdk';
+// Removed LangGraph SDK imports for security - all operations now go through API routes
 import { createClient } from "@/utils/supabase/client";
 
 export type Message = {
+  id?: string;
   role: 'system' | 'user' | 'assistant';
   content: string;
+  isStatus?: boolean; // For temporary status/progress messages
 };
 
 export type ChatRequest = {
@@ -271,7 +272,7 @@ export async function updateChatSessionTitle(sessionId: string, title: string): 
 }
 
 /**
- * Creates a new chat session (thread) directly using LangGraph SDK
+ * Creates a new chat session (thread) via API route
  */
 export async function createChatSession(
   accountId: string,
@@ -289,19 +290,27 @@ export async function createChatSession(
 
   try {
     console.log(`Creating new chat session with title: ${title}, userId: ${userId}, accountId: ${accountId}`);
-    const client = getLangGraphClient();
     
-    // Create thread with metadata including userId and accountId
-    const thread = await client.threads.create({
-      metadata: {
-        user_id: userId,
+    const response = await fetch('/api/conversations/create-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         account_id: accountId,
+        user_id: userId,
         title: title,
-      }
+      }),
     });
-    
-    console.log(`Created new thread with ID: ${thread.thread_id}`);
-    return { id: thread.thread_id };
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to create chat session');
+    }
+
+    const data = await response.json();
+    console.log(`Created new thread with ID: ${data.id}`);
+    return { id: data.id };
   } catch (error) {
     console.error('Error creating chat session:', error);
     return null;
@@ -377,14 +386,13 @@ export async function getConversationHistory(
 }
 
 /**
- * Gets all chat sessions (threads) for the current user directly using LangGraph SDK
+ * Gets all chat sessions (threads) for the current user via API route
  */
 export async function getChatSessions(
   portfolioId: string
 ): Promise<ChatSession[]> {
   try {
     console.log(`Fetching chat sessions with portfolio ID: ${portfolioId}`);
-    const client = getLangGraphClient();
     
     // Get user ID from localStorage
     const userId = localStorage.getItem('userId');
@@ -394,25 +402,25 @@ export async function getChatSessions(
       return [];
     }
     
-    // Use threads.search to get all threads with matching metadata
-    const threads = await client.threads.search({
-      metadata: {
-        user_id: userId
+    const response = await fetch('/api/conversations/get-sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-      limit: 20 // Added limit parameter
+      body: JSON.stringify({
+        portfolio_id: portfolioId,
+        user_id: userId,
+        limit: 20
+      }),
     });
-    
-    // Format threads as ChatSessions
-    const sessions: ChatSession[] = threads.map(thread => {
-      const metadata = thread.metadata || {};
-      return {
-        id: thread.thread_id,
-        title: (metadata.title as string) || "New Conversation",
-        createdAt: thread.created_at || new Date().toISOString(),
-        updatedAt: thread.updated_at || new Date().toISOString(),
-        messages: []
-      };
-    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to get chat sessions');
+    }
+
+    const data = await response.json();
+    const sessions: ChatSession[] = data.sessions || [];
     
     console.log(`Found ${sessions.length} chat sessions`);
     return sessions;
@@ -423,32 +431,31 @@ export async function getChatSessions(
 }
 
 /**
- * Get thread messages directly using LangGraph SDK
+ * Get thread messages via API route
  */
 export async function getThreadMessages(
   threadId: string
 ): Promise<Message[]> {
   try {
     console.log(`Fetching messages for thread: ${threadId}`);
-    const client = getLangGraphClient();
     
-    // Get thread state
-    const threadState = await client.threads.getState(threadId);
-    
-    // Extract messages from thread state with proper type handling
-    let messages: LangGraphMessage[] = [];
-    
-    // Check if values exists and safely access the messages property
-    if (threadState.values && typeof threadState.values === 'object') {
-      // Access messages using type assertion since structure may vary
-      const stateValues = threadState.values as Record<string, unknown>;
-      if (Array.isArray(stateValues.messages)) {
-        messages = stateValues.messages as LangGraphMessage[];
-      }
+    const response = await fetch('/api/conversations/get-thread-messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        thread_id: threadId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to get thread messages');
     }
-    
-    // Convert messages to our format
-    return convertLangGraphMessages(messages);
+
+    const data = await response.json();
+    return data.messages || [];
   } catch (error) {
     console.error(`Error getting thread messages for ${threadId}:`, error);
     return [];
@@ -456,7 +463,7 @@ export async function getThreadMessages(
 }
 
 /**
- * Updates the title of a chat thread directly using LangGraph SDK
+ * Updates the title of a chat thread via API route
  */
 export async function updateChatThreadTitle(
   threadId: string, 
@@ -464,15 +471,22 @@ export async function updateChatThreadTitle(
 ): Promise<boolean> {
   try {
     console.log(`Updating thread ${threadId} title to: ${title}`);
-    const client = getLangGraphClient();
     
-    // Use update() with metadata instead of patchState()
-    await client.threads.update(threadId, {
-      metadata: {
-        title: title
-      }
+    const response = await fetch('/api/conversations/update-thread-title', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        thread_id: threadId,
+        title: title,
+      }),
     });
-    
+
+    if (!response.ok) {
+      return false;
+    }
+
     console.log(`Successfully updated title for thread ${threadId}`);
     return true;
   } catch (error) {
@@ -482,21 +496,34 @@ export async function updateChatThreadTitle(
 }
 
 /**
- * Deletes a chat session (thread) directly using LangGraph SDK.
+ * Deletes a chat session (thread) via API route
  */
 export async function deleteChatSession(
   threadId: string
 ): Promise<boolean> {
   try {
-    console.log(`Attempting to delete thread ${threadId} using LangGraph SDK`);
-    const client = getLangGraphClient();
-    await client.threads.delete(threadId);
+    console.log(`Attempting to delete thread ${threadId}`);
+    
+    const response = await fetch('/api/conversations/delete-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        thread_id: threadId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error(`Failed to delete thread ${threadId}:`, errorData.error);
+      return false;
+    }
+
     console.log(`Successfully deleted thread ${threadId}`);
     return true;
   } catch (error) {
     console.error(`Failed to delete thread ${threadId}:`, error);
-    // Optional: Check error type/status for more specific feedback
-    // e.g., if (error.status === 404) console.error("Thread not found");
     return false;
   }
 }
@@ -556,56 +583,15 @@ export function conversationsToMessages(conversations: Conversation[]): Message[
   return messages;
 }
 
-// --- Get LangGraphClient Instance ---
-// You need to configure this client with your LangGraph API URL and potentially API key.
-// Assuming environment variables for configuration:
-const getLangGraphClient = () => {
-  const apiUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL;
-  const apiKey = process.env.NEXT_PUBLIC_LANGGRAPH_API_KEY;
-
-  if (!apiUrl) {
-    throw new Error("NEXT_PUBLIC_LANGGRAPH_API_URL is not set in environment variables.");
-  }
-
-  return new Client({
-    apiUrl,
-    ...(apiKey && { apiKey }),
-  });
-};
+// --- SECURITY NOTE ---
+// Direct LangGraph client usage removed for security.
+// All LangGraph operations now go through Next.js API routes that proxy to the backend.
+// This prevents exposing API keys and URLs to the browser.
 // ----------------------------------
 
 // --- LangGraph SDK Helper Methods ---
 
-/**
- * Converts LangGraph message format to our frontend Message format
- */
-function convertLangGraphMessages(messages: LangGraphMessage[]): Message[] {
-  const convertedMessages: Message[] = [];
-  
-  for (const msg of messages) {
-    if (msg.type === 'human') {
-      convertedMessages.push({
-        role: 'user',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-      });
-    } else if (msg.type === 'ai') {
-      // Skip tool calls and specific worker messages
-      const hasAgentName = 'name' in msg && !!msg.name;
-      const hasFunctionCalls = msg.tool_calls && msg.tool_calls.length > 0;
-      
-      if (hasFunctionCalls || (hasAgentName && msg.name !== 'Clera')) {
-        continue;
-      }
-      
-      convertedMessages.push({
-        role: 'assistant',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-      });
-    }
-  }
-  
-  return convertedMessages;
-}
+// Message conversion is now handled by the backend API routes
 
 /**
  * Retrieves the number of queries a user has made today (PST).

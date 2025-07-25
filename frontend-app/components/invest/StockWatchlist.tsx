@@ -49,61 +49,68 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
     console.log(`[Watchlist] Starting chart-based calculation for ${symbol}`);
     
     try {
-      // Use the same date logic as MiniStockChart
+      // ROBUST DATE LOGIC - Handle system clock issues and future dates (MATCH MiniStockChart)
       const now = new Date();
+      const { default: MarketHolidayUtil } = await import("@/lib/marketHolidays");
+      const latestTradingDay = MarketHolidayUtil.getLastTradingDay(now);
+      const daysSinceLastTradingDay = (now.getTime() - latestTradingDay.getTime()) / (1000 * 60 * 60 * 24);
+      const isUnreasonableFutureDate = daysSinceLastTradingDay > 7; // More than a week after last trading day
+
       let toDate: Date;
       let fromDate: Date;
-      
-      // Check if markets are currently closed using proper Eastern Time
-      const easternFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-      
-      const easternParts = easternFormatter.formatToParts(now);
-      const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
-      const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
-      const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
-      const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
-      
-      const easternToday = new Date(easternYear, easternMonth - 1, easternDay);
-      const easternDayOfWeek = easternToday.getDay();
-      
-      const isAfterHours = easternHour >= 16 || easternHour < 9;
-      const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
-      const isMarketClosed = isAfterHours || isWeekend;
-      
-      console.log(`[Watchlist ${symbol}] Market status: closed=${isMarketClosed}, hour=${easternHour}`);
-      
-      if (isMarketClosed) {
-        // If markets are closed, use the most recent trading day
-        const { default: MarketHolidayUtil } = await import("@/lib/marketHolidays");
-        const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
-        
-        // FIXED: Show ONLY the most recent trading day for proper 1D calculation  
-        // This ensures consistency with StockChart 1D calculation
-        fromDate = new Date(mostRecentTradingDay);
-        fromDate.setHours(0, 0, 0, 0); // Start of the trading day
-        
-        toDate = new Date(mostRecentTradingDay);
-        toDate.setHours(23, 59, 59, 999); // End of the same trading day
+      let easternToday: Date = new Date();
+      let isMarketClosed = false;
+
+      if (isUnreasonableFutureDate) {
+        // System clock seems wrong - use the most recent trading day as fallback (MATCH MiniStockChart)
+        console.warn(`[Watchlist ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
+        easternToday = new Date(latestTradingDay);
+        isMarketClosed = true; // Always treat fallback as closed for safety
+        fromDate = new Date(latestTradingDay);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate = new Date(latestTradingDay);
+        toDate.setHours(23, 59, 59, 999);
       } else {
-        // Markets are open - get current trading day data
-        const { getStartOfTodayInUserTimezone } = await import("@/lib/timezone");
-        const startOfToday = getStartOfTodayInUserTimezone();
-        fromDate = startOfToday;
-        toDate = now;
+        // System date seems reasonable - use normal logic
+        const easternFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/New_York',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        const easternParts = easternFormatter.formatToParts(now);
+        const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
+        const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
+        const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
+        const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
+        const { createEasternDate } = await import("@/lib/timezone");
+        easternToday = createEasternDate(`${easternYear}-${String(easternMonth).padStart(2,'0')}-${String(easternDay).padStart(2,'0')}`);
+        const easternDayOfWeek = easternToday.getDay();
+        const isAfterHours = easternHour >= 16 || easternHour < 9;
+        const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
+        isMarketClosed = isAfterHours || isWeekend;
+        console.log(`[Watchlist ${symbol}] Market status: closed=${isMarketClosed}, hour=${easternHour}`);
+        if (isMarketClosed) {
+          const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
+          fromDate = new Date(mostRecentTradingDay);
+          fromDate.setHours(0, 0, 0, 0);
+          toDate = new Date(mostRecentTradingDay);
+          toDate.setHours(23, 59, 59, 999);
+        } else {
+          const { getStartOfTodayInUserTimezone } = await import("@/lib/timezone");
+          const startOfToday = getStartOfTodayInUserTimezone();
+          fromDate = startOfToday;
+          toDate = now;
+        }
       }
       
       const fromStr = fromDate.toISOString().split('T')[0];
       const toStr = toDate.toISOString().split('T')[0];
       
-      console.log(`[Watchlist ${symbol}] Fetching chart data from ${fromStr} to ${toStr}`);
+      console.log(`[Watchlist ${symbol}] Fetching chart data from ${fromStr} to ${toStr} (system date: ${now.toISOString()})`);
       
       // Try to get chart data
       const response = await fetch(`/api/fmp/chart/${symbol}?interval=5min&from=${fromStr}&to=${toStr}`);

@@ -51,7 +51,7 @@ export default function ChatSidebar({
         const chatSessions = await getChatSessions(accountId);
         setSessions(chatSessions);
       } catch (error) {
-        console.error('Error loading chat sessions:', error);
+        console.error('[ChatSidebar] Error loading chat sessions:', error);
       } finally {
         setIsLoading(false);
       }

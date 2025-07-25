@@ -54,7 +54,6 @@ export default function ChatPage() {
         }
         currentUserId = user.id; // Assign to temp variable
         setUserId(currentUserId);
-        console.log("ChatPage: User ID found:", currentUserId);
 
         // 2. Fetch Alpaca Account ID using utility (checks localStorage then Supabase)
         const fetchedAccountId = await getAlpacaAccountId();
@@ -62,7 +61,6 @@ export default function ChatPage() {
           throw new Error("Alpaca Account ID not found. Please complete onboarding.");
         }
         setAccountId(fetchedAccountId);
-        console.log("ChatPage: Alpaca Account ID found:", fetchedAccountId);
 
         // 3. Fetch initial query count for the user
         if (currentUserId) { // Check if user ID was successfully fetched
@@ -80,18 +78,11 @@ export default function ChatPage() {
           const storedSessionId = localStorage.getItem(CURRENT_SESSION_KEY);
           if (storedSessionId) {
             setCurrentSessionId(storedSessionId);
-            console.log("ChatPage: Restored session ID:", storedSessionId);
             // Messages will be loaded by the Chat component based on sessionId
             setInitialMessages([]);
           } else {
-            console.log("ChatPage: No session ID found in localStorage.");
-             // Start with default welcome message if no session restored
-            setInitialMessages([
-                {
-                  role: 'assistant',
-                  content: "Hello, I'm Clera, your personal financial advisor. How can I help you with your portfolio today?"
-                }
-            ]);
+             // Start with empty messages to show suggested questions
+            setInitialMessages([]);
           }
         }
 
@@ -116,38 +107,22 @@ export default function ChatPage() {
   }, [currentSessionId, isLoading]);
 
   const handleNewChat = async () => {
-    if (!accountId) {
-      console.error("Cannot create new chat without Alpaca Account ID");
-      setError("Cannot start a new chat: Missing account information.");
-      return;
-    }
-    try {
-      // Clear localStorage immediately
-      localStorage.removeItem(CURRENT_SESSION_KEY);
-      setCurrentSessionId(undefined); // Clear state
-      
-      // Reset messages immediately for responsiveness
-      setInitialMessages([
-        {
-          role: 'assistant',
-          content: "Hello, I'm Clera, your personal financial advisor. How can I help you with your portfolio today?"
-        }
-      ]);
-      
-      // Create a new chat session in the background
-      // The Chat component will handle showing the actual session once created
-      // No need to await here, let the Chat component manage session creation flow
-      // createChatSession(accountId, 'New Conversation'); // Let Chat component handle this
-      
-      // Force sidebar to refresh (optional, Chat component might handle this)
-      setRefreshTrigger(prev => prev + 1);
-    } catch (error) {
-      console.error('Error preparing for new chat session:', error);
-      setError("Failed to start a new chat session.");
-    }
+    if (isLoading) return; // Prevent multiple clicks
+    console.log('[ChatPage] handleNewChat triggered');
+    setIsLoading(true);
+    setCurrentSessionId(undefined);
+    setInitialMessages([]);
+    localStorage.removeItem(CURRENT_SESSION_KEY);
+    // Give a moment for the state to clear before allowing a new chat to be created
+    setTimeout(() => {
+      setIsLoading(false);
+      setRefreshTrigger(prev => prev + 1); // Refresh sidebar
+      console.log('[ChatPage] New chat state cleared');
+    }, 100);
   };
 
   const handleSelectSession = (sessionId: string) => {
+    if (isLoading) return;
     localStorage.setItem(CURRENT_SESSION_KEY, sessionId);
     setCurrentSessionId(sessionId);
     setInitialMessages([]); // Let Chat component load messages
@@ -184,13 +159,11 @@ export default function ChatPage() {
 
   // Add handler for title updates from Chat component
   const handleTitleUpdated = (sessionId: string, newTitle: string) => {
-    console.log(`ChatPage received title update for ${sessionId}: ${newTitle}`);
     setRefreshTrigger(prev => prev + 1);
   };
 
   // Handler for when a message is sent (new or existing thread)
   const handleMessageSent = () => {
-    console.log("ChatPage: Message sent, triggering sidebar refresh.");
     setRefreshTrigger(prev => prev + 1);
   };
 

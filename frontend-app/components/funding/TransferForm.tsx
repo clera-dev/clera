@@ -86,7 +86,7 @@ export default function TransferForm({
       saveDataToLocalStorage();
       
       // Always attempt to create a new transfer
-      console.log("Initiating new transfer with relationshipId:", relationshipId);
+      console.log("Initiating new transfer.");
       
       const response = await fetch('/api/broker/transfer', {
         method: 'POST',
@@ -112,7 +112,7 @@ export default function TransferForm({
       saveDataToLocalStorage(data.id);
       
       // Always show the success page - don't auto-redirect anymore
-      console.log("Transfer successful, showing success page");
+      console.log("Transfer successful.");
       
       // Still call the callback if provided (for any parent component logic)
       if (onTransferComplete) {

@@ -287,7 +287,7 @@ export async function GET(
         if (response.ok) {
           const data = await response.json();
           if (Array.isArray(data) && data.length > 0) {
-          return NextResponse.json(data);
+            return NextResponse.json(data);
           }
         }
       } catch (fallbackError) {

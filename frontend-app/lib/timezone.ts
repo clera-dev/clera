@@ -27,10 +27,69 @@ export const MARKET_TIMEZONES = {
 } as const;
 
 /**
+ * Get the correct Eastern Time offset for any given date (accounts for DST)
+ * Returns offset string like "-05:00" (EST) or "-04:00" (EDT)
+ */
+export function getEasternTimeOffset(date: Date): string {
+  try {
+    // Use the actual date being processed, not current date
+    const formatter = new Intl.DateTimeFormat('en', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'longOffset'
+    });
+    
+    const parts = formatter.formatToParts(date);
+    const offsetPart = parts.find(part => part.type === 'timeZoneName');
+    
+    if (offsetPart && offsetPart.value.match(/GMT([+-]\d{2}):(\d{2})/)) {
+      const match = offsetPart.value.match(/GMT([+-])(\d{2}):(\d{2})/);
+      const sign = match![1];
+      const hours = match![2];
+      const minutes = match![3];
+      return `${sign}${hours}:${minutes}`;
+    }
+    
+    // Fallback: determine based on month (rough but better than hardcoded)
+    const month = date.getMonth(); // 0-11
+    const day = date.getDate();
+    
+    // DST runs roughly from second Sunday in March to first Sunday in November
+    // This is a simplified check - the Intl.DateTimeFormat above is more accurate
+    if (month > 2 && month < 10) { // April through October
+      return '-04:00'; // EDT
+    } else if (month === 2 && day > 7) { // March, likely after second Sunday
+      return '-04:00'; // EDT
+    } else if (month === 10 && day < 8) { // November, likely before first Sunday
+      return '-04:00'; // EDT
+    } else {
+      return '-05:00'; // EST
+    }
+  } catch (error) {
+    console.warn('Failed to determine Eastern offset, falling back to EST', error);
+    return '-05:00'; // Conservative fallback to EST
+  }
+}
+
+/**
+ * Create a date with Eastern Time offset (DST-aware)
+ * @param dateString - Date string in YYYY-MM-DD format
+ * @param timeString - Time string in HH:mm:ss format (optional, defaults to midnight)
+ */
+export function createEasternDate(dateString: string, timeString: string = '00:00:00'): Date {
+  // Create a temporary date to determine the correct offset
+  const tempDate = new Date(`${dateString}T${timeString}Z`); // Assume UTC temporarily
+  const correctOffset = getEasternTimeOffset(tempDate);
+  
+  // Create the final date with correct Eastern offset
+  const easternDateString = `${dateString}T${timeString}${correctOffset}`;
+  return new Date(easternDateString);
+}
+
+/**
  * Parse FMP timestamp (which is in Eastern Time) to a proper UTC Date object
  * FMP returns timestamps in America/New_York timezone, not UTC
  * 
- * SIMPLIFIED VERSION: More robust and less prone to errors
+ * FIXED VERSION: Now properly accounts for DST based on the actual date being parsed
  */
 export function parseFMPEasternTimestamp(fmpTimestamp: string): Date {
   // Add input validation to prevent undefined/null errors
@@ -52,24 +111,12 @@ export function parseFMPEasternTimestamp(fmpTimestamp: string): Date {
     dateTimeString = `${fmpTimestamp}T16:00:00`;
   }
   
-  // Add Eastern timezone offset
-  // In June, Eastern time is EDT (UTC-4), so we append -04:00
-  // In winter, it would be EST (UTC-5), so we would append -05:00
-  // For simplicity, we'll determine this dynamically
-  const testDate = new Date();
-  const easternOffset = testDate.toLocaleString('en', {
-    timeZone: 'America/New_York',
-    timeZoneName: 'longOffset'
-  }).match(/GMT([+-]\d{2}):(\d{2})/);
+  // Extract date part to determine correct Eastern offset for that specific date
+  const datePart = dateTimeString.split('T')[0];
+  const tempDate = new Date(`${datePart}T12:00:00Z`); // Use noon UTC to avoid edge cases
+  const offsetString = getEasternTimeOffset(tempDate);
   
-  let offsetString = '-04:00'; // Default for EDT
-  if (easternOffset) {
-    const signAndHours = easternOffset[1]; // e.g., "-04"
-    const minutes = easternOffset[2];      // e.g., "00"
-    offsetString = `${signAndHours}:${minutes}`;
-  }
-  
-  // Create the full ISO string with timezone
+  // Create the full ISO string with correct timezone offset
   const fullISOString = `${dateTimeString}${offsetString}`;
   
   // Create and validate the Date object
@@ -406,5 +453,8 @@ export default {
   getStartOfTodayInMarketTimezone,
   isToday,
   logTimezoneDebugInfo,
+  getEasternTimeOffset,
+  createEasternDate,
+  parseFMPEasternTimestamp,
   MARKET_TIMEZONES,
 }; 

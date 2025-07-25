@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -13,17 +13,13 @@ export async function GET(request: NextRequest) {
   }
   
   try {
-    // Create Supabase client
-    const supabase = await createClient();
-    
-    // Check auth status
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Use centralized authentication service
+    const authResult = await ConversationAuthService.authenticateUser(request);
+    if (!authResult.success) {
+      return authResult.error!;
     }
+
+    const { user } = authResult;
     
     // Get backend URL from environment variable
     const backendUrl = process.env.BACKEND_API_URL;

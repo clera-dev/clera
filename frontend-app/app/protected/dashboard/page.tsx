@@ -23,7 +23,6 @@ async function fetchAccountSummary(alpacaAccountId: string): Promise<AccountSumm
   try {
     const cachedData = localStorage.getItem(cacheKey);
     if (cachedData) {
-      console.log("Using cached account summary details.");
       // TODO: Add TTL logic if needed
       return JSON.parse(cachedData) as AccountSummaryDetails;
     }
@@ -32,7 +31,6 @@ async function fetchAccountSummary(alpacaAccountId: string): Promise<AccountSumm
   }
 
   // 2. Fetch from API if no cache
-  console.log(`Fetching account summary details for account: ${alpacaAccountId}`);
   try {
     // IMPORTANT: This API route needs to be created!
     const response = await fetch(`/api/broker/account-summary?accountId=${alpacaAccountId}`);

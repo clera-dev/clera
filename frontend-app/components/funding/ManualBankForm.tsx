@@ -66,14 +66,8 @@ export default function ManualBankForm({
             }
           );
           
-          // Log all relationships for debugging
-          console.log('[ManualBankForm] Found relationships:', data.relationships.map((rel: any) => ({
-            id: rel.id,
-            status: rel.status
-          })));
-          
           if (activeRelationship) {
-            console.log('[ManualBankForm] Using active relationship:', activeRelationship.id, 'with status:', activeRelationship.status);
+            console.log('[ManualBankForm] Using active relationship');
             
             // Get detailed connection info from Supabase since Alpaca doesn't provide last_4
             const supabase = createClient();
@@ -95,9 +89,7 @@ export default function ManualBankForm({
               if (connectionError) {
                 console.error('[ManualBankForm] Error querying Supabase connections:', connectionError);
               }
-              
-              console.log('[ManualBankForm] Supabase query result:', connections);
-              
+                            
               if (connections && connections.length > 0) {
                 const connection = connections[0];
                 console.log('[ManualBankForm] Found detailed connection info in Supabase:', connection.last_4);

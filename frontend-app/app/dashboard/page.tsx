@@ -79,7 +79,6 @@ export default function DashboardPage() {
             
             alpacaId = onboardingData.alpaca_account_id;
             if (alpacaId) {
-              console.log(`Found Alpaca account ID: ${alpacaId}`);
               setAlpacaAccountId(alpacaId);
               
               // Store in localStorage for access by other components
@@ -117,9 +116,7 @@ export default function DashboardPage() {
             if (bankData) {
                 bankName = bankData.bank_name;
                 bankAccountLast4 = bankData.last_4;
-                console.log("Dashboard: Bank details found:", { bankName, bankAccountLast4 });
             } else {
-                 console.log("Dashboard: No bank connection found in database");
                  
                  // Try to get from localStorage as fallback
                  try {
@@ -153,9 +150,7 @@ export default function DashboardPage() {
             if (transferData) {
                 latestTransferAmount = transferData.amount;
                 latestTransferStatus = transferData.status;
-                console.log("Dashboard: Transfer details found:", { latestTransferAmount, latestTransferStatus });
             } else {
-                 console.log("Dashboard: No transfer data found in database");
                  
                  // Try to get from localStorage as fallback
                  try {

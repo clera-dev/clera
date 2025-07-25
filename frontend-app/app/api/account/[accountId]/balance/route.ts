@@ -44,9 +44,12 @@ export async function GET(
       );
     }
 
+    // Sanitize accountId to prevent path-injection or request-smuggling attacks
+    const safeAccountId = encodeURIComponent(accountId);
+
     // Call backend API to get account balance
-    console.log(`Fetching balance for account ${accountId} from backend`);
-    const response = await fetch(`${backendUrl}/get-account-balance/${accountId}`, {
+    console.log(`Fetching balance for account ${safeAccountId} from backend`);
+    const response = await fetch(`${backendUrl}/api/account/${safeAccountId}/balance`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -71,16 +74,39 @@ export async function GET(
 
     const balanceData = await response.json();
     
-    // Format and return the response
-    return NextResponse.json({
-      success: true,
-      data: {
-        buying_power: parseFloat(balanceData.buying_power || 0),
-        cash: parseFloat(balanceData.cash || 0),
-        portfolio_value: parseFloat(balanceData.portfolio_value || 0),
-        currency: balanceData.currency || 'USD'
+    // The backend now returns a structured response: { success: true, data: { ... } }
+    // We need to pass that nested data object to the frontend
+    if (balanceData.success && balanceData.data) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          buying_power: parseFloat(balanceData.data.buying_power || 0),
+          cash: parseFloat(balanceData.data.cash || 0),
+          portfolio_value: parseFloat(balanceData.data.portfolio_value || 0),
+          currency: balanceData.data.currency || 'USD'
+        }
+      });
+    } else {
+      // Use status from backend payload if available, otherwise default to 500
+      const status =
+        (typeof balanceData.status === 'number' && balanceData.status) ||
+        (typeof balanceData.code === 'number' && balanceData.code) ||
+        500;
+      // Ensure msg is always a string to prevent TypeError
+      let msg = balanceData.message;
+      if (typeof msg !== 'string') {
+        if (msg !== undefined && msg !== null) {
+          try {
+            msg = JSON.stringify(msg);
+          } catch {
+            msg = 'Failed to get balance data';
+          }
+        } else {
+          msg = 'Failed to get balance data';
+        }
       }
-    });
+      return NextResponse.json({ success: false, message: msg }, { status });
+    }
 
   } catch (error) {
     console.error('Error fetching account balance:', error);

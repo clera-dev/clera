@@ -94,7 +94,7 @@ export const cleanupGlobalLocalStorage = async (): Promise<void> => {
     });
     
     if (cleanedCount > 0) {
-      console.log(`Global localStorage cleanup completed: removed ${cleanedCount} contaminated keys for user:`, user.id);
+      console.log(`Global localStorage cleanup completed: removed ${cleanedCount} contaminated keys for user.`);
     }
   } catch (error) {
     console.error("Error during localStorage cleanup:", error);
@@ -127,14 +127,14 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
       return null; // Cannot fetch without user
     }
 
-    console.log("Alpaca Account ID: User found:", user.id);
+    console.log("Alpaca Account ID: User found.");
     
     // 2. Check user-specific localStorage key (SECURITY FIX)
     const userSpecificKey = `alpacaAccountId_${user.id}`;
     try {
       const storedId = localStorage.getItem(userSpecificKey);
       if (storedId && storedId !== 'null' && storedId !== 'undefined' && storedId !== 'Missing') {
-        console.log("Retrieved Alpaca Account ID from user-specific localStorage:", storedId);
+        console.log("Retrieved Alpaca Account ID from user-specific localStorage");
         // Still validate this cached ID against Supabase periodically for security
         return storedId;
       }
@@ -143,7 +143,7 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
     }
 
     // 3. Fetch from Supabase (PRIMARY SOURCE)
-    console.log("Alpaca Account ID: Fetching from Supabase for user:", user.id);
+    console.log("Alpaca Account ID: Fetching from Supabase.");
     const { data: onboardingData, error: dbError } = await supabase
       .from('user_onboarding')
       .select('alpaca_account_id')
@@ -155,11 +155,11 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
       return null;
     }
 
-    console.log("Alpaca Account ID: Supabase DB query successful. Data:", onboardingData);
+    console.log("Alpaca Account ID: Supabase DB query successful.");
 
     if (onboardingData && onboardingData.alpaca_account_id) {
       const fetchedId = onboardingData.alpaca_account_id;
-      console.log("Alpaca Account ID: Retrieved from Supabase:", fetchedId);
+      console.log("Alpaca Account ID: Retrieved from Supabase.");
       
       // 4. Store in user-specific localStorage (SECURITY FIX)
       try {
@@ -205,7 +205,7 @@ export const getUserDailyQueryCount = async (userId: string): Promise<number> =>
     throw error; // Re-throw the error to be handled by the caller
   }
 
-  console.log(`Query count for user ${userId}: ${data}`);
+  console.log(`Query count for user : ${data}`);
   return data ?? 0; // Return 0 if data is null/undefined
 };
 

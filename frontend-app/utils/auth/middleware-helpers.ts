@@ -31,6 +31,16 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/broker/delete-ach-relationship": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/portfolio/history": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/portfolio/positions": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
+  
+  // Conversation API routes - require auth but not onboarding for basic chat functionality
+  "/api/conversations/create-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/get-sessions": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/get-thread-messages": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/update-thread-title": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/delete-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/stream-chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/submit-message": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/conversations/handle-interrupt": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {
@@ -62,9 +72,7 @@ export async function getOnboardingStatus(supabase: any, userId: string): Promis
   try {
     // Force no caching for critical user flow data (Next.js 15.3.3 fix)
     noStore();
-    
-    console.log(`[Middleware] Fetching real-time onboarding status for user: ${userId}`);
-    
+        
     // Force fresh query by adding a timestamp parameter to bust any server-side caching
     const { data: onboardingData, error } = await supabase
       .from('user_onboarding')
@@ -79,7 +87,6 @@ export async function getOnboardingStatus(supabase: any, userId: string): Promis
     }
     
     const status = onboardingData?.status || null;
-    console.log(`[Middleware] Real-time onboarding status for ${userId}: ${status}`);
     
     return status;
   } catch (error) {
@@ -90,7 +97,6 @@ export async function getOnboardingStatus(supabase: any, userId: string): Promis
 
 export function hasCompletedOnboarding(status: string | null): boolean {
   const completed = status === 'submitted' || status === 'approved';
-  console.log(`[Middleware] Onboarding completed check: status="${status}" -> ${completed}`);
   return completed;
 }
 
@@ -136,12 +142,11 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
     // Force no caching for critical user flow data (Next.js 15.3.3 fix)
     noStore();
     
-    console.log(`[Middleware] Fetching real-time funding status for user: ${userId}`);
     
     // Get user's Alpaca account ID
     const alpacaAccountId = await getAlpacaAccountId(supabase, userId);
     if (!alpacaAccountId) {
-      console.log(`[Middleware] No Alpaca account found for user ${userId}`);
+      console.log(`[Middleware] No Alpaca account found for user`);
       return false;
     }
     
@@ -171,7 +176,6 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
       const responseData = await response.json();
       const isFunded = responseData?.data?.is_funded || false;
       
-      console.log(`[Middleware] Real-time funding status for ${userId} (account: ${alpacaAccountId}): ${isFunded}`);
       // Sensitive funding details removed from logs for security
       
       return isFunded;
@@ -200,7 +204,6 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
           transfer.status === 'SETTLED'
         );
       
-      console.log(`[Middleware] Fallback funding status for ${userId}: ${!!hasFunding} (${transfers?.length || 0} transfers)`);
       return !!hasFunding;
     }
   } catch (error) {

@@ -165,6 +165,13 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
     const min = Math.min(...values);
     const max = Math.max(...values);
     
+    // --- FIX: Handle case where all data points are the same ---
+    if (min === max) {
+      // If all values are the same, set domain from 0 to slightly above the value
+      return [0, max * 1.2]; // 20% padding above
+    }
+    // --- END FIX ---
+    
     // Add padding of 10% below and 10% above for better visualization
     const range = max - min;
     const paddedMin = Math.max(0, min - range * 0.1);

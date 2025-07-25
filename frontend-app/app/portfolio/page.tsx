@@ -548,7 +548,6 @@ export default function PortfolioPage() {
             size="sm" 
             disabled={isLoading}
             onClick={() => {
-              console.log("[Refresh Button Clicked] - Enhanced refresh process started with cache busting.");
               if (accountId) {
                 setIsLoading(true);
                 
@@ -564,7 +563,6 @@ export default function PortfolioPage() {
                 
                 const loadInitialStaticData = async () => {
                   try {
-                    console.log("[Refresh Button] - Fetching fresh portfolio data with cache busting...");
                     
                     // Add cache-busting timestamp to all requests
                     const cacheBuster = `_cb=${Date.now()}`;
@@ -591,11 +589,6 @@ export default function PortfolioPage() {
                     
                     // Set analytics data first and log the fresh values
                     setAnalytics(analyticsData);
-                    console.log("[Refresh Button] - FRESH Analytics data updated:", {
-                      risk_score: analyticsData?.risk_score,
-                      diversification_score: analyticsData?.diversification_score,
-                      timestamp: new Date().toISOString()
-                    });
                     
                     // Initialize combinedTransactions with ordersData
                     let combinedTransactions = Array.isArray(ordersData) ? [...ordersData] : [];
@@ -620,7 +613,6 @@ export default function PortfolioPage() {
                       }
                     }
                     setOrders(combinedTransactions);
-                    console.log("[Refresh Button] - Orders/Transactions data updated.", combinedTransactions);
                     
                     const totalMarketValue = Array.isArray(positionsData) ? positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0) : 0;
                     
@@ -638,13 +630,11 @@ export default function PortfolioPage() {
                     })) : [];
                     
                     setPositions(enrichedPositions);
-                    console.log("[Refresh Button] - Positions/Holdings data updated.", enrichedPositions);
                     
                     // Also refresh the history with the current selected time range
                     const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}&${cacheBuster}`;
                     const historyData = await fetchWithCacheBusting(historyUrl);
                     setPortfolioHistory(historyData);
-                    console.log("[Refresh Button] - Portfolio history updated for range:", selectedTimeRange, historyData);
                     
                     // Update all time history if we're on MAX timeframe
                     if (selectedTimeRange === 'MAX') {
@@ -658,7 +648,6 @@ export default function PortfolioPage() {
                     setIsLoading(false);
                     // Force refresh of all chart components
                     setAllocationChartRefreshKey(Date.now()); 
-                    console.log("[Refresh Button] - Enhanced refresh process complete with cache busting. All components should show fresh data.");
                   }
                 };
                 
