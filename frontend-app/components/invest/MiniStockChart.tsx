@@ -56,11 +56,10 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       // ROBUST DATE LOGIC - Handle system clock issues and future dates
       const now = new Date();
       
-      // Use a fixed, known-good trading day as fallback if system clock is unreasonable
-      const { createEasternDate } = await import("@/lib/timezone");
-      const FALLBACK_DATE = createEasternDate("2024-12-31", "16:00:00"); // Last trading day of 2024, 4pm ET
-      const currentYear = now.getFullYear();
-      const isUnreasonableFutureDate = currentYear > (new Date().getFullYear() + 1);
+      // PRODUCTION-GRADE: Use market data as a proxy for unreasonable future date
+      const latestTradingDay = MarketHolidayUtil.getLastTradingDay(now);
+      const daysSinceLastTradingDay = (now.getTime() - latestTradingDay.getTime()) / (1000 * 60 * 60 * 24);
+      const isUnreasonableFutureDate = daysSinceLastTradingDay > 7; // More than a week after last trading day
       
       let toDate: Date;
       let fromDate: Date;
@@ -70,13 +69,13 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       if (isUnreasonableFutureDate) {
         // System clock seems wrong - use a recent known good date range
         console.warn(`[MiniChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
-        // Use the fallback date as the anchor
-        easternToday = new Date(FALLBACK_DATE);
+        // Use the latest trading day as the anchor
+        easternToday = new Date(latestTradingDay);
         isMarketClosed = true; // Always treat fallback as closed for safety
         // Set fromDate and toDate to the fallback trading day (start and end of day)
-        fromDate = new Date(FALLBACK_DATE);
+        fromDate = new Date(latestTradingDay);
         fromDate.setHours(0, 0, 0, 0);
-        toDate = new Date(FALLBACK_DATE);
+        toDate = new Date(latestTradingDay);
         toDate.setHours(23, 59, 59, 999);
       } else {
         // System date seems reasonable - use normal logic

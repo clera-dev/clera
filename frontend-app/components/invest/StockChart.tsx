@@ -111,23 +111,20 @@ export default function StockChart({ symbol }: StockChartProps) {
       // ROBUST DATE LOGIC - Handle system clock issues and future dates
       const now = new Date();
       
-      // CRITICAL FIX: Validate system date and use reasonable bounds
-      // If system date appears to be in the future (beyond reasonable market data availability),
-      // fall back to a known good date range
-      const currentYear = now.getFullYear();
-      const isUnreasonableFutureDate = currentYear > 2030; // Updated for 2025+ compatibility
+      // PRODUCTION-GRADE: Use market data as a proxy for unreasonable future date
+      const latestTradingDay = MarketHolidayUtil.getLastTradingDay(now);
+      const daysSinceLastTradingDay = (now.getTime() - latestTradingDay.getTime()) / (1000 * 60 * 60 * 24);
+      const isUnreasonableFutureDate = daysSinceLastTradingDay > 7; // More than a week after last trading day
       
       let toDate: Date;
       let fromDate: Date;
       let useIntraday = false;
       
       if (isUnreasonableFutureDate) {
-        // System clock seems wrong - use a hardcoded, known-good recent trading day
+        // System clock seems wrong - use a recent known good date range
         if (process.env.NODE_ENV === 'development') console.warn(`[StockChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
-        // Use a fixed fallback date (e.g., last trading day of 2024)
-        const { createEasternDate } = await import("@/lib/timezone");
-        const FALLBACK_DATE = createEasternDate("2024-12-31", "16:00:00"); // 4pm ET
-        const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(FALLBACK_DATE);
+        // Use the latest trading day as the anchor
+        const mostRecentTradingDay = latestTradingDay;
         if (intervalConfig.interval.includes('min') || intervalConfig.interval.includes('hour')) {
           useIntraday = true;
           toDate = new Date(mostRecentTradingDay);
