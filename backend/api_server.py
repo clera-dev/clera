@@ -2025,7 +2025,7 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
         return_percent = (todays_return / base_value * 100) if base_value > 0 else 0
         
         # --- FIX: Ensure zero return for purely cash accounts ---
-        if positions == [] and cash_balance == current_equity:
+        if (positions == [] or positions is None) and cash_balance == current_equity:
              return_formatted = "+$0.00"
              return_percent = 0.0
         else:
