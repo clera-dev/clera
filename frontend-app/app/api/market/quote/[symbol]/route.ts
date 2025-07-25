@@ -52,9 +52,28 @@ export async function GET(
     });
 
     const responseText = await response.text();
-    const responseData = responseText ? JSON.parse(responseText) : {};
+    let responseData;
+    try {
+      responseData = responseText ? JSON.parse(responseText) : {};
+    } catch (parseError) {
+      console.error('[API Proxy] Failed to parse backend JSON response.', parseError);
+      return NextResponse.json({ error: 'Invalid response from backend service.' }, { status: 502 });
+    }
 
-    return NextResponse.json(responseData, { status: response.status });
+    if (!response.ok) {
+      // Map backend error to client-friendly message
+      let errorMessage = 'Failed to fetch market quote. Please try again later.';
+      if (response.status >= 500) {
+        // Hide backend details for server errors
+        return NextResponse.json({ error: errorMessage }, { status: 502 });
+      } else {
+        // For 4xx, try to pass backend error detail if available
+        const backendError = responseData?.error || responseData?.detail || errorMessage;
+        return NextResponse.json({ error: backendError }, { status: response.status });
+      }
+    }
+
+    return NextResponse.json(responseData, { status: 200 });
 
   } catch (error: any) {
     console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });
