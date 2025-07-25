@@ -123,7 +123,7 @@ export default function StockChart({ symbol }: StockChartProps) {
       
       if (isUnreasonableFutureDate) {
         // System clock seems wrong - use a hardcoded, known-good recent trading day
-        console.warn(`[StockChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
+        if (process.env.NODE_ENV === 'development') console.warn(`[StockChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
         // Use a fixed fallback date (e.g., last trading day of 2024)
         const FALLBACK_DATE = new Date("2024-12-31T16:00:00-05:00"); // 4pm ET
         const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(FALLBACK_DATE);

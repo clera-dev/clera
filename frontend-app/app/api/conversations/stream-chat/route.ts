@@ -1,47 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { Client } from '@langchain/langgraph-sdk';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { thread_id, input, user_id, account_id } = body;
+    const { thread_id, input, user_id } = body;
 
-    if (!thread_id || !input || !user_id || !account_id) {
+    // Extract and validate account ID
+    const account_id = ConversationAuthService.extractAccountId(body, 'account_id');
+
+    if (!thread_id || !input || !account_id) {
       return NextResponse.json(
-        { error: 'Thread ID, input, user ID, and account ID are required' },
+        { error: 'Thread ID, input, and account ID are required' },
         { status: 400 }
       );
     }
 
-    // Create supabase server client for authentication
-    const supabase = await createClient();
-    
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Use centralized authentication and authorization service
+    const authResult = await ConversationAuthService.authenticateAndAuthorize(request, account_id);
+    if (!authResult.success) {
+      return authResult.error!;
     }
 
-    // Verify user owns this account
-    const { data: onboardingData, error: onboardingError } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (onboardingError || !onboardingData?.alpaca_account_id || onboardingData.alpaca_account_id !== account_id) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
-    }
+    const { user } = authResult.context!;
 
     // Validate required environment variables for LangGraph
     const langGraphApiUrl = process.env.LANGGRAPH_API_URL;
@@ -63,27 +45,35 @@ export async function POST(request: NextRequest) {
       apiKey: langGraphApiKey,
     });
 
-    console.log(`Starting LangGraph stream for thread ${thread_id} with account ${account_id}`);
-
     // Create a streaming response with enhanced event handling
     const stream = new ReadableStream({
       async start(controller) {
         try {
           // Use multiple streaming modes for enhanced user experience
+          const streamConfig = {
+            input: input,
+            config: {
+              configurable: { 
+                user_id: user.id, // Use authenticated user ID only
+                account_id: account_id 
+              }
+            },
+            // PRODUCTION FIX: Use messages for token-by-token streaming (LangGraph standard)
+            streamMode: ['updates', 'messages'] as any
+          };
+          
+          console.log('[StreamChat] Starting stream with config:', JSON.stringify({
+            thread_id,
+            assistant_id: process.env.LANGGRAPH_ASSISTANT_ID || 'agent',
+            streamMode: streamConfig.streamMode,
+            user_id: user.id,
+            account_id: account_id
+          }, null, 2));
+          
           const streamIterator = langGraphClient.runs.stream(
             thread_id,
             process.env.LANGGRAPH_ASSISTANT_ID || 'agent',
-            {
-              input: input,
-              config: {
-                configurable: { 
-                  user_id: user.id, // Use authenticated user ID only
-                  account_id: account_id 
-                }
-              },
-              // Enhanced streaming with multiple modes for progressive updates
-              streamMode: ['updates', 'messages']
-            }
+            streamConfig
           );
 
           for await (const chunk of streamIterator) {
@@ -102,19 +92,19 @@ export async function POST(request: NextRequest) {
             // Handle actual LangGraph event format
             const event = (chunk as any).event;
             const data = (chunk as any).data;
-
-            console.log('Processing LangGraph event:', event, 'with data keys:', Object.keys(data || {}));
+            
+            // DEBUG: Log event types to understand streaming
+            console.log('[StreamChat] Received event:', event, 'data type:', typeof data, 'data keys:', Object.keys(data || {}));
 
             // Handle GraphInterrupt events
             if (event === '__interrupt__' || (data && data.__interrupt__)) {
               const interruptData = data.__interrupt__ || data;
-              console.log('GraphInterrupt detected:', interruptData);
               chunkData = {
                 type: 'interrupt',
                 data: interruptData,
                 interrupt: interruptData
               };
-            } 
+            }
             // Handle node execution updates for progress feedback
             else if (event === 'updates' && data && typeof data === 'object') {
               const nodeName = Object.keys(data)[0];
@@ -139,9 +129,22 @@ export async function POST(request: NextRequest) {
                 chunkData = { type: 'metadata', data: data };
               }
             }
-            // Handle partial/streaming messages 
+            // Handle partial/streaming messages (token-level streaming)
             else if (event === 'messages/partial' && Array.isArray(data)) {
               chunkData = { type: 'message_token', data: data };
+            }
+            // Handle raw messages events (fallback for when LangGraph sends 'messages' instead of 'messages/complete')
+            else if (event === 'messages' && Array.isArray(data)) {
+              console.log('[StreamChat] WARNING: Received raw "messages" event instead of messages-tuple. Data:', data);
+              const hasMessages = data.some((item: any) => 
+                item && typeof item === 'object' && (item.type || item.content || item.role)
+              );
+              
+              if (hasMessages) {
+                chunkData = { type: 'messages', data: data };
+              } else {
+                chunkData = { type: 'metadata', data: data };
+              }
             }
             // Handle metadata events
             else if (event === 'metadata' || event === 'messages/metadata') {
@@ -171,7 +174,7 @@ export async function POST(request: NextRequest) {
         } finally {
           controller.close();
         }
-      },
+      }
     });
 
     // Return streaming response with proper headers

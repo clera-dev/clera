@@ -1981,7 +1981,7 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
                                 total_intraday_pl += intraday_pl
                                 if intraday_pl != 0:
                                     intraday_data_available = True
-                        except:
+                        except Exception:
                             pass
                     
                     if intraday_data_available:

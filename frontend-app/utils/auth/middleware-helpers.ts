@@ -72,9 +72,7 @@ export async function getOnboardingStatus(supabase: any, userId: string): Promis
   try {
     // Force no caching for critical user flow data (Next.js 15.3.3 fix)
     noStore();
-    
-    console.log(`[Middleware] Fetching real-time onboarding status for user: ${userId}`);
-    
+        
     // Force fresh query by adding a timestamp parameter to bust any server-side caching
     const { data: onboardingData, error } = await supabase
       .from('user_onboarding')
@@ -89,7 +87,6 @@ export async function getOnboardingStatus(supabase: any, userId: string): Promis
     }
     
     const status = onboardingData?.status || null;
-    console.log(`[Middleware] Real-time onboarding status for ${userId}: ${status}`);
     
     return status;
   } catch (error) {
@@ -100,7 +97,6 @@ export async function getOnboardingStatus(supabase: any, userId: string): Promis
 
 export function hasCompletedOnboarding(status: string | null): boolean {
   const completed = status === 'submitted' || status === 'approved';
-  console.log(`[Middleware] Onboarding completed check: status="${status}" -> ${completed}`);
   return completed;
 }
 
@@ -146,7 +142,6 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
     // Force no caching for critical user flow data (Next.js 15.3.3 fix)
     noStore();
     
-    console.log(`[Middleware] Fetching real-time funding status for user: ${userId}`);
     
     // Get user's Alpaca account ID
     const alpacaAccountId = await getAlpacaAccountId(supabase, userId);
@@ -181,7 +176,6 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
       const responseData = await response.json();
       const isFunded = responseData?.data?.is_funded || false;
       
-      console.log(`[Middleware] Real-time funding status for ${userId} (account: ${alpacaAccountId}): ${isFunded}`);
       // Sensitive funding details removed from logs for security
       
       return isFunded;

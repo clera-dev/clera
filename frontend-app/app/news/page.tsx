@@ -456,7 +456,6 @@ export default function NewsPage() {
 
   // Function to toggle watchlist selection
   const toggleWatchlistItem = (item: string) => {
-    console.log(`Toggling category: ${item}`);
     setWatchlist(prev => ({
       ...prev,
       [item]: !prev[item]
@@ -473,7 +472,6 @@ export default function NewsPage() {
     }, 3000);
     
     // Future implementation would connect to a text-to-speech service
-    console.log("Reading summary aloud...");
   };
 
   // Function to get source initials for logos
@@ -529,13 +527,11 @@ export default function NewsPage() {
     const selectedCategories = Object.entries(watchlist)
       .filter(([_, isSelected]) => isSelected)
       .map(([category]) => category);
-    console.log("Selected categories:", selectedCategories);
     
     // Iterate through all categories
     Object.entries(watchlist).forEach(([category, isSelected]) => {
       // Only include news from selected categories
       if (isSelected && watchlistNews[category]) {
-        console.log(`Category ${category} has ${watchlistNews[category].length} articles`);
         
         // Add category info to each news item
         const newsWithCategory = watchlistNews[category]
@@ -553,7 +549,6 @@ export default function NewsPage() {
       }
     });
     
-    console.log(`Total filtered news items: ${allNews.length}`);
     
     // Sort by published date if available (most recent first)
     return allNews.sort((a, b) => {

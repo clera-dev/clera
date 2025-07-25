@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { Client } from '@langchain/langgraph-sdk';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,20 +14,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create supabase server client
-    const supabase = await createClient();
-    
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Use centralized authentication service (user auth only, thread ownership validated separately)
+    const authResult = await ConversationAuthService.authenticateUser(request);
+    if (!authResult.success) {
+      return authResult.error!;
     }
+
+    const { user } = authResult;
 
     // Create LangGraph client (server-side only)
     const langGraphClient = new Client({
@@ -65,10 +58,36 @@ export async function POST(request: NextRequest) {
         if (msg.tool_calls && msg.tool_calls.length > 0) return false;
         return true;
       })
-      .map(msg => ({
-        role: msg.type === 'human' ? 'user' : 'assistant',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-      }));
+      .map(msg => {
+        let content = '';
+        
+        if (typeof msg.content === 'string') {
+          content = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          // Handle array format: [{"text":"...", "type":"text", "index":0}]
+          content = msg.content
+            .map((item: any) => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item === 'object') {
+                // Extract text from different possible structures
+                return item.text || item.content || JSON.stringify(item);
+              }
+              return String(item);
+            })
+            .join('');
+        } else if (msg.content && typeof msg.content === 'object') {
+          // Handle single object format: {"text":"...", "type":"text"}
+          const contentObj = msg.content as any;
+          content = contentObj.text || contentObj.content || JSON.stringify(contentObj);
+        } else {
+          content = String(msg.content || '');
+        }
+
+        return {
+          role: msg.type === 'human' ? 'user' : 'assistant',
+          content: content
+        };
+      });
     
     console.log(`Retrieved ${formattedMessages.length} messages for thread: ${thread_id}`);
     

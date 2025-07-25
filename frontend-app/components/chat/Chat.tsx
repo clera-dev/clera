@@ -19,7 +19,7 @@ import ChatMessage, { ChatMessageProps } from './ChatMessage';
 import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import { InterruptConfirmation } from './InterruptConfirmation';
-import ChatSkeleton from './ChatSkeleton';
+// ChatSkeleton removed - status messages now provide proper feedback
 import SuggestedQuestions from './SuggestedQuestions';
 
 interface ChatProps {
@@ -77,19 +77,42 @@ export default function Chat({
 
   // --- Effect to load initial/thread messages into the client's state ---
   useEffect(() => {
-    if (currentThreadId) {
-      // If we have a thread ID, we should be fetching its messages
-      // and setting them in the client. This part is assumed to be
-      // handled by a parent component or another effect that calls
-      // a function like `chatClient.loadMessages(currentThreadId)`.
-      // For now, we'll just log it.
-      console.log(`Chat component is ready for thread: ${currentThreadId}`);
-    } else {
-      // If there's no thread, initialize the client with any initial messages.
-      chatClient.setMessages(initialMessages);
-    }
-    // This effect should be revisited if message loading logic is added.
-  }, [currentThreadId, initialMessages, chatClient]);
+    const loadMessages = async () => {
+      // CRITICAL FIX: Don't load messages if we're in new chat mode (initialSessionId is undefined)
+      if (initialSessionId === undefined) {
+        console.log(`Skipping message loading - in new chat mode`);
+        return;
+      }
+      
+      if (currentThreadId) {
+        console.log(`Loading messages for thread: ${currentThreadId}`);
+        try {
+          // Fetch the existing messages for this thread
+          const threadMessages = await getThreadMessages(currentThreadId);
+          console.log(`Loaded ${threadMessages.length} messages for thread ${currentThreadId}`);
+          
+          // CRITICAL FIX: Don't overwrite existing messages if we already have content
+          // This prevents wiping out user messages + status when a new thread is created
+          const currentMessages = chatClient.state.messages;
+          if (threadMessages.length === 0 && currentMessages.length > 0) {
+            console.log(`Not overwriting ${currentMessages.length} existing messages with 0 thread messages`);
+            return; // Keep existing messages (user input + status)
+          }
+          
+          chatClient.setMessages(threadMessages);
+        } catch (error) {
+          console.error(`Failed to load messages for thread ${currentThreadId}:`, error);
+          // Fall back to initial messages if thread loading fails
+          chatClient.setMessages(initialMessages);
+        }
+      } else {
+        // If there's no thread, initialize the client with any initial messages.
+        chatClient.setMessages(initialMessages);
+      }
+    };
+
+    loadMessages();
+  }, [currentThreadId, initialMessages, chatClient, initialSessionId]);
 
 
   // --- Effect to handle submitting the *first* message ---
@@ -294,18 +317,33 @@ export default function Chat({
       console.log("Chat component received session/thread ID prop change:", initialSessionId);
       const newThreadId = initialSessionId ?? null;
       
-      // Update state only if prop is different from current state
-      if (newThreadId !== currentThreadId) {
-          setCurrentThreadId(newThreadId);
-          setInput(''); // Clear input when switching threads
-          // Reset any potential creation state just in case
-          setIsCreatingSession(false);
-          // Also clear any pending first message if the thread context changes
-          setPendingFirstMessage(null);
-          setIsFirstMessageSent(false); // Reset first message sent flag
+      // CRITICAL FIX: If initialSessionId is undefined (New Chat), immediately clear everything
+      if (initialSessionId === undefined) {
+        console.log("New Chat detected - clearing all chat state immediately");
+        setCurrentThreadId(null);
+        setInput('');
+        setIsCreatingSession(false);
+        setPendingFirstMessage(null);
+        setIsFirstMessageSent(false);
+        chatClient.setMessages([]); // Clear messages immediately
+        return; // Don't proceed with normal logic
       }
       
-  }, [initialSessionId, currentThreadId]); 
+      // Update state only if prop is different from current state
+      if (newThreadId !== currentThreadId) {
+          console.log(`Switching to thread: ${newThreadId} from ${currentThreadId}`);
+          setCurrentThreadId(newThreadId);
+          setInput(''); // Clear input when switching threads
+          setIsCreatingSession(false);
+          setPendingFirstMessage(null);
+          setIsFirstMessageSent(false);
+          
+          // PRODUCTION FIX: Clear messages synchronously, let useEffect handle loading
+          // This is deterministic and doesn't rely on timing
+          chatClient.setMessages([]);
+      }
+      
+  }, [initialSessionId, currentThreadId, chatClient]); 
 
   // Create a string representation of the error, or null if no error
   const errorMessage = error ? String(error) : null;
@@ -430,9 +468,9 @@ export default function Chat({
       >
         {messagesToDisplay.map((msg: Message, index: number) => (
             <ChatMessage 
-            key={`msg-${index}`}
+            key={msg.id || `msg-${index}`}
             message={msg}
-            isLast={index === messagesToDisplay.length - 1 && !isProcessing && !isInterrupting}
+            isLast={index === messagesToDisplay.length - 1}
           />
         ))}
         
@@ -444,7 +482,7 @@ export default function Chat({
           />
         )}
         
-        {isProcessing && !isInterrupting && !messagesToDisplay.some(msg => msg.isStatus) && <ChatSkeleton />}
+        {/* ChatSkeleton removed - status messages now provide proper feedback */}
         
         <div ref={messagesEndRef} />
       </div>

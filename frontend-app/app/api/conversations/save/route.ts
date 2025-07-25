@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 export async function POST(request: NextRequest) {
-  // Create a Supabase client
-  const supabase = await createClient();
-  
   try {
-    // Check auth status
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Use centralized authentication service
+    const authResult = await ConversationAuthService.authenticateUser(request);
+    if (!authResult.success) {
+      return authResult.error!;
     }
+
+    const { user } = authResult;
     
     // Parse request body
     const requestData = await request.json();

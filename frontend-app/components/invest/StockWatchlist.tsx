@@ -87,7 +87,9 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
         const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
         
-        const easternToday = new Date(easternYear, easternMonth - 1, easternDay);
+        // Instead of using new Date(easternYear, easternMonth - 1, easternDay),
+        // construct the date string in ET to avoid local timezone issues
+        const easternToday = new Date(`${easternYear}-${String(easternMonth).padStart(2,'0')}-${String(easternDay).padStart(2,'0')}T00:00:00-05:00`);
         const easternDayOfWeek = easternToday.getDay();
         
         const isAfterHours = easternHour >= 16 || easternHour < 9;

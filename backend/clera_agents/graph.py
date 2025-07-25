@@ -380,7 +380,9 @@ main_llm = ChatAnthropic(
     model="claude-sonnet-4-20250514",
     temperature=0.1,  # Research shows lower temp prevents function calling errors
     max_retries=3,
-    timeout=120  # Anthropic uses 'timeout' not 'request_timeout'
+    timeout=120,  # Anthropic uses 'timeout' not 'request_timeout'
+    streaming=True,  # CRITICAL: Enable streaming for token-by-token output
+    stream_usage=True  # Also include usage metadata in streaming
 )
     
 
@@ -389,7 +391,9 @@ financial_analyst_llm = ChatAnthropic(
     model="claude-3-5-haiku-20241022",  
     temperature=0.1,  # Lower temp for reliable function calling
     max_retries=3,
-    timeout=120  # Anthropic uses 'timeout' not 'request_timeout'
+    timeout=120,  # Anthropic uses 'timeout' not 'request_timeout'
+    streaming=True,  # CRITICAL: Enable streaming for token-by-token output
+    stream_usage=True  # Also include usage metadata in streaming
 )
 
 # Use the more reliable llama-3.3-70b-versatile model for function calling
@@ -398,7 +402,9 @@ rebalance_llm = ChatAnthropic(
     model="claude-3-5-haiku-20241022",
     temperature=0.2,
     max_retries=3,
-    timeout=120
+    timeout=120,
+    streaming=True,  # CRITICAL: Enable streaming for token-by-token output
+    stream_usage=True  # Also include usage metadata in streaming
 )
 
 
@@ -416,7 +422,9 @@ trade_llm = ChatAnthropic(
     model="claude-3-5-haiku-20241022",
     temperature=0.2,
     max_retries=3,
-    timeout=60
+    timeout=60,
+    streaming=True,  # CRITICAL: Enable streaming for token-by-token output
+    stream_usage=True  # Also include usage metadata in streaming
 )
 
 financial_analyst_agent = create_react_agent(

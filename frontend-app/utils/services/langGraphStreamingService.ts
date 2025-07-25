@@ -112,8 +112,10 @@ export class LangGraphStreamingService {
           
           const errorChunk = {
             type: 'error',
-            data: { error: error.message }
+            data: { error: 'An unexpected error occurred. Please try again later.' }
           };
+          // Optionally, for internal debugging, you can log the real error:
+          // console.error('LangGraph streaming error:', error instanceof Error ? error.message : String(error));
           controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorChunk)}\n\n`));
         } finally {
           controller.close();
@@ -141,7 +143,7 @@ export class LangGraphStreamingService {
     const data = (chunk as any).data;
 
     // SECURITY: Only log non-sensitive metadata for debugging
-    console.log('Processing LangGraph event:', event, 'with data keys:', Object.keys(data || {}));
+    console.log('[LangGraphStreamingService] Processing event:', event, 'with data keys:', Object.keys(data || {}));
 
     // Handle GraphInterrupt events
     if (event === '__interrupt__' || (data && data.__interrupt__)) {
@@ -181,8 +183,13 @@ export class LangGraphStreamingService {
       }
     }
     
-    // Handle partial/streaming messages 
+    // Handle partial/streaming messages (token-by-token from messages-tuple)
     if (event === 'messages/partial' && Array.isArray(data)) {
+      return { type: 'message_token', data: data };
+    }
+    
+    // Handle messages-tuple streaming events
+    if (event.startsWith('messages-tuple/') && Array.isArray(data)) {
       return { type: 'message_token', data: data };
     }
     

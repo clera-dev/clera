@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { Client } from '@langchain/langgraph-sdk';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,20 +14,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create supabase server client
-    const supabase = await createClient();
-    
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Use centralized authentication service (user auth only, thread ownership validated separately)
+    const authResult = await ConversationAuthService.authenticateUser(request);
+    if (!authResult.success) {
+      return authResult.error!;
     }
+
+    const { user } = authResult;
 
     // Create LangGraph client (server-side only)
     const langGraphClient = new Client({

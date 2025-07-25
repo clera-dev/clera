@@ -62,9 +62,17 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
   };
 
   const handleSelectSession = (sessionId: string) => {
+    console.log(`[SidebarChat] Selecting session: ${sessionId}`);
     setCurrentSessionId(sessionId);
+    // Clear initial messages since Chat component will load them from the thread
     setInitialMessages([]);
     setIsSidebarOpen(false);
+    
+    // Also update localStorage to ensure consistency
+    localStorage.setItem('cleraCurrentChatSession', sessionId);
+    
+    // Force a refresh to ensure state is properly updated
+    setRefreshTrigger(prev => prev + 1);
   };
 
   const handleSessionCreated = (newSessionId: string) => {

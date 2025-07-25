@@ -180,7 +180,6 @@ export default function InvestPage() {
         setIsLoadingBalance(true);
         setBalanceError(null);
         try {
-            console.log(`Fetching balance for account: ${accountId}`);
             const response = await fetch(`/api/account/${accountId}/balance`);
             if (!response.ok) {
                 const errorData = await response.json();
@@ -188,7 +187,6 @@ export default function InvestPage() {
                 throw new Error(errorData.message || `Failed to fetch balance: ${response.statusText}`);
             }
             const result = await response.json();
-            console.log("Balance API success response:", result);
             if (result.success && result.data) {
                 setAvailableBalance(result.data);
             } else {
@@ -213,7 +211,6 @@ export default function InvestPage() {
       setResearchError(null);
       
       try {
-        console.log('Loading cached investment research data...');
         
         const response = await fetch('/api/investment/research', {
           method: 'GET',
@@ -228,7 +225,6 @@ export default function InvestPage() {
         }
 
         const data = await response.json();
-        console.log('Cached research data loaded successfully:', data);
         
         if (data.research_data) {
           setResearchData(data.research_data);

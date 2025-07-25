@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingService';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 /**
  * Handles interrupt resumption for LangGraph conversations
@@ -15,30 +15,18 @@ async function handleInterruptLogic(
   run_id: string,
   response: any,
   account_id: string,
-  user_id: string
+  request: NextRequest
 ): Promise<NextResponse> {
-  // Create supabase server client for authentication
-  const supabase = await createClient();
-  
-  // Verify user is authenticated
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  
-  if (!user) {
-    return LangGraphStreamingService.createErrorStreamingResponse('Unauthorized', 401);
+  // Use centralized authentication and authorization service
+  const authResult = await ConversationAuthService.authenticateAndAuthorize(request, account_id);
+  if (!authResult.success) {
+    // Convert NextResponse to streaming error response
+    const errorData = await authResult.error!.json();
+    const status = authResult.error!.status;
+    return LangGraphStreamingService.createErrorStreamingResponse(errorData.error, status);
   }
 
-  // Verify user owns this account
-  const { data: onboardingData, error: onboardingError } = await supabase
-    .from('user_onboarding')
-    .select('alpaca_account_id')
-    .eq('user_id', user.id)
-    .single();
-
-  if (onboardingError || !onboardingData?.alpaca_account_id || onboardingData.alpaca_account_id !== account_id) {
-    return LangGraphStreamingService.createErrorStreamingResponse('Forbidden', 403);
-  }
+  const { user } = authResult.context!;
 
   // Create streaming service instance
   const streamingService = LangGraphStreamingService.create();
@@ -80,20 +68,29 @@ export async function GET(request: NextRequest) {
     const thread_id = url.searchParams.get('thread_id');
     const run_id = url.searchParams.get('run_id');
     const responseParam = url.searchParams.get('response');
-    // Do not trust user_id from the query string; always use the authenticated user's ID
-    const account_id = url.searchParams.get('account_id');
+    
+    // Extract account ID from query parameters
+    const account_id = ConversationAuthService.extractAccountIdFromQuery(url, 'account_id');
 
     if (!thread_id || !run_id || !responseParam || !account_id) {
       return NextResponse.json(
-        { error: 'Thread ID, run ID, response, user ID, and account ID are required' },
+        { error: 'Thread ID, run ID, response, and account ID are required' },
         { status: 400 }
       );
     }
 
     // Parse the response parameter
-    const response = JSON.parse(responseParam);
+    let response;
+    try {
+      response = JSON.parse(responseParam);
+    } catch (err) {
+      return NextResponse.json(
+        { error: 'Malformed response parameter: must be valid JSON.' },
+        { status: 400 }
+      );
+    }
 
-    return await handleInterruptLogic(thread_id, run_id, response, account_id, '');
+    return await handleInterruptLogic(thread_id, run_id, response, account_id, request);
 
   } catch (error: any) {
     console.error('Error handling interrupt (GET):', error);
@@ -107,7 +104,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { thread_id, run_id, response, account_id } = body;
+    const { thread_id, run_id, response } = body;
+
+    // Extract account ID from request body
+    const account_id = ConversationAuthService.extractAccountId(body, 'account_id');
 
     if (!thread_id || !run_id || response === undefined || !account_id) {
       return NextResponse.json(
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return await handleInterruptLogic(thread_id, run_id, response, account_id, '');
+    return await handleInterruptLogic(thread_id, run_id, response, account_id, request);
 
   } catch (error: any) {
     console.error('Error handling interrupt (POST):', error);

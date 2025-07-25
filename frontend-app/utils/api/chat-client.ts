@@ -4,6 +4,7 @@
 import { createClient } from "@/utils/supabase/client";
 
 export type Message = {
+  id?: string;
   role: 'system' | 'user' | 'assistant';
   content: string;
   isStatus?: boolean; // For temporary status/progress messages

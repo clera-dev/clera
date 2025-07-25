@@ -44,9 +44,12 @@ export async function GET(
       );
     }
 
+    // Sanitize accountId to prevent path-injection or request-smuggling attacks
+    const safeAccountId = encodeURIComponent(accountId);
+
     // Call backend API to get account balance
-    console.log(`Fetching balance for account ${accountId} from backend`);
-    const response = await fetch(`${backendUrl}/api/account/${accountId}/balance`, {
+    console.log(`Fetching balance for account ${safeAccountId} from backend`);
+    const response = await fetch(`${backendUrl}/api/account/${safeAccountId}/balance`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -84,9 +87,11 @@ export async function GET(
         }
       });
     } else {
-      // Use the backend's HTTP status code if available, otherwise default to 500
-      // Do not derive status from error message strings (anti-pattern)
-      const status = response.status && response.status !== 200 ? response.status : 500;
+      // Use status from backend payload if available, otherwise default to 500
+      const status =
+        (typeof balanceData.status === 'number' && balanceData.status) ||
+        (typeof balanceData.code === 'number' && balanceData.code) ||
+        500;
       // Ensure msg is always a string to prevent TypeError
       let msg = balanceData.message;
       if (typeof msg !== 'string') {
@@ -100,7 +105,7 @@ export async function GET(
           msg = 'Failed to get balance data';
         }
       }
-      return NextResponse.json({ success: false, error: msg }, { status });
+      return NextResponse.json({ success: false, message: msg }, { status });
     }
 
   } catch (error) {

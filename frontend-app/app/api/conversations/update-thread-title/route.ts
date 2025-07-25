@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { Client } from '@langchain/langgraph-sdk';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 export async function POST(request: NextRequest) {
   let body;
@@ -18,6 +18,21 @@ export async function POST(request: NextRequest) {
   try {
     const { thread_id, title } = body;
 
+    // Explicit type and length validation
+    if (
+      typeof thread_id !== 'string' ||
+      thread_id.length < 1 ||
+      thread_id.length > 128 ||
+      typeof title !== 'string' ||
+      title.length < 1 ||
+      title.length > 256
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid thread_id or title: must be non-empty strings of reasonable length.' },
+        { status: 400 }
+      );
+    }
+
     if (!thread_id || !title) {
       return NextResponse.json(
         { error: 'Thread ID and title are required' },
@@ -25,20 +40,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create supabase server client
-    const supabase = await createClient();
-    
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Use centralized authentication service (user auth only, thread ownership validated separately)
+    const authResult = await ConversationAuthService.authenticateUser(request);
+    if (!authResult.success) {
+      return authResult.error!;
     }
+
+    const { user } = authResult;
 
     // Create LangGraph client (server-side only)
     const langGraphClient = new Client({

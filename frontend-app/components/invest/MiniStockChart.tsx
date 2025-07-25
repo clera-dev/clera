@@ -59,7 +59,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       // Use a fixed, known-good trading day as fallback if system clock is unreasonable
       const FALLBACK_DATE = new Date("2024-12-31T16:00:00-05:00"); // Last trading day of 2024, 4pm ET
       const currentYear = now.getFullYear();
-      const isUnreasonableFutureDate = currentYear > 2030;
+      const isUnreasonableFutureDate = currentYear > (new Date().getFullYear() + 1);
       
       let toDate: Date;
       let fromDate: Date;
@@ -125,9 +125,7 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       
       const fromStr = fromDate.toISOString().split('T')[0];
       const toStr = toDate.toISOString().split('T')[0];
-      
-      console.log(`[MiniChart ${symbol}] Fetching data from ${fromStr} to ${toStr} (system date: ${now.toISOString()})`);
-      
+            
       // Try 5-minute data first (same as main chart)
       let response = await fetch(`/api/fmp/chart/${symbol}?interval=5min&from=${fromStr}&to=${toStr}`);
       
@@ -184,8 +182,6 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
     }
 
     const now = new Date();
-    
-    console.log(`[MiniChart ${symbol}] Processing ${rawData.length} raw data points`);
     
     // EXACT SAME FILTERING LOGIC AS MAIN STOCKCHART
     const processedData = rawData
@@ -248,16 +244,12 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
       .filter(item => item !== null)
       .sort((a, b) => a!.timestamp - b!.timestamp) as ProcessedDataPoint[];
 
-    console.log(`[MiniChart ${symbol}] Processed ${processedData.length} data points after filtering`);
-
     // Calculate price change percentage (1D return) - same as main chart
     if (processedData.length >= 2) {
       const openingPrice = processedData[0].price; // Earliest time (market open)
       const closingPrice = processedData[processedData.length - 1].price; // Latest time (most recent)
       const changePercent = ((closingPrice - openingPrice) / openingPrice) * 100;
       setPriceChangePercent(changePercent);
-      
-      console.log(`[MiniChart ${symbol}] Price calculation: ${openingPrice} -> ${closingPrice} = ${changePercent.toFixed(2)}%`);
     } else {
       setPriceChangePercent(null);
       console.warn(`[MiniChart ${symbol}] Insufficient data for percentage calculation`);

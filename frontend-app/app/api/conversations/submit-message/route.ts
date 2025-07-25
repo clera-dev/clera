@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { Client } from '@langchain/langgraph-sdk';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    // Remove user_id from destructuring, as we use the authenticated user
-    const { thread_id, input, account_id, config } = body;
+    // SECURITY FIX: Removed 'config' from destructuring to prevent client-supplied config injection
+    const { thread_id, input } = body;
 
-    // Only require thread_id, input, and account_id
+    // Extract and validate account ID
+    const account_id = ConversationAuthService.extractAccountId(body, 'account_id');
+
     if (!thread_id || !input || !account_id) {
       return NextResponse.json(
         { error: 'Thread ID, input, and account ID are required' },
@@ -16,34 +18,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create supabase server client for authentication
-    const supabase = await createClient();
-    
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Use centralized authentication and authorization service
+    const authResult = await ConversationAuthService.authenticateAndAuthorize(request, account_id);
+    if (!authResult.success) {
+      return authResult.error!;
     }
 
-    // Verify user owns this account
-    const { data: onboardingData, error: onboardingError } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (onboardingError || !onboardingData?.alpaca_account_id || onboardingData.alpaca_account_id !== account_id) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
-    }
+    const { user } = authResult.context!;
 
     // Create LangGraph client (server-side only)
     const langGraphClient = new Client({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { Client } from '@langchain/langgraph-sdk';
+import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 // Limit constants to prevent resource exhaustion
 const MIN_LIMIT = 1;
@@ -19,41 +19,22 @@ export async function POST(request: NextRequest) {
     }
     limit = Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, limit));
 
-    if (!portfolio_id) {
+    // Extract and validate account ID
+    const accountId = ConversationAuthService.extractAccountId(body, 'portfolio_id');
+    if (!accountId) {
       return NextResponse.json(
         { error: 'Portfolio ID is required' },
         { status: 400 }
       );
     }
 
-    // Create supabase server client for authentication
-    const supabase = await createClient();
-    
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Use centralized authentication and authorization service
+    const authResult = await ConversationAuthService.authenticateAndAuthorize(request, accountId);
+    if (!authResult.success) {
+      return authResult.error!;
     }
 
-    // Verify user owns this portfolio/account
-    const { data: onboardingData, error: onboardingError } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (onboardingError || !onboardingData?.alpaca_account_id || onboardingData.alpaca_account_id !== portfolio_id) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
-    }
+    const { user } = authResult.context!;
 
     // Create LangGraph client (server-side only)
     const langGraphClient = new Client({
@@ -66,7 +47,7 @@ export async function POST(request: NextRequest) {
     const threads = await langGraphClient.threads.search({
       metadata: {
         user_id: user.id,
-        account_id: portfolio_id
+        account_id: accountId
       },
       limit: limit
     });
@@ -83,6 +64,7 @@ export async function POST(request: NextRequest) {
       };
     });
     
+    console.log(`Found ${sessions.length} LangGraph sessions for portfolio: ${accountId}`);
     
     return NextResponse.json({ sessions });
   } catch (error: any) {
