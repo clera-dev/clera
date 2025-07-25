@@ -236,11 +236,19 @@ export class SecureChatClientImpl implements SecureChatClient {
         }
       }
 
+      console.log('[SecureChatClient] Stream completed successfully');
       this.setState({ isLoading: false });
       this.isStreaming = false;
 
     } catch (error: any) {
       console.error('[SecureChatClient] Error starting stream:', error);
+      console.error('[SecureChatClient] Error details:', {
+        message: error.message,
+        stack: error.stack,
+        threadId,
+        userId,
+        accountId
+      });
       this.setState({ 
         error: error.message || 'Failed to start stream',
         isLoading: false 
@@ -250,8 +258,14 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   private handleStreamChunk(chunk: any) {
-    //console.log('[SecureChatClient] Stream chunk received:', chunk);
-    //console.log('[SecureChatClient] Chunk type:', chunk.type, 'Data keys:', Object.keys(chunk.data || {}));
+    console.log('[SecureChatClient] Stream chunk received:', chunk);
+    console.log('[SecureChatClient] Chunk type:', chunk.type, 'Data keys:', Object.keys(chunk.data || {}));
+    console.log('[SecureChatClient] Current state:', {
+      isStreaming: this.isStreaming,
+      hasReceivedRealContent: this.hasReceivedRealContent,
+      messageCount: this._state.messages.length,
+      isLoading: this._state.isLoading
+    });
     
     // Handle different chunk types
     if (chunk.type === 'error') {
@@ -293,15 +307,15 @@ export class SecureChatClientImpl implements SecureChatClient {
       return;
     }
 
-    // Handle node execution updates for progressive feedback
+        // Handle node execution updates for progressive feedback
     if (chunk.type === 'node_update' && chunk.nodeName) {
-      //console.log(`Node ${chunk.nodeName} executed:`, chunk.data);
+      console.log(`[SecureChatClient] Node ${chunk.nodeName} executed:`, chunk.data);
       
       // Show status messages during the thinking phase, but stop when final streaming starts
       const isFinalStreamingPhase = this.hasReceivedRealContent && this.isCurrentlyStreamingFinalResponse();
       
       if (isFinalStreamingPhase) {
-        //console.log('Skipping status message - final response is streaming');
+        console.log('[SecureChatClient] Skipping status message - final response is streaming');
         return;
       }
       
@@ -316,6 +330,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       const messages = this._state.messages.filter(msg => !msg.isStatus);
       messages.push(statusMessage);
       
+      console.log('[SecureChatClient] Setting status message:', statusMessage);
       this.setState({ messages });
       return;
     }
@@ -396,12 +411,13 @@ export class SecureChatClientImpl implements SecureChatClient {
       return;
     }
 
-    // Handle LangGraph messages streaming (token-by-token from 'messages' stream mode)
+    // Handle LangGraph messages streaming (complete messages from 'messages' stream mode)
     if (chunk.type === 'messages' && chunk.data && Array.isArray(chunk.data)) {
-      //console.log('[SecureChatClient] Received messages chunk:', chunk.data);
+      console.log('[SecureChatClient] Received messages chunk:', chunk.data);
       
-      // LangGraph messages mode returns tuples of (message_chunk, metadata)
-      // But if we're getting direct message objects, process them as tokens
+      // Process all AI messages in the chunk (don't break early)
+      let hasProcessedMessage = false;
+      
       for (const messageData of chunk.data) {
         if (messageData && messageData.type === 'ai' && messageData.name === 'Clera') {
           // Check for agent transfers before processing
@@ -417,20 +433,37 @@ export class SecureChatClientImpl implements SecureChatClient {
             ).join('');
           }
 
-          // console.log('[SecureChatClient] Processing AI message content:', content);
+          console.log('[SecureChatClient] Processing AI message content:', content);
 
           if (content && content.trim().length > 0) {
             this.hasReceivedRealContent = true;
+            hasProcessedMessage = true;
             
-            // Replace status with complete response (for now, until true streaming works)
+            // PRODUCTION FIX: Always replace status messages with complete response
             const currentMessages = [...this._state.messages];
             const filteredMessages = currentMessages.filter(msg => !msg.isStatus);
-            const newMessage: Message = { role: 'assistant', content: content };
+            const newMessage: Message = { 
+              role: 'assistant', 
+              content: content,
+              id: messageData.id // Preserve message ID for debugging
+            };
             
-            this.setState({ messages: [...filteredMessages, newMessage] });
+            console.log('[SecureChatClient] Setting message state:', newMessage);
+            this.setState({ 
+              messages: [...filteredMessages, newMessage],
+              isLoading: false // CRITICAL: Mark loading as complete
+            });
+            
+            // Mark streaming as complete
+            this.isStreaming = false;
           }
-          break;
+          // FIXED: Don't break early - process all AI messages in the chunk
         }
+      }
+      
+      // If we processed a message, we're done with this chunk
+      if (hasProcessedMessage) {
+        return;
       }
     }
 
