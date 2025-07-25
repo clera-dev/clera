@@ -3,11 +3,23 @@ import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
 /**
- * API route to get a list of tradable market assets.
+ * Ensures this route is always treated as dynamic, preventing Next.js
+ * from throwing errors about `params` usage.
+ */
+export const dynamic = 'force-dynamic';
+
+/**
+ * API route to get a market quote for a specific symbol.
  * This route is a proxy to the backend service.
  */
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ symbol: string }> }
+) {
   try {
+    const params = await context.params;
+    const { symbol } = params;
+
     // 1. Authenticate user
     const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -16,7 +28,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
     }
 
-    // 2. Proxy the request to backend
+    // 2. Construct final backend path
+    const backendPath = `/api/market/quote/${symbol}`;
+
+    // 3. Proxy the request
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
 
@@ -25,7 +40,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
     }
 
-    const targetUrl = `${backendUrl}/api/market/assets`;
+    const targetUrl = `${backendUrl}${backendPath}`;
 
     const response = await fetch(targetUrl, {
       method: 'GET',
@@ -47,7 +62,7 @@ export async function GET(request: NextRequest) {
 
     if (!response.ok) {
       // Map backend error to client-friendly message
-      let errorMessage = 'Failed to fetch market assets. Please try again later.';
+      let errorMessage = 'Failed to fetch market quote. Please try again later.';
       if (response.status >= 500) {
         // Hide backend details for server errors
         return NextResponse.json({ error: errorMessage }, { status: 502 });

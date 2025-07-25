@@ -122,7 +122,7 @@ export default function StockChart({ symbol }: StockChartProps) {
       
       if (isUnreasonableFutureDate) {
         // System clock seems wrong - use a recent known good date range
-        if (process.env.NODE_ENV === 'development') console.warn(`[StockChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
+        // console.warn(`[StockChart ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
         // Use the latest trading day as the anchor
         const mostRecentTradingDay = latestTradingDay;
         if (intervalConfig.interval.includes('min') || intervalConfig.interval.includes('hour')) {
@@ -139,34 +139,51 @@ export default function StockChart({ symbol }: StockChartProps) {
         if (intervalConfig.interval.includes('min') || intervalConfig.interval.includes('hour')) {
           useIntraday = true;
           
-          // Check if markets are currently closed using proper Eastern Time
-          const easternFormatter = new Intl.DateTimeFormat('en-US', {
+          // PRODUCTION-GRADE: Use proper market days logic for brokerage platform
+          // Business Rules:
+          // - Before 9:30 AM ET: Show previous trading day's complete data  
+          // - After 9:30 AM ET on trading day: Show current trading day (intraday)
+          // - Non-trading days (weekends/holidays): Show most recent trading day
+          
+          // Get market timing in Eastern timezone
+          const easternHour = parseInt(now.toLocaleString("en-US", {
+            timeZone: "America/New_York",
+            hour: "2-digit",
+            hour12: false
+          }));
+          
+          const easternMinute = parseInt(now.toLocaleString("en-US", {
+            timeZone: "America/New_York", 
+            minute: "2-digit"
+          }));
+          
+          // Convert to market timezone date for trading day validation
+          // FIXED: Properly extract Eastern timezone date components to avoid timezone interpretation bug
+          const easternParts = new Intl.DateTimeFormat('en-US', {
             timeZone: 'America/New_York',
             year: 'numeric',
             month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          });
+            day: '2-digit'
+          }).formatToParts(now);
           
-          const easternParts = easternFormatter.formatToParts(now);
-          const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
-          const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
-          const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
           const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
+          const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
+          const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
           
-          const easternToday = new Date(easternYear, easternMonth - 1, easternDay);
-          const easternDayOfWeek = easternToday.getDay();
+          // Create date with Eastern date components for accurate trading day validation
+          const marketDate = new Date(easternYear, easternMonth - 1, easternDay);
           
-          const isAfterHours = easternHour >= 16 || easternHour < 9;
-          const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
-          const isMarketClosed = isAfterHours || isWeekend;
+          // Check if current market date is a valid trading day
+          const isValidTradingDay = MarketHolidayUtil.isMarketOpen(marketDate);
+          
+          // Market timing logic (9:30 AM ET = market open)
+          const isPreMarket = easternHour < 9 || (easternHour === 9 && easternMinute < 30);
+          const isMarketClosed = isPreMarket || !isValidTradingDay;
           
           if (selectedInterval === '1D') {
             if (isMarketClosed) {
               // If markets are closed, use the most recent trading day
-              const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
+              const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(marketDate, isValidTradingDay ? 1 : 0);
               
               // FIXED: Show ONLY the most recent trading day for proper 1D calculation
               // This ensures 1D performance represents that single trading day's open-to-close movement
@@ -197,22 +214,31 @@ export default function StockChart({ symbol }: StockChartProps) {
         }
       }
 
-      const fromStr = fromDate.toISOString().split('T')[0];
-      const toStr = toDate.toISOString().split('T')[0];
+      // FIX: Use timezone-safe date string conversion instead of toISOString() 
+      // which can shift dates when converting to UTC
+      const formatDateSafe = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      const fromStr = formatDateSafe(fromDate);
+      const toStr = formatDateSafe(toDate);
       
       // Add comprehensive debugging for the current issue
       if (process.env.NODE_ENV === 'development') {
-        console.log('[StockChart Debug] Chart request details:', {
-          symbol,
-          selectedInterval,
-          intervalConfig,
-          currentTime: now.toISOString(),
-          useIntraday,
-          fromStr,
-          toStr,
-          userTimezone: getUserTimezone(),
-          isUnreasonableFutureDate
-        });
+        // console.log('[StockChart Debug] Chart request details:', {
+        //   symbol,
+        //   selectedInterval,
+        //   intervalConfig,
+        //   currentTime: now.toISOString(),
+        //   useIntraday,
+        //   fromStr,
+        //   toStr,
+        //   userTimezone: getUserTimezone(),
+        //   isUnreasonableFutureDate
+        // });
       }
       
       // Function to process raw data into chart format with timezone conversion
@@ -221,16 +247,16 @@ export default function StockChart({ symbol }: StockChartProps) {
         
         // Debug: log the structure of the first few items to understand FMP response format
         if (process.env.NODE_ENV === 'development' && rawData.length > 0) {
-          console.log('[FMP Data Structure Debug]', {
-            symbol,
-            interval: selectedInterval,
-            rawDataCount: rawData.length,
-            firstItem: rawData[0],
-            hasDate: !!rawData[0]?.date,
-            hasDatetime: !!rawData[0]?.datetime,
-            hasTimestamp: !!rawData[0]?.timestamp,
-            fields: Object.keys(rawData[0] || {})
-          });
+          // console.log('[FMP Data Structure Debug]', {
+          //   symbol,
+          //   interval: selectedInterval,
+          //   rawDataCount: rawData.length,
+          //   firstItem: rawData[0],
+          //   hasDate: !!rawData[0]?.date,
+          //   hasDatetime: !!rawData[0]?.datetime,
+          //   hasTimestamp: !!rawData[0]?.timestamp,
+          //   fields: Object.keys(rawData[0] || {})
+          // });
         }
         
       const processedData = rawData
@@ -240,7 +266,7 @@ export default function StockChart({ symbol }: StockChartProps) {
             const fmpTimestamp = item.date || item.datetime || item.timestamp;
             
             if (!fmpTimestamp) {
-              console.warn('[FMP Data Warning] No timestamp found in data item:', item);
+              // console.warn('[FMP Data Warning] No timestamp found in data item:', item);
               return null; // Skip items without timestamps
             }
             
@@ -251,7 +277,7 @@ export default function StockChart({ symbol }: StockChartProps) {
               // Filter out any future data points
               if (utcDate > now) {
                 if (process.env.NODE_ENV === 'development') {
-                  console.warn(`[Future Data Filter] Removing future data point: ${fmpTimestamp} (ET) -> ${formatChartDate(utcDate, '5min', true)} - Current time: ${formatChartDate(now, '5min', true)}`);
+                  // console.warn(`[Future Data Filter] Removing future data point: ${fmpTimestamp} (ET) -> ${formatChartDate(utcDate, '5min', true)} - Current time: ${formatChartDate(now, '5min', true)}`);
                 }
                 return null; // Will be filtered out
               }
@@ -261,7 +287,7 @@ export default function StockChart({ symbol }: StockChartProps) {
               
               // For development debugging - log what data we're keeping
               if (process.env.NODE_ENV === 'development') {
-                console.log(`[Data Processing] Keeping data point: ${fmpTimestamp} -> ${formatChartDate(utcDate, '5min', true)}`);
+                // console.log(`[Data Processing] Keeping data point: ${fmpTimestamp} -> ${formatChartDate(utcDate, '5min', true)}`);
               }
               
           const price = item.price !== undefined ? item.price : item.close || 0;
@@ -275,7 +301,7 @@ export default function StockChart({ symbol }: StockChartProps) {
                 localDate: utcDate
           };
             } catch (error) {
-              console.error(`[FMP Timestamp Parse Error] Failed to parse ${fmpTimestamp}:`, error);
+              // console.error(`[FMP Timestamp Parse Error] Failed to parse ${fmpTimestamp}:`, error);
               return null; // Skip invalid timestamps
             }
           })
@@ -287,44 +313,44 @@ export default function StockChart({ symbol }: StockChartProps) {
           const filteredCount = rawData.length - processedData.length;
           const userTimezone = getUserTimezone();
           
-          console.log('[Chart Data Processing Results]', {
-            symbol,
-            interval: selectedInterval,
-            userTimezone,
-            currentTime: formatChartDate(now, '5min', true),
-            originalCount: rawData.length,
-            processedCount: processedData.length,
-            filteredCount: filteredCount,
-            timeRange: processedData.length > 0 ? {
-              firstPoint: {
-                fmpOriginal: processedData[0].date,
-                parsedUTC: processedData[0].localDate.toISOString(),
-                displayTime: processedData[0].formattedDate
-              },
-              lastPoint: {
-                fmpOriginal: processedData[processedData.length - 1].date,
-                parsedUTC: processedData[processedData.length - 1].localDate.toISOString(),
-                displayTime: processedData[processedData.length - 1].formattedDate
-              }
-            } : null
-          });
+          // console.log('[Chart Data Processing Results]', {
+          //   symbol,
+          //   interval: selectedInterval,
+          //   userTimezone,
+          //   currentTime: formatChartDate(now, '5min', true),
+          //   originalCount: rawData.length,
+          //   processedCount: processedData.length,
+          //   filteredCount: filteredCount,
+          //   timeRange: processedData.length > 0 ? {
+          //     firstPoint: {
+          //       fmpOriginal: processedData[0].date,
+          //       parsedUTC: processedData[0].localDate.toISOString(),
+          //       displayTime: processedData[0].formattedDate
+          //     },
+          //     lastPoint: {
+          //       fmpOriginal: processedData[processedData.length - 1].date,
+          //       parsedUTC: processedData[processedData.length - 1].localDate.toISOString(),
+          //       displayTime: processedData[processedData.length - 1].formattedDate
+          //     }
+          //   } : null
+          // });
           
           if (filteredCount > 0) {
-            console.warn(`[Data Filter] Removed ${filteredCount} data points from ${symbol} chart`);
+            // console.warn(`[Data Filter] Removed ${filteredCount} data points from ${symbol} chart`);
           }
           
           // If we have no data after processing, log the raw data for debugging
           if (processedData.length === 0 && rawData.length > 0) {
-            console.error(`[Critical] All data was filtered out! Raw data sample:`, {
-              rawDataSample: rawData.slice(0, 3),
-              filteringSettings: {
-                selectedInterval,
-                useIntraday,
-                fromStr,
-                toStr,
-                currentTime: now.toISOString()
-              }
-            });
+            // console.error(`[Critical] All data was filtered out! Raw data sample:`, {
+            //   rawDataSample: rawData.slice(0, 3),
+            //   filteringSettings: {
+            //     selectedInterval,
+            //     useIntraday,
+            //     fromStr,
+            //     toStr,
+            //     currentTime: now.toISOString()
+            //   }
+            // });
           }
         }
 
@@ -399,7 +425,7 @@ export default function StockChart({ symbol }: StockChartProps) {
         // If still no data, try extending the date range to get recent data
         const extendedFromDate = new Date(fromDate);
         extendedFromDate.setDate(extendedFromDate.getDate() - 7); // Go back 7 more days
-        const extendedFromStr = extendedFromDate.toISOString().split('T')[0];
+        const extendedFromStr = formatDateSafe(extendedFromDate);
         
         const extendedResponse = await fetch(`/api/fmp/chart/${symbol}?interval=daily&from=${extendedFromStr}&to=${toStr}`);
         if (extendedResponse.ok) {
@@ -451,7 +477,7 @@ export default function StockChart({ symbol }: StockChartProps) {
       setData(processedData);
       
     } catch (error) {
-      console.error('Error fetching chart data:', error);
+      // console.error('Error fetching chart data:', error);
       setError(error instanceof Error ? error.message : 'Failed to load chart data');
     } finally {
       setLoading(false);

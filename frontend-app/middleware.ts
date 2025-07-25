@@ -62,6 +62,7 @@ const authRequiredApiPaths = [
   '/api/investment',
   '/api/companies/profiles',
   '/api/fmp',
+  '/api/market',
   '/api/broker/create-account',
 ];
 
