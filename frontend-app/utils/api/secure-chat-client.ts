@@ -34,8 +34,9 @@ export class SecureChatClientImpl implements SecureChatClient {
   private stateListeners: Set<() => void> = new Set();
   private eventSource: EventSource | null = null;
   private isStreaming: boolean = false;
-  private hasReceivedRealContent: boolean = false; // Track if real content has been received
-  private hasReceivedInterrupt: boolean = false; // Track if an interrupt has been received
+  private hasReceivedRealContent: boolean = false;
+  private hasReceivedInterrupt: boolean = false;
+  private streamCompletedSuccessfully: boolean = false; // NEW: Track if chunk processing handled completion
 
   /**
    * Returns an immutable copy of the current state
@@ -84,6 +85,9 @@ export class SecureChatClientImpl implements SecureChatClient {
     });
   }
 
+  /**
+   * Handles GraphInterrupt events from LangGraph agents
+   */
   async handleInterrupt(threadId: string, runId: string, response: any): Promise<void> {
     // Store current interrupt for potential restoration on error
     const currentInterrupt = this._state.interrupt;
@@ -99,6 +103,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       // Reset content flag for interrupt continuation
       this.hasReceivedRealContent = false;
       this.hasReceivedInterrupt = false; // Reset interrupt tracking for new stream
+      this.streamCompletedSuccessfully = false; // Reset completion tracking for new stream
       this.isStreaming = true; // Ensure streaming flag is set for token aggregation
       
       // CRITICAL FIX: Import and use getAlpacaAccountId utility for consistency
@@ -185,6 +190,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       // Reset flags on error
       this.hasReceivedRealContent = false;
       this.hasReceivedInterrupt = false;
+      this.streamCompletedSuccessfully = false;
       
       this.setState({ 
         error: error.message || 'Failed to handle interrupt',
@@ -203,6 +209,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       // This ensures status messages don't persist from previous streams
       this.hasReceivedRealContent = false;
       this.hasReceivedInterrupt = false; // Reset interrupt tracking
+      this.streamCompletedSuccessfully = false; // Reset completion tracking
       this.isStreaming = true;
       
       this.setState({ isLoading: true, error: null });
@@ -291,24 +298,31 @@ export class SecureChatClientImpl implements SecureChatClient {
       // console.log('[SecureChatClient] Stream completed successfully, final state:', {
       //   hasReceivedRealContent: this.hasReceivedRealContent,
       //   hasReceivedInterrupt: this.hasReceivedInterrupt,
+      //   streamCompletedSuccessfully: this.streamCompletedSuccessfully,
       //   messageCount: this._state.messages.length,
       //   totalChunksProcessed: chunkCount
       // });
       
-      // CRITICAL FIX: Consider both real content AND interrupts as valid responses
-      // GraphInterrupts (trade confirmations) are valid responses, not errors
-      const hasValidResponse = this.hasReceivedRealContent || this.hasReceivedInterrupt;
-      
-      if (hasValidResponse) {
-        this.setState({ isLoading: false });
-        // console.log('[SecureChatClient] Stream completed with valid response');
+      // CRITICAL FIX: Only run completion logic if chunk processing didn't handle it
+      // This prevents race conditions and state corruption from redundant setState calls
+      if (!this.streamCompletedSuccessfully) {
+        // Fallback completion logic only for edge cases where chunk processing failed
+        const hasValidResponse = this.hasReceivedRealContent || this.hasReceivedInterrupt;
+        
+        if (hasValidResponse) {
+          this.setState({ isLoading: false });
+          console.log('[SecureChatClient] FALLBACK completion - valid response detected');
+        } else {
+          console.warn('[SecureChatClient] Stream completed with no response - neither chunk processing nor fallback detected valid content');
+          this.setState({ 
+            error: 'No response received from agent. Please try again.',
+            isLoading: false 
+          });
+        }
       } else {
-        console.warn('[SecureChatClient] Stream completed with no valid response (no content or interrupt)');
-        this.setState({ 
-          error: 'No response received from agent. Please try again.',
-          isLoading: false 
-        });
+        console.log('[SecureChatClient] Chunk processing handled completion successfully - skipping redundant completion logic');
       }
+      // If streamCompletedSuccessfully is true, chunk processing already handled completion correctly
       
       this.isStreaming = false;
 
@@ -325,6 +339,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       // CRITICAL FIX: Reset streaming flags on error to prevent stuck states
       this.hasReceivedRealContent = false;
       this.hasReceivedInterrupt = false; // Reset interrupt tracking on error
+      this.streamCompletedSuccessfully = false; // Reset completion tracking on error
       this.isStreaming = false;
       
       this.setState({ 
@@ -378,7 +393,8 @@ export class SecureChatClientImpl implements SecureChatClient {
       
       // CRITICAL FIX: Mark interrupt as a valid response (not an error)
       this.hasReceivedInterrupt = true;
-      // console.log('[SecureChatClient] Marked interrupt as valid response');
+      this.streamCompletedSuccessfully = true; // Mark that chunk processing handled completion
+      console.log('[SecureChatClient] Marked interrupt as valid response - completed by chunk processing');
       
       this.setState({
         interrupt: {
@@ -474,7 +490,11 @@ export class SecureChatClientImpl implements SecureChatClient {
           isLoading: false // Mark as complete since we have the final response
         });
         
-        // console.log('[SecureChatClient] Complete messages applied successfully');
+        // CRITICAL FIX: Mark that chunk processing handled completion successfully
+        // This prevents the redundant completion logic from interfering
+        this.streamCompletedSuccessfully = true;
+        
+        console.log('[SecureChatClient] Complete messages applied successfully - marked as completed by chunk processing');
         return;
       } else {
         // console.log('[SecureChatClient] No valid content found in messages_complete event');
