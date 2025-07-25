@@ -139,11 +139,9 @@ export default function MiniStockChart({ symbol, className = "" }: MiniStockChar
           let widerToDate: Date;
           
           if (isUnreasonableFutureDate) {
-            // Use a wider range based on recent trading days
-            const fallbackDate = new Date();
-            fallbackDate.setDate(fallbackDate.getDate() - 30);
-            widerToDate = MarketHolidayUtil.getLastTradingDay(fallbackDate);
-            widerFromDate = new Date(widerToDate);
+            // Use a wider range based on recent trading days, anchored to latestTradingDay
+            widerToDate = new Date(latestTradingDay);
+            widerFromDate = new Date(latestTradingDay);
             widerFromDate.setDate(widerFromDate.getDate() - 7);
           } else {
             widerFromDate = new Date(now);
