@@ -281,7 +281,7 @@ export default function Chat({
     };
 
     try {
-      console.log('[Chat] Retrying failed message using LangGraph interrupt mechanism:', lastFailedMessage);
+      console.log('[Chat] Retrying failed message using LangGraph interrupt mechanism.');
       
       // Use the same thread but with interrupt strategy to replace the failed attempt
       await chatClient.startStream(lastFailedThreadId, runInput, userId, accountId);

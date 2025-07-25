@@ -82,7 +82,7 @@ export class LangGraphStreamingService {
         try {
           // console.log('[LangGraphStreamingService] Starting stream for thread:', options.threadId);
           
-          const stream = await serviceInstance.langGraphClient.runs.stream(
+          const langGraphStream = await serviceInstance.langGraphClient.runs.stream(
             options.threadId,
             process.env.LANGGRAPH_ASSISTANT_ID || 'agent',
             {
@@ -95,7 +95,7 @@ export class LangGraphStreamingService {
 
           // console.log('[LangGraphStreamingService] LangGraph stream created successfully');
 
-          for await (const chunk of stream) {
+          for await (const chunk of langGraphStream) {
             // console.log('[LangGraphStreamingService] Raw chunk received from LangGraph:', {
             //   hasChunk: !!chunk,
             //   chunkKeys: chunk ? Object.keys(chunk) : [],

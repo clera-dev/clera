@@ -74,7 +74,15 @@ export class SecureChatClientImpl implements SecureChatClient {
     const validMessages = messages.filter(msg => {
       const isValid = msg.content && typeof msg.content === 'string' && msg.content.trim() !== '';
       if (!isValid) {
-        console.error('[SecureChatClient] Filtering out invalid message:', msg);
+        // SECURITY FIX: Sanitize message logging to prevent information disclosure
+        const sanitizedMsg = {
+          role: msg.role,
+          hasContent: !!msg.content,
+          contentType: typeof msg.content,
+          contentLength: msg.content?.length || 0,
+          isStatus: msg.isStatus
+        };
+        console.error('[SecureChatClient] Filtering out invalid message:'); // sanitizedMsg
       }
       return isValid;
     });
@@ -87,7 +95,15 @@ export class SecureChatClientImpl implements SecureChatClient {
   addMessagesWithStatus(userMessage: Message) {
     // CRITICAL FIX: Validate message content to prevent backend errors
     if (!userMessage.content || userMessage.content.trim() === '') {
-      console.error('[SecureChatClient] Attempted to add empty user message, rejecting:', userMessage);
+      // SECURITY FIX: Sanitize message logging to prevent information disclosure
+      const sanitizedMsg = {
+        role: userMessage.role,
+        hasContent: !!userMessage.content,
+        contentType: typeof userMessage.content,
+        contentLength: userMessage.content?.length || 0,
+        isStatus: userMessage.isStatus
+      };
+      console.error('[SecureChatClient] Attempted to add empty user message, rejecting.');// sanitizedMsg
       return;
     }
 
@@ -360,7 +376,14 @@ export class SecureChatClientImpl implements SecureChatClient {
           // console.log('[SecureChatClient] FALLBACK completion - valid response detected');
         } else {
           console.error('[SecureChatClient] CRITICAL ERROR: Stream completed with no response - neither chunk processing nor fallback detected valid content');
-          console.error('[SecureChatClient] Current message state:', this._state.messages.map(m => ({ role: m.role, contentLength: m.content?.length, isStatus: m.isStatus })));
+          // SECURITY FIX: Sanitize message state logging to prevent information disclosure
+          const sanitizedMessageState = this._state.messages.map(m => ({ 
+            role: m.role, 
+            hasContent: !!m.content,
+            contentType: typeof m.content,
+            isStatus: m.isStatus 
+          }));
+          console.error('[SecureChatClient] Current message state.'); // sanitizedMessageState
           
           // CRITICAL FIX: Clean up message state to prevent corrupting subsequent requests.
           // Remove any temporary status messages, preserving the rest of the chat history.
@@ -383,13 +406,14 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     } catch (error: any) {
       console.error('[SecureChatClient] Error starting stream:', error);
-      console.error('[SecureChatClient] Error details:', {
-        message: error.message,
-        stack: error.stack,
-        threadId,
-        userId,
-        accountId
-      });
+      // SECURITY FIX: Sanitize error details to prevent information disclosure
+      //console.error('[SecureChatClient] Error details:', {
+      //  message: error.message,
+      //  stack: error.stack,
+      //  threadId: threadId ? `${threadId.substring(0, 8)}...` : 'undefined',
+      //  hasUserId: !!userId,
+      //  hasAccountId: !!accountId
+      //});
       
       // CRITICAL FIX: Reset streaming flags on error to prevent stuck states
       this.hasReceivedRealContent = false;
