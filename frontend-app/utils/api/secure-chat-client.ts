@@ -236,7 +236,7 @@ export class SecureChatClientImpl implements SecureChatClient {
         }
       }
 
-      console.log('[SecureChatClient] Stream completed successfully');
+      //console.log('[SecureChatClient] Stream completed successfully');
       this.setState({ isLoading: false });
       this.isStreaming = false;
 
@@ -258,14 +258,14 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   private handleStreamChunk(chunk: any) {
-    console.log('[SecureChatClient] Stream chunk received:', chunk);
-    console.log('[SecureChatClient] Chunk type:', chunk.type, 'Data keys:', Object.keys(chunk.data || {}));
-    console.log('[SecureChatClient] Current state:', {
-      isStreaming: this.isStreaming,
-      hasReceivedRealContent: this.hasReceivedRealContent,
-      messageCount: this._state.messages.length,
-      isLoading: this._state.isLoading
-    });
+    //console.log('[SecureChatClient] Stream chunk received:', chunk);
+    //console.log('[SecureChatClient] Chunk type:', chunk.type, 'Data keys:', Object.keys(chunk.data || {}));
+    //console.log('[SecureChatClient] Current state:', {
+    //  isStreaming: this.isStreaming,
+    //  hasReceivedRealContent: this.hasReceivedRealContent,
+    //  messageCount: this._state.messages.length,
+    //  isLoading: this._state.isLoading
+    //});
     
     // Handle different chunk types
     if (chunk.type === 'error') {
@@ -309,13 +309,11 @@ export class SecureChatClientImpl implements SecureChatClient {
 
         // Handle node execution updates for progressive feedback
     if (chunk.type === 'node_update' && chunk.nodeName) {
-      console.log(`[SecureChatClient] Node ${chunk.nodeName} executed:`, chunk.data);
+      //console.log(`[SecureChatClient] Node ${chunk.nodeName} executed:`, chunk.data);
       
-      // Show status messages during the thinking phase, but stop when final streaming starts
-      const isFinalStreamingPhase = this.hasReceivedRealContent && this.isCurrentlyStreamingFinalResponse();
-      
-      if (isFinalStreamingPhase) {
-        console.log('[SecureChatClient] Skipping status message - final response is streaming');
+      // Skip status messages if we've already received real content (complete response)
+      if (this.hasReceivedRealContent) {
+        //console.log('[SecureChatClient] Skipping status message - real content already received');
         return;
       }
       
@@ -330,7 +328,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       const messages = this._state.messages.filter(msg => !msg.isStatus);
       messages.push(statusMessage);
       
-      console.log('[SecureChatClient] Setting status message:', statusMessage);
+      //console.log('[SecureChatClient] Setting status message:', statusMessage);
       this.setState({ messages });
       return;
     }
@@ -413,9 +411,10 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // Handle LangGraph messages streaming (complete messages from 'messages' stream mode)
     if (chunk.type === 'messages' && chunk.data && Array.isArray(chunk.data)) {
-      console.log('[SecureChatClient] Received messages chunk:', chunk.data);
+      //console.log('[SecureChatClient] Received messages chunk:', chunk.data);
       
-      // Process all AI messages in the chunk (don't break early)
+      // Collect all new AI messages first to avoid state overwriting bug
+      const newMessages: Message[] = [];
       let hasProcessedMessage = false;
       
       for (const messageData of chunk.data) {
@@ -433,36 +432,39 @@ export class SecureChatClientImpl implements SecureChatClient {
             ).join('');
           }
 
-          console.log('[SecureChatClient] Processing AI message content:', content);
+          //console.log('[SecureChatClient] Processing AI message content:', content);
 
           if (content && content.trim().length > 0) {
             this.hasReceivedRealContent = true;
             hasProcessedMessage = true;
             
-            // PRODUCTION FIX: Always replace status messages with complete response
-            const currentMessages = [...this._state.messages];
-            const filteredMessages = currentMessages.filter(msg => !msg.isStatus);
+            // Create new message with safe ID assignment
             const newMessage: Message = { 
               role: 'assistant', 
               content: content,
-              id: messageData.id // Preserve message ID for debugging
+              ...(messageData.id !== undefined && { id: messageData.id }) // Only add ID if it exists
             };
             
-            console.log('[SecureChatClient] Setting message state:', newMessage);
-            this.setState({ 
-              messages: [...filteredMessages, newMessage],
-              isLoading: false // CRITICAL: Mark loading as complete
-            });
-            
-            // Mark streaming as complete
-            this.isStreaming = false;
+            newMessages.push(newMessage);
+            //console.log('[SecureChatClient] Collected message:', newMessage);
           }
-          // FIXED: Don't break early - process all AI messages in the chunk
         }
       }
       
-      // If we processed a message, we're done with this chunk
-      if (hasProcessedMessage) {
+      // Apply all new messages in a single setState call to prevent state overwriting
+      if (hasProcessedMessage && newMessages.length > 0) {
+        const currentMessages = [...this._state.messages];
+        const filteredMessages = currentMessages.filter(msg => !msg.isStatus);
+        
+        //console.log('[SecureChatClient] Setting all messages state:', newMessages);
+        
+        this.setState({ 
+          messages: [...filteredMessages, ...newMessages],
+          isLoading: false // Mark loading as complete only once
+        });
+        
+        // Mark streaming as complete only once
+        this.isStreaming = false;
         return;
       }
     }
@@ -567,9 +569,9 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   private updateStatusForTransfer(agentName: string): void {
-    // Don't update if we're already streaming final response
-    if (this.isCurrentlyStreamingFinalResponse()) {
-      //console.log(`[SecureChatClient] Skipping status update - final response streaming`);
+    // Don't update if we've already received real content
+    if (this.hasReceivedRealContent) {
+      //console.log(`[SecureChatClient] Skipping status update - real content already received`);
       return;
     }
     
