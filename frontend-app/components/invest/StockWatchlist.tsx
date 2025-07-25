@@ -49,29 +49,29 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
     console.log(`[Watchlist] Starting chart-based calculation for ${symbol}`);
     
     try {
-      // ROBUST DATE LOGIC - Handle system clock issues and future dates
+      // ROBUST DATE LOGIC - Handle system clock issues and future dates (MATCH MiniStockChart)
       const now = new Date();
-      
-      // CRITICAL FIX: Validate system date and use reasonable bounds
-      const currentYear = now.getFullYear();
-      const isUnreasonableFutureDate = currentYear > 2030; // Updated for 2025+ compatibility
-      
+      const { default: MarketHolidayUtil } = await import("@/lib/marketHolidays");
+      const latestTradingDay = MarketHolidayUtil.getLastTradingDay(now);
+      const daysSinceLastTradingDay = (now.getTime() - latestTradingDay.getTime()) / (1000 * 60 * 60 * 24);
+      const isUnreasonableFutureDate = daysSinceLastTradingDay > 7; // More than a week after last trading day
+
       let toDate: Date;
       let fromDate: Date;
-      
+      let easternToday: Date = new Date();
+      let isMarketClosed = false;
+
       if (isUnreasonableFutureDate) {
-        // System clock seems wrong - use a hardcoded, known-good recent trading day
+        // System clock seems wrong - use the most recent trading day as fallback (MATCH MiniStockChart)
         console.warn(`[Watchlist ${symbol}] System date appears to be in future (${now.toISOString()}), using fallback date range`);
-        // Use a fixed fallback date (e.g., last trading day of 2024)
-        const { createEasternDate } = await import("@/lib/timezone");
-        const FALLBACK_DATE = createEasternDate("2024-12-31", "16:00:00"); // 4pm ET
-        const { default: MarketHolidayUtil } = await import("@/lib/marketHolidays");
-        const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(FALLBACK_DATE);
-        toDate = new Date(mostRecentTradingDay);
-        fromDate = new Date(mostRecentTradingDay); // Same day for 1D chart
+        easternToday = new Date(latestTradingDay);
+        isMarketClosed = true; // Always treat fallback as closed for safety
+        fromDate = new Date(latestTradingDay);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate = new Date(latestTradingDay);
+        toDate.setHours(23, 59, 59, 999);
       } else {
         // System date seems reasonable - use normal logic
-        // Check if markets are currently closed using proper Eastern Time
         const easternFormatter = new Intl.DateTimeFormat('en-US', {
           timeZone: 'America/New_York',
           year: 'numeric',
@@ -81,39 +81,25 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
           minute: '2-digit',
           hour12: false
         });
-        
         const easternParts = easternFormatter.formatToParts(now);
         const easternHour = parseInt(easternParts.find(part => part.type === 'hour')?.value || '0');
         const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
         const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
         const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
-        
-        // Instead of using new Date(easternYear, easternMonth - 1, easternDay),
-        // construct the date string in ET to avoid local timezone issues
         const { createEasternDate } = await import("@/lib/timezone");
-        const easternToday = createEasternDate(`${easternYear}-${String(easternMonth).padStart(2,'0')}-${String(easternDay).padStart(2,'0')}`);
+        easternToday = createEasternDate(`${easternYear}-${String(easternMonth).padStart(2,'0')}-${String(easternDay).padStart(2,'0')}`);
         const easternDayOfWeek = easternToday.getDay();
-        
         const isAfterHours = easternHour >= 16 || easternHour < 9;
         const isWeekend = easternDayOfWeek === 0 || easternDayOfWeek === 6;
-        const isMarketClosed = isAfterHours || isWeekend;
-        
+        isMarketClosed = isAfterHours || isWeekend;
         console.log(`[Watchlist ${symbol}] Market status: closed=${isMarketClosed}, hour=${easternHour}`);
-        
         if (isMarketClosed) {
-          // If markets are closed, use the most recent trading day
-          const { default: MarketHolidayUtil } = await import("@/lib/marketHolidays");
           const mostRecentTradingDay = MarketHolidayUtil.getLastTradingDay(easternToday);
-          
-          // FIXED: Show ONLY the most recent trading day for proper 1D calculation  
-          // This ensures consistency with StockChart 1D calculation
           fromDate = new Date(mostRecentTradingDay);
-          fromDate.setHours(0, 0, 0, 0); // Start of the trading day
-          
+          fromDate.setHours(0, 0, 0, 0);
           toDate = new Date(mostRecentTradingDay);
-          toDate.setHours(23, 59, 59, 999); // End of the same trading day
+          toDate.setHours(23, 59, 59, 999);
         } else {
-          // Markets are open - get current trading day data
           const { getStartOfTodayInUserTimezone } = await import("@/lib/timezone");
           const startOfToday = getStartOfTodayInUserTimezone();
           fromDate = startOfToday;
