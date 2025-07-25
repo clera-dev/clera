@@ -226,7 +226,8 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
           const closingPrice = singleDayData[singleDayData.length - 1].price; // Last data point of the day
 
           if (openingPrice === 0) {
-            return closingPrice > 0 ? Infinity : 0;
+            // If opening price is zero, percentage change is undefined (avoid Infinity/NaN)
+            return undefined;
           }
 
           const changePercent = ((closingPrice - openingPrice) / openingPrice) * 100;
