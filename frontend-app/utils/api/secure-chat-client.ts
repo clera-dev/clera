@@ -10,13 +10,15 @@ export interface ChatState {
     resumable: boolean;
     ns?: string[];
   } | null;
+  modelProviderError: boolean; // NEW: Flag for graceful model provider error handling
 }
 
 export interface SecureChatClient {
-  readonly state: ChatState;
+  state: ChatState;
   handleInterrupt: (threadId: string, runId: string, response: any) => Promise<void>;
   startStream: (threadId: string, input: any, userId: string, accountId: string) => Promise<void>;
   clearError: () => void;
+  clearModelProviderError: () => void;
   setMessages: (messages: Message[]) => void;
   addMessagesWithStatus: (userMessage: Message) => void;
   subscribe: (listener: () => void) => () => void;
@@ -29,6 +31,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     isLoading: false,
     error: null,
     interrupt: null,
+    modelProviderError: false,
   };
   
   private stateListeners: Set<() => void> = new Set();
@@ -47,7 +50,8 @@ export class SecureChatClientImpl implements SecureChatClient {
       messages: [...this._state.messages], // Shallow copy of messages array
       isLoading: this._state.isLoading,
       error: this._state.error,
-      interrupt: this._state.interrupt ? { ...this._state.interrupt } : null // Deep copy of interrupt object
+      interrupt: this._state.interrupt ? { ...this._state.interrupt } : null, // Deep copy of interrupt object
+      modelProviderError: this._state.modelProviderError
     };
   }
 
@@ -66,10 +70,27 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   setMessages(messages: Message[]) {
-    this.setState({ messages: [...messages] }); // Create defensive copy
+    // CRITICAL FIX: Validate all messages to prevent backend errors
+    const validMessages = messages.filter(msg => {
+      const isValid = msg.content && typeof msg.content === 'string' && msg.content.trim() !== '';
+      if (!isValid) {
+        console.error('[SecureChatClient] Filtering out invalid message:', msg);
+      }
+      return isValid;
+    });
+
+    console.log('[SecureChatClient] setMessages called - Original:', messages.length, 'Valid:', validMessages.length);
+    
+    this.setState({ messages: [...validMessages] }); // Create defensive copy
   }
 
   addMessagesWithStatus(userMessage: Message) {
+    // CRITICAL FIX: Validate message content to prevent backend errors
+    if (!userMessage.content || userMessage.content.trim() === '') {
+      console.error('[SecureChatClient] Attempted to add empty user message, rejecting:', userMessage);
+      return;
+    }
+
     // Add both user message and status message atomically to prevent timing issues
     const statusMessage: Message = {
       role: 'assistant',
@@ -79,6 +100,8 @@ export class SecureChatClientImpl implements SecureChatClient {
     
     // Ensure we preserve all existing messages and add the new ones atomically
     const newMessages = [...this._state.messages, userMessage, statusMessage];
+    
+    console.log('[SecureChatClient] Adding user message and status, total messages:', newMessages.length);
     
     this.setState({ 
       messages: newMessages
@@ -203,7 +226,7 @@ export class SecureChatClientImpl implements SecureChatClient {
 
   async startStream(threadId: string, input: any, userId: string, accountId: string): Promise<void> {
     try {
-      // console.log('[SecureChatClient] Starting stream for thread:', threadId);
+      // console.log('[SecureChatClient] Starting stream for thread:', threadId, 'with input:', typeof input);
       
       // CRITICAL FIX: Reset streaming state at the beginning of each stream
       // This ensures status messages don't persist from previous streams
@@ -239,6 +262,8 @@ export class SecureChatClientImpl implements SecureChatClient {
         }),
       });
 
+      // console.log('[SecureChatClient] Stream response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`[SecureChatClient] Stream response error:`, {
@@ -258,7 +283,7 @@ export class SecureChatClientImpl implements SecureChatClient {
         throw new Error(errorData.error || `HTTP ${response.status}: ${errorText}`);
       }
 
-      // console.log('[SecureChatClient] Stream response received, starting to read chunks');
+      // console.log('[SecureChatClient] Stream response received, starting to read chunks...');
 
       // Create EventSource from the streaming response
       const reader = response.body?.getReader();
@@ -298,6 +323,8 @@ export class SecureChatClientImpl implements SecureChatClient {
               //   dataType: typeof data.data,
               //   dataKeys: data.data ? Object.keys(data.data) : []
               // });
+              
+              // CRITICAL FIX: Actually call handleStreamChunk to process the chunk!
               this.handleStreamChunk(data);
             } catch (e) {
               console.error('[SecureChatClient] Error parsing stream chunk:', e, 'Line:', line);
@@ -322,18 +349,35 @@ export class SecureChatClientImpl implements SecureChatClient {
         // Fallback completion logic only for edge cases where chunk processing failed
         const hasValidResponse = this.hasReceivedRealContent || this.hasReceivedInterrupt;
         
+        // console.log('[SecureChatClient] Completion logic - streamCompletedSuccessfully:', this.streamCompletedSuccessfully, 
+        //            'hasReceivedRealContent:', this.hasReceivedRealContent, 
+        //            'hasReceivedInterrupt:', this.hasReceivedInterrupt,
+        //            'chunkCount:', chunkCount,
+        //            'currentMessages:', this._state.messages.length);
+        
         if (hasValidResponse) {
           this.setState({ isLoading: false });
           // console.log('[SecureChatClient] FALLBACK completion - valid response detected');
         } else {
-          console.warn('[SecureChatClient] Stream completed with no response - neither chunk processing nor fallback detected valid content');
+          console.error('[SecureChatClient] CRITICAL ERROR: Stream completed with no response - neither chunk processing nor fallback detected valid content');
+          console.error('[SecureChatClient] Current message state:', this._state.messages.map(m => ({ role: m.role, contentLength: m.content?.length, isStatus: m.isStatus })));
+          
+          // CRITICAL FIX: Clean up message state to prevent corrupting subsequent requests
+          // Remove any potentially corrupted status messages but preserve valid user messages
+          const cleanMessages = this._state.messages.filter(msg => 
+            msg.role === 'user' && msg.content && msg.content.trim() !== ''
+          );
+          
+          console.error('[SecureChatClient] Cleaning message state - Before:', this._state.messages.length, 'After:', cleanMessages.length);
+          
           this.setState({ 
+            messages: cleanMessages, // Clean state
             error: 'No response received from agent. Please try again.',
             isLoading: false 
           });
         }
       } else {
-        // console.log('[SecureChatClient] Chunk processing handled completion successfully - skipping redundant completion logic');
+        console.log('[SecureChatClient] Chunk processing handled completion successfully - skipping redundant completion logic');
       }
       // If streamCompletedSuccessfully is true, chunk processing already handled completion correctly
       
@@ -471,7 +515,8 @@ export class SecureChatClientImpl implements SecureChatClient {
         //   name: messageData?.name,
         //   hasContent: !!messageData?.content,
         //   contentType: typeof messageData?.content,
-        //   contentLength: messageData?.content ? messageData.content.length : 0
+        //   contentLength: Array.isArray(messageData?.content) ? messageData.content.length : (messageData?.content?.length || 0),
+        //   content: messageData?.content
         // });
         
         if (messageData && messageData.type === 'ai' && messageData.name === 'Clera') {
@@ -498,6 +543,17 @@ export class SecureChatClientImpl implements SecureChatClient {
             };
             
             newMessages.push(newMessage);
+          } else if (messageData.name === 'Clera') {
+            // CRITICAL FIX: Detect empty Clera responses (Anthropic model provider issue)
+            console.log('[SecureChatClient] Detected empty Clera response - setting graceful model provider error');
+            
+            // Set graceful error state and mark as handled to prevent harsh error message
+            this.streamCompletedSuccessfully = true;
+            this.setState({ 
+              modelProviderError: true,
+              isLoading: false 
+            });
+            return; // Exit early with graceful error handling
           }
         }
       }
@@ -676,6 +732,10 @@ export class SecureChatClientImpl implements SecureChatClient {
     }
     
     return 'Processing...';
+  }
+
+  clearModelProviderError() {
+    this.setState({ modelProviderError: false });
   }
 
   cleanup() {

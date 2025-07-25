@@ -67,58 +67,72 @@ export class LangGraphStreamingService {
    * @returns NextResponse with streaming content
    */
   async createStreamingResponse(options: LangGraphStreamingOptions): Promise<NextResponse> {
-    const { threadId, streamConfig, streamMode, initialMessage, onError } = options;
+    // console.log('[LangGraphStreamingService] Creating streaming response with options:', {
+    //   threadId: options.threadId,
+    //   streamMode: options.streamMode,
+    //   hasInput: !!options.streamConfig.input,
+    //   hasConfig: !!options.streamConfig.config
+    // });
+
+    // Capture service instance for use in ReadableStream
+    const serviceInstance = this;
 
     const stream = new ReadableStream({
-      start: async (controller) => {
+      async start(controller) {
         try {
-          // Send initial message if provided
-          if (initialMessage) {
-            const initialChunk = `data: ${JSON.stringify(initialMessage)}\n\n`;
-            controller.enqueue(new TextEncoder().encode(initialChunk));
-          }
-
-          // Start LangGraph streaming
-          const streamIterator = this.langGraphClient.runs.stream(
-            threadId,
+          // console.log('[LangGraphStreamingService] Starting stream for thread:', options.threadId);
+          
+          const stream = await serviceInstance.langGraphClient.runs.stream(
+            options.threadId,
             process.env.LANGGRAPH_ASSISTANT_ID || 'agent',
             {
-              input: streamConfig.input,
-              command: streamConfig.command,
-              config: streamConfig.config,
-              streamMode: streamMode as any || ['updates', 'messages'] as any
+              input: options.streamConfig.input,
+              command: options.streamConfig.command,
+              config: options.streamConfig.config,
+              streamMode: options.streamMode as any || ['updates', 'messages'] as any
             }
           );
 
-          // Process stream chunks
-          for await (const chunk of streamIterator) {
-            const processedChunk = this.processStreamChunk(chunk);
+          // console.log('[LangGraphStreamingService] LangGraph stream created successfully');
+
+          for await (const chunk of stream) {
+            // console.log('[LangGraphStreamingService] Raw chunk received from LangGraph:', {
+            //   hasChunk: !!chunk,
+            //   chunkKeys: chunk ? Object.keys(chunk) : [],
+            //   event: (chunk as any)?.event,
+            //   dataType: typeof (chunk as any)?.data
+            // });
+
+            const processedChunk = serviceInstance.processStreamChunk(chunk);
             
             if (processedChunk) {
-              // SECURITY: Never log sensitive user content or PII
-              // console.log('Sending processed chunk to client:', { type: processedChunk.type });
+              // console.log('[LangGraphStreamingService] Sending processed chunk to client:', { 
+              //   type: processedChunk.type,
+              //   hasData: !!processedChunk.data,
+              //   metadata: processedChunk.metadata
+              // });
               
               const chunkText = `data: ${JSON.stringify(processedChunk)}\n\n`;
               controller.enqueue(new TextEncoder().encode(chunkText));
+            } else {
+              // console.log('[LangGraphStreamingService] Chunk processed but no output (filtered out)');
             }
           }
 
+          // console.log('[LangGraphStreamingService] Stream completed successfully');
+          controller.close();
+
         } catch (error: any) {
-          console.error('LangGraph streaming error:', error);
-          
-          // Call error handler if provided
-          if (onError) {
-            onError(error);
-          }
+          console.error('[LangGraphStreamingService] Stream error:', error);
+          options.onError?.(error);
           
           const errorChunk = {
             type: 'error',
-            data: { error: 'An unexpected error occurred. Please try again later.' }
+            data: { error: error.message || 'Unknown streaming error' }
           };
-          // Optionally, for internal debugging, you can log the real error:
-          // console.error('LangGraph streaming error:', error instanceof Error ? error.message : String(error));
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorChunk)}\n\n`));
-        } finally {
+          
+          const errorText = `data: ${JSON.stringify(errorChunk)}\n\n`;
+          controller.enqueue(new TextEncoder().encode(errorText));
           controller.close();
         }
       }
@@ -129,7 +143,7 @@ export class LangGraphStreamingService {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
-      },
+      }
     });
   }
 

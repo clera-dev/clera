@@ -19,6 +19,7 @@ import ChatMessage, { ChatMessageProps } from './ChatMessage';
 import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import { InterruptConfirmation } from './InterruptConfirmation';
+import ModelProviderRetryPopup from './ModelProviderRetryPopup';
 // ChatSkeleton removed - status messages now provide proper feedback
 import SuggestedQuestions from './SuggestedQuestions';
 
@@ -59,6 +60,10 @@ export default function Chat({
   const [isFirstMessageSent, setIsFirstMessageSent] = useState(false); // New state to prevent duplicates
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   
+  // NEW: State for intelligent retry functionality
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
+  const [lastFailedThreadId, setLastFailedThreadId] = useState<string | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -69,6 +74,10 @@ export default function Chat({
   const interrupt = chatClient.state.interrupt;
   const isInterrupting = interrupt !== null;
   const interruptMessage = interrupt?.value || null;
+  
+  // NEW: Model provider error detection
+  const hasModelProviderError = chatClient.state.modelProviderError;
+  const shouldShowRetryPopup = hasModelProviderError && lastFailedMessage !== null;
 
   // --- NEW: Single source of truth for messages ---
   // The chatClient's state will now be the primary message store.
@@ -226,8 +235,16 @@ export default function Chat({
 
         //console.log(`Submitting subsequent input via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
         
+        // NEW: Store message content for potential retry before attempting to send
+        setLastFailedMessage(contentToSend);
+        setLastFailedThreadId(targetThreadId);
+        
         try {
             await chatClient.startStream(targetThreadId, runInput, userId, accountId);
+
+            // Clear retry state on successful submission
+            setLastFailedMessage(null);
+            setLastFailedThreadId(null);
 
             // Callbacks after successful submission initiation for subsequent messages
             onMessageSent?.();
@@ -235,10 +252,135 @@ export default function Chat({
 
         } catch (err) {
             console.error("Error submitting subsequent message:", err);
+            // Keep retry state for potential retry (don't clear lastFailedMessage)
         }
     }
 
   }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession]);
+
+  // NEW: Intelligent retry function using LangGraph's interrupt mechanism
+  const handleRetry = useCallback(async () => {
+    if (!lastFailedMessage || !lastFailedThreadId) return;
+
+    // Clear the model provider error state first
+    chatClient.clearModelProviderError();
+
+    // Use LangGraph's interrupt mechanism to retry the same message
+    // This creates a new run with the same input but interrupts the previous one
+    const runInput = {
+      messages: [{ type: 'human' as const, content: lastFailedMessage }],
+    };
+
+    try {
+      console.log('[Chat] Retrying failed message using LangGraph interrupt mechanism:', lastFailedMessage);
+      
+      // Use the same thread but with interrupt strategy to replace the failed attempt
+      await chatClient.startStream(lastFailedThreadId, runInput, userId, accountId);
+
+      // Clear retry state on successful retry
+      setLastFailedMessage(null);
+      setLastFailedThreadId(null);
+
+      // Callbacks after successful retry
+      onMessageSent?.();
+      await onQuerySent?.();
+
+    } catch (err) {
+      console.error("Error during intelligent retry:", err);
+      // Keep retry state for another attempt
+    }
+  }, [lastFailedMessage, lastFailedThreadId, chatClient, userId, accountId, onMessageSent, onQuerySent]);
+
+  // NEW: Dismiss retry popup
+  const handleDismissRetry = useCallback(() => {
+    setLastFailedMessage(null);
+    setLastFailedThreadId(null);
+    chatClient.clearModelProviderError();
+  }, [chatClient]);
+
+  // Handle suggested question selection
+  const handleSuggestedQuestion = useCallback(async (question: string) => {
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion || isProcessing || isInterrupting) return;
+
+    // Clear the input field immediately
+    setInput('');
+
+    // Reset textarea height after sending
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.rows = 1;
+    }
+
+    // Add user message and status immediately - BEFORE any async operations
+    const userMessage: Message = {
+      role: 'user',
+      content: trimmedQuestion
+    };
+    chatClient.addMessagesWithStatus(userMessage);
+
+    let targetThreadId = currentThreadId;
+
+    // Handle Session Creation OR Subsequent Message (same logic as handleSendMessage)
+    if (targetThreadId === null) {
+        // This is the FIRST message in a new chat
+        setIsCreatingSession(true);
+        //console.log("No current thread ID. Attempting to create new session...");
+        try {
+            const newTitle = formatChatTitle(trimmedQuestion);
+            const newSession = await createChatSession(accountId, userId, newTitle);
+
+            if (newSession && newSession.id) {
+                targetThreadId = newSession.id;
+                //console.log("New session created successfully:", targetThreadId);
+
+                // Set the pending message content
+                setPendingFirstMessage(trimmedQuestion);
+                // Update the thread ID state - this will trigger the useEffect
+                setCurrentThreadId(targetThreadId);
+
+                if (onSessionCreated) {
+                    onSessionCreated(targetThreadId);
+                }
+            } else {
+                throw new Error("Failed to create chat session or received invalid response.");
+            }
+        } catch (err) {
+            console.error("Error creating session in handleSuggestedQuestion:", err);
+            setPendingFirstMessage(null);
+        } finally {
+             setIsCreatingSession(false);
+        }
+    } else {
+        // This is a SUBSEQUENT message in an existing chat
+        //console.log(`Submitting SUBSEQUENT suggested question to thread ${targetThreadId}`);
+
+        const runInput = {
+            messages: [{ type: 'human' as const, content: trimmedQuestion }],
+        };
+        
+        const runConfig = {
+          configurable: {
+            user_id: userId,
+            account_id: accountId
+          },
+          stream_mode: 'messages-tuple' as const
+        };
+
+        // console.log(`Submitting suggested question via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
+        
+        try {
+            await chatClient.startStream(targetThreadId, runInput, userId, accountId);
+
+            // Callbacks after successful submission initiation
+            onMessageSent?.();
+            await onQuerySent?.();
+
+        } catch (err) {
+            console.error("Error submitting suggested question:", err);
+        }
+    }
+  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent]);
 
   // Auto-adjust textarea height
   useEffect(() => {
@@ -353,90 +495,6 @@ export default function Chat({
   // Create a string representation of the error, or null if no error
   const errorMessage = error ? String(error) : null;
 
-  // Add this function to handle selecting a suggested question
-  const handleSuggestedQuestion = useCallback(async (question: string) => {
-    const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || isProcessing || isInterrupting) return;
-
-    // Clear the input field immediately
-    setInput('');
-
-    // Reset textarea height after sending
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto';
-      inputRef.current.rows = 1;
-    }
-
-    // Add user message and status immediately - BEFORE any async operations
-    const userMessage: Message = {
-      role: 'user',
-      content: trimmedQuestion
-    };
-    chatClient.addMessagesWithStatus(userMessage);
-
-    let targetThreadId = currentThreadId;
-
-    // Handle Session Creation OR Subsequent Message (same logic as handleSendMessage)
-    if (targetThreadId === null) {
-        // This is the FIRST message in a new chat
-        setIsCreatingSession(true);
-        //console.log("No current thread ID. Attempting to create new session...");
-        try {
-            const newTitle = formatChatTitle(trimmedQuestion);
-            const newSession = await createChatSession(accountId, userId, newTitle);
-
-            if (newSession && newSession.id) {
-                targetThreadId = newSession.id;
-                //console.log("New session created successfully:", targetThreadId);
-
-                // Set the pending message content
-                setPendingFirstMessage(trimmedQuestion);
-                // Update the thread ID state - this will trigger the useEffect
-                setCurrentThreadId(targetThreadId);
-
-                if (onSessionCreated) {
-                    onSessionCreated(targetThreadId);
-                }
-            } else {
-                throw new Error("Failed to create chat session or received invalid response.");
-            }
-        } catch (err) {
-            console.error("Error creating session in handleSuggestedQuestion:", err);
-            setPendingFirstMessage(null);
-        } finally {
-             setIsCreatingSession(false);
-        }
-    } else {
-        // This is a SUBSEQUENT message in an existing chat
-        //console.log(`Submitting SUBSEQUENT suggested question to thread ${targetThreadId}`);
-
-        const runInput = {
-            messages: [{ type: 'human' as const, content: trimmedQuestion }],
-        };
-        
-        const runConfig = {
-          configurable: {
-            user_id: userId,
-            account_id: accountId
-          },
-          stream_mode: 'messages-tuple' as const
-        };
-
-        // console.log(`Submitting suggested question via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
-        
-        try {
-            await chatClient.startStream(targetThreadId, runInput, userId, accountId);
-
-            // Callbacks after successful submission initiation
-            onMessageSent?.();
-            await onQuerySent?.();
-
-        } catch (err) {
-            console.error("Error submitting suggested question:", err);
-        }
-    }
-  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent]);
-
   return (
     <div className="flex flex-col h-full">
       {!isFullscreen && !isSidebarMode && (
@@ -504,6 +562,17 @@ export default function Chat({
       
       {/* Input Area - Fixed at bottom */}
       <div className="flex-shrink-0 border-t bg-background">
+        {/* NEW: Model Provider Retry Popup - Above input area */}
+        {shouldShowRetryPopup && (
+          <div className="p-4 border-b border-gray-100">
+            <ModelProviderRetryPopup
+              isVisible={shouldShowRetryPopup}
+              onRetry={handleRetry}
+              onDismiss={handleDismissRetry}
+            />
+          </div>
+        )}
+        
         {errorMessage && (
             <div className="text-red-500 text-sm py-1 px-3">Error: {errorMessage}</div>
         )}
