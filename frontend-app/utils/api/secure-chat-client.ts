@@ -270,6 +270,8 @@ export class SecureChatClientImpl implements SecureChatClient {
       let buffer = '';
       let chunkCount = 0;
 
+      // console.log('[SecureChatClient] Starting to read stream chunks...');
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
@@ -281,16 +283,27 @@ export class SecureChatClientImpl implements SecureChatClient {
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
+        // console.log('[SecureChatClient] Received', lines.length, 'lines in this read');
+
         for (const line of lines) {
+          // console.log('[SecureChatClient] Processing line:', line.substring(0, 100) + (line.length > 100 ? '...' : ''));
+          
           if (line.startsWith('data: ')) {
             chunkCount++;
             try {
               const data = JSON.parse(line.slice(6));
-              // console.log(`[SecureChatClient] Processing chunk ${chunkCount}:`, { type: data.type });
+              // console.log(`[SecureChatClient] Processing chunk ${chunkCount}:`, { 
+              //   type: data.type, 
+              //   hasData: !!data.data,
+              //   dataType: typeof data.data,
+              //   dataKeys: data.data ? Object.keys(data.data) : []
+              // });
               this.handleStreamChunk(data);
             } catch (e) {
               console.error('[SecureChatClient] Error parsing stream chunk:', e, 'Line:', line);
             }
+          } else if (line.trim() !== '') {
+            // console.log('[SecureChatClient] Non-data line:', line);
           }
         }
       }
@@ -311,7 +324,7 @@ export class SecureChatClientImpl implements SecureChatClient {
         
         if (hasValidResponse) {
           this.setState({ isLoading: false });
-          console.log('[SecureChatClient] FALLBACK completion - valid response detected');
+          // console.log('[SecureChatClient] FALLBACK completion - valid response detected');
         } else {
           console.warn('[SecureChatClient] Stream completed with no response - neither chunk processing nor fallback detected valid content');
           this.setState({ 
@@ -320,7 +333,7 @@ export class SecureChatClientImpl implements SecureChatClient {
           });
         }
       } else {
-        console.log('[SecureChatClient] Chunk processing handled completion successfully - skipping redundant completion logic');
+        // console.log('[SecureChatClient] Chunk processing handled completion successfully - skipping redundant completion logic');
       }
       // If streamCompletedSuccessfully is true, chunk processing already handled completion correctly
       
@@ -350,14 +363,16 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   private handleStreamChunk(chunk: any) {
-    // console.log('[SecureChatClient] Stream chunk received:', {
+    // console.log('[SecureChatClient] handleStreamChunk called with:', {
     //   type: chunk.type,
     //   hasData: !!chunk.data,
-    //   metadata: chunk.metadata,
-    //   dataKeys: chunk.data ? Object.keys(chunk.data) : [],
+    //   dataType: typeof chunk.data,
+    //   dataLength: Array.isArray(chunk.data) ? chunk.data.length : 'not array',
     //   currentState: {
     //     isStreaming: this.isStreaming,
     //     hasReceivedRealContent: this.hasReceivedRealContent,
+    //     hasReceivedInterrupt: this.hasReceivedInterrupt,
+    //     streamCompletedSuccessfully: this.streamCompletedSuccessfully,
     //     messageCount: this._state.messages.length,
     //     isLoading: this._state.isLoading
     //   }
@@ -377,7 +392,11 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // 2. Handle GraphInterrupt events
     if (chunk.type === 'interrupt') {
-      // console.log('[SecureChatClient] Processing GraphInterrupt:', chunk.data);
+      // console.log('[SecureChatClient] Processing GraphInterrupt:', {
+      //   hasData: !!chunk.data,
+      //   dataType: typeof chunk.data,
+      //   isArray: Array.isArray(chunk.data)
+      // });
       
       let interruptData = chunk.data;
       
@@ -394,7 +413,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       // CRITICAL FIX: Mark interrupt as a valid response (not an error)
       this.hasReceivedInterrupt = true;
       this.streamCompletedSuccessfully = true; // Mark that chunk processing handled completion
-      console.log('[SecureChatClient] Marked interrupt as valid response - completed by chunk processing');
+      // console.log('[SecureChatClient] Marked interrupt as valid response - completed by chunk processing');
       
       this.setState({
         interrupt: {
@@ -411,7 +430,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     // 3. Handle node execution updates for progressive feedback
     if (chunk.type === 'node_update' && chunk.data?.nodeName) {
       const nodeName = chunk.data.nodeName;
-      // console.log(`[SecureChatClient] Node update for: ${nodeName}`);
+      // console.log(`[SecureChatClient] Node update for: ${nodeName}, hasReceivedRealContent: ${this.hasReceivedRealContent}`);
       
       // CRITICAL FIX: Only show status messages if we haven't received real content yet
       // This prevents status messages from overriding completed responses
@@ -435,9 +454,11 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // 4. Handle complete messages from agents - CRITICAL PATH FOR BUG FIX
     if (chunk.type === 'messages_complete' && chunk.data && Array.isArray(chunk.data)) {
-      // console.log('[SecureChatClient] Processing complete messages:', {
+      // console.log('[SecureChatClient] Processing messages_complete chunk:', {
       //   messageCount: chunk.data.length,
-      //   isCompleteResponse: chunk.metadata?.isCompleteResponse
+      //   isCompleteResponse: chunk.metadata?.isCompleteResponse,
+      //   firstMessage: chunk.data[0],
+      //   allMessageTypes: chunk.data.map((msg: any) => ({ type: msg?.type, name: msg?.name, hasContent: !!msg?.content }))
       // });
       
       // Process all AI messages from Clera
@@ -445,6 +466,14 @@ export class SecureChatClientImpl implements SecureChatClient {
       let hasValidContent = false;
       
       for (const messageData of chunk.data) {
+        // console.log('[SecureChatClient] Processing message data:', {
+        //   type: messageData?.type,
+        //   name: messageData?.name,
+        //   hasContent: !!messageData?.content,
+        //   contentType: typeof messageData?.content,
+        //   contentLength: messageData?.content ? messageData.content.length : 0
+        // });
+        
         if (messageData && messageData.type === 'ai' && messageData.name === 'Clera') {
           // Extract content from AI message
           let content = '';
@@ -494,23 +523,23 @@ export class SecureChatClientImpl implements SecureChatClient {
         // This prevents the redundant completion logic from interfering
         this.streamCompletedSuccessfully = true;
         
-        console.log('[SecureChatClient] Complete messages applied successfully - marked as completed by chunk processing');
+        // console.log('[SecureChatClient] Complete messages applied successfully - marked as completed by chunk processing');
         return;
       } else {
-        // console.log('[SecureChatClient] No valid content found in messages_complete event');
+        // console.log('[SecureChatClient] No valid content found in messages_complete event - no AI messages from Clera with content');
       }
     }
 
     // 5. Handle messages metadata (progress indication)
     if (chunk.type === 'messages_metadata') {
-      // console.log('[SecureChatClient] Received messages metadata, stream is progressing');
+      // console.log('[SecureChatClient] Received messages_metadata');
       // Just log for debugging, don't update UI state for metadata
       return;
     }
 
     // 6. Handle token-level streaming (if LangGraph sends token events)
     if (chunk.type === 'message_token' && chunk.data) {
-      // console.log('[SecureChatClient] Received message token (legacy support)');
+      // console.log('[SecureChatClient] Received message_token');
       
       // Process token content
       let tokenContent = '';
@@ -551,7 +580,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     }
 
     // 7. Handle other metadata and unknown events
-    // console.log('[SecureChatClient] Received metadata or unknown event type:', chunk.type);
+    // console.log('[SecureChatClient] Received unhandled chunk type:', chunk.type, 'with data:', !!chunk.data);
     // Don't update UI for generic metadata events to prevent interference
   }
 
