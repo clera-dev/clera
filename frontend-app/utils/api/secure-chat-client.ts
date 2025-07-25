@@ -458,14 +458,27 @@ export class SecureChatClientImpl implements SecureChatClient {
         
         //console.log('[SecureChatClient] Setting all messages state:', newMessages);
         
+        // Only update messages, don't clear loading/streaming states here
+        // The stream may still have more chunks coming (e.g., message_token events)
         this.setState({ 
-          messages: [...filteredMessages, ...newMessages],
-          isLoading: false // Mark loading as complete only once
+          messages: [...filteredMessages, ...newMessages]
         });
         
-        // Mark streaming as complete only once
-        this.isStreaming = false;
+        // Mark that we've received real content for status message logic
+        this.hasReceivedRealContent = true;
         return;
+      }
+      
+      // Handle edge case: if we get a messages chunk with no valid content
+      // but the stream might be complete, we should still mark as having received content
+      // to prevent status messages from staying forever
+      if (chunk.data && Array.isArray(chunk.data) && chunk.data.length > 0) {
+        const hasAnyAIMessage = chunk.data.some((item: any) => 
+          item && item.type === 'ai' && item.name === 'Clera'
+        );
+        if (hasAnyAIMessage) {
+          this.hasReceivedRealContent = true;
+        }
       }
     }
 
