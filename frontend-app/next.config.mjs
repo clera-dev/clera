@@ -9,7 +9,6 @@ const nextConfig = {
   // Use the environment variable for the backend URL, with a fallback for development
   async rewrites() {
     const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
-    console.log('Using backend URL for rewrites:', backendUrl);
     
     return [
       // PostHog analytics rewrites

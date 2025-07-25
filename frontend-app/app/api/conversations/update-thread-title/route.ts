@@ -48,10 +48,24 @@ export async function POST(request: NextRequest) {
 
     const { user } = authResult;
 
+    // Validate required environment variables for LangGraph
+    const langGraphApiUrl = process.env.LANGGRAPH_API_URL;
+    const langGraphApiKey = process.env.LANGGRAPH_API_KEY;
+    if (!langGraphApiUrl || !langGraphApiKey) {
+      console.error('Missing required LangGraph environment variables:', {
+        LANGGRAPH_API_URL: langGraphApiUrl,
+        LANGGRAPH_API_KEY: langGraphApiKey ? '***set***' : undefined
+      });
+      return NextResponse.json(
+        { error: 'Server misconfiguration: LangGraph API credentials are missing.' },
+        { status: 500 }
+      );
+    }
+
     // Create LangGraph client (server-side only)
     const langGraphClient = new Client({
-      apiUrl: process.env.LANGGRAPH_API_URL,
-      apiKey: process.env.LANGGRAPH_API_KEY,
+      apiUrl: langGraphApiUrl,
+      apiKey: langGraphApiKey,
     });
 
     // Authorization check: ensure the thread belongs to the authenticated user

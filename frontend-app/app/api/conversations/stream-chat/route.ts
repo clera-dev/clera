@@ -61,14 +61,16 @@ export async function POST(request: NextRequest) {
             // PRODUCTION FIX: Use messages for token-by-token streaming (LangGraph standard)
             streamMode: ['updates', 'messages'] as any
           };
-          
-          console.log('[StreamChat] Starting stream with config:', JSON.stringify({
+
+          const logConfig = JSON.stringify({
             thread_id,
             assistant_id: process.env.LANGGRAPH_ASSISTANT_ID || 'agent',
             streamMode: streamConfig.streamMode,
             user_id: user.id,
             account_id: account_id
-          }, null, 2));
+          }, null, 2);
+          
+          console.log('[StreamChat] Starting stream.'); // hide logConfig for security
           
           const streamIterator = langGraphClient.runs.stream(
             thread_id,

@@ -24,10 +24,24 @@ export async function POST(request: NextRequest) {
 
     const { user } = authResult.context!;
 
+    // Validate required environment variables for LangGraph
+    const langGraphApiUrl = process.env.LANGGRAPH_API_URL;
+    const langGraphApiKey = process.env.LANGGRAPH_API_KEY;
+    if (!langGraphApiUrl || !langGraphApiKey) {
+      console.error('Missing required LangGraph environment variables:', {
+        LANGGRAPH_API_URL: langGraphApiUrl,
+        LANGGRAPH_API_KEY: langGraphApiKey ? '***set***' : undefined
+      });
+      return NextResponse.json(
+        { error: 'Server misconfiguration: LangGraph API credentials are missing.' },
+        { status: 500 }
+      );
+    }
+
     // Create LangGraph client (server-side only)
     const langGraphClient = new Client({
-      apiUrl: process.env.LANGGRAPH_API_URL,
-      apiKey: process.env.LANGGRAPH_API_KEY,
+      apiUrl: langGraphApiUrl,
+      apiKey: langGraphApiKey,
     });
 
     // Create thread using LangGraph SDK
@@ -40,7 +54,7 @@ export async function POST(request: NextRequest) {
     });
     
     // Avoid logging sensitive account_id to protect user privacy
-    console.log(`Created LangGraph thread: ${thread.thread_id} for account: [REDACTED]`);
+    console.log(`Created thread for account.`);
     
     return NextResponse.json({ id: thread.thread_id });
   } catch (error: any) {

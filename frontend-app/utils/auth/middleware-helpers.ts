@@ -146,7 +146,7 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
     // Get user's Alpaca account ID
     const alpacaAccountId = await getAlpacaAccountId(supabase, userId);
     if (!alpacaAccountId) {
-      console.log(`[Middleware] No Alpaca account found for user ${userId}`);
+      console.log(`[Middleware] No Alpaca account found for user`);
       return false;
     }
     
@@ -204,7 +204,6 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
           transfer.status === 'SETTLED'
         );
       
-      console.log(`[Middleware] Fallback funding status for ${userId}: ${!!hasFunding} (${transfers?.length || 0} transfers)`);
       return !!hasFunding;
     }
   } catch (error) {

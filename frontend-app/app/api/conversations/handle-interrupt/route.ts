@@ -38,7 +38,7 @@ async function handleInterruptLogic(
   }
 
   // SECURITY: Never log sensitive user content or PII
-  console.log(`Handling interrupt for thread ${thread_id}, run ${run_id}`);
+  console.log(`Handling interrupt for thread.`);
 
   // Create streaming response using the service
   return streamingService.createStreamingResponse({

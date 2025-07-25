@@ -77,12 +77,6 @@ export class SecureChatClientImpl implements SecureChatClient {
     
     // Ensure we preserve all existing messages and add the new ones atomically
     const newMessages = [...this._state.messages, userMessage, statusMessage];
-    console.log('[SecureChatClient] Adding user message and status:', {
-      userContent: userMessage.content,
-      totalMessages: newMessages.length,
-      userMessages: newMessages.filter(m => m.role === 'user').length,
-      statusMessages: newMessages.filter(m => m.isStatus).length
-    });
     
     this.setState({ 
       messages: newMessages
@@ -184,9 +178,6 @@ export class SecureChatClientImpl implements SecureChatClient {
         this.eventSource.close();
       }
 
-      console.log(`[SecureChatClient] Starting stream for thread ${threadId} with input:`, input);
-      console.log(`[SecureChatClient] User ID: ${userId}, Account ID: ${accountId}`);
-
       // Start new stream
       const response = await fetch('/api/conversations/stream-chat', {
         method: 'POST',
@@ -200,9 +191,6 @@ export class SecureChatClientImpl implements SecureChatClient {
           account_id: accountId,
         }),
       });
-
-      console.log(`[SecureChatClient] Stream response status: ${response.status}`);
-      console.log(`[SecureChatClient] Stream response headers:`, response.headers);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -262,8 +250,8 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   private handleStreamChunk(chunk: any) {
-    console.log('[SecureChatClient] Stream chunk received:', chunk);
-    console.log('[SecureChatClient] Chunk type:', chunk.type, 'Data keys:', Object.keys(chunk.data || {}));
+    //console.log('[SecureChatClient] Stream chunk received:', chunk);
+    //console.log('[SecureChatClient] Chunk type:', chunk.type, 'Data keys:', Object.keys(chunk.data || {}));
     
     // Handle different chunk types
     if (chunk.type === 'error') {
@@ -277,8 +265,8 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // Handle GraphInterrupt events
     if (chunk.type === 'interrupt') {
-      console.log('[SecureChatClient] Processing GraphInterrupt:', chunk.data);
-      console.log('[SecureChatClient] Full interrupt chunk:', chunk);
+      //console.log('[SecureChatClient] Processing GraphInterrupt:', chunk.data);
+      //console.log('[SecureChatClient] Full interrupt chunk:', chunk);
       
       // GraphInterrupt structure: { value, resumable, ns, when }
       let interruptData = chunk.data;
@@ -307,13 +295,13 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // Handle node execution updates for progressive feedback
     if (chunk.type === 'node_update' && chunk.nodeName) {
-      console.log(`Node ${chunk.nodeName} executed:`, chunk.data);
+      //console.log(`Node ${chunk.nodeName} executed:`, chunk.data);
       
       // Show status messages during the thinking phase, but stop when final streaming starts
       const isFinalStreamingPhase = this.hasReceivedRealContent && this.isCurrentlyStreamingFinalResponse();
       
       if (isFinalStreamingPhase) {
-        console.log('Skipping status message - final response is streaming');
+        //console.log('Skipping status message - final response is streaming');
         return;
       }
       
@@ -334,7 +322,7 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // Handle token-level streaming from LLM
     if (chunk.type === 'message_token') {
-      console.log('[SecureChatClient] Received message token:', chunk.data);
+      //console.log('[SecureChatClient] Received message token:', chunk.data);
       
       // Handle different token formats from LangGraph
       let content = '';
@@ -359,7 +347,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       }
       
       if (content) {
-        console.log('[SecureChatClient] Processing token content:', content);
+        //console.log('[SecureChatClient] Processing token content:', content);
         
         // Mark that we've received real content
         this.hasReceivedRealContent = true;
@@ -375,7 +363,7 @@ export class SecureChatClientImpl implements SecureChatClient {
         if (lastMessage && lastMessage.role === 'assistant' && this.isStreaming && !lastMessage.isStatus) {
           // Append to existing assistant message for streaming effect
           lastMessage.content += content;
-          console.log('[SecureChatClient] Appending to existing message, new length:', lastMessage.content.length);
+          //console.log('[SecureChatClient] Appending to existing message, new length:', lastMessage.content.length);
           this.setState({ messages: [...filteredMessages] });
         } else {
           // Add new assistant message
@@ -383,7 +371,7 @@ export class SecureChatClientImpl implements SecureChatClient {
             role: 'assistant',
             content: content
           };
-          console.log('[SecureChatClient] Creating new message with content:', content);
+          //console.log('[SecureChatClient] Creating new message with content:', content);
           this.setState({ messages: [...filteredMessages, newMessage] });
         }
       }
@@ -392,7 +380,7 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // Handle progress updates from tools/nodes
     if (chunk.type === 'progress_update') {
-      console.log('Progress update:', chunk.data);
+      //console.log('Progress update:', chunk.data);
       
       // Add a temporary status message
       const statusMessage: Message = {
@@ -410,7 +398,7 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // Handle LangGraph messages streaming (token-by-token from 'messages' stream mode)
     if (chunk.type === 'messages' && chunk.data && Array.isArray(chunk.data)) {
-      console.log('[SecureChatClient] Received messages chunk:', chunk.data);
+      //console.log('[SecureChatClient] Received messages chunk:', chunk.data);
       
       // LangGraph messages mode returns tuples of (message_chunk, metadata)
       // But if we're getting direct message objects, process them as tokens
@@ -429,7 +417,7 @@ export class SecureChatClientImpl implements SecureChatClient {
             ).join('');
           }
 
-          console.log('[SecureChatClient] Processing AI message content:', content);
+          // console.log('[SecureChatClient] Processing AI message content:', content);
 
           if (content && content.trim().length > 0) {
             this.hasReceivedRealContent = true;
@@ -440,7 +428,6 @@ export class SecureChatClientImpl implements SecureChatClient {
             const newMessage: Message = { role: 'assistant', content: content };
             
             this.setState({ messages: [...filteredMessages, newMessage] });
-            console.log('[SecureChatClient] AI message replaced status');
           }
           break;
         }
@@ -449,7 +436,7 @@ export class SecureChatClientImpl implements SecureChatClient {
 
     // Handle token-level streaming chunks (if LangGraph sends token events)
     if (chunk.type === 'message_token' && chunk.data) {
-      console.log('[SecureChatClient] Received message token:', chunk.data);
+      //console.log('[SecureChatClient] Received message token:', chunk.data);
       
       // Process token content
       let tokenContent = '';
@@ -460,13 +447,13 @@ export class SecureChatClientImpl implements SecureChatClient {
       }
 
       if (tokenContent) {
-        console.log('[SecureChatClient] Processing token:', tokenContent);
+        //console.log('[SecureChatClient] Processing token:', tokenContent);
         
         const currentMessages = [...this._state.messages];
         
         // First token: Remove status message and start building response
         if (!this.hasReceivedRealContent) {
-          console.log('[SecureChatClient] First token received, removing status message');
+          //console.log('[SecureChatClient] First token received, removing status message');
           this.hasReceivedRealContent = true;
           
           // Remove status messages and add new assistant message with first token
@@ -529,7 +516,7 @@ export class SecureChatClientImpl implements SecureChatClient {
           const agentMatch = content.match(/Successfully transferred to (\w+)/);
           if (agentMatch) {
             const targetAgent = agentMatch[1];
-            console.log(`[SecureChatClient] Detected transfer to: ${targetAgent}`);
+            //console.log(`[SecureChatClient] Detected transfer to: ${targetAgent}`);
             this.updateStatusForTransfer(targetAgent);
             return; // Only process first transfer per chunk
           }
@@ -538,7 +525,7 @@ export class SecureChatClientImpl implements SecureChatClient {
         // Also detect by tool name pattern
         if (toolName.startsWith('transfer_to_') && message?.status === 'success') {
           const targetAgent = toolName.replace('transfer_to_', '');
-          console.log(`[SecureChatClient] Detected transfer via tool name: ${targetAgent}`);
+          //console.log(`[SecureChatClient] Detected transfer via tool name: ${targetAgent}`);
           this.updateStatusForTransfer(targetAgent);
           return;
         }
@@ -549,11 +536,11 @@ export class SecureChatClientImpl implements SecureChatClient {
   private updateStatusForTransfer(agentName: string): void {
     // Don't update if we're already streaming final response
     if (this.isCurrentlyStreamingFinalResponse()) {
-      console.log(`[SecureChatClient] Skipping status update - final response streaming`);
+      //console.log(`[SecureChatClient] Skipping status update - final response streaming`);
       return;
     }
     
-    console.log(`[SecureChatClient] Updating status for transfer to: ${agentName}`);
+    //console.log(`[SecureChatClient] Updating status for transfer to: ${agentName}`);
     
     // Add status message for the new agent
     const statusMessage: Message = {
@@ -566,7 +553,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     const messages = this._state.messages.filter(msg => !msg.isStatus);
     const newMessages = [...messages, statusMessage];
     
-    console.log(`[SecureChatClient] Status update - preserving ${messages.length} non-status messages, adding new status`);
+    //console.log(`[SecureChatClient] Status update - preserving ${messages.length} non-status messages, adding new status`);
     
     this.setState({ messages: newMessages });
   }

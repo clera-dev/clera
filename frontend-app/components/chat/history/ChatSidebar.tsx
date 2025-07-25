@@ -46,11 +46,9 @@ export default function ChatSidebar({
   // Load chat sessions when mounted or when refreshKey changes
   useEffect(() => {
     const loadSessions = async () => {
-      console.log(`[ChatSidebar] Loading sessions for account: ${accountId}, refreshKey: ${refreshKey}`);
       setIsLoading(true);
       try {
         const chatSessions = await getChatSessions(accountId);
-        console.log(`[ChatSidebar] Loaded ${chatSessions.length} sessions:`, chatSessions);
         setSessions(chatSessions);
       } catch (error) {
         console.error('[ChatSidebar] Error loading chat sessions:', error);

@@ -80,22 +80,20 @@ export default function Chat({
     const loadMessages = async () => {
       // CRITICAL FIX: Don't load messages if we're in new chat mode (initialSessionId is undefined)
       if (initialSessionId === undefined) {
-        console.log(`Skipping message loading - in new chat mode`);
         return;
       }
       
       if (currentThreadId) {
-        console.log(`Loading messages for thread: ${currentThreadId}`);
         try {
           // Fetch the existing messages for this thread
           const threadMessages = await getThreadMessages(currentThreadId);
-          console.log(`Loaded ${threadMessages.length} messages for thread ${currentThreadId}`);
+          //console.log(`Loaded ${threadMessages.length} messages for thread ${currentThreadId}`);
           
           // CRITICAL FIX: Don't overwrite existing messages if we already have content
           // This prevents wiping out user messages + status when a new thread is created
           const currentMessages = chatClient.state.messages;
           if (threadMessages.length === 0 && currentMessages.length > 0) {
-            console.log(`Not overwriting ${currentMessages.length} existing messages with 0 thread messages`);
+            //console.log(`Not overwriting ${currentMessages.length} existing messages with 0 thread messages`);
             return; // Keep existing messages (user input + status)
           }
           
@@ -125,7 +123,7 @@ export default function Chat({
     if (currentThreadId && pendingFirstMessage && !isProcessing && !isFirstMessageSent) {
       setIsFirstMessageSent(true); // Set flag to prevent re-sending
       const contentToSend = pendingFirstMessage;
-      console.log(`useEffect detected new threadId ${currentThreadId} and pending message "${contentToSend}". Submitting...`);
+      //console.log(`useEffect detected new threadId ${currentThreadId} and pending message "${contentToSend}". Submitting...`);
       setPendingFirstMessage(null);
 
       // Submit message through secure client
@@ -133,7 +131,7 @@ export default function Chat({
         messages: [{ type: 'human' as const, content: contentToSend }],
       };
 
-      console.log(`Submitting FIRST message via secure client to thread ${currentThreadId}`);
+      //console.log(`Submitting FIRST message via secure client to thread ${currentThreadId}`);
       
       chatClient.startStream(currentThreadId, runInput, userId, accountId).then(() => {
         // Callbacks for the first message submission
@@ -178,7 +176,7 @@ export default function Chat({
     if (targetThreadId === null) {
         // --- This is the FIRST message in a new chat ---
         setIsCreatingSession(true); // Start loading indicator for session creation
-        console.log("No current thread ID. Attempting to create new session...");
+        //console.log("No current thread ID. Attempting to create new session...");
         try {
             const newTitle = formatChatTitle(contentToSend);
             // Pass accountId and userId correctly
@@ -186,7 +184,7 @@ export default function Chat({
 
             if (newSession && newSession.id) {
                 targetThreadId = newSession.id;
-                console.log("New session created successfully:", targetThreadId);
+                //console.log("New session created successfully:", targetThreadId);
 
                 // 1. Set the pending message content
                 setPendingFirstMessage(contentToSend);
@@ -210,7 +208,7 @@ export default function Chat({
         }
     } else {
         // --- This is a SUBSEQUENT message in an existing chat ---
-        console.log(`Submitting SUBSEQUENT message to thread ${targetThreadId}`);
+        //console.log(`Submitting SUBSEQUENT message to thread ${targetThreadId}`);
 
         // --- MODIFIED: Send only the new message for subsequent messages ---
         // LangGraph server maintains thread state, so we only need to send the new message
@@ -226,7 +224,7 @@ export default function Chat({
           stream_mode: 'messages-tuple' as const // Ensure consistent stream mode
         };
 
-        console.log(`Submitting subsequent input via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
+        //console.log(`Submitting subsequent input via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
         
         try {
             await chatClient.startStream(targetThreadId, runInput, userId, accountId);
@@ -261,7 +259,7 @@ export default function Chat({
 
   // Handle interrupt confirmation
   const handleInterruptConfirmation = useCallback(async (confirmationString: 'yes' | 'no') => { 
-    console.log("Resuming interrupt with value:", confirmationString);
+    //console.log("Resuming interrupt with value:", confirmationString);
     if (!isInterrupting) return;
 
     try { 
@@ -321,12 +319,12 @@ export default function Chat({
 
   // Update internal state when the session ID prop changes (e.g., new chat started or existing selected)
   useEffect(() => {
-      console.log("Chat component received session/thread ID prop change:", initialSessionId);
+      //console.log("Chat component received session/thread ID prop change:", initialSessionId);
       const newThreadId = initialSessionId ?? null;
       
       // CRITICAL FIX: If initialSessionId is undefined (New Chat), immediately clear everything
       if (initialSessionId === undefined) {
-        console.log("New Chat detected - clearing all chat state immediately");
+        // console.log("New Chat detected - clearing all chat state immediately");
         setCurrentThreadId(null);
         setInput('');
         setIsCreatingSession(false);
@@ -338,7 +336,7 @@ export default function Chat({
       
       // Update state only if prop is different from current state
       if (newThreadId !== currentThreadId) {
-          console.log(`Switching to thread: ${newThreadId} from ${currentThreadId}`);
+          //console.log(`Switching to thread: ${newThreadId} from ${currentThreadId}`);
           setCurrentThreadId(newThreadId);
           setInput(''); // Clear input when switching threads
           setIsCreatingSession(false);
@@ -382,14 +380,14 @@ export default function Chat({
     if (targetThreadId === null) {
         // This is the FIRST message in a new chat
         setIsCreatingSession(true);
-        console.log("No current thread ID. Attempting to create new session...");
+        //console.log("No current thread ID. Attempting to create new session...");
         try {
             const newTitle = formatChatTitle(trimmedQuestion);
             const newSession = await createChatSession(accountId, userId, newTitle);
 
             if (newSession && newSession.id) {
                 targetThreadId = newSession.id;
-                console.log("New session created successfully:", targetThreadId);
+                //console.log("New session created successfully:", targetThreadId);
 
                 // Set the pending message content
                 setPendingFirstMessage(trimmedQuestion);
@@ -410,7 +408,7 @@ export default function Chat({
         }
     } else {
         // This is a SUBSEQUENT message in an existing chat
-        console.log(`Submitting SUBSEQUENT suggested question to thread ${targetThreadId}`);
+        //console.log(`Submitting SUBSEQUENT suggested question to thread ${targetThreadId}`);
 
         const runInput = {
             messages: [{ type: 'human' as const, content: trimmedQuestion }],
@@ -424,7 +422,7 @@ export default function Chat({
           stream_mode: 'messages-tuple' as const
         };
 
-        console.log(`Submitting suggested question via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
+        // console.log(`Submitting suggested question via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
         
         try {
             await chatClient.startStream(targetThreadId, runInput, userId, accountId);
