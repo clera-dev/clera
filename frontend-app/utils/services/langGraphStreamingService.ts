@@ -8,6 +8,7 @@ export interface LangGraphChunk {
   interrupt?: any;
   streamMode?: string;
   nodeName?: string;
+  metadata?: any; // Add metadata property for enhanced event information
 }
 
 export interface StreamConfig {
@@ -95,7 +96,7 @@ export class LangGraphStreamingService {
             
             if (processedChunk) {
               // SECURITY: Never log sensitive user content or PII
-              console.log('Sending processed chunk to client:', { type: processedChunk.type });
+              // console.log('Sending processed chunk to client:', { type: processedChunk.type });
               
               const chunkText = `data: ${JSON.stringify(processedChunk)}\n\n`;
               controller.enqueue(new TextEncoder().encode(chunkText));
@@ -143,12 +144,14 @@ export class LangGraphStreamingService {
     const data = (chunk as any).data;
 
     // SECURITY: Only log non-sensitive metadata for debugging
-    console.log('[LangGraphStreamingService] Processing event:', event, 'with data keys:', Object.keys(data || {}));
+    // console.log('[LangGraphStreamingService] Processing event:', event, 'with data keys:', Object.keys(data || {}));
 
-    // Handle GraphInterrupt events
+    // UNIFIED EVENT HANDLING - Consistent with frontend expectations
+    
+    // 1. Handle GraphInterrupt events (highest priority)
     if (event === '__interrupt__' || (data && data.__interrupt__)) {
       const interruptData = data.__interrupt__ || data;
-      console.log('GraphInterrupt detected:', { hasInterrupt: true });
+      // console.log('[LangGraphStreamingService] GraphInterrupt detected');
       
       return {
         type: 'interrupt',
@@ -157,49 +160,96 @@ export class LangGraphStreamingService {
       };
     }
     
-    // Handle node execution updates for progress feedback
+    // 2. Handle node execution updates for status feedback
     if (event === 'updates' && data && typeof data === 'object') {
       const nodeName = Object.keys(data)[0];
       const nodeData = data[nodeName];
       
+      // console.log('[LangGraphStreamingService] Node update:', nodeName);
+      
       return {
         type: 'node_update',
-        data: nodeData,
+        data: { nodeName, nodeData },
         nodeName: nodeName,
         streamMode: 'updates'
       };
     }
     
-    // Handle complete messages from LLM
+    // 3. Handle messages (final responses) - CRITICAL PATH FOR STATUS BUBBLE FIX
+    if (event === 'messages' && Array.isArray(data)) {
+      // console.log('[LangGraphStreamingService] Processing messages event with', data.length, 'items');
+      
+      // Filter for AI messages from Clera
+      const aiMessages = data.filter((item: any) => 
+        item && 
+        typeof item === 'object' && 
+        item.type === 'ai' && 
+        item.name === 'Clera' &&
+        item.content
+      );
+      
+      if (aiMessages.length > 0) {
+        // console.log('[LangGraphStreamingService] Found', aiMessages.length, 'AI messages from Clera');
+        
+        // CRITICAL FIX: Use 'messages_complete' type to trigger status message removal in frontend
+        return { 
+          type: 'messages_complete',
+          data: aiMessages,
+          metadata: { 
+            event, 
+            messageCount: aiMessages.length,
+            isCompleteResponse: true
+          }
+        };
+      } else {
+        // console.log('[LangGraphStreamingService] No valid AI messages found in messages event');
+        return { 
+          type: 'messages_metadata',
+          data: data,
+          metadata: { event, messageCount: data.length }
+        };
+      }
+    }
+    
+    // 4. Handle legacy message formats for backward compatibility
     if (event === 'messages/complete' && Array.isArray(data)) {
+      // console.log('[LangGraphStreamingService] Processing legacy messages/complete event');
+      
       const hasMessages = data.some((item: any) => 
         item && typeof item === 'object' && (item.type || item.content || item.role)
       );
       
       if (hasMessages) {
-        return { type: 'messages', data: data };
+        // Convert to unified format
+        return { 
+          type: 'messages_complete',
+          data: data,
+          metadata: { event, isCompleteResponse: true }
+        };
       } else {
         return { type: 'metadata', data: data };
       }
     }
     
-    // Handle partial/streaming messages (token-by-token from messages-tuple)
+    // 5. Handle token-level streaming (if LangGraph sends token events)
     if (event === 'messages/partial' && Array.isArray(data)) {
+      // console.log('[LangGraphStreamingService] Processing partial messages for token streaming');
       return { type: 'message_token', data: data };
     }
     
-    // Handle messages-tuple streaming events
+    // 6. Handle messages-tuple streaming events (alternative token format)
     if (event.startsWith('messages-tuple/') && Array.isArray(data)) {
+      // console.log('[LangGraphStreamingService] Processing messages-tuple event');
       return { type: 'message_token', data: data };
     }
     
-    // Handle metadata events
+    // 7. Handle metadata events
     if (event === 'metadata' || event === 'messages/metadata') {
       return { type: 'metadata', data: data };
     }
     
-    // Fallback for other events
-    console.log('Unhandled event type:', event);
+    // 8. Fallback for other events
+    // console.log('[LangGraphStreamingService] Unhandled event type:', event);
     return { type: 'metadata', data: data };
   }
 

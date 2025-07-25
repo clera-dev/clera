@@ -18,6 +18,7 @@ import {
   Calendar,
   Hash
 } from "lucide-react";
+import { getAlpacaAccountId } from "@/lib/utils"; // Import reliable account ID utility
 
 // Types
 interface OrderHistoryItem {
@@ -245,9 +246,10 @@ const useOrderHistory = (timeRange: TimeRange) => {
       setIsLoading(true);
       setError(null);
 
-      const accountId = localStorage.getItem('alpacaAccountId');
+      // RELIABILITY FIX: Use Supabase-based account ID instead of localStorage
+      const accountId = await getAlpacaAccountId();
       if (!accountId) {
-        throw new Error('No account ID found');
+        throw new Error('No account ID found - please complete onboarding');
       }
 
       const afterDate = getAfterDate(timeRange);
@@ -315,8 +317,12 @@ const usePositionsCheck = () => {
 
   const checkPositions = async () => {
     try {
-      const accountId = localStorage.getItem('alpacaAccountId');
-      if (!accountId) return;
+      // RELIABILITY FIX: Use Supabase-based account ID instead of localStorage
+      const accountId = await getAlpacaAccountId();
+      if (!accountId) {
+        console.warn('No account ID found for positions check');
+        return;
+      }
 
       const response = await fetch(`/api/portfolio/positions?accountId=${encodeURIComponent(accountId)}`, {
         method: 'GET',

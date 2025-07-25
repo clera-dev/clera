@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getAlpacaAccountId } from "@/lib/utils"; // Import reliable account ID utility
 
 // Define a more accurate type for account details based on Supabase fetch
 interface FetchedAccountDetails {
@@ -81,12 +82,7 @@ export default function DashboardPage() {
             if (alpacaId) {
               setAlpacaAccountId(alpacaId);
               
-              // Store in localStorage for access by other components
-              try {
-                localStorage.setItem('alpacaAccountId', alpacaId);
-              } catch (e) {
-                console.error("Error storing alpacaAccountId in localStorage:", e);
-              }
+              // RELIABILITY FIX: Removed localStorage caching - Supabase is the source of truth
             } else {
               console.warn("No Alpaca account ID found in onboarding data");
             }
@@ -179,13 +175,18 @@ export default function DashboardPage() {
         console.error("Error fetching dashboard data:", err);
         setError(err.message || "Failed to load dashboard data.");
         
-        // Try to recover using localStorage data
+        // Try to recover using more reliable sources
         try {
           const storedFirstName = localStorage.getItem('firstName') || "User";
           setUserData({ firstName: storedFirstName, lastName: "" });
           
-          const storedAccountId = localStorage.getItem('alpacaAccountId');
-          if (storedAccountId) setAlpacaAccountId(storedAccountId);
+          // RELIABILITY FIX: Use Supabase-based account ID instead of localStorage fallback
+          try {
+            const fallbackAccountId = await getAlpacaAccountId();
+            if (fallbackAccountId) setAlpacaAccountId(fallbackAccountId);
+          } catch (accountErr) {
+            console.warn("Could not recover account ID:", accountErr);
+          }
           
           // Set minimal account details from localStorage
           setAccountDetails({

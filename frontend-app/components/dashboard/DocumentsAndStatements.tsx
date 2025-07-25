@@ -14,6 +14,7 @@ import {
   CheckCircle,
   Loader2
 } from "lucide-react";
+import { getAlpacaAccountId } from "@/lib/utils"; // Import reliable account ID utility
 
 // Types
 interface TradeDocument {
@@ -114,9 +115,10 @@ const useDocuments = (documentType: DocumentType) => {
       setIsLoading(true);
       setError(null);
 
-      const accountId = localStorage.getItem('alpacaAccountId');
+      // RELIABILITY FIX: Use Supabase-based account ID instead of localStorage
+      const accountId = await getAlpacaAccountId();
       if (!accountId) {
-        throw new Error('No account ID found');
+        throw new Error('No account ID found - please complete onboarding');
       }
 
       // Build query params
@@ -445,9 +447,10 @@ export default function DocumentsAndStatements() {
     try {
       setDownloadingDocumentId(tradeDocument.id);
 
-      const accountId = localStorage.getItem('alpacaAccountId');
+      // RELIABILITY FIX: Use Supabase-based account ID instead of localStorage
+      const accountId = await getAlpacaAccountId();
       if (!accountId) {
-        throw new Error('No account ID found');
+        throw new Error('No account ID found - please complete onboarding');
       }
 
       const response = await fetch(
