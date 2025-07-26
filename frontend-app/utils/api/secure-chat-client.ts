@@ -74,15 +74,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     const validMessages = messages.filter(msg => {
       const isValid = msg.content && typeof msg.content === 'string' && msg.content.trim() !== '';
       if (!isValid) {
-        // SECURITY FIX: Sanitize message logging to prevent information disclosure
-        const sanitizedMsg = {
-          role: msg.role,
-          hasContent: !!msg.content,
-          contentType: typeof msg.content,
-          contentLength: msg.content?.length || 0,
-          isStatus: msg.isStatus
-        };
-        console.error('[SecureChatClient] Filtering out invalid message:'); // sanitizedMsg
+        console.error('[SecureChatClient] Filtering out invalid message.');
       }
       return isValid;
     });
@@ -95,15 +87,7 @@ export class SecureChatClientImpl implements SecureChatClient {
   addMessagesWithStatus(userMessage: Message) {
     // CRITICAL FIX: Validate message content to prevent backend errors
     if (!userMessage.content || userMessage.content.trim() === '') {
-      // SECURITY FIX: Sanitize message logging to prevent information disclosure
-      const sanitizedMsg = {
-        role: userMessage.role,
-        hasContent: !!userMessage.content,
-        contentType: typeof userMessage.content,
-        contentLength: userMessage.content?.length || 0,
-        isStatus: userMessage.isStatus
-      };
-      console.error('[SecureChatClient] Attempted to add empty user message, rejecting.');// sanitizedMsg
+      console.error('[SecureChatClient] Attempted to add empty user message, rejecting.');
       return;
     }
 
@@ -376,14 +360,6 @@ export class SecureChatClientImpl implements SecureChatClient {
           // console.log('[SecureChatClient] FALLBACK completion - valid response detected');
         } else {
           console.error('[SecureChatClient] CRITICAL ERROR: Stream completed with no response - neither chunk processing nor fallback detected valid content');
-          // SECURITY FIX: Sanitize message state logging to prevent information disclosure
-          const sanitizedMessageState = this._state.messages.map(m => ({ 
-            role: m.role, 
-            hasContent: !!m.content,
-            contentType: typeof m.content,
-            isStatus: m.isStatus 
-          }));
-          console.error('[SecureChatClient] Current message state.'); // sanitizedMessageState
           
           // CRITICAL FIX: Clean up message state to prevent corrupting subsequent requests.
           // Remove any temporary status messages, preserving the rest of the chat history.
@@ -573,9 +549,14 @@ export class SecureChatClientImpl implements SecureChatClient {
             // Only trigger for messages that have no content at all, not for valid non-textual content
             console.log('[SecureChatClient] Detected empty Clera response - setting graceful model provider error');
             
+            // CRITICAL FIX: Remove status messages when setting model provider error
+            // This ensures the "Analyzing your request..." message disappears
+            const cleanMessages = this._state.messages.filter(msg => !msg.isStatus);
+            
             // Set graceful error state and mark as handled to prevent harsh error message
             this.streamCompletedSuccessfully = true;
             this.setState({ 
+              messages: cleanMessages, // Remove status messages
               modelProviderError: true,
               isLoading: false 
             });

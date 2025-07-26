@@ -82,7 +82,13 @@ export class LangGraphStreamingService {
         try {
           // console.log('[LangGraphStreamingService] Starting stream for thread:', options.threadId);
           
-          const langGraphStream = await serviceInstance.langGraphClient.runs.stream(
+          // Send initial message if provided
+          if (options.initialMessage) {
+            const initialText = `data: ${JSON.stringify(options.initialMessage)}\n\n`;
+            controller.enqueue(new TextEncoder().encode(initialText));
+          }
+          
+          const langGraphStream = serviceInstance.langGraphClient.runs.stream(
             options.threadId,
             process.env.LANGGRAPH_ASSISTANT_ID || 'agent',
             {

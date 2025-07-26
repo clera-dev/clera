@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Message } from '@/utils/api/chat-client';
 import { useSecureChat } from '@/utils/api/secure-chat-client';
+import { useMessageRetry } from '@/hooks/useMessageRetry';
 import { 
   saveChatHistory, 
   loadChatHistory,
@@ -60,9 +61,14 @@ export default function Chat({
   const [isFirstMessageSent, setIsFirstMessageSent] = useState(false); // New state to prevent duplicates
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   
-  // NEW: State for intelligent retry functionality
-  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
-  const [lastFailedThreadId, setLastFailedThreadId] = useState<string | null>(null);
+  // Initialize message retry hook to handle retry orchestration
+  const messageRetry = useMessageRetry({
+    userId,
+    accountId,
+    onMessageSent,
+    onQuerySent,
+    onFirstMessageFlagReset: () => setIsFirstMessageSent(false),
+  });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -75,9 +81,8 @@ export default function Chat({
   const isInterrupting = interrupt !== null;
   const interruptMessage = interrupt?.value || null;
   
-  // NEW: Model provider error detection
-  const hasModelProviderError = chatClient.state.modelProviderError;
-  const shouldShowRetryPopup = hasModelProviderError && lastFailedMessage !== null;
+  // Use retry popup state from the hook
+  const shouldShowRetryPopup = messageRetry.shouldShowRetryPopup;
 
   // --- NEW: Single source of truth for messages ---
   // The chatClient's state will now be the primary message store.
@@ -130,41 +135,43 @@ export default function Chat({
   useEffect(() => {
     // Check if we just set a new thread ID, have a pending message, and haven't sent it yet
     if (currentThreadId && pendingFirstMessage && !isProcessing && !isFirstMessageSent) {
-      setIsFirstMessageSent(true); // Set flag to prevent re-sending
-      const contentToSend = pendingFirstMessage;
       //console.log(`useEffect detected new threadId ${currentThreadId} and pending message "${contentToSend}". Submitting...`);
       setPendingFirstMessage(null);
 
       // NEW: Store message content for potential retry before attempting to send
-      setLastFailedMessage(contentToSend);
-      setLastFailedThreadId(currentThreadId);
+      messageRetry.prepareForSend(pendingFirstMessage, currentThreadId);
 
       // Submit message through secure client
       const runInput = {
-        messages: [{ type: 'human' as const, content: contentToSend }],
+        messages: [{ type: 'human' as const, content: pendingFirstMessage }],
+      };
+      
+      const runConfig = {
+        configurable: {
+          user_id: userId,
+          account_id: accountId
+        },
+        stream_mode: 'messages-tuple' as const
       };
 
-      //console.log(`Submitting FIRST message via secure client to thread ${currentThreadId}`);
+      //console.log(`Submitting FIRST message via secure client to new thread ${currentThreadId}:`, runInput, "with config:", runConfig);
       
       chatClient.startStream(currentThreadId, runInput, userId, accountId).then(() => {
-        // Clear retry state on successful submission
-        setLastFailedMessage(null);
-        setLastFailedThreadId(null);
+        // NOTE: Don't clear retry state here - stream just started, not completed
+        // Retry state will be cleared when we receive successful response or on next successful send
         
         // Callbacks for the first message submission
         onMessageSent?.();
-        if (onQuerySent) {
-          onQuerySent().catch(err => console.error("Error in onQuerySent for first message:", err));
-        }
-      }).catch(err => {
-        console.error("Error submitting first message:", err);
-        // BUG FIX: If the stream fails to start, reset the flag to allow a retry.
+        onQuerySent?.(); // Call onQuerySent for the first message
+        setIsFirstMessageSent(true); // Mark as sent to prevent re-sending
+      }).catch((error: any) => {
+        console.error("Error submitting first message:", error);
         // This prevents the user from being stuck if the first message fails.
         setIsFirstMessageSent(false);
         // Keep retry state for potential retry (don't clear lastFailedMessage)
       });
     }
-  }, [currentThreadId, pendingFirstMessage, chatClient, userId, accountId, onMessageSent, onQuerySent, isProcessing, isFirstMessageSent]); // Add isFirstMessageSent to dependency array
+  }, [currentThreadId, pendingFirstMessage, chatClient, userId, accountId, onMessageSent, onQuerySent, isProcessing, isFirstMessageSent, messageRetry]); // Add isFirstMessageSent to dependency array
   // --- End Effect for first message ---
 
   // Handle input submission (for new sessions OR subsequent messages)
@@ -239,21 +246,19 @@ export default function Chat({
             user_id: userId,
             account_id: accountId
           },
-          stream_mode: 'messages-tuple' as const // Ensure consistent stream mode
+          stream_mode: 'messages-tuple' as const
         };
 
         //console.log(`Submitting subsequent input via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
         
         // NEW: Store message content for potential retry before attempting to send
-        setLastFailedMessage(contentToSend);
-        setLastFailedThreadId(targetThreadId);
+        messageRetry.prepareForSend(contentToSend, targetThreadId);
         
         try {
             await chatClient.startStream(targetThreadId, runInput, userId, accountId);
 
-            // Clear retry state on successful submission
-            setLastFailedMessage(null);
-            setLastFailedThreadId(null);
+            // NOTE: Don't clear retry state here - stream just started, not completed
+            // Retry state will be cleared when we receive successful response or on next successful send
 
             // Callbacks after successful submission initiation for subsequent messages
             onMessageSent?.();
@@ -265,49 +270,7 @@ export default function Chat({
         }
     }
 
-  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession]);
-
-  // NEW: Intelligent retry function using LangGraph's interrupt mechanism
-  const handleRetry = useCallback(async () => {
-    if (!lastFailedMessage || !lastFailedThreadId) return;
-
-    // Clear the model provider error state first
-    chatClient.clearModelProviderError();
-
-    // Use LangGraph's interrupt mechanism to retry the same message
-    // This creates a new run with the same input but interrupts the previous one
-    const runInput = {
-      messages: [{ type: 'human' as const, content: lastFailedMessage }],
-    };
-
-    try {
-      console.log('[Chat] Retrying failed message using LangGraph interrupt mechanism.');
-      
-      // Use the same thread but with interrupt strategy to replace the failed attempt
-      await chatClient.startStream(lastFailedThreadId, runInput, userId, accountId);
-
-      // Clear retry state on successful retry
-      setLastFailedMessage(null);
-      setLastFailedThreadId(null);
-
-      // Callbacks after successful retry
-      onMessageSent?.();
-      await onQuerySent?.();
-
-    } catch (err) {
-      console.error("Error during intelligent retry:", err);
-      // Keep retry state for another attempt
-    }
-  }, [lastFailedMessage, lastFailedThreadId, chatClient, userId, accountId, onMessageSent, onQuerySent]);
-
-  // NEW: Dismiss retry popup
-  const handleDismissRetry = useCallback(() => {
-    setLastFailedMessage(null);
-    setLastFailedThreadId(null);
-    chatClient.clearModelProviderError();
-    // Reset first message flag to allow retry for first messages
-    setIsFirstMessageSent(false);
-  }, [chatClient]);
+  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry]);
 
   // Handle suggested question selection
   const handleSuggestedQuestion = useCallback(async (question: string) => {
@@ -381,15 +344,13 @@ export default function Chat({
         // console.log(`Submitting suggested question via secure client to thread ${targetThreadId}:`, runInput, "with config:", runConfig);
         
         // NEW: Store message content for potential retry before attempting to send
-        setLastFailedMessage(trimmedQuestion);
-        setLastFailedThreadId(targetThreadId);
+        messageRetry.prepareForSend(trimmedQuestion, targetThreadId);
         
         try {
             await chatClient.startStream(targetThreadId, runInput, userId, accountId);
 
-            // Clear retry state on successful submission
-            setLastFailedMessage(null);
-            setLastFailedThreadId(null);
+            // NOTE: Don't clear retry state here - stream just started, not completed
+            // Retry state will be cleared when we receive successful response or on next successful send
 
             // Callbacks after successful submission initiation
             onMessageSent?.();
@@ -400,7 +361,7 @@ export default function Chat({
             // Keep retry state for potential retry (don't clear lastFailedMessage)
         }
     }
-  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent]);
+  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry]);
 
   // Auto-adjust textarea height
   useEffect(() => {
@@ -587,8 +548,8 @@ export default function Chat({
           <div className="p-4 border-b border-gray-100">
             <ModelProviderRetryPopup
               isVisible={shouldShowRetryPopup}
-              onRetry={handleRetry}
-              onDismiss={handleDismissRetry}
+              onRetry={messageRetry.handleRetry}
+              onDismiss={messageRetry.handleDismissRetry}
             />
           </div>
         )}
