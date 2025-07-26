@@ -154,6 +154,49 @@ jobs:
           file: ./backend/coverage.xml
           fail_ci_if_error: false
 
+  docker-build-dry-run:
+    name: Docker Build Dry-Run (PR)
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build API service image (no push)
+      - name: Build API service image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: ghcr.io/${{ github.repository_owner }}/clera-backend:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha,scope=api-service-pr
+          cache-to: type=gha,mode=max,scope=api-service-pr
+          build-args: |
+            BUILDTIME=${{ github.event.pull_request.updated_at }}
+            VERSION=${{ github.sha }}
+
+      # Build WebSocket service image (no push)
+      - name: Build WebSocket service image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.websocket
+          push: false
+          tags: ghcr.io/${{ github.repository_owner }}/clera-backend-websocket:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha,scope=websocket-service-pr
+          cache-to: type=gha,mode=max,scope=websocket-service-pr
+          build-args: |
+            BUILDTIME=${{ github.event.pull_request.updated_at }}
+            VERSION=${{ github.sha }}
+
   docker-build:
     name: Build Docker Image
     runs-on: ubuntu-latest
@@ -189,7 +232,7 @@ jobs:
           cache-from: type=gha,scope=api-service
           cache-to: type=gha,mode=max,scope=api-service
           build-args: |
-            BUILDTIME=${{ fromJSON('["' + github.event.repository.updated_at + '"]')[0] }}
+            BUILDTIME=${{ github.event.repository.updated_at }}
             VERSION=${{ github.sha }}
 
       # Build and push the WebSocket service image
@@ -205,7 +248,7 @@ jobs:
           cache-from: type=gha,scope=websocket-service
           cache-to: type=gha,mode=max,scope=websocket-service
           build-args: |
-            BUILDTIME=${{ fromJSON('["' + github.event.repository.updated_at + '"]')[0] }}
+            BUILDTIME=${{ github.event.repository.updated_at }}
             VERSION=${{ github.sha }}
 
       # Scan the API service image for vulnerabilities
@@ -240,8 +283,8 @@ jobs:
           sarif_file: 'trivy-results-websocket.sarif'
           category: trivy-websocket
 
-  trigger-aws-copilot-deploy:
-    name: Trigger AWS Copilot Pipeline
+  deploy-to-aws:
+    name: Deploy to AWS with Copilot
     runs-on: ubuntu-latest
     needs: [docker-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -249,6 +292,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          # Note: Ensure you have AWS_ACCOUNT_ID and other necessary secrets configured in your GitHub repository settings.
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsOIDCRole
           aws-region: us-west-1
       
@@ -262,23 +306,17 @@ jobs:
       - name: Checkout code (for Copilot manifest files)
         uses: actions/checkout@v4
       
-      - name: Deploy WebSocket service first
+      - name: Deploy services
         run: |
           cd backend
-          # Deploy WebSocket service first, then API service
-          echo "Deploying WebSocket service..."
-          copilot svc deploy --name websocket-service --env production
-      
-      - name: Deploy API service
-        run: |
-          cd backend
-          echo "Deploying API service..."
+          echo "Deploying websocket-lb-service..."
+          copilot svc deploy --name websocket-lb-service --env production
+          
+          echo "Deploying api-service..."
           copilot svc deploy --name api-service --env production
       
       - name: Verify deployment
         run: |
-          echo "Checking WebSocket service status..."
-          copilot svc status --name websocket-service
-          
-          echo "Checking API service status..."
+          echo "Checking service status..."
+          copilot svc status --name websocket-lb-service
           copilot svc status --name api-service
