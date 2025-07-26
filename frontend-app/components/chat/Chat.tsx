@@ -65,6 +65,7 @@ export default function Chat({
   const messageRetry = useMessageRetry({
     userId,
     accountId,
+    chatClient,
     onMessageSent,
     onQuerySent,
     onFirstMessageFlagReset: () => setIsFirstMessageSent(false),
@@ -171,7 +172,7 @@ export default function Chat({
         // Keep retry state for potential retry (don't clear lastFailedMessage)
       });
     }
-  }, [currentThreadId, pendingFirstMessage, chatClient, userId, accountId, onMessageSent, onQuerySent, isProcessing, isFirstMessageSent, messageRetry]); // Add isFirstMessageSent to dependency array
+  }, [currentThreadId, pendingFirstMessage, chatClient, userId, accountId, onMessageSent, onQuerySent, isProcessing, isFirstMessageSent, messageRetry.prepareForSend]); // Add isFirstMessageSent to dependency array
   // --- End Effect for first message ---
 
   // Handle input submission (for new sessions OR subsequent messages)
@@ -270,7 +271,7 @@ export default function Chat({
         }
     }
 
-  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry]);
+  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend]);
 
   // Handle suggested question selection
   const handleSuggestedQuestion = useCallback(async (question: string) => {
@@ -361,7 +362,7 @@ export default function Chat({
             // Keep retry state for potential retry (don't clear lastFailedMessage)
         }
     }
-  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry]);
+  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend]);
 
   // Auto-adjust textarea height
   useEffect(() => {

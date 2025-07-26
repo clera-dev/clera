@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useSecureChat } from '@/utils/api/secure-chat-client';
+import { SecureChatClient } from '@/utils/api/secure-chat-client';
 
 interface RetryState {
   lastFailedMessage: string | null;
@@ -20,6 +20,7 @@ interface UseMessageRetryReturn {
 }
 
 interface UseMessageRetryOptions {
+  chatClient: SecureChatClient; // NEW: Accept existing chatClient instead of creating new one
   userId: string;
   accountId: string;
   onMessageSent?: () => void;
@@ -30,10 +31,11 @@ interface UseMessageRetryOptions {
 /**
  * Custom hook for managing message retry state and orchestration.
  * Encapsulates retry logic to prevent duplication across send paths.
+ * 
+ * ARCHITECTURAL FIX: Now accepts existing chatClient to maintain single source of truth
  */
 export function useMessageRetry(options: UseMessageRetryOptions): UseMessageRetryReturn {
-  const { userId, accountId, onMessageSent, onQuerySent, onFirstMessageFlagReset } = options;
-  const chatClient = useSecureChat();
+  const { chatClient, userId, accountId, onMessageSent, onQuerySent, onFirstMessageFlagReset } = options;
   
   // Retry state management
   const [retryState, setRetryState] = useState<RetryState>({
@@ -61,7 +63,6 @@ export function useMessageRetry(options: UseMessageRetryOptions): UseMessageRetr
    * Prepare retry state before attempting to send a message
    */
   const prepareForSend = useCallback((message: string, threadId: string) => {
-    console.log('[useMessageRetry] Preparing for send:', { message: message.substring(0, 50) + '...', threadId });
     setRetryState({
       lastFailedMessage: message,
       lastFailedThreadId: threadId,
