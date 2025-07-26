@@ -157,13 +157,23 @@ export default function Chat({
 
       //console.log(`Submitting FIRST message via secure client to new thread ${currentThreadId}:`, runInput, "with config:", runConfig);
       
-      chatClient.startStream(currentThreadId, runInput, userId, accountId).then(() => {
+      chatClient.startStream(currentThreadId, runInput, userId, accountId).then(async () => {
         // NOTE: Don't clear retry state here - stream just started, not completed
         // Retry state will be cleared when we receive successful response or on next successful send
         
         // Callbacks for the first message submission
         onMessageSent?.();
-        onQuerySent?.(); // Call onQuerySent for the first message
+        
+        // CRITICAL FIX: Properly await and handle onQuerySent promise to prevent unhandled rejections
+        if (onQuerySent) {
+          try {
+            await onQuerySent();
+          } catch (err) {
+            console.error("Error in onQuerySent for first message:", err);
+            // Don't throw - this is a non-critical callback that shouldn't break the chat flow
+          }
+        }
+        
         setIsFirstMessageSent(true); // Mark as sent to prevent re-sending
       }).catch((error: any) => {
         console.error("Error submitting first message:", error);
@@ -263,7 +273,16 @@ export default function Chat({
 
             // Callbacks after successful submission initiation for subsequent messages
             onMessageSent?.();
-            await onQuerySent?.(); // Keep await here for subsequent messages
+            
+            // CRITICAL FIX: Properly await and handle onQuerySent promise to prevent unhandled rejections
+            if (onQuerySent) {
+              try {
+                await onQuerySent();
+              } catch (err) {
+                console.error("Error in onQuerySent for subsequent message:", err);
+                // Don't throw - this is a non-critical callback that shouldn't break the chat flow
+              }
+            }
 
         } catch (err) {
             console.error("Error submitting subsequent message:", err);
@@ -355,7 +374,16 @@ export default function Chat({
 
             // Callbacks after successful submission initiation
             onMessageSent?.();
-            await onQuerySent?.();
+            
+            // CRITICAL FIX: Properly await and handle onQuerySent promise to prevent unhandled rejections
+            if (onQuerySent) {
+              try {
+                await onQuerySent();
+              } catch (err) {
+                console.error("Error in onQuerySent for suggested question:", err);
+                // Don't throw - this is a non-critical callback that shouldn't break the chat flow
+              }
+            }
 
         } catch (err) {
             console.error("Error submitting suggested question:", err);

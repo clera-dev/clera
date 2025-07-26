@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { SecureChatClient } from '@/utils/api/secure-chat-client';
 
 interface RetryState {
@@ -33,6 +33,7 @@ interface UseMessageRetryOptions {
  * Encapsulates retry logic to prevent duplication across send paths.
  * 
  * ARCHITECTURAL FIX: Now accepts existing chatClient to maintain single source of truth
+ * REACTIVITY FIX: Subscribes to chatClient state changes for reactive updates
  */
 export function useMessageRetry(options: UseMessageRetryOptions): UseMessageRetryReturn {
   const { chatClient, userId, accountId, onMessageSent, onQuerySent, onFirstMessageFlagReset } = options;
@@ -43,21 +44,25 @@ export function useMessageRetry(options: UseMessageRetryOptions): UseMessageRetr
     lastFailedThreadId: null,
   });
 
-  // Derived state
-  const hasModelProviderError = chatClient.state.modelProviderError;
+  // REACTIVITY FIX: Subscribe to chatClient state changes to make hook reactive
+  const [modelProviderError, setModelProviderError] = useState(chatClient.state.modelProviderError);
+
+  // Subscribe to chatClient state changes
+  useEffect(() => {
+    const unsubscribe = chatClient.subscribe(() => {
+      // Update local state when chatClient state changes
+      setModelProviderError(chatClient.state.modelProviderError);
+    });
+
+    // Cleanup subscription on unmount
+    return unsubscribe;
+  }, [chatClient]);
+
+  // Derived state - now reactive to chatClient state changes
+  const hasModelProviderError = modelProviderError;
   const shouldShowRetryPopup = hasModelProviderError && 
                               retryState.lastFailedMessage !== null && 
                               retryState.lastFailedThreadId !== null;
-
-  // DEBUG: Log retry popup state
-  if (hasModelProviderError) {
-    console.log('[useMessageRetry] Model provider error detected:', {
-      hasModelProviderError,
-      lastFailedMessage: retryState.lastFailedMessage,
-      lastFailedThreadId: retryState.lastFailedThreadId,
-      shouldShowRetryPopup
-    });
-  }
 
   /**
    * Prepare retry state before attempting to send a message
@@ -73,7 +78,6 @@ export function useMessageRetry(options: UseMessageRetryOptions): UseMessageRetr
    * Clear retry state on successful message send
    */
   const handleSendSuccess = useCallback(() => {
-    console.log('[useMessageRetry] Clearing retry state on success');
     setRetryState({
       lastFailedMessage: null,
       lastFailedThreadId: null,
