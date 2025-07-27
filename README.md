@@ -19,6 +19,7 @@ In T3 run:
 ```bash
 cd frontend-app && npm install && npm run dev
 ```
+And you can track their progress in AWS > Elastic Container Service.
 
 ## Project Structure
 
