@@ -31,7 +31,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@a1c9e9088d91e1f8f3b8c7c7c7c7c7c7c7c7c7c7c7
+        uses: actions/setup-python@v5.1.0
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -75,7 +75,7 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
 
       - name: Set up Python
-        uses: actions/setup-python@a1c9e9088d91e1f8f3b8c7c7c7c7c7c7c7c7c7c7c7
+        uses: actions/setup-python@v5.1.0
         with:
           python-version: '3.11'
           cache: 'pip'
