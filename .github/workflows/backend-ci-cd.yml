@@ -26,12 +26,12 @@ jobs:
         working-directory: ./backend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.1.0
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -51,13 +51,13 @@ jobs:
         continue-on-error: true
         
       - name: Run Semgrep for security scanning
-        uses: semgrep/semgrep-action@v1
+        uses: semgrep/semgrep-action@v2
         with:
           config: p/owasp-top-ten
           output: semgrep-results.sarif
           
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v3.25.15
         with:
           sarif_file: semgrep-results.sarif
           category: semgrep
@@ -70,10 +70,10 @@ jobs:
         working-directory: ./backend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.1.0
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -122,10 +122,10 @@ jobs:
       WEBSOCKET_CONNECT_TIMEOUT: 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.1.0
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -149,7 +149,7 @@ jobs:
           fi
         
       - name: Upload coverage report
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v4.5.0
         with:
           file: ./backend/coverage.xml
           fail_ci_if_error: false
@@ -164,14 +164,14 @@ jobs:
         working-directory: ./backend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3.4.0
 
       # Build API service image (no push)
       - name: Build API service image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6.5.0
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -185,7 +185,7 @@ jobs:
 
       # Build WebSocket service image (no push)
       - name: Build WebSocket service image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6.5.0
         with:
           context: ./backend
           file: ./backend/Dockerfile.websocket
@@ -207,13 +207,13 @@ jobs:
         working-directory: ./backend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v3.4.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v3.2.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -221,7 +221,7 @@ jobs:
 
       # Build and push the API service image
       - name: Build and push API service image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6.5.0
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -237,7 +237,7 @@ jobs:
 
       # Build and push the WebSocket service image
       - name: Build and push WebSocket service image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6.5.0
         with:
           context: ./backend
           file: ./backend/Dockerfile.websocket
@@ -253,7 +253,7 @@ jobs:
 
       # Scan the API service image for vulnerabilities
       - name: Run Trivy vulnerability scanner on API service
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.21.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/clera-backend:${{ github.sha }}
           format: 'sarif'
@@ -262,7 +262,7 @@ jobs:
 
       # Scan the WebSocket service image for vulnerabilities
       - name: Run Trivy vulnerability scanner on WebSocket service
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.21.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/clera-backend-websocket:${{ github.sha }}
           format: 'sarif'
@@ -271,14 +271,14 @@ jobs:
 
       # Upload API service vulnerability scan results
       - name: Upload API service Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v3.25.15
         with:
           sarif_file: 'trivy-results-api.sarif'
           category: trivy-api
 
       # Upload WebSocket service vulnerability scan results
       - name: Upload WebSocket service Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v3.25.15
         with:
           sarif_file: 'trivy-results-websocket.sarif'
           category: trivy-websocket
@@ -290,7 +290,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.0.2
         with:
           # Note: Ensure you have AWS_ACCOUNT_ID and other necessary secrets configured in your GitHub repository settings.
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsOIDCRole
@@ -304,7 +304,7 @@ jobs:
           copilot --version
       
       - name: Checkout code (for Copilot manifest files)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.7
       
       - name: Deploy services
         run: |
