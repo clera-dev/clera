@@ -93,10 +93,11 @@ export default function ProtectedPageClient() {
   
   if (!hasCompletedOnboarding) {
     return (
-      <div className="flex-1 w-full flex flex-col p-2 sm:p-4 min-h-screen">
+      <div className="flex-1 w-full flex flex-col">
         <div className="flex-grow pb-16">
           <OnboardingFlow 
-            userId={user.id} 
+            userId={user.id}
+            userEmail={user.email} 
             initialData={onboardingData?.onboarding_data}
           />
         </div>

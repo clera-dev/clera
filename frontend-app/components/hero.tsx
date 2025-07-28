@@ -13,7 +13,7 @@ const AuthButtons = () => (
     <Button asChild size="lg" className="w-full" variant="outline">
       <Link href="/sign-in">Sign in</Link>
     </Button>
-    <Button asChild size="lg" className="w-full bg-blue-600 hover:bg-blue-700">
+    <Button asChild size="lg" className="w-full" variant="default">
       <Link href="/sign-up">Sign up</Link>
     </Button>
   </div>
@@ -24,11 +24,11 @@ const AuthButtons = () => (
  * ------------------------------------------------------------------------------------------------*/
 export default function Hero() {
   return (
-    <div className="min-h-screen w-full flex justify-center items-start pt-8">
-      <div className="w-full max-w-7xl mx-auto bg-gradient-to-br from-gray-900 via-gray-950 to-black text-gray-200 rounded-lg overflow-hidden">
-        <div className="container flex flex-col lg:flex-row items-center justify-between w-full px-6 md:px-8 lg:px-10 py-16 gap-12">
-          {/* Left column -------------------------------------------------- */}
-          <div className="w-full lg:w-[48%] flex flex-col gap-6 text-center lg:text-left items-center lg:items-start">
+    <div className="min-h-screen w-full flex justify-center items-start pt-8 sm:pt-20">
+      <div className="w-full max-w-4xl mx-auto bg-gradient-to-br from-gray-900 via-gray-950 to-black text-gray-200 rounded-lg overflow-hidden">
+        <div className="container flex flex-col items-center justify-center w-full px-6 md:px-8 lg:px-10 py-8 gap-6 text-center">
+          {/* Main content - centered on all screen sizes */}
+          <div className="w-full flex flex-col gap-6 items-center">
             <h1 className="text-4xl sm:text-6xl font-bold !leading-tight bg-gradient-to-r from-blue-400 via-blue-500 to-cyan-400 bg-clip-text text-transparent">
               Meet Clera.
             </h1>
@@ -36,7 +36,7 @@ export default function Hero() {
               Your Personal AI Financial Advisor.
             </h2>
             <p className="text-lg text-gray-400 leading-relaxed max-w-xl">
-              Get Wall Street‑level investment guidance and portfolio management,
+              Get Wall Street‑level investment guidance and portfolio management,
               powered by AI. Secure, personalized, and always available — all at
               a fraction of the cost.
             </p>

@@ -41,9 +41,16 @@ export function clearIntendedRedirectCookie(): void {
 export function usePostOnboardingNavigation() {
   const router = useRouter();
   
-  const navigateAfterOnboarding = () => {
+  const navigateAfterOnboarding = (isNewUser: boolean = false) => {
     clearIntendedRedirectCookie();
-    router.refresh();
+    
+    if (isNewUser) {
+      // New users who just completed onboarding should go to /invest
+      router.push('/invest');
+    } else {
+      // Existing users should go to /portfolio
+      router.push('/portfolio');
+    }
   };
   
   return { navigateAfterOnboarding };

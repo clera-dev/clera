@@ -32,10 +32,11 @@ enum StepIndex {
 
 interface OnboardingFlowProps {
   userId: string;
+  userEmail?: string;
   initialData?: OnboardingData;
 }
 
-export default function OnboardingFlow({ userId, initialData }: OnboardingFlowProps) {
+export default function OnboardingFlow({ userId, userEmail, initialData }: OnboardingFlowProps) {
   const router = useRouter();
   const { navigateAfterOnboarding } = usePostOnboardingNavigation();
   const [currentStep, setCurrentStep] = useState<Step>("welcome");
@@ -67,6 +68,17 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
       saveOnboardingProgress();
     }
   }, [currentStep, onboardingData]);
+
+  // Scroll to top when step changes (but not on initial load)
+  useEffect(() => {
+    // Skip scroll on initial load (welcome step)
+    if (currentStep !== "welcome") {
+      // Use setTimeout to ensure the new content is rendered
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 100);
+    }
+  }, [currentStep]);
 
   // Check for intended redirect on mount
   useEffect(() => {
@@ -159,7 +171,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           
           setAccountCreated(true);
           setSubmitting(false);
-          navigateAfterOnboarding();
+          navigateAfterOnboarding(true); // New user who just completed onboarding
           return;
         }
         
@@ -184,7 +196,7 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
       
       setAccountCreated(true);
       setSubmitting(false);
-      navigateAfterOnboarding();
+      navigateAfterOnboarding(true); // New user who just completed onboarding
     } catch (error) {
       console.error("Error in onboarding submission:", error);
       setSubmissionError(error instanceof Error ? error.message : "An unknown error occurred");
@@ -202,7 +214,8 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
           <ContactInfoStep 
             data={onboardingData} 
             onUpdate={updateData} 
-            onContinue={handleStepCompletion} 
+            onContinue={handleStepCompletion}
+            userEmail={userEmail}
           />
         );
       case "personal":
@@ -265,8 +278,8 @@ export default function OnboardingFlow({ userId, initialData }: OnboardingFlowPr
   };
 
   return (
-    <div className="flex flex-col w-full min-h-[calc(100vh-16rem)]">
-      <div className="w-full max-w-2xl mx-auto pt-5">
+    <div className="flex flex-col w-full">
+      <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
         {/* Progress bar - don't show for welcome or success pages */}
         {currentStep !== "welcome" && currentStep !== "success" && (
           <div className="mb-6">

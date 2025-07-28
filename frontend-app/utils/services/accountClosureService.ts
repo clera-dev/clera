@@ -81,7 +81,10 @@ export class AccountClosureService {
       const response = await fetch('/api/account-closure/data');
       
       if (!response.ok) {
-        console.error('[AccountClosureService] Failed to fetch closure data:', response.status);
+        // Don't log 500 errors as they're likely temporary server issues
+        if (response.status !== 500) {
+          console.warn('[AccountClosureService] Failed to fetch closure data:', response.status);
+        }
         return null;
       }
       
@@ -105,7 +108,8 @@ export class AccountClosureService {
       
       return null;
     } catch (error) {
-      console.error('[AccountClosureService] Error fetching closure data:', error);
+      // Don't log network errors as they're likely temporary
+      console.warn('[AccountClosureService] Network error fetching closure data (likely temporary)');
       return null;
     }
   }

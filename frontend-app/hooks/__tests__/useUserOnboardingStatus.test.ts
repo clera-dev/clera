@@ -29,6 +29,14 @@ describe('useUserOnboardingStatus', () => {
     expect(result.current.error).toBe(null);
   });
 
+  it('should skip auth check when skipAuthCheck is true', () => {
+    const { result } = renderHook(() => useUserOnboardingStatus({ skipAuthCheck: true }));
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.status).toBe(null);
+    expect(result.current.error).toBe(null);
+  });
+
   it('should fetch user onboarding status successfully', async () => {
     const mockUser = { id: 'user-123' };
     const mockOnboardingData = { status: 'completed' };
@@ -85,6 +93,90 @@ describe('useUserOnboardingStatus', () => {
     expect(result.current.error).toBe(null);
   });
 
+  it('should handle auth session missing gracefully', async () => {
+    const mockSupabase = {
+      auth: {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'Auth session missing!' }
+        })
+      }
+    };
+    mockCreateClient.mockReturnValue(mockSupabase as any);
+
+    const { result } = renderHook(() => useUserOnboardingStatus());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.status).toBe(null);
+    expect(result.current.error).toBe(null); // Should not set error for missing auth session
+  });
+
+  it('should handle invalid JWT gracefully', async () => {
+    const mockSupabase = {
+      auth: {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'Invalid JWT' }
+        })
+      }
+    };
+    mockCreateClient.mockReturnValue(mockSupabase as any);
+
+    const { result } = renderHook(() => useUserOnboardingStatus());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.status).toBe(null);
+    expect(result.current.error).toBe(null); // Should not set error for invalid JWT
+  });
+
+  it('should handle JWT expired gracefully', async () => {
+    const mockSupabase = {
+      auth: {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'JWT expired' }
+        })
+      }
+    };
+    mockCreateClient.mockReturnValue(mockSupabase as any);
+
+    const { result } = renderHook(() => useUserOnboardingStatus());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.status).toBe(null);
+    expect(result.current.error).toBe(null); // Should not set error for expired JWT
+  });
+
+  it('should handle other authentication errors as actual errors', async () => {
+    const mockSupabase = {
+      auth: {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'Authentication failed' }
+        })
+      }
+    };
+    mockCreateClient.mockReturnValue(mockSupabase as any);
+
+    const { result } = renderHook(() => useUserOnboardingStatus());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.status).toBe(null);
+    expect(result.current.error).toBe('Failed to get user: Authentication failed');
+  });
+
   it('should handle onboarding data not found (new user)', async () => {
     const mockUser = { id: 'user-123' };
     
@@ -116,27 +208,6 @@ describe('useUserOnboardingStatus', () => {
 
     expect(result.current.status).toBe(null);
     expect(result.current.error).toBe(null);
-  });
-
-  it('should handle authentication error', async () => {
-    const mockSupabase = {
-      auth: {
-        getUser: jest.fn().mockResolvedValue({
-          data: { user: null },
-          error: { message: 'Authentication failed' }
-        })
-      }
-    };
-    mockCreateClient.mockReturnValue(mockSupabase as any);
-
-    const { result } = renderHook(() => useUserOnboardingStatus());
-
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
-    });
-
-    expect(result.current.status).toBe(null);
-    expect(result.current.error).toBe('Failed to get user: Authentication failed');
   });
 
   it('should handle onboarding fetch error', async () => {

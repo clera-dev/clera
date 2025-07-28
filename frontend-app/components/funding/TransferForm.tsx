@@ -241,7 +241,7 @@ export default function TransferForm({
       <div className="text-center mb-6">
         <h2 className="text-2xl font-bold mb-2 text-foreground">Fund Your Account</h2>
         <p className="text-foreground/80 text-base leading-relaxed mb-4">
-          You have successfully connected your account! This is the final step.
+          You have successfully connected your bank.
         </p>
         <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           <p className="text-blue-800 dark:text-blue-200 font-medium">

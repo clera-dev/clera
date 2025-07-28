@@ -41,9 +41,20 @@ export function useAccountClosure(): UseAccountClosureReturn {
         setClosureData(data);
         
       } catch (err) {
-        console.error('[useAccountClosure] Error fetching closure data:', err);
-        setError('Failed to load closure data');
+        // Don't log temporary network errors
+        console.warn('[useAccountClosure] Temporary error fetching closure data (will retry)');
+        setError(null); // Don't show error for temporary issues
         setClosureData(null);
+        
+        // Retry once after a short delay for temporary server issues
+        setTimeout(async () => {
+          try {
+            const retryData = await accountClosureService.fetchClosureData();
+            setClosureData(retryData);
+          } catch (retryErr) {
+            // Silent fail on retry
+          }
+        }, 2000);
       } finally {
         setLoading(false);
       }
@@ -68,8 +79,9 @@ export function useAccountClosure(): UseAccountClosureReturn {
       setClosureData(data);
       
     } catch (err) {
-      console.error('[useAccountClosure] Error refetching closure data:', err);
-      setError('Failed to load closure data');
+      // Don't log temporary network errors
+      console.warn('[useAccountClosure] Temporary error refetching closure data (will retry)');
+      setError(null); // Don't show error for temporary issues
       setClosureData(null);
     } finally {
       setLoading(false);

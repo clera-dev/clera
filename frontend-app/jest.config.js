@@ -10,14 +10,27 @@ module.exports = {
   },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^@/components/(.*)$': '<rootDir>/components/$1',
+    '^@/utils/(.*)$': '<rootDir>/utils/$1',
+    '^@/hooks/(.*)$': '<rootDir>/hooks/$1',
+    '^@/lib/(.*)$': '<rootDir>/lib/$1',
+    '^@/app/(.*)$': '<rootDir>/app/$1',
   },
   verbose: true,
   collectCoverage: false,
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  // Configure test environment per test file
   testEnvironmentOptions: {
     customExportConditions: ['node', 'node-addons']
-  }
+  },
+  transformIgnorePatterns: [
+    'node_modules/(?!(next|@next|react|@react|@testing-library)/)'
+  ],
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
+  globals: {
+    'ts-jest': {
+      useESM: true,
+    },
+  },
 }; 

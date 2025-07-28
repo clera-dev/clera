@@ -2,7 +2,7 @@ import "@/app/globals.css";
 import { Inter } from "next/font/google";
 import Link from "next/link";
 import ClientLayout from "@/components/ClientLayout";
-import { ThemeSwitcher } from "@/components/theme-switcher";
+// import { ThemeSwitcher } from "@/components/theme-switcher";
 import { hasEnvVars } from "@/utils/supabase/check-env-vars";
 import { EnvVarWarning } from "@/components/env-var-warning";
 import HeaderController from "@/components/HeaderController";
@@ -37,21 +37,21 @@ export default function RootLayout({
             <ClientLayout>
               {/* --- Top nav bar ------------------------------------------------ */}
               <HeaderController>
-                <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16 fixed top-0 right-0 bg-background z-50">
-                  <div className="w-full max-w-5xl flex justify-between items-center p-3 px-5 text-sm">
+                <nav className="w-full flex justify-center border-b border-b-foreground/10 h-10 sm:h-16 fixed top-0 right-0 bg-background z-50">
+                  <div className="w-full max-w-screen-2xl flex justify-between items-center p-2 sm:p-3 px-3 sm:px-6 lg:px-8 text-sm">
                     <div className="flex gap-5 items-center font-semibold">
                       <ConditionalLogoLink />
                     </div>
-                    {!hasEnvVars ? <EnvVarWarning /> : <ClientAuthButtons />}
+                    <div className="flex justify-end">
+                      {!hasEnvVars ? <EnvVarWarning /> : <ClientAuthButtons />}
+                    </div>
                   </div>
                 </nav>
               </HeaderController>
 
               {/* --- Page content ---------------------------------------------- */}
-              <main className="flex-1 w-full flex flex-col items-center pt-16">
-                <div className="flex flex-col w-full max-w-5xl p-4">
-                  {children}
-                </div>
+              <main className="flex-1 w-full flex flex-col pt-10 sm:pt-16">
+                {children}
               </main>
 
               {/* --- Footer ---------------------------------------------------- */}

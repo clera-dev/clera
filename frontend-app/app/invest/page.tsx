@@ -331,120 +331,82 @@ export default function InvestPage() {
   }
 
   return (
-    <div className="p-4 space-y-4 bg-background text-foreground w-full h-full">
-      <Toaster 
-        position="bottom-center"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: '#1f2937',
-            color: '#fff',
-            border: '1px solid #374151',
-            borderRadius: '0.5rem',
-            fontSize: '14px',
-            padding: '12px 16px',
-          },
-          success: {
-            iconTheme: {
-              primary: '#10b981',
-              secondary: '#fff',
+    <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="py-4 space-y-6 bg-background text-foreground w-full h-full">
+        <Toaster 
+          position="bottom-center"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#1f2937',
+              color: '#fff',
+              border: '1px solid #374151',
+              borderRadius: '0.5rem',
+              fontSize: '14px',
+              padding: '12px 16px',
             },
-          },
-          error: {
-            iconTheme: {
-              primary: '#ef4444',
-              secondary: '#fff',
+            success: {
+              iconTheme: {
+                primary: '#10b981',
+                secondary: '#fff',
+              },
             },
-          },
-          loading: {
-            iconTheme: {
-              primary: '#6b7280',
-              secondary: '#fff',
+            error: {
+              iconTheme: {
+                primary: '#ef4444',
+                secondary: '#fff',
+              },
             },
-          },
-        }}
-      />
+            loading: {
+              iconTheme: {
+                primary: '#6b7280',
+                secondary: '#fff',
+              },
+            },
+          }}
+        />
 
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Discover Your Investment Opportunities</h1>
-      </div>
-      
-      {/* Search Bar Section */}
-      <Card className="bg-gradient-to-r from-slate-900 to-slate-800 border-slate-700 shadow-lg">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <Search className="text-primary h-5 w-5" />
-            <h2 className="text-xl font-semibold text-white">Find Investment Opportunities</h2>
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold">Discover Your Investment Opportunities</h1>
+            <p className="text-muted-foreground mt-1">Find and research stocks to build your portfolio</p>
           </div>
-          <StockSearchBar 
-            onStockSelect={handleStockSelect} 
-            accountId={accountId}
-            watchlistSymbols={watchlistSymbols}
-            onWatchlistChange={refreshWatchlist}
-            onOptimisticAdd={optimisticAddToWatchlist}
-          />
-        </CardContent>
-      </Card>
-      
-      {/* Balance Error Alert */}
-      {!isLoadingBalance && balanceError && !isLoadingAccountId && (
-        <Alert variant="default" className="bg-amber-50 border-amber-200 text-amber-800">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Account Information Unavailable</AlertTitle>
-            <AlertDescription>
-                We're having trouble connecting to your account data. You can still browse investments, but buying functionality may be limited.
-            </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Responsive Layout */}
-      {shouldUseStackedLayout ? (
-        /* Stacked Layout for Chat Mode / Narrow Screens */
-        <div className="space-y-4">
-          {/* Stock Watchlist - First in stacked layout */}
-          <StockWatchlist 
-            accountId={accountId}
-            onStockSelect={handleStockSelect}
-            watchlistSymbols={watchlistSymbols}
-            onWatchlistChange={refreshWatchlist}
-            onOptimisticAdd={optimisticAddToWatchlist}
-            onOptimisticRemove={optimisticRemoveFromWatchlist}
-          />
-          
-          {/* Stock Picks - Second in stacked layout */}
-          <StockPicksCard
-            stockPicks={researchData?.stock_picks || []}
-            onStockSelect={handleStockSelect}
-            lastGenerated={lastGenerated}
-            isLoading={isLoadingResearch}
-          />
-          
-          {/* Investment Ideas - Third in stacked layout */}
-          <InvestmentIdeasCard
-            investmentThemes={researchData?.investment_themes || []}
-            onStockSelect={handleStockSelect}
-            onThemeSelect={autoCollapseSidebar}
-            isLoading={isLoadingResearch}
-          />
-          
-          {/* Research Sources - Fourth in stacked layout */}
-          <ResearchSourcesCard
-            citations={citations}
-            isLoading={isLoadingResearch}
-          />
         </div>
-      ) : (
-        /* Desktop Layout: 2x3 Grid Structure */
-        <div className="space-y-4">
-          {/* Top Row: Stock Picks (left) + Stock Watchlist (right) - 50/50 split */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <StockPicksCard
-              stockPicks={researchData?.stock_picks || []}
-              onStockSelect={handleStockSelect}
-              lastGenerated={lastGenerated}
-              isLoading={isLoadingResearch}
+        
+        {/* Search Bar Section */}
+        <Card className="bg-gradient-to-r from-slate-900 to-slate-800 border-slate-700 shadow-lg">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Search className="text-primary h-5 w-5" />
+              <h2 className="text-xl font-semibold text-white">Find Investment Opportunities</h2>
+            </div>
+            <StockSearchBar 
+              onStockSelect={handleStockSelect} 
+              accountId={accountId}
+              watchlistSymbols={watchlistSymbols}
+              onWatchlistChange={refreshWatchlist}
+              onOptimisticAdd={optimisticAddToWatchlist}
             />
+          </CardContent>
+        </Card>
+        
+        {/* Balance Error Alert */}
+        {!isLoadingBalance && balanceError && !isLoadingAccountId && (
+          <Alert variant="default" className="bg-amber-50 border-amber-200 text-amber-800">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Account Information Unavailable</AlertTitle>
+              <AlertDescription>
+                  We're having trouble connecting to your account data. You can still browse investments, but buying functionality may be limited.
+              </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Main Content Layout */}
+        {shouldUseStackedLayout ? (
+          /* Stacked Layout for Chat Mode / Narrow Screens */
+          <div className="space-y-6">
+            {/* Stock Watchlist - First in stacked layout */}
             <StockWatchlist 
               accountId={accountId}
               onStockSelect={handleStockSelect}
@@ -453,85 +415,129 @@ export default function InvestPage() {
               onOptimisticAdd={optimisticAddToWatchlist}
               onOptimisticRemove={optimisticRemoveFromWatchlist}
             />
+            
+            {/* Stock Picks - Second in stacked layout */}
+            <StockPicksCard
+              stockPicks={researchData?.stock_picks || []}
+              onStockSelect={handleStockSelect}
+              lastGenerated={lastGenerated}
+              isLoading={isLoadingResearch}
+            />
+            
+            {/* Investment Ideas - Third in stacked layout */}
+            <InvestmentIdeasCard
+              investmentThemes={researchData?.investment_themes || []}
+              onStockSelect={handleStockSelect}
+              onThemeSelect={autoCollapseSidebar}
+              isLoading={isLoadingResearch}
+            />
+            
+            {/* Research Sources - Fourth in stacked layout */}
+            <ResearchSourcesCard
+              citations={citations}
+              isLoading={isLoadingResearch}
+            />
           </div>
-          
-          {/* Middle Row: Investment Ideas - Full Width */}
-          <InvestmentIdeasCard
-            investmentThemes={researchData?.investment_themes || []}
-            onStockSelect={handleStockSelect}
-            onThemeSelect={autoCollapseSidebar}
-            isLoading={isLoadingResearch}
-          />
-          
-          {/* Bottom Row: Research Sources - Full Width */}
-          <ResearchSourcesCard
-            citations={citations}
-            isLoading={isLoadingResearch}
-          />
-        </div>
-      )}
-
-      {/* Bottom Padding */}
-      <div className="pb-24" />
-
-      {/* Stock Information Dialog */}
-      <Dialog open={!!selectedSymbol} onOpenChange={(open) => !open && setSelectedSymbol(null)}>
-        <DialogContent className="sm:max-w-[85vw] lg:max-w-[70vw] xl:max-w-[60vw] p-0 max-h-[90vh] overflow-auto border-0 shadow-xl rounded-lg left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-[50]">
-          <DialogHeader className="bg-slate-950 p-4 flex flex-row items-center justify-between sticky top-0 z-10 border-b border-slate-800">
-            <DialogTitle className="text-white text-xl font-semibold">{selectedSymbol}</DialogTitle>
-            <DialogClose className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded-full p-1">
-              <X className="h-5 w-5" />
-            </DialogClose>
-          </DialogHeader>
-          <div className="p-0">
-            {selectedSymbol && (
-              <StockInfoCard 
-                symbol={selectedSymbol} 
+        ) : (
+          /* Desktop Layout: Optimized Grid Structure */
+          <div className="space-y-6">
+            {/* Top Row: Stock Picks (left) + Stock Watchlist (right) - 50/50 split */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <StockPicksCard
+                stockPicks={researchData?.stock_picks || []}
+                onStockSelect={handleStockSelect}
+                lastGenerated={lastGenerated}
+                isLoading={isLoadingResearch}
+              />
+              <StockWatchlist 
                 accountId={accountId}
-                isInWatchlist={watchlistSymbols.has(selectedSymbol)}
+                onStockSelect={handleStockSelect}
+                watchlistSymbols={watchlistSymbols}
                 onWatchlistChange={refreshWatchlist}
                 onOptimisticAdd={optimisticAddToWatchlist}
                 onOptimisticRemove={optimisticRemoveFromWatchlist}
               />
-            )}
-          </div>
-          
-          {/* Action Footer */}
-          {selectedSymbol && (
-            <div className="sticky bottom-0 left-0 right-0 mt-auto bg-background border-t border-border p-4 flex items-center justify-between shadow-md z-10">
-              <div className="text-left">
-                <p className="text-xs text-muted-foreground">Available to Invest</p>
-                {isLoadingBalance || isLoadingAccountId ? (
-                  <Skeleton className="h-6 w-32 mt-1" />
-                ) : balanceError ? (
-                  <p className="text-sm text-amber-600">Account info unavailable</p>
-                ) : (
-                  <p className="text-lg font-semibold">{formatCurrency(availableBalance?.cash)}</p>
-                )}
-              </div>
-              <Button 
-                size="lg" 
-                className="font-semibold text-lg px-6"
-                onClick={handleOpenModal}
-                disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
-              >
-                $ Invest
-              </Button>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+            
+            {/* Bottom Row: Investment Ideas (2/3) + Research Sources (1/3) */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2">
+                <InvestmentIdeasCard
+                  investmentThemes={researchData?.investment_themes || []}
+                  onStockSelect={handleStockSelect}
+                  onThemeSelect={autoCollapseSidebar}
+                  isLoading={isLoadingResearch}
+                />
+              </div>
+              <div className="xl:col-span-1">
+                <ResearchSourcesCard
+                  citations={citations}
+                  isLoading={isLoadingResearch}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
-      {/* Order Modal */}
-      {selectedSymbol && accountId && (
-        <OrderModal 
-            isOpen={isModalOpen} 
-            onClose={handleCloseModal} 
-            symbol={selectedSymbol} 
-            accountId={accountId}
-            orderType="BUY"
-        />
-      )}
+        {/* Stock Information Dialog */}
+        <Dialog open={!!selectedSymbol} onOpenChange={(open) => !open && setSelectedSymbol(null)}>
+          <DialogContent className="sm:max-w-[85vw] lg:max-w-[70vw] xl:max-w-[60vw] p-0 max-h-[90vh] overflow-auto border-0 shadow-xl rounded-lg left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-[50]">
+            <DialogHeader className="bg-slate-950 p-4 flex flex-row items-center justify-between sticky top-0 z-10 border-b border-slate-800">
+              <DialogTitle className="text-white text-xl font-semibold">{selectedSymbol}</DialogTitle>
+              <DialogClose className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded-full p-1">
+                <X className="h-5 w-5" />
+              </DialogClose>
+            </DialogHeader>
+            <div className="p-0">
+              {selectedSymbol && (
+                <StockInfoCard 
+                  symbol={selectedSymbol} 
+                  accountId={accountId}
+                  isInWatchlist={watchlistSymbols.has(selectedSymbol)}
+                  onWatchlistChange={refreshWatchlist}
+                  onOptimisticAdd={optimisticAddToWatchlist}
+                  onOptimisticRemove={optimisticRemoveFromWatchlist}
+                />
+              )}
+            </div>
+            
+            {/* Action Footer */}
+            {selectedSymbol && (
+              <div className="sticky bottom-0 left-0 right-0 mt-auto bg-background border-t border-border p-4 flex items-center justify-between shadow-md z-10">
+                <div className="text-left">
+                  <p className="text-xs text-muted-foreground">Available to Invest</p>
+                  {isLoadingBalance || isLoadingAccountId ? (
+                    <Skeleton className="h-6 w-32 mt-1" />
+                  ) : balanceError ? (
+                    <p className="text-sm text-amber-600">Account info unavailable</p>
+                  ) : (
+                    <p className="text-lg font-semibold">{formatCurrency(availableBalance?.cash)}</p>
+                  )}
+                </div>
+                <Button 
+                  size="lg" 
+                  className="font-semibold text-lg px-6"
+                  onClick={handleOpenModal}
+                  disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
+                >
+                  $ Invest
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Order Modal */}
+        {selectedSymbol && accountId && (
+          <OrderModal 
+              isOpen={isModalOpen} 
+              onClose={handleCloseModal} 
+              symbol={selectedSymbol} 
+              accountId={accountId}
+              orderType="BUY"
+          />
+        )}
+      </div>
     </div>
   );
 } 

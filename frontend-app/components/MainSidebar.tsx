@@ -137,24 +137,7 @@ export default function MainSidebar({
     },
   ];
 
-  // Bottom icons (these will be placed above the user profile)
-  const bottomIcons = [
-    {
-      name: 'Account',
-      href: '/dashboard',
-      icon: User,
-    },
-    {
-      name: 'Information',
-      href: '/info',
-      icon: Info,
-    },
-    {
-      name: 'Settings',
-      href: '/settings',
-      icon: Settings,
-    },
-  ];
+  // Bottom icons section removed - functionality consolidated into user profile section
 
   const toggleCollapse = () => {
     const newState = !isCollapsed;
@@ -275,67 +258,30 @@ export default function MainSidebar({
               </nav>
             </div>
 
-            {/* Bottom Icons Section - Above the user profile */}
-            <div className="flex-shrink-0">
-              <div className="space-y-1 p-2">
-                {bottomIcons.map((item) => {
-                  const isActive = pathname === item.href;
-                  
-                  return (
-                    <Link 
-                      key={item.href}
-                      href={item.href} 
-                      className={cn(
-                        "flex items-center py-2 hover:text-primary transition-colors",
-                        isActive ? "text-primary" : "text-muted-foreground",
-                        isCollapsed ? "justify-center" : "px-3"
-                      )}
-                      onClick={(e) => {
-                        // Use the same navigation handler for bottom icons
-                        handleNavigation(item.href, e);
-                      }}
-                      title={item.name}
-                    >
-                      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                        {item.name === 'Account' && (
-                          <div className="border border-current rounded-full w-6 h-6 flex items-center justify-center">
-                            <User size={14} />
-                          </div>
-                        )}
-                        {item.name === 'Information' && (
-                          <div className="border border-current rounded-full w-6 h-6 flex items-center justify-center">
-                            <Info size={14} />
-                          </div>
-                        )}
-                        {item.name === 'Settings' && (
-                          <Settings size={20} />
-                        )}
-                      </div>
-                      {!isCollapsed && (
-                        <span className="ml-3">{item.name}</span>
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
 
-            {/* User section - Fixed at bottom */}
+
+            {/* User section - Fixed at bottom, now navigates to dashboard */}
             <div className="border-t p-4 flex-shrink-0 mt-auto">
-              <div className={cn(
-                "flex items-center gap-3",
-                isCollapsed ? "justify-center" : ""
-              )}>
+              <Link 
+                href="/dashboard"
+                className={cn(
+                  "flex items-center gap-3 hover:bg-accent hover:text-accent-foreground rounded-md p-2 transition-colors",
+                  pathname === '/dashboard' ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                  isCollapsed ? "justify-center" : ""
+                )}
+                onClick={(e) => handleNavigation('/dashboard', e)}
+                title={isCollapsed ? "Dashboard" : undefined}
+              >
                 <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
                   <User size={16} className="text-muted-foreground" />
                 </div>
                 {!isCollapsed && (
                   <div className="flex-1 overflow-hidden">
-                    <p className="text-sm font-medium truncate">User Profile</p>
-                    <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+                    <p className="text-sm font-medium truncate">Dashboard</p>
+                    <p className="text-xs text-muted-foreground truncate">Account & Settings</p>
                   </div>
                 )}
-              </div>
+              </Link>
             </div>
           </aside>
           

@@ -7,16 +7,29 @@ interface UserOnboardingStatus {
   error: string | null;
 }
 
+interface UseUserOnboardingStatusOptions {
+  skipAuthCheck?: boolean; // Skip auth check entirely (useful for auth pages)
+}
+
 /**
  * Custom hook to fetch and manage user onboarding status
  * Abstracts Supabase access logic from UI components
+ * Gracefully handles missing auth sessions (e.g., on auth pages)
  */
-export function useUserOnboardingStatus(): UserOnboardingStatus {
+export function useUserOnboardingStatus(options: UseUserOnboardingStatusOptions = {}): UserOnboardingStatus {
+  const { skipAuthCheck = false } = options;
   const [status, setStatus] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!skipAuthCheck); // Start as not loading if skipping auth check
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // If skipping auth check, don't make any API calls
+    if (skipAuthCheck) {
+      setStatus(null);
+      setIsLoading(false);
+      return;
+    }
+
     const fetchUserStatus = async () => {
       try {
         setError(null);
@@ -25,6 +38,16 @@ export function useUserOnboardingStatus(): UserOnboardingStatus {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         
         if (userError) {
+          // Handle auth errors gracefully - this is expected on auth pages
+          if (userError.message.includes('Auth session missing') || 
+              userError.message.includes('Invalid JWT') ||
+              userError.message.includes('JWT expired')) {
+            // This is not an error, it just means the user is not logged in
+            setStatus(null);
+            setIsLoading(false);
+            return;
+          }
+          // For other auth errors, still throw them
           throw new Error(`Failed to get user: ${userError.message}`);
         }
         
@@ -32,6 +55,7 @@ export function useUserOnboardingStatus(): UserOnboardingStatus {
           // This is not an error, it just means the user is not logged in.
           // The hook should not throw an error in this case.
           setStatus(null);
+          setIsLoading(false);
           return;
         }
 
@@ -57,7 +81,7 @@ export function useUserOnboardingStatus(): UserOnboardingStatus {
     };
 
     fetchUserStatus();
-  }, []);
+  }, [skipAuthCheck]);
 
   return {
     status,

@@ -49,18 +49,33 @@ export default function ClientAuthButtons() {
         
         if (event === "SIGNED_IN" && session) {
           setUser(session.user);
+          setLoading(false);
           // Force a router refresh to update server components
           router.refresh();
         } else if (event === "SIGNED_OUT") {
+          // Clear localStorage to prevent cross-user session issues
+          if (typeof window !== 'undefined') {
+            console.log('[ClientAuthButtons] Clearing localStorage on auth state SIGNED_OUT');
+            localStorage.removeItem('cleraCurrentChatSession');
+            // Clear any other user-specific localStorage items
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && (key.startsWith('alpacaAccountId_') || key.startsWith('clera'))) {
+                keysToRemove.push(key);
+              }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+          }
+
           setUser(null);
+          setLoading(false);
           router.refresh();
         } else if (event === "TOKEN_REFRESHED" && session) {
           // Handle token refresh to ensure user state stays current
           setUser(session.user);
+          setLoading(false);
         }
-        
-        // Ensure loading is false after auth state changes
-        setLoading(false);
       }
     );
 
@@ -72,6 +87,21 @@ export default function ClientAuthButtons() {
 
   const handleSignOut = async () => {
     try {
+      // Clear localStorage to prevent cross-user session issues
+      if (typeof window !== 'undefined') {
+        console.log('[ClientAuthButtons] Clearing localStorage on sign out');
+        localStorage.removeItem('cleraCurrentChatSession');
+        // Clear any other user-specific localStorage items
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('alpacaAccountId_') || key.startsWith('clera'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+      }
+
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error("Error signing out:", error);
@@ -86,20 +116,38 @@ export default function ClientAuthButtons() {
     }
   };
 
-  // Don't render anything on server-side or while loading to prevent flash
-  if (!isClient || loading) {
+  // Don't render anything on server-side to prevent flash
+  if (!isClient) {
     return <div className="h-8 w-24 bg-gray-200 animate-pulse rounded-md"></div>;
+  }
+  
+  // Show loading state only briefly, then show auth buttons
+  if (loading) {
+    return (
+      <div className="flex gap-2">
+        <Button asChild size="sm" variant="outline">
+          <Link href="/sign-in">Sign in</Link>
+        </Button>
+        <Button asChild size="sm" variant="default">
+          <Link href="/sign-up">Sign up</Link>
+        </Button>
+      </div>
+    );
   }
 
   return user ? (
-    <div className="flex items-center gap-4">
-      <span className="truncate max-w-[150px]">Hey, {user.email}!</span>
-      <Button variant="outline" onClick={handleSignOut}>
+    <div className="flex items-center gap-2 sm:gap-4">
+      <Button 
+        variant="outline" 
+        size="sm"
+        onClick={handleSignOut}
+        className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2"
+      >
         Sign out
       </Button>
     </div>
   ) : (
-    <div className="flex gap-2">
+    <div className="flex gap-1 sm:gap-2">
       <Button asChild size="sm" variant="outline">
         <Link href="/sign-in">Sign in</Link>
       </Button>

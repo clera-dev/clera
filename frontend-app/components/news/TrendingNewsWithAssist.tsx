@@ -138,7 +138,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                       <div className="flex items-center gap-2">
                         {news.banner_image ? (
                           <img 
-                            src={news.banner_image} 
+                            src={`/api/image-proxy?url=${encodeURIComponent(news.banner_image)}`} 
                             alt={news.source}
                             className="w-6 h-6 rounded-md object-cover" 
                             onError={(e) => {
@@ -153,7 +153,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                         <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
                           <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
                         </div>
-                        <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
+                        <span className="font-medium text-xs sm:text-sm line-clamp-2 leading-tight">{news.title}</span>
                       </div>
                     </a>
                   ))}
@@ -217,7 +217,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                     <div className="flex items-center gap-2">
                       {news.banner_image ? (
                         <img 
-                          src={news.banner_image} 
+                          src={`/api/image-proxy?url=${encodeURIComponent(news.banner_image)}`} 
                           alt={news.source}
                           className="w-6 h-6 rounded-md object-cover" 
                           onError={(e) => {
@@ -232,7 +232,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                       <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
                         <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
                       </div>
-                      <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
+                                              <span className="font-medium text-xs sm:text-sm line-clamp-2 leading-tight">{news.title}</span>
                     </div>
                   </a>
                 ))}

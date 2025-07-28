@@ -83,6 +83,10 @@ const formatDate = (dateString: string) => {
   };
 };
 
+const formatStatus = (status: string) => {
+  return status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
+};
+
 export default function TransferHistory() {
   const [transfers, setTransfers] = useState<TransferHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -235,7 +239,7 @@ export default function TransferHistory() {
                           {`$${transfer.amount.toFixed(2)}`}
                         </p>
                         <Badge className={`text-xs ${getStatusColor(transfer.status)}`}>
-                          {transfer.status}
+                          {formatStatus(transfer.status)}
                         </Badge>
                       </div>
                       <div className="space-y-1">

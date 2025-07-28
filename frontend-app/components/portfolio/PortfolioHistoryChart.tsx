@@ -106,8 +106,8 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
                              timeRange === '6M' ? 180 * 86400 : 365 * 86400);
       
       return [
-        { timestamp: pastDate, date: fromUnixTime(pastDate), equity: 1 },
-        { timestamp: now, date: fromUnixTime(now), equity: 1 }
+        { timestamp: pastDate, date: fromUnixTime(pastDate), equity: 0 },
+        { timestamp: now, date: fromUnixTime(now), equity: 0 }
       ];
     }
     
@@ -128,8 +128,8 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
       
       if (first && last) {
         return [
-          { ...first, equity: 1 },
-          { ...last, equity: 1 }
+          { ...first, equity: 0 },
+          { ...last, equity: 0 }
         ];
       }
     }
@@ -157,10 +157,13 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
 
   // Get Y-axis domain with proper padding for better visibility
   const yAxisDomain = useMemo(() => {
-    if (!chartData || chartData.length === 0) return [0, 100];
+    if (!chartData || chartData.length === 0) return [0, 1];
     
-    const values = chartData.map(d => d.equity || 0).filter(v => v > 0);
-    if (values.length === 0) return [0, 100];
+    const values = chartData.map(d => d.equity || 0);
+    if (values.length === 0) return [0, 1];
+    
+    // If all values are 0, show a small range for better visibility
+    if (values.every(v => v === 0)) return [0, 1];
     
     const min = Math.min(...values);
     const max = Math.max(...values);

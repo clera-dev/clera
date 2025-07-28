@@ -274,8 +274,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     <SidebarContext.Provider value={{ autoCollapseSidebar }}>
       <ThemeProvider
         attribute="class"
-        defaultTheme="system"
-        enableSystem
+        defaultTheme="dark" // Set to "system" to allow system theme to be used
+        forcedTheme="dark" // Delete this line if you want to allow system theme to be used
+        enableSystem={false} // Set to true to allow system theme to be used
         disableTransitionOnChange
       >
         <CleraAssistProvider

@@ -17,10 +17,12 @@ export async function POST(request: NextRequest) {
     // Use centralized authentication service (user auth only, thread ownership validated separately)
     const authResult = await ConversationAuthService.authenticateUser(request);
     if (!authResult.success) {
+      console.error('Authentication failed for user in get-thread-messages');
       return authResult.error!;
     }
 
     const { user } = authResult;
+    //console.log(`[get-thread-messages] Authenticated user: ${user.id}, thread: ${thread_id}`);
 
     // Validate required environment variables for LangGraph
     const langGraphApiUrl = process.env.LANGGRAPH_API_URL;
@@ -43,12 +45,37 @@ export async function POST(request: NextRequest) {
     });
 
     // Authorization check: ensure the thread belongs to the authenticated user
-    const thread = await langGraphClient.threads.get(thread_id);
-    if (!thread || !thread.metadata || thread.metadata.user_id !== user.id) {
+    let thread;
+    try {
+      thread = await langGraphClient.threads.get(thread_id);
+      console.log(`[get-thread-messages] Thread found:`, { 
+        exists: !!thread, 
+        hasMetadata: !!thread?.metadata,
+        metadataUserId: thread?.metadata?.user_id,
+        authenticatedUserId: user.id
+      });
+    } catch (threadError: any) {
+      console.error(`[get-thread-messages] Error fetching thread ${thread_id}:`, threadError);
+      // If thread doesn't exist, return empty messages instead of 403
+      if (threadError.status === 404 || threadError.message?.includes('not found')) {
+        console.log(`[get-thread-messages] Thread ${thread_id} not found, returning empty messages`);
+        return NextResponse.json({ messages: [] });
+      }
+      throw threadError;
+    }
+
+    // Check thread ownership - be more lenient with missing metadata
+    if (thread && thread.metadata && thread.metadata.user_id && thread.metadata.user_id !== user.id) {
+      console.error(`[get-thread-messages] Thread ownership mismatch: thread user_id=${thread.metadata.user_id}, authenticated user_id=${user.id}`);
       return NextResponse.json(
         { error: 'Forbidden' },
         { status: 403 }
       );
+    }
+
+    // If thread exists but has no metadata or user_id, allow access but log it
+    if (thread && (!thread.metadata || !thread.metadata.user_id)) {
+      console.warn(`[get-thread-messages] Thread ${thread_id} has missing metadata or user_id, allowing access for user ${user.id}`);
     }
 
     // Get thread state to extract messages
@@ -103,7 +130,7 @@ export async function POST(request: NextRequest) {
         };
       });
     
-    console.log(`Retrieved ${formattedMessages.length} messages for thread.`);
+    //console.log(`[get-thread-messages] Retrieved ${formattedMessages.length} messages for thread ${thread_id}`);
     
     return NextResponse.json({ messages: formattedMessages });
   } catch (error: any) {

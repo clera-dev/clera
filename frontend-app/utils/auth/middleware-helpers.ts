@@ -82,6 +82,11 @@ export async function getOnboardingStatus(supabase: any, userId: string): Promis
       .single();
     
     if (error) {
+      // GRACEFUL HANDLING: If no row is found, it simply means the user hasn't started onboarding.
+      // This is an expected state for new users, not an error.
+      if (error.code === 'PGRST116') {
+        return null;
+      }
       console.error('Onboarding status check error:', error);
       return null;
     }
@@ -125,6 +130,9 @@ export async function getAlpacaAccountId(supabase: any, userId: string): Promise
       .single();
     
     if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
       console.error('Error fetching Alpaca account ID:', error);
       return null;
     }

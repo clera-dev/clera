@@ -30,7 +30,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from langgraph.errors import GraphInterrupt
 from langgraph.graph.message import add_messages
@@ -48,6 +48,7 @@ from utils.alpaca.account_closure import (
 
 # Authentication imports
 from utils.authentication import verify_account_ownership
+from utils.supabase.db_client import get_supabase_client
 
 # Watchlist imports
 from utils.alpaca.watchlist import (
@@ -1702,7 +1703,7 @@ async def get_portfolio_history(
             equity=[float(e) if e is not None else None for e in history_data.equity],
             profit_loss=[float(pl) if pl is not None else None for pl in history_data.profit_loss],
             profit_loss_pct=[float(plp) if plp is not None else None for plp in history_data.profit_loss_pct],
-            base_value=float(history_data.base_value) if history_data.base_value is not None else None,
+            base_value=float(history_data.base_value) if history_data.base_value is not None else 0.0,
             timeframe=history_data.timeframe
         )
         
@@ -1711,6 +1712,17 @@ async def get_portfolio_history(
             response.base_value_asof = str(history_data.base_value_asof) # Ensure it's a string if needed
             
         return response
+    except ValidationError:
+        # This occurs for new accounts with no trading history
+        logger.warn(f"Validation error for account {account_id}, likely a new account. Returning empty history.")
+        return PortfolioHistoryResponse(
+            timestamp=[],
+            equity=[],
+            profit_loss=[],
+            profit_loss_pct=[],
+            base_value=0.0,
+            timeframe="1D"
+        )
     except Exception as e:
         error_msg = f"Error retrieving portfolio history for account {account_id}: {str(e)}"
         logger.error(error_msg)
@@ -2385,7 +2397,6 @@ async def get_account_closure_progress_endpoint(
         # Get Supabase data for confirmation number and initiation date
         supabase_data = {}
         try:
-            from utils.supabase.db_client import get_supabase_client
             supabase = get_supabase_client()
             
             # Find user by account_id

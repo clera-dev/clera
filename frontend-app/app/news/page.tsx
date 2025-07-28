@@ -566,17 +566,18 @@ export default function NewsPage() {
   ];
 
   return (
-    <div className="w-full h-full relative">
-      <div className="p-4 space-y-4 bg-background text-foreground w-full min-h-full">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-4">
+    <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="py-4 space-y-6 bg-background text-foreground w-full min-h-full">
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Financial News and Analysis</h1>
-            <h2 className="text-lg text-muted-foreground">How the world is impacting your investments today?</h2>
+            <h1 className="text-2xl lg:text-3xl font-bold">Financial News and Analysis</h1>
+            <p className="text-muted-foreground mt-1">How the world is impacting your investments today</p>
           </div>
         </div>
 
         {accountError && (
-          <Alert variant="destructive" className="mb-2">
+          <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Account Error</AlertTitle>
             <AlertDescription>
@@ -585,9 +586,10 @@ export default function NewsPage() {
           </Alert>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-6">
-          {/* Left Section - 3 columns on large screens, full width on mobile */}
-          <div className="lg:col-span-3 flex flex-col">
+        {/* Main Content Grid - Responsive Layout */}
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+          {/* Left Section - Portfolio News (3 columns on xl screens) */}
+          <div className="xl:col-span-3 flex flex-col">
             <PortfolioNewsSummaryWithAssist
               portfolioSummary={portfolioSummary}
               isLoadingSummary={isLoadingSummary}
@@ -599,8 +601,8 @@ export default function NewsPage() {
             />
           </div>
 
-          {/* Right Section - 2 columns on large screens, full width on mobile */}
-          <div className="lg:col-span-2 flex flex-col space-y-3">
+          {/* Right Section - Trending & Watchlist (2 columns on xl screens) */}
+          <div className="xl:col-span-2 flex flex-col space-y-6">
             <TrendingNewsWithAssist
               trendingNews={trendingNews}
               isLoading={isLoadingTrendingNews}
@@ -626,8 +628,10 @@ export default function NewsPage() {
           </div>
         </div>
 
-        {/* Market Environment Section - appears below all other sections */}
-        <MarketEnvironment />
+        {/* Market Environment Section - Full Width */}
+        <div className="mt-8">
+          <MarketEnvironment />
+        </div>
       </div>
     </div>
   );

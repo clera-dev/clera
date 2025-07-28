@@ -28,6 +28,15 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (fetchError) {
+      // GRACEFUL HANDLING: If no row is found (PGRST116), it's not a server error.
+      // It simply means the user has not started the onboarding/closure process.
+      if (fetchError.code === 'PGRST116') {
+        return NextResponse.json({
+          success: true,
+          data: null,
+        });
+      }
+
       console.error('Error fetching closure data:', fetchError);
       return NextResponse.json(
         { error: 'Failed to fetch closure data' },

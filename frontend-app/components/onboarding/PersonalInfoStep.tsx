@@ -14,6 +14,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { PIIFormField } from "@/components/account/PIIFormField";
 
 interface PersonalInfoStepProps {
   data: OnboardingData;
@@ -149,99 +151,100 @@ export default function PersonalInfoStep({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-8">
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Personal Information</h2>
-        <p className="text-muted-foreground">Please provide your personal details and citizenship information.</p>
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4 sm:p-8">
+      <div className="mb-6 sm:mb-8">
+        <h2 className="text-2xl sm:text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Personal Information</h2>
+        <p className="text-muted-foreground text-sm sm:text-base">Next, we'll need some personal details, which will be securely stored for regulatory purposes.</p>
       </div>
       
-      <div className="space-y-6 bg-card/50 p-6 rounded-lg border border-border/30 shadow-sm">
-        <div className="grid grid-cols-3 gap-4">
-          <div className="grid grid-rows-[auto_1fr] gap-1">
-            <Label htmlFor="firstName" className="text-sm font-medium min-h-[2.5rem] flex items-end">First Name</Label>
+      <div className="space-y-6 bg-card/50 p-4 sm:p-6 rounded-lg border border-border/30 shadow-sm">
+        {/* Name Fields - Stack vertically on mobile, 3 columns on desktop */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="firstName" className="text-sm font-medium">First Name</Label>
             <Input
               id="firstName"
               value={data.firstName}
               onChange={(e) => onUpdate({ firstName: e.target.value })}
-              className={`${errors.firstName ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`${errors.firstName ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
             />
             {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
           </div>
           
-          <div className="grid grid-rows-[auto_1fr] gap-1">
-            <Label htmlFor="middleName" className="text-sm font-medium min-h-[2.5rem] flex items-end">Middle Name (Optional)</Label>
+          <div className="space-y-2">
+            <Label htmlFor="middleName" className="text-sm font-medium">Middle Name (Optional)</Label>
             <Input
               id="middleName"
               value={data.middleName}
               onChange={(e) => onUpdate({ middleName: e.target.value })}
-              className="border-border/40 rounded-md h-11"
+              className="border-border/40 rounded-md h-12 sm:h-11"
             />
           </div>
           
-          <div className="grid grid-rows-[auto_1fr] gap-1">
-            <Label htmlFor="lastName" className="text-sm font-medium min-h-[2.5rem] flex items-end">Last Name</Label>
+          <div className="space-y-2">
+            <Label htmlFor="lastName" className="text-sm font-medium">Last Name</Label>
             <Input
               id="lastName"
               value={data.lastName}
               onChange={(e) => onUpdate({ lastName: e.target.value })}
-              className={`${errors.lastName ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`${errors.lastName ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
             />
             {errors.lastName && <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>}
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <div className="grid grid-rows-[auto_1fr] gap-1">
-            <Label htmlFor="dateOfBirth" className="text-sm font-medium min-h-[2.5rem] flex items-end">Date of Birth</Label>
+        {/* Date of Birth and SSN - Stack vertically on mobile, 2 columns on desktop */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="dateOfBirth" className="text-sm font-medium">Date of Birth</Label>
             <Input
               id="dateOfBirth"
               type="date"
               value={data.dateOfBirth}
               onChange={(e) => onUpdate({ dateOfBirth: e.target.value })}
-              className={`${errors.dateOfBirth ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`${errors.dateOfBirth ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
             />
             {errors.dateOfBirth && <p className="text-red-500 text-sm mt-1">{errors.dateOfBirth}</p>}
           </div>
 
-          <div className="grid grid-rows-[auto_1fr] gap-1">
-            <Label htmlFor="taxId" className="text-sm font-medium min-h-[2.5rem] flex items-end">Social Security Number (SSN)</Label>
+          <div className="space-y-2">
+            <Label htmlFor="taxId" className="text-sm font-medium">Social Security Number (SSN)</Label>
             <Input
               id="taxId"
+              type="text"
+              inputMode="numeric"
               value={data.taxId}
               onChange={(e) => onUpdate({ taxId: formatSSN(e.target.value) })}
-              className={`${errors.taxId ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`${errors.taxId ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
               maxLength={11}
               placeholder="123-45-6789"
             />
             {errors.taxId && <p className="text-red-500 text-sm mt-1">{errors.taxId}</p>}
           </div>
-
-          <div className="grid grid-rows-[auto_1fr] gap-1">
-            <div className="flex items-center gap-2 min-h-[2.5rem]">
-              <Label className="text-sm font-medium">Country of Tax Residence</Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>We are currently only available in the USA.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Input
-              value={data.countryOfTaxResidence}
-              disabled
-              className="border-border/40 bg-muted/50 rounded-md h-11"
-            />
-          </div>
         </div>
 
+        {/* Country of Tax Residence - Full width */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium">Country of Tax Residence</Label>
+            <InfoTooltip content="We are currently only available in the USA.">
+              <button type="button" className="ml-2">
+                <InfoIcon className="h-4 w-4 text-gray-400" />
+              </button>
+            </InfoTooltip>
+          </div>
+          <Input
+            value={data.countryOfTaxResidence}
+            disabled
+            className="border-border/40 bg-muted/50 rounded-md h-12 sm:h-11"
+          />
+        </div>
+
+        {/* Citizenship Section */}
         <div className="space-y-4">
           <Label className="text-sm font-medium">Are you a citizen of the United States?</Label>
-          <div className="grid grid-cols-1 gap-2">
-            <div className="flex items-center space-x-2">
+          <div className="space-y-3">
+            <div className="flex items-center space-x-3">
               <input
                 type="radio"
                 id="us-citizen"
@@ -249,11 +252,11 @@ export default function PersonalInfoStep({
                 value={CitizenshipStatus.US_CITIZEN}
                 checked={data.citizenshipStatus === CitizenshipStatus.US_CITIZEN}
                 onChange={(e) => handleCitizenshipChange(e.target.value as CitizenshipStatus)}
-                className="h-4 w-4 text-primary border-border/40 focus:ring-primary"
+                className="h-5 w-5 text-primary border-border/40 focus:ring-primary"
               />
-              <Label htmlFor="us-citizen" className="font-normal cursor-pointer">Yes</Label>
+              <Label htmlFor="us-citizen" className="font-normal cursor-pointer text-sm sm:text-base">Yes</Label>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3">
               <input
                 type="radio"
                 id="permanent-resident"
@@ -261,11 +264,11 @@ export default function PersonalInfoStep({
                 value={CitizenshipStatus.PERMANENT_RESIDENT}
                 checked={data.citizenshipStatus === CitizenshipStatus.PERMANENT_RESIDENT}
                 onChange={(e) => handleCitizenshipChange(e.target.value as CitizenshipStatus)}
-                className="h-4 w-4 text-primary border-border/40 focus:ring-primary"
+                className="h-5 w-5 text-primary border-border/40 focus:ring-primary"
               />
-              <Label htmlFor="permanent-resident" className="font-normal cursor-pointer">No - Green Card / Permanent Resident</Label>
+              <Label htmlFor="permanent-resident" className="font-normal cursor-pointer text-sm sm:text-base">No - Green Card / Permanent Resident</Label>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3">
               <input
                 type="radio"
                 id="visa-holder"
@@ -273,9 +276,9 @@ export default function PersonalInfoStep({
                 value={CitizenshipStatus.VISA_HOLDER}
                 checked={data.citizenshipStatus === CitizenshipStatus.VISA_HOLDER}
                 onChange={(e) => handleCitizenshipChange(e.target.value as CitizenshipStatus)}
-                className="h-4 w-4 text-primary border-border/40 focus:ring-primary"
+                className="h-5 w-5 text-primary border-border/40 focus:ring-primary"
               />
-              <Label htmlFor="visa-holder" className="font-normal cursor-pointer">No - Visa</Label>
+              <Label htmlFor="visa-holder" className="font-normal cursor-pointer text-sm sm:text-base">No - Visa</Label>
             </div>
           </div>
           {errors.citizenshipStatus && <p className="text-red-500 text-sm mt-1">{errors.citizenshipStatus}</p>}
@@ -284,8 +287,8 @@ export default function PersonalInfoStep({
         {/* Conditional fields for non-US citizens */}
         {(data.citizenshipStatus === CitizenshipStatus.PERMANENT_RESIDENT || data.citizenshipStatus === CitizenshipStatus.VISA_HOLDER) && (
           <div className="space-y-4 border-t border-border/30 pt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label htmlFor="countryOfBirth" className="text-sm font-medium">Country of Birth</Label>
                 <Input
                   id="countryOfBirth"
@@ -293,13 +296,13 @@ export default function PersonalInfoStep({
                   onChange={(e) => onUpdate({ countryOfBirth: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') })}
                   onBlur={handleCountryCodeBlur}
                   maxLength={3}
-                  className={`mt-1 ${errors.countryOfBirth ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                  className={`${errors.countryOfBirth ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
                   placeholder="3-letter ISO country code (e.g., CAN)"
                 />
                 {errors.countryOfBirth && <p className="text-red-500 text-sm mt-1">{errors.countryOfBirth}</p>}
               </div>
 
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="countryOfCitizenship" className="text-sm font-medium">Country of Citizenship</Label>
                 <Input
                   id="countryOfCitizenship"
@@ -307,7 +310,7 @@ export default function PersonalInfoStep({
                   onChange={(e) => onUpdate({ countryOfCitizenship: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') })}
                   onBlur={handleCountryCodeBlur}
                   maxLength={3}
-                  className={`mt-1 ${errors.countryOfCitizenship ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                  className={`${errors.countryOfCitizenship ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
                   placeholder="3-letter ISO country code (e.g., CAN)"
                 />
                 {errors.countryOfCitizenship && <p className="text-red-500 text-sm mt-1">{errors.countryOfCitizenship}</p>}
