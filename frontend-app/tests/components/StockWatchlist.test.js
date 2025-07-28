@@ -12,19 +12,19 @@ jest.mock('@/hooks/useCompanyProfile', () => ({
 
 jest.mock('@/components/invest/MiniStockChart', () => {
   return function MockMiniStockChart({ symbol }) {
-    return <div data-testid={`mini-chart-${symbol}`}>Mini Chart for {symbol}</div>;
+    return { type: 'div', props: { 'data-testid': `mini-chart-${symbol}` }, children: `Mini Chart for ${symbol}` };
   };
 });
 
 jest.mock('@/components/invest/StockSearchBar', () => {
   return function MockStockSearchBar() {
-    return <div data-testid="stock-search-bar">Stock Search Bar</div>;
+    return { type: 'div', props: { 'data-testid': 'stock-search-bar' }, children: 'Stock Search Bar' };
   };
 });
 
 jest.mock('@/components/ui/CompanyLogo', () => {
   return function MockCompanyLogo({ symbol }) {
-    return <div data-testid={`company-logo-${symbol}`}>Logo for {symbol}</div>;
+    return { type: 'div', props: { 'data-testid': `company-logo-${symbol}` }, children: `Logo for ${symbol}` };
   };
 });
 
@@ -37,29 +37,25 @@ process.env.NEXT_PUBLIC_API_KEY = 'test-api-key';
 
 // Mock the StockWatchlist component
 const MockStockWatchlist = ({ accountId, onStockSelect, onWatchlistChange, onOptimisticAdd, onOptimisticRemove, watchlistSymbols }) => {
-  return (
-    <div data-testid="stock-watchlist">
-      <h2>Stock Watchlist</h2>
-      {accountId ? (
-        <div>
-          <div data-testid="loading-spinner" role="status">Loading...</div>
-          <div data-testid="watchlist-content">
-            {watchlistSymbols && watchlistSymbols.size > 0 ? (
-              Array.from(watchlistSymbols).map(symbol => (
-                <div key={symbol} data-testid={`stock-item-${symbol}`}>
-                  {symbol}
-                </div>
-              ))
-            ) : (
-              <div data-testid="empty-state">Your Watchlist is Empty</div>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div>Please complete account setup to use the watchlist feature.</div>
-      )}
-    </div>
-  );
+  if (!accountId) {
+    return React.createElement('div', { 'data-testid': 'stock-watchlist' }, 
+      React.createElement('div', null, 'Please complete account setup to use the watchlist feature.')
+    );
+  }
+
+  const watchlistItems = watchlistSymbols && watchlistSymbols.size > 0 
+    ? Array.from(watchlistSymbols).map(symbol => 
+        React.createElement('div', { key: symbol, 'data-testid': `stock-item-${symbol}` }, symbol)
+      )
+    : React.createElement('div', { 'data-testid': 'empty-state' }, 'Your Watchlist is Empty');
+
+  return React.createElement('div', { 'data-testid': 'stock-watchlist' }, [
+    React.createElement('h2', { key: 'title' }, 'Stock Watchlist'),
+    React.createElement('div', { key: 'content' }, [
+      React.createElement('div', { 'data-testid': 'loading-spinner', key: 'spinner', role: 'status' }, 'Loading...'),
+      React.createElement('div', { 'data-testid': 'watchlist-content', key: 'watchlist' }, watchlistItems)
+    ])
+  ]);
 };
 
 jest.mock('@/components/invest/StockWatchlist', () => MockStockWatchlist);
@@ -89,7 +85,7 @@ describe('StockWatchlist Component', () => {
         json: async () => ({ symbols: ['AAPL', 'GOOGL'] })
       });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       // Should show loading spinner in header
       expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -102,7 +98,7 @@ describe('StockWatchlist Component', () => {
         json: async () => ({ symbols: ['AAPL', 'GOOGL'] })
       });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       // Should not show empty message during loading
       expect(screen.queryByText('Your Watchlist is Empty')).not.toBeInTheDocument();
@@ -121,7 +117,7 @@ describe('StockWatchlist Component', () => {
           json: async () => ({ quotes: [{ symbol: 'AAPL', price: 150 }, { symbol: 'GOOGL', price: 2800 }] })
         });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -141,7 +137,7 @@ describe('StockWatchlist Component', () => {
           json: async () => ({ quotes: [{ symbol: 'AAPL', price: 150 }, { symbol: 'GOOGL', price: 2800 }] })
         });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -164,7 +160,7 @@ describe('StockWatchlist Component', () => {
           json: async () => ({ price: 2800 })
         });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -179,7 +175,7 @@ describe('StockWatchlist Component', () => {
         json: async () => ({ symbols: [] })
       });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -189,7 +185,7 @@ describe('StockWatchlist Component', () => {
     it('should not show empty state during loading', async () => {
       mockFetch.mockImplementation(() => new Promise(() => {})); // Never resolves
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       expect(screen.queryByText('Your Watchlist is Empty')).not.toBeInTheDocument();
     });
@@ -199,7 +195,7 @@ describe('StockWatchlist Component', () => {
     it('should handle watchlist API errors gracefully', async () => {
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -217,7 +213,7 @@ describe('StockWatchlist Component', () => {
           json: async () => ({ quotes: [{ symbol: 'AAPL', price: 150 }, { symbol: 'GOOGL', price: 2800 }] })
         });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -237,7 +233,7 @@ describe('StockWatchlist Component', () => {
           json: async () => ({ quotes: [{ symbol: 'AAPL', price: 150 }] })
         });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -255,12 +251,7 @@ describe('StockWatchlist Component', () => {
           json: async () => ({ quotes: [{ symbol: 'AAPL', price: 150 }, { symbol: 'GOOGL', price: 2800 }] })
         });
 
-      render(
-        <MockStockWatchlist 
-          {...defaultProps} 
-          watchlistSymbols={externalSymbols}
-        />
-      );
+      render(React.createElement(MockStockWatchlist, { ...defaultProps, watchlistSymbols: externalSymbols }));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -280,7 +271,7 @@ describe('StockWatchlist Component', () => {
           json: async () => ({ quotes: [{ symbol: 'AAPL', price: 150 }] })
         });
 
-      const { rerender } = render(<MockStockWatchlist {...defaultProps} />);
+      const { rerender } = render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -289,7 +280,7 @@ describe('StockWatchlist Component', () => {
       const initialCallCount = mockFetch.mock.calls.length;
 
       // Rerender without prop changes
-      rerender(<MockStockWatchlist {...defaultProps} />);
+      rerender(React.createElement(MockStockWatchlist, defaultProps));
 
       // Should not make additional API calls
       expect(mockFetch.mock.calls.length).toBe(initialCallCount);
@@ -308,7 +299,7 @@ describe('StockWatchlist Component', () => {
           json: async () => ({ quotes: [{ symbol: 'AAPL', price: 150 }] })
         });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -321,13 +312,13 @@ describe('StockWatchlist Component', () => {
 
   describe('Edge Cases', () => {
     it('should handle null accountId gracefully', () => {
-      render(<MockStockWatchlist {...defaultProps} accountId={null} />);
+      render(React.createElement(MockStockWatchlist, { ...defaultProps, accountId: null }));
 
       expect(screen.getByText('Please complete account setup to use the watchlist feature.')).toBeInTheDocument();
     });
 
     it('should handle empty accountId gracefully', () => {
-      render(<MockStockWatchlist {...defaultProps} accountId="" />);
+      render(React.createElement(MockStockWatchlist, { ...defaultProps, accountId: "" }));
 
       expect(screen.getByText('Please complete account setup to use the watchlist feature.')).toBeInTheDocument();
     });
@@ -338,7 +329,7 @@ describe('StockWatchlist Component', () => {
         json: async () => ({ invalid: 'response' })
       });
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();
@@ -352,7 +343,7 @@ describe('StockWatchlist Component', () => {
         )
       );
 
-      render(<MockStockWatchlist {...defaultProps} />);
+      render(React.createElement(MockStockWatchlist, defaultProps));
 
       await waitFor(() => {
         expect(screen.getByText('Stock Watchlist')).toBeInTheDocument();

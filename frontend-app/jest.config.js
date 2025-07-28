@@ -27,10 +27,4 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!(next|@next|react|@react|@testing-library)/)'
   ],
-  extensionsToTreatAsEsm: ['.ts', '.tsx'],
-  globals: {
-    'ts-jest': {
-      useESM: true,
-    },
-  },
 }; 
