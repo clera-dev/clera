@@ -156,9 +156,10 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
     const allocationDataByClass = useMemo(() => {
         // Use new cash/stock/bond data if available
         if (cashStockBondData.length > 0) {
-            // Assign colors from constants to the backend data
+            // Assign colors from constants to the backend data and format names with percentages
             return cashStockBondData.map(item => ({
                 ...item,
+                name: `${item.name} (${item.percentage.toFixed(2)}%)`, // Format name with percentage on frontend
                 color: ASSET_ALLOCATION_COLORS[item.category as keyof typeof ASSET_ALLOCATION_COLORS] || '#8884d8'
             }));
         }

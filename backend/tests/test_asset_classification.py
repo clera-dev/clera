@@ -6,13 +6,6 @@ Tests cash/stock/bond allocation logic with various edge cases.
 
 import unittest
 from decimal import Decimal
-import sys
-import os
-
-# Add the project root to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, '..'))
-sys.path.insert(0, project_root)
 
 from utils.asset_classification import (
     classify_asset, calculate_allocation, get_allocation_pie_data, 
@@ -269,8 +262,8 @@ class TestPieDataGeneration(unittest.TestCase):
         self.assertEqual(len(pie_data), 1)
         self.assertEqual(pie_data[0]['category'], 'stock')
 
-    def test_pie_data_percentage_formatting(self):
-        """Test that percentages are formatted correctly in names"""
+    def test_pie_data_category_names(self):
+        """Test that category names are provided without presentation formatting"""
         allocation = {
             'cash': {'value': Decimal('333.33'), 'percentage': 33.33},
             'stock': {'value': Decimal('333.33'), 'percentage': 33.33},
@@ -280,11 +273,16 @@ class TestPieDataGeneration(unittest.TestCase):
         
         pie_data = get_allocation_pie_data(allocation)
         
-        # Check name formatting
+        # Check that names are just category titles without percentage formatting
         names = [item['name'] for item in pie_data]
-        self.assertIn('Cash (33.33%)', names)
-        self.assertIn('Stock (33.33%)', names)
-        self.assertIn('Bond (33.34%)', names)
+        self.assertIn('Cash', names)
+        self.assertIn('Stock', names)
+        self.assertIn('Bond', names)
+        
+        # Verify that percentage data is available separately for frontend formatting
+        for item in pie_data:
+            self.assertIn('percentage', item)
+            self.assertIsInstance(item['percentage'], float)
 
 
 class TestBondDetection(unittest.TestCase):

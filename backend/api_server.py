@@ -3139,21 +3139,14 @@ async def get_cash_stock_bond_allocation(
         raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
     
     try:
-        # For production, prefer async Redis client from app state
-        if hasattr(request.app.state, 'redis') and request.app.state.redis:
-            redis_client = request.app.state.redis
-            is_async = True
-            portfolio_service = PortfolioService(redis_client, is_async=is_async)
-            return await portfolio_service.get_cash_stock_bond_allocation_async(account_id)
-        else:
-            # For testing and when no async client is available, use sync client
-            sync_redis = get_sync_redis_client()
-            portfolio_service = PortfolioService(sync_redis, is_async=False)
-            return portfolio_service.get_cash_stock_bond_allocation(account_id)
+        # Use sync Redis client and run in separate thread to avoid blocking
+        sync_redis = get_sync_redis_client()
+        portfolio_service = PortfolioService(sync_redis)
+        return await asyncio.to_thread(portfolio_service.get_cash_stock_bond_allocation, account_id)
         
     except Exception as e:
         logger.error(f"Error calculating cash/stock/bond allocation for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error calculating allocation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error occurred while calculating allocation")
 
 if __name__ == "__main__":
     import uvicorn

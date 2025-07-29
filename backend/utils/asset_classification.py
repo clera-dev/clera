@@ -235,15 +235,16 @@ def get_allocation_pie_data(allocation: Dict[str, Dict]) -> List[Dict]:
         allocation: Output from calculate_allocation()
         
     Returns:
-        List of pie chart data points with name, value, percentage
-        Note: Colors should be defined by the frontend/UI layer
+        List of pie chart data points with name, value, percentage, category.
+        Note: Presentation formatting (colors, percentage display) should be 
+        handled by the frontend/UI layer to maintain separation of concerns.
     """
     pie_data = []
     
     for category in [AssetClassification.STOCK, AssetClassification.BOND, AssetClassification.CASH]:
         if category in allocation and allocation[category]['value'] > 0:
             data_point = {
-                'name': f"{category.title()} ({allocation[category]['percentage']:.2f}%)",
+                'name': category.title(),  # Just the category name, formatting handled by frontend
                 'value': float(allocation[category]['value']),
                 'percentage': allocation[category]['percentage'],
                 'category': category

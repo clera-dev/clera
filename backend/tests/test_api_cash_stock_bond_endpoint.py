@@ -33,8 +33,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         """Clean up after tests"""
         pass
 
-    @patch('utils.portfolio_service.PortfolioService._get_positions_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_cash_balance_sync')
+    @patch('utils.portfolio_service.PortfolioService._get_positions')
+    @patch('utils.portfolio_service.PortfolioService._get_cash_balance')
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
@@ -91,8 +91,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         self.assertIn('stock', pie_categories)
         self.assertIn('bond', pie_categories)
 
-    @patch('utils.portfolio_service.PortfolioService._get_positions_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_cash_balance_sync')
+    @patch('utils.portfolio_service.PortfolioService._get_positions')
+    @patch('utils.portfolio_service.PortfolioService._get_cash_balance')
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
@@ -128,8 +128,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         self.assertEqual(len(data['pie_data']), 1)
         self.assertEqual(data['pie_data'][0]['category'], 'cash')
 
-    @patch('utils.portfolio_service.PortfolioService._get_positions_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_cash_balance_sync')
+    @patch('utils.portfolio_service.PortfolioService._get_positions')
+    @patch('utils.portfolio_service.PortfolioService._get_cash_balance')
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
@@ -170,8 +170,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         self.assertEqual(len(data['pie_data']), 1)
         self.assertEqual(data['pie_data'][0]['category'], 'bond')
 
-    @patch('utils.portfolio_service.PortfolioService._get_positions_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_cash_balance_sync')
+    @patch('utils.portfolio_service.PortfolioService._get_positions')
+    @patch('utils.portfolio_service.PortfolioService._get_cash_balance')
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
@@ -213,12 +213,25 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         self.assertEqual(len(data['pie_data']), 1)
         self.assertEqual(data['pie_data'][0]['category'], 'stock')
 
-    def test_missing_account_id(self):
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
+    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
+    def test_missing_account_id(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id):
         """Test handling of missing account ID parameter"""
-        response = self.client.get("/api/portfolio/cash-stock-bond-allocation") # Removed headers to trigger 401
-        self.assertEqual(response.status_code, 401) # Expect 401 due to missing API key
+        # Mock authentication
+        mock_get_user_id_from_api_key.return_value = "test-user-id"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
+        response = self.client.get("/api/portfolio/cash-stock-bond-allocation", headers=self.test_headers)
+        
+        # Should return 422 (Unprocessable Entity) for missing required parameter
+        self.assertEqual(response.status_code, 422)
+        data = response.json()
+        self.assertIn('detail', data)
 
-    @patch('utils.portfolio_service.PortfolioService._get_positions_sync')
+    @patch('utils.portfolio_service.PortfolioService._get_positions')
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
@@ -240,8 +253,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         
         self.assertEqual(response.status_code, 500)
 
-    @patch('utils.portfolio_service.PortfolioService._get_positions_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_cash_balance_sync')
+    @patch('utils.portfolio_service.PortfolioService._get_positions')
+    @patch('utils.portfolio_service.PortfolioService._get_cash_balance')
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
@@ -264,9 +277,9 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         
         self.assertEqual(response.status_code, 500)
 
-    @patch('utils.portfolio_service.PortfolioService._get_positions_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_cash_balance_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_asset_name_sync')
+    @patch('utils.portfolio_service.PortfolioService._get_positions')
+    @patch('utils.portfolio_service.PortfolioService._get_cash_balance')
+    @patch('utils.portfolio_service.PortfolioService._get_asset_name')
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
@@ -302,9 +315,9 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         self.assertEqual(data['total_value'], 2300.0)  # 1000 AAPL + 500 empty symbol + 300 missing symbol + 500 cash
         self.assertEqual(data['stock']['value'], 1800.0)  # AAPL (1000) + empty symbol (500) + missing symbol (300)
 
-    @patch('utils.portfolio_service.PortfolioService._get_positions_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_cash_balance_sync')
-    @patch('utils.portfolio_service.PortfolioService._get_asset_name_sync')
+    @patch('utils.portfolio_service.PortfolioService._get_positions')
+    @patch('utils.portfolio_service.PortfolioService._get_cash_balance')
+    @patch('utils.portfolio_service.PortfolioService._get_asset_name')
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
