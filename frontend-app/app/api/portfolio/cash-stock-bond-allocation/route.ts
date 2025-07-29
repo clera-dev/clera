@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: 'Account ID is required' }, { status: 400 });
     }
 
-    console.log(`Cash/Stock/Bond Allocation API: Getting allocation for account: ${accountId}, user: ${user.id}`);
+    console.log('Cash/Stock/Bond Allocation API: Processing allocation request');
 
     // =================================================================
     // CRITICAL SECURITY FIX: Verify account ownership before querying
@@ -38,14 +38,14 @@ export async function GET(request: NextRequest) {
       .single();
     
     if (onboardingError || !onboardingData) {
-      console.error(`Cash/Stock/Bond Allocation API: User ${user.id} does not own account ${accountId}`);
+      console.error('Cash/Stock/Bond Allocation API: Account ownership verification failed');
       return NextResponse.json(
         { error: 'Account not found or access denied' },
         { status: 403 }
       );
     }
     
-    console.log(`Cash/Stock/Bond Allocation API: Ownership verified. User ${user.id} owns account ${accountId}`);
+    console.log('Cash/Stock/Bond Allocation API: Account ownership verified');
 
     // --- Fetch from actual backend ---
     const backendUrl = process.env.BACKEND_API_URL;
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     }
 
     const targetUrl = `${backendUrl}/api/portfolio/cash-stock-bond-allocation?account_id=${accountId}`;
-    console.log(`Proxying request to: ${targetUrl}`);
+    console.log('Cash/Stock/Bond Allocation API: Proxying request to backend');
 
     // Prepare headers
     const headers: HeadersInit = {
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Backend cash/stock/bond allocation error: ${response.status} - ${errorText}`);
+      console.error(`Backend cash/stock/bond allocation error: ${response.status}`);
       
       // Return appropriate error response
       if (response.status === 404) {
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
 
   } catch (error) {
-    console.error('Error in cash/stock/bond allocation API route:', error);
+    console.error('Error in cash/stock/bond allocation API route');
     return NextResponse.json(
       { detail: 'Internal server error' },
       { status: 500 }

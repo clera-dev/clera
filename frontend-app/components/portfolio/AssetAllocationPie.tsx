@@ -119,7 +119,7 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             fetchSectorData();
         }
         // No explicit cleanup needed, fetch is triggered by state change
-    }, [viewType, accountId, refreshTimestamp, isSectorLoading]); // Re-run if viewType, accountId, refreshTimestamp, or isSectorLoading changes.
+    }, [viewType, accountId, refreshTimestamp]); // Re-run if viewType, accountId, or refreshTimestamp changes.
 
     const [cashStockBondData, setCashStockBondData] = useState<any[]>([]);
     const [isCashStockBondLoading, setIsCashStockBondLoading] = useState<boolean>(false);
@@ -151,7 +151,7 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             
             fetchCashStockBondData();
         }
-    }, [viewType, accountId, refreshTimestamp, isCashStockBondLoading]);
+    }, [viewType, accountId, refreshTimestamp]);
 
     const allocationDataByClass = useMemo(() => {
         // Use new cash/stock/bond data if available

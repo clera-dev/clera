@@ -49,11 +49,9 @@ BOND_ETFS = {
     'IEI': 'iShares 3-7 Year Treasury Bond ETF',
     'SHV': 'iShares Short Treasury Bond ETF',
     'GOVT': 'iShares U.S. Treasury Bond ETF',
-    'VGIT': 'Vanguard Intermediate-Term Treasury ETF',
     
     # Municipal Bond ETFs
     'MUB': 'iShares National Muni Bond ETF',
-    'VTEB': 'Vanguard Tax-Exempt Bond ETF',
     'TFI': 'SPDR Nuveen Bloomberg Municipal Bond ETF',
     'MUA': 'BlackRock MuniAssets Fund',
     'MUNI': 'PIMCO Intermediate Municipal Bond ETF',
@@ -67,7 +65,6 @@ BOND_ETFS = {
     'BKLN': 'Invesco Senior Loan ETF',
     
     # International Bond ETFs
-    'BNDX': 'Vanguard Total International Bond ETF',
     'VTFB': 'Vanguard Total International Bond ETF (Hedged)',
     'VWOB': 'Vanguard Emerging Markets Government Bond ETF',
     'EMB': 'iShares J.P. Morgan USD Emerging Markets Bond ETF',
@@ -135,7 +132,7 @@ def classify_asset(symbol: str, asset_name: Optional[str] = None, asset_class: O
     
     # Check if it's a known bond ETF by symbol
     if symbol in BOND_ETFS:
-        logger.debug(f"Classified {symbol} as bond via symbol lookup: {BOND_ETFS[symbol]}")
+        logger.debug(f"Classified {symbol} as bond via symbol lookup")
         return AssetClassification.BOND
     
     # Check asset name for bond keywords if available
@@ -143,7 +140,7 @@ def classify_asset(symbol: str, asset_name: Optional[str] = None, asset_class: O
         asset_name_lower = asset_name.lower()
         for keyword in BOND_KEYWORDS:
             if keyword in asset_name_lower:
-                logger.debug(f"Classified {symbol} as bond via name keyword '{keyword}': {asset_name}")
+                logger.debug(f"Classified {symbol} as bond via name keyword '{keyword}'")
                 return AssetClassification.BOND
         
         # Additional ETF detection
@@ -151,7 +148,7 @@ def classify_asset(symbol: str, asset_name: Optional[str] = None, asset_class: O
             # Look for bond-related terms in ETF name
             bond_terms = ['bond', 'treasury', 'credit', 'fixed', 'tips', 'municipal', 'corporate']
             if any(term in asset_name_lower for term in bond_terms):
-                logger.debug(f"Classified {symbol} as bond via ETF name analysis: {asset_name}")
+                logger.debug(f"Classified {symbol} as bond via ETF name analysis")
                 return AssetClassification.BOND
     
     # Default to stock for us_equity and other asset classes
@@ -193,7 +190,7 @@ def calculate_allocation(positions: List[Dict], cash_balance: Decimal) -> Dict[s
             try:
                 market_value = Decimal(str(market_value_str))
             except (ValueError, TypeError, decimal.InvalidOperation):
-                logger.warning(f"Invalid market_value '{market_value_str}' for position {symbol}, skipping")
+                logger.warning(f"Invalid market_value for position {symbol}, skipping")
                 continue
                 
             asset_name = position.get('name')  # May be available from asset details
@@ -205,7 +202,7 @@ def calculate_allocation(positions: List[Dict], cash_balance: Decimal) -> Dict[s
             classification = classify_asset(symbol, asset_name, asset_class)
             allocations[classification] += market_value
             
-            logger.debug(f"Position {symbol}: ${market_value} -> {classification}")
+            logger.debug(f"Position {symbol} classified as {classification}")
             
         except (ValueError, TypeError) as e:
             logger.warning(f"Error processing position {position.get('symbol', 'Unknown')}: {e}")
@@ -225,10 +222,8 @@ def calculate_allocation(positions: List[Dict], cash_balance: Decimal) -> Dict[s
     
     result['total_value'] = total_value
     
-    logger.info(f"Allocation calculated - Total: ${total_value}, "
-               f"Cash: {result['cash']['percentage']}%, "
-               f"Stock: {result['stock']['percentage']}%, "
-               f"Bond: {result['bond']['percentage']}%")
+    logger.info(f"Allocation calculation completed successfully - "
+               f"Categories: {', '.join([cat for cat, data in result.items() if cat != 'total_value' and data['value'] > 0])}")
     
     return result
 
