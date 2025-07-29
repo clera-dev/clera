@@ -257,7 +257,7 @@ class PIIManagementService:
                                 #logger.error(f"Failed to update Supabase Auth email for user {user_id}: No response")
                                 
                         except Exception as auth_error:
-                            logger.error(f"Failed to update Supabase Auth email for user {user_id}: {auth_error}")
+                            logger.error(f"Failed to update Supabase Auth email for user: {auth_error}")
                             # Don't fail the entire request - the PII update was successful
                             # This is logged for monitoring and manual intervention if needed
                 else:

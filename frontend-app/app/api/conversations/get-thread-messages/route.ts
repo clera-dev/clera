@@ -48,17 +48,17 @@ export async function POST(request: NextRequest) {
     let thread;
     try {
       thread = await langGraphClient.threads.get(thread_id);
-      console.log(`[get-thread-messages] Thread found:`, { 
-        exists: !!thread, 
-        hasMetadata: !!thread?.metadata,
-        metadataUserId: thread?.metadata?.user_id,
-        authenticatedUserId: user.id
-      });
+      //console.log(`[get-thread-messages] Thread found:`, { 
+        //exists: !!thread, 
+        //hasMetadata: !!thread?.metadata,
+        //metadataUserId: thread?.metadata?.user_id,
+        //authenticatedUserId: user.id
+      //});
     } catch (threadError: any) {
       console.error(`[get-thread-messages] Error fetching thread ${thread_id}:`, threadError);
       // If thread doesn't exist, return empty messages instead of 403
       if (threadError.status === 404 || threadError.message?.includes('not found')) {
-        console.log(`[get-thread-messages] Thread ${thread_id} not found, returning empty messages`);
+        //console.log(`[get-thread-messages] Thread ${thread_id} not found, returning empty messages`);
         return NextResponse.json({ messages: [] });
       }
       throw threadError;

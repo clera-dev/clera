@@ -3,17 +3,20 @@
 import { usePathname } from 'next/navigation';
 import LogoLink from '@/components/LogoLink';
 import { useUserOnboardingStatus } from '@/hooks/useUserOnboardingStatus';
+import { AUTH_ROUTES } from '@/lib/constants';
 
 export default function ConditionalLogoLink() {
   const pathname = usePathname();
   
   // Auth pages where users are not authenticated
-  const authPages = ['/sign-in', '/sign-up', '/forgot-password'];
-  const isOnAuthPage = authPages.some(page => pathname?.startsWith(page));
+  const authPages = AUTH_ROUTES;
+
+  // For auth pages, we can show the logo immediately without waiting for status
+  const isAuthPage = authPages.includes(pathname);
   
   // Use the hook with skipAuthCheck for auth pages
   const { status: userStatus, isLoading, error } = useUserOnboardingStatus({
-    skipAuthCheck: isOnAuthPage
+    skipAuthCheck: isAuthPage
   });
   
   // Pages where we don't want to show the logo (except for special cases)
@@ -31,7 +34,7 @@ export default function ConditionalLogoLink() {
   const shouldShowLogo = !shouldHideLogoBasedOnPath || isAccountClosurePage;
   
   // On auth pages, show logo immediately without waiting for auth status
-  if (isOnAuthPage) {
+  if (isAuthPage) {
     return <LogoLink />;
   }
   

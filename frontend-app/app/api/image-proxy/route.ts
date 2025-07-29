@@ -52,35 +52,56 @@ export async function GET(request: NextRequest) {
       return new NextResponse(`Domain not allowed: ${domain}`, { status: 403 });
     }
 
-    // 3. Fetch the image
-    const response = await fetch(imageUrl, {
-      headers: {
-        // It's good practice to set a custom User-Agent
-        'User-Agent': 'Clera-Image-Proxy/1.0',
-      },
-    });
+    // 3. Fetch the image with timeout protection
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    if (!response.ok) {
-      console.error(`[Image Proxy] Failed to fetch image from ${imageUrl}. Status: ${response.status}`);
-      return new NextResponse('Failed to fetch image', { status: response.status });
+    try {
+      const response = await fetch(imageUrl, {
+        headers: {
+          // It's good practice to set a custom User-Agent
+          'User-Agent': 'Clera-Image-Proxy/1.0',
+        },
+        signal: controller.signal,
+      });
+
+      // Clear the timeout since the request completed
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.error(`[Image Proxy] Failed to fetch image from ${imageUrl}. Status: ${response.status}`);
+        return new NextResponse('Failed to fetch image', { status: response.status });
+      }
+
+      // 4. Stream the image response back to the client
+      const imageContentType = response.headers.get('Content-Type') || 'application/octet-stream';
+      
+      // Ensure we only proxy image content types
+      if (!imageContentType.startsWith('image/')) {
+          console.warn(`[Image Proxy] Blocked non-image content type: ${imageContentType} from ${imageUrl}`);
+          return new NextResponse('URL does not point to a valid image.', { status: 400 });
+      }
+
+      return new NextResponse(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': imageContentType,
+          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800', // Cache for 1 day, revalidate for a week
+        },
+      });
+
+    } catch (fetchError: any) {
+      // Clear the timeout since we're handling the error
+      clearTimeout(timeoutId);
+      
+      if (fetchError.name === 'AbortError') {
+        console.warn(`[Image Proxy] Request timed out for image: ${imageUrl}`);
+        return new NextResponse('Image request timed out. Please try again later.', { status: 504 });
+      }
+      
+      console.error(`[Image Proxy] Failed to fetch image from ${imageUrl}:`, fetchError);
+      return new NextResponse('Failed to fetch image', { status: 502 });
     }
-
-    // 4. Stream the image response back to the client
-    const imageContentType = response.headers.get('Content-Type') || 'application/octet-stream';
-    
-    // Ensure we only proxy image content types
-    if (!imageContentType.startsWith('image/')) {
-        console.warn(`[Image Proxy] Blocked non-image content type: ${imageContentType} from ${imageUrl}`);
-        return new NextResponse('URL does not point to a valid image.', { status: 400 });
-    }
-
-    return new NextResponse(response.body, {
-      status: 200,
-      headers: {
-        'Content-Type': imageContentType,
-        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800', // Cache for 1 day, revalidate for a week
-      },
-    });
 
   } catch (error) {
     console.error('[Image Proxy] An unexpected error occurred:', error);

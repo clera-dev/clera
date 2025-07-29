@@ -12,6 +12,7 @@ import {
   isAccountClosed,
   shouldRestartOnboarding
 } from './utils/auth/middleware-helpers';
+import { AUTH_ROUTES } from './lib/constants';
 
 // Paths that are always accessible regardless of auth state
 const publicPaths = [
@@ -23,7 +24,7 @@ const publicPaths = [
 ];
 
 // Auth pages that authenticated users should not access
-const authPages = ['/sign-in', '/sign-up', '/forgot-password'];
+const authPages = AUTH_ROUTES;
 
 // Paths that require authentication AND completed onboarding
 const protectedPaths = [

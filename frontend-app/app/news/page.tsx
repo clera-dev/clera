@@ -572,7 +572,7 @@ export default function NewsPage() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold">Financial News and Analysis</h1>
-            <p className="text-muted-foreground mt-1">How the world is impacting your investments today</p>
+            <h2 className="text-lg text-muted-foreground mt-1">How the world is impacting your investments today</h2>
           </div>
         </div>
 

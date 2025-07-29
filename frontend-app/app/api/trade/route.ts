@@ -83,6 +83,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(responseData, { status: 200 });
 
     } catch (fetchError: any) {
+      // Clear the timeout to prevent it from firing after we've already handled the error
+      clearTimeout(timeoutId);
+      
       // Handle fetch errors, including AbortError if the request was cancelled
       if (fetchError.name === 'AbortError') {
         console.warn('[API Proxy] Request timed out for backend service.');

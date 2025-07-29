@@ -157,13 +157,13 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
 
   // Get Y-axis domain with proper padding for better visibility
   const yAxisDomain = useMemo(() => {
-    if (!chartData || chartData.length === 0) return [0, 1];
+    if (!chartData || chartData.length === 0) return [0, 100];
     
     const values = chartData.map(d => d.equity || 0);
-    if (values.length === 0) return [0, 1];
+    if (values.length === 0) return [0, 100];
     
     // If all values are 0, show a small range for better visibility
-    if (values.every(v => v === 0)) return [0, 1];
+    if (values.every(v => v === 0)) return [0, 100];
     
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -194,7 +194,8 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
   // Current value (most recent data point)
   const currentValue = useMemo(() => {
     if (!chartData || chartData.length === 0) return null;
-    return chartData[chartData.length - 1]?.equity || null;
+    // Use nullish coalescing operator (??) to correctly handle 0 as a valid value
+    return chartData[chartData.length - 1]?.equity ?? null;
   }, [chartData]);
   
   // Format with commas for large numbers
@@ -279,7 +280,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
               animationDuration={750}
             />
             {/* Add reference line for current value */}
-            {currentValue && (
+            {currentValue !== null && (
               <ReferenceLine 
                 y={currentValue} 
                 stroke="rgba(255, 255, 255, 0.3)" 

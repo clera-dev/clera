@@ -2094,7 +2094,8 @@ async def get_portfolio_activities(
     limit: Optional[int] = 100,
     days_back: Optional[int] = 60,
     api_key: str = Depends(verify_api_key),
-    x_user_id: str = Header(..., alias="X-User-ID")
+    x_user_id: str = Header(..., alias="X-User-ID"),
+    user_id: str = Depends(verify_account_ownership)
 ):
     """
     Get comprehensive account activities including trading history, statistics, and first purchase dates.

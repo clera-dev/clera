@@ -12,6 +12,34 @@ interface InfoTooltipProps {
   content: React.ReactNode
 }
 
+// Helper function to validate content for XSS safety
+const validateContent = (content: React.ReactNode): React.ReactNode => {
+  // Allow strings, numbers, and safe React elements
+  if (typeof content === 'string' || typeof content === 'number') {
+    return content;
+  }
+  
+  // Allow React elements that are safe (not user-generated HTML)
+  if (React.isValidElement(content)) {
+    // Only allow basic HTML elements with safe props
+    const allowedElements = ['p', 'span', 'div', 'strong', 'em', 'br', 'ul', 'ol', 'li'];
+    const elementType = typeof content.type === 'string' ? content.type : '';
+    
+    if (allowedElements.includes(elementType)) {
+      return content;
+    }
+  }
+  
+  // For arrays, validate each child
+  if (Array.isArray(content)) {
+    return content.map(validateContent);
+  }
+  
+  // If content is not safe, return a sanitized string version
+  console.warn('[InfoTooltip] Potentially unsafe content detected, rendering as string');
+  return String(content);
+};
+
 export function InfoTooltip({ children, content }: InfoTooltipProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -35,6 +63,9 @@ export function InfoTooltip({ children, content }: InfoTooltipProps) {
     }
   }
 
+  // Validate content to prevent XSS
+  const safeContent = React.useMemo(() => validateContent(content), [content]);
+
   return (
     <TooltipProvider>
       <Tooltip open={open} onOpenChange={handleOpenChange}>
@@ -42,7 +73,7 @@ export function InfoTooltip({ children, content }: InfoTooltipProps) {
           {children}
         </TooltipTrigger>
         <TooltipContent>
-          {content}
+          {safeContent}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

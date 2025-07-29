@@ -42,6 +42,11 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
   // Maximum number of trending articles to display to prevent layout issues
   const MAX_TRENDING_ARTICLES = 7;
   
+  // Helper function to generate proxied image URL
+  const getProxiedImageUrl = (imageUrl: string): string => {
+    return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
+  };
+  
   // Extract news context for dynamic prompts
   const hasNews = trendingNews.length > 0;
   const newsCount = trendingNews.length;
@@ -138,7 +143,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                       <div className="flex items-center gap-2">
                         {news.banner_image ? (
                           <img 
-                            src={`/api/image-proxy?url=${encodeURIComponent(news.banner_image)}`} 
+                            src={getProxiedImageUrl(news.banner_image)} 
                             alt={news.source}
                             className="w-6 h-6 rounded-md object-cover" 
                             onError={(e) => {
@@ -217,7 +222,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                     <div className="flex items-center gap-2">
                       {news.banner_image ? (
                         <img 
-                          src={`/api/image-proxy?url=${encodeURIComponent(news.banner_image)}`} 
+                          src={getProxiedImageUrl(news.banner_image)} 
                           alt={news.source}
                           className="w-6 h-6 rounded-md object-cover" 
                           onError={(e) => {

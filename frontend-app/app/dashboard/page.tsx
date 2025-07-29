@@ -174,7 +174,7 @@ export default function DashboardPage() {
         
       } catch (err: any) {
         console.error("Error fetching dashboard data:", err);
-        setError(err.message || "Failed to load dashboard data.");
+        setError("Some account information may be incomplete. Please try again later.");
         
         // Try to recover using more reliable sources
         try {
@@ -261,7 +261,7 @@ export default function DashboardPage() {
             <Terminal className="h-4 w-4" />
             <AlertTitle>Note</AlertTitle>
             <AlertDescription>
-              Some account information may be incomplete. {error}
+              Some account information may be incomplete. Please try again later.
             </AlertDescription>
           </Alert>
         )}
