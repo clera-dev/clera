@@ -76,8 +76,8 @@ export async function GET(request: NextRequest) {
       // 4. Stream the image response back to the client
       const imageContentType = response.headers.get('Content-Type') || 'application/octet-stream';
       
-      // Ensure we only proxy image content types
-      if (!imageContentType.startsWith('image/')) {
+      // Ensure we only proxy image content types (case-insensitive check)
+      if (!imageContentType.toLowerCase().startsWith('image/')) {
           console.warn(`[Image Proxy] Blocked non-image content type: ${imageContentType} from ${imageUrl}`);
           return new NextResponse('URL does not point to a valid image.', { status: 400 });
       }

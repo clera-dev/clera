@@ -228,7 +228,7 @@ export default function PersonalInfoStep({
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium">Country of Tax Residence</Label>
             <InfoTooltip content="We are currently only available in the USA.">
-              <button type="button" className="ml-2">
+              <button type="button" aria-label="Learn more about country of tax residence" className="ml-2">
                 <InfoIcon className="h-4 w-4 text-gray-400" />
               </button>
             </InfoTooltip>

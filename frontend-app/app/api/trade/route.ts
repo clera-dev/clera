@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      return NextResponse.json(responseData, { status: 200 });
+      return NextResponse.json(responseData, { status: response.status });
 
     } catch (fetchError: any) {
       // Clear the timeout to prevent it from firing after we've already handled the error

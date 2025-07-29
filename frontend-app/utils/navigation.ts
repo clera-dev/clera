@@ -42,8 +42,16 @@ export function usePostOnboardingNavigation() {
   const router = useRouter();
   
   const navigateAfterOnboarding = (isNewUser: boolean = false) => {
-    clearIntendedRedirectCookie();
+    // First, check if there's an intended redirect cookie
+    const intendedRedirect = getIntendedRedirect();
     
+    // If there was an intended redirect, use it (regardless of new user status)
+    if (intendedRedirect && intendedRedirect !== '/portfolio') {
+      router.push(intendedRedirect);
+      return;
+    }
+    
+    // If no intended redirect, use the default logic based on user type
     if (isNewUser) {
       // New users who just completed onboarding should go to /invest
       router.push('/invest');

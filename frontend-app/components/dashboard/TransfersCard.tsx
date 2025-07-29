@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatTransferStatus, getTransferStatusDotColor } from "@/lib/utils/transfer-formatting";
 
 interface Transfer {
   id: string;
@@ -35,17 +36,7 @@ export default function TransfersCard({ transfers }: TransfersCardProps) {
     }
   };
 
-  const formatStatus = (status: string) => {
-    return status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
-  };
-
-  const getStatusColor = (status: string) => {
-    status = status.toUpperCase();
-    if (status === 'COMPLETE' || status === 'APPROVED') return 'bg-green-500';
-    if (status === 'PENDING' || status === 'QUEUED') return 'bg-yellow-500';
-    if (status === 'REJECTED' || status === 'CANCELED' || status === 'FAILED') return 'bg-red-500';
-    return 'bg-gray-500';
-  };
+  // Utility functions moved to @/lib/utils/transfer-formatting
 
   return (
     <Card>
@@ -85,9 +76,9 @@ export default function TransfersCard({ transfers }: TransfersCardProps) {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`inline-block h-2 w-2 rounded-full ${getStatusColor(transfer.status)}`} />
+                  <span className={`inline-block h-2 w-2 rounded-full ${getTransferStatusDotColor(transfer.status)}`} />
                   <span className="text-xs font-medium">
-                    {formatStatus(transfer.status)}
+                    {formatTransferStatus(transfer.status)}
                   </span>
                 </div>
               </div>
@@ -95,7 +86,7 @@ export default function TransfersCard({ transfers }: TransfersCardProps) {
               {expandedTransfer === transfer.id && (
                 <div className="p-3 bg-muted/30 border-t text-sm space-y-2">
                   <p><span className="font-medium">Transfer ID:</span> {transfer.transfer_id}</p>
-                  <p><span className="font-medium">Status:</span> {formatStatus(transfer.status)}</p>
+                  <p><span className="font-medium">Status:</span> {formatTransferStatus(transfer.status)}</p>
                   <p className="flex items-center gap-1.5">
                     <span className="font-medium">Processing time:</span> 
                     <span className="text-xs text-muted-foreground">1-3 business days</span>

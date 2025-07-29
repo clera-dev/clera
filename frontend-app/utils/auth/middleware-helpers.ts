@@ -1,5 +1,6 @@
 import { unstable_noStore as noStore } from 'next/cache';
 import { NextResponse } from "next/server";
+import { AUTH_ROUTES } from '@/lib/constants';
 
 export interface RouteConfig {
   requiresAuth: boolean;
@@ -54,17 +55,14 @@ export function isPublicPath(path: string): boolean {
     '/protected/reset-password', 
     '/ingest',
     '/.well-known',
-    '/sign-in',
-    '/sign-up', 
-    '/forgot-password'
+    ...AUTH_ROUTES
   ];
   
   return publicPaths.some(publicPath => path.startsWith(publicPath));
 }
 
 export function isAuthPage(path: string): boolean {
-  const authPages = ['/sign-in', '/sign-up', '/forgot-password'];
-  return authPages.some(authPage => path.startsWith(authPage));
+  return AUTH_ROUTES.some(authPage => path.startsWith(authPage));
 }
 
 // Real-time onboarding status check - no caching for critical user flows

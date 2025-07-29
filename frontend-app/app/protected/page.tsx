@@ -82,6 +82,7 @@ export default function ProtectedPageClient() {
               </p>
               <OnboardingFlow 
                 userId={user.id} 
+                userEmail={user.email}
                 initialData={undefined}
               />
             </div>

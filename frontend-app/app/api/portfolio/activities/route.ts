@@ -31,6 +31,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
     }
 
+    // =================================================================
+    // Verify account ownership before querying
+    // =================================================================
+    
+    // Verify that the authenticated user owns the accountId
+    const { data: onboardingData, error: onboardingError } = await supabase
+      .from('user_onboarding')
+      .select('alpaca_account_id')
+      .eq('user_id', user.id)
+      .eq('alpaca_account_id', accountId)
+      .single();
+    
+    if (onboardingError || !onboardingData) {
+      console.error('Portfolio Activities API: Account ownership verification failed - access denied');
+      return NextResponse.json(
+        { error: 'Account not found or access denied' },
+        { status: 403 }
+      );
+    }
+    
+    console.log('Portfolio Activities API: Account ownership verified successfully');
+
     // 3. Construct final backend path with query parameters
     const queryParams = new URLSearchParams();
     queryParams.append('accountId', accountId); // Add the required accountId
@@ -42,20 +64,29 @@ export async function GET(request: NextRequest) {
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
 
-    if (!backendUrl || !backendApiKey) {
-      console.error('[API Proxy] Backend API URL or Key is not configured.');
+    if (!backendUrl) {
+      console.error('[API Proxy] Backend API URL is not configured.');
       return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
     }
 
     const targetUrl = `${backendUrl}${backendPath}`;
 
+    // Prepare headers
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      'X-User-ID': user.id,
+    };
+
+    // Add API key if available
+    if (backendApiKey) {
+      headers['X-API-KEY'] = backendApiKey;
+    } else {
+      console.warn('[API Proxy] Warning: BACKEND_API_KEY environment variable is not set.');
+    }
+
     const response = await fetch(targetUrl, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': backendApiKey,
-        'X-User-ID': user.id,
-      },
+      headers,
     });
 
     const responseText = await response.text();

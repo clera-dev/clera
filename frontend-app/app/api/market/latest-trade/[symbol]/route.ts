@@ -49,6 +49,7 @@ export async function GET(
         'X-API-KEY': backendApiKey,
         'X-User-ID': user.id,
       },
+      cache: 'no-store', // Ensure we always get fresh data for latest trade prices
     });
 
     const responseText = await response.text();

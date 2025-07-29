@@ -30,6 +30,9 @@ export function useUserOnboardingStatus(options: UseUserOnboardingStatusOptions 
       return;
     }
 
+    // Set loading to true when we start making API calls
+    setIsLoading(true);
+
     const fetchUserStatus = async () => {
       try {
         setError(null);

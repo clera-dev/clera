@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import { clearUserSpecificLocalStorage } from "@/lib/utils/auth-storage";
 
 export default function ClientAuthButtons() {
   const [user, setUser] = useState<any>(null);
@@ -54,19 +55,7 @@ export default function ClientAuthButtons() {
           router.refresh();
         } else if (event === "SIGNED_OUT") {
           // Clear localStorage to prevent cross-user session issues
-          if (typeof window !== 'undefined') {
-            console.log('[ClientAuthButtons] Clearing localStorage on auth state SIGNED_OUT');
-            localStorage.removeItem('cleraCurrentChatSession');
-            // Clear any other user-specific localStorage items
-            const keysToRemove = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const key = localStorage.key(i);
-              if (key && (key.startsWith('alpacaAccountId_') || key.startsWith('clera'))) {
-                keysToRemove.push(key);
-              }
-            }
-            keysToRemove.forEach(key => localStorage.removeItem(key));
-          }
+          clearUserSpecificLocalStorage('auth-state-signed-out');
 
           setUser(null);
           setLoading(false);
@@ -88,19 +77,7 @@ export default function ClientAuthButtons() {
   const handleSignOut = async () => {
     try {
       // Clear localStorage to prevent cross-user session issues
-      if (typeof window !== 'undefined') {
-        console.log('[ClientAuthButtons] Clearing localStorage on sign out');
-        localStorage.removeItem('cleraCurrentChatSession');
-        // Clear any other user-specific localStorage items
-        const keysToRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.startsWith('alpacaAccountId_') || key.startsWith('clera'))) {
-            keysToRemove.push(key);
-          }
-        }
-        keysToRemove.forEach(key => localStorage.removeItem(key));
-      }
+      clearUserSpecificLocalStorage('manual-sign-out');
 
       const { error } = await supabase.auth.signOut();
       if (error) {
