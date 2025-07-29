@@ -146,7 +146,7 @@ export default function FinancialProfileStep({
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium">Investible / Liquid Assets</Label>
             <InfoTooltip content="Your net worth minus assets that cannot be converted quickly and easily into cash, such as real estate, business equity, personal property and automobiles, expected inheritances, assets earmarked for other purposes, and investments or accounts subject to substantial penalties if they were sold or if assets were withdrawn from them.">
-              <button type="button" className="ml-2">
+              <button type="button" className="ml-2" aria-label="Learn more about investible and liquid assets">
                 <InfoIcon className="h-4 w-4 text-gray-400" />
               </button>
             </InfoTooltip>
@@ -192,7 +192,7 @@ export default function FinancialProfileStep({
                     ).join(' ')}
                   </Label>
                   <InfoTooltip content={fundingSourceDescriptions[source]}>
-                    <button type="button" className="ml-2">
+                    <button type="button" className="ml-2" aria-label={`Learn more about ${source.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} funding source`}>
                       <InfoIcon className="h-4 w-4 text-gray-400" />
                     </button>
                   </InfoTooltip>

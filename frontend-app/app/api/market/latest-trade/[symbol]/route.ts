@@ -29,7 +29,7 @@ export async function GET(
     }
 
     // 2. Construct final backend path
-    const backendPath = `/api/market/latest-trade/${symbol}`;
+    const backendPath = `/api/market/latest-trade/${encodeURIComponent(symbol)}`;
 
     // 3. Proxy the request
     const backendUrl = process.env.BACKEND_API_URL;

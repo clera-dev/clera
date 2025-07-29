@@ -109,7 +109,7 @@ export class AccountClosureService {
       return null;
     } catch (error) {
       // Don't log network errors as they're likely temporary
-      console.warn('[AccountClosureService] Network error fetching closure data (likely temporary)');
+      console.warn('[AccountClosureService] Network error fetching closure data (likely temporary):', error);
       return null;
     }
   }

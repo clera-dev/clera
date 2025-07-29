@@ -69,6 +69,9 @@ from utils.alpaca.account_status_service import (
     sync_account_status_to_supabase
 )
 
+# Purchase History imports
+from clera_agents.tools.purchase_history import get_comprehensive_account_activities
+
 # Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
 logger.setLevel(logging.INFO) # Changed to INFO for less verbose startup in prod
@@ -1714,7 +1717,7 @@ async def get_portfolio_history(
         return response
     except ValidationError:
         # This occurs for new accounts with no trading history
-        logger.warn(f"Validation error for account {account_id}, likely a new account. Returning empty history.")
+        logger.warning(f"Validation error for account {account_id}, likely a new account. Returning empty history.")
         return PortfolioHistoryResponse(
             timestamp=[],
             equity=[],
@@ -2088,21 +2091,45 @@ async def get_redis_client():
 @app.get("/api/portfolio/activities")
 async def get_portfolio_activities(
     accountId: str = Query(..., description="Alpaca account ID"),
-    limit: Optional[int] = 100
+    limit: Optional[int] = 100,
+    days_back: Optional[int] = 60,
+    api_key: str = Depends(verify_api_key),
+    x_user_id: str = Header(..., alias="X-User-ID")
 ):
     """
-    Get transaction and account activities for a portfolio.
-    
-    This endpoint is not yet implemented, but is handled to properly return
-    a 404 status code with a clear message so the frontend can gracefully degrade.
+    Get comprehensive account activities including trading history, statistics, and first purchase dates.
     """
-    logger.info(f"Activities endpoint requested for account {accountId}, but not implemented yet")
-    
-    # Return a 404 to indicate that the feature is not available
-    raise HTTPException(
-        status_code=404,
-        detail="Portfolio activities endpoint not yet implemented"
-    )
+    try:
+        logger.info(f"Activities endpoint requested for account {accountId} by user {x_user_id}")
+        
+        # Create a config object with both account_id and user_id for the purchase history function
+        config = {
+            "configurable": {
+                "account_id": accountId,
+                "user_id": x_user_id
+            }
+        }
+        
+        # Get comprehensive account activities report
+        activities_report = get_comprehensive_account_activities(days_back=days_back, config=config)
+        
+        logger.info(f"Successfully generated activities report for account {accountId}")
+        
+        return {
+            "account_id": accountId,
+            "user_id": x_user_id,
+            "days_back": days_back,
+            "limit": limit,
+            "report": activities_report,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating activities report for account {accountId}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate account activities report: {str(e)}"
+        )
 
 # Add this health endpoint for websocket proxy health checks
 @app.get("/ws/health")

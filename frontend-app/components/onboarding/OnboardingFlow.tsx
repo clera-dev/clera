@@ -74,9 +74,12 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     // Skip scroll on initial load (welcome step)
     if (currentStep !== "welcome") {
       // Use setTimeout to ensure the new content is rendered
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }, 100);
+      
+      // Clean up timeout on unmount or when currentStep changes
+      return () => clearTimeout(timeoutId);
     }
   }, [currentStep]);
 

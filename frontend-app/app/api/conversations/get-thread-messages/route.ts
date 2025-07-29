@@ -64,18 +64,31 @@ export async function POST(request: NextRequest) {
       throw threadError;
     }
 
-    // Check thread ownership - be more lenient with missing metadata
-    if (thread && thread.metadata && thread.metadata.user_id && thread.metadata.user_id !== user.id) {
-      console.error(`[get-thread-messages] Thread ownership mismatch: thread user_id=${thread.metadata.user_id}, authenticated user_id=${user.id}`);
+    // Strict authorization check: require proper thread ownership
+    if (!thread) {
+      console.error(`[get-thread-messages] Thread ${thread_id} not found`);
+      return NextResponse.json(
+        { error: 'Thread not found' },
+        { status: 404 }
+      );
+    }
+
+    // Require metadata and user_id to be present for security
+    if (!thread.metadata || !thread.metadata.user_id) {
+      console.error(`[get-thread-messages] Thread ${thread_id} missing required metadata or user_id`);
       return NextResponse.json(
         { error: 'Forbidden' },
         { status: 403 }
       );
     }
 
-    // If thread exists but has no metadata or user_id, allow access but log it
-    if (thread && (!thread.metadata || !thread.metadata.user_id)) {
-      console.warn(`[get-thread-messages] Thread ${thread_id} has missing metadata or user_id, allowing access for user ${user.id}`);
+    // Verify thread ownership
+    if (thread.metadata.user_id !== user.id) {
+      console.error(`[get-thread-messages] Thread ownership mismatch: thread user_id=${thread.metadata.user_id}, authenticated user_id=${user.id}`);
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      );
     }
 
     // Get thread state to extract messages

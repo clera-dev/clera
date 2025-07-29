@@ -24,6 +24,8 @@ export function useAccountClosure(): UseAccountClosureReturn {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     const fetchClosureDataWrapper = async () => {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -47,7 +49,7 @@ export function useAccountClosure(): UseAccountClosureReturn {
         setClosureData(null);
         
         // Retry once after a short delay for temporary server issues
-        setTimeout(async () => {
+        timeoutId = setTimeout(async () => {
           try {
             const retryData = await accountClosureService.fetchClosureData();
             setClosureData(retryData);
@@ -61,6 +63,13 @@ export function useAccountClosure(): UseAccountClosureReturn {
     };
 
     fetchClosureDataWrapper();
+    
+    // Cleanup function to clear timeout if component unmounts
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, []);
 
   const refetch = async (): Promise<void> => {

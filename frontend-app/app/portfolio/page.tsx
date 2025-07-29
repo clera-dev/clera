@@ -355,12 +355,6 @@ export default function PortfolioPage() {
               (Array.isArray(ordersData) && ordersData.some(order => order.status === 'filled'));
             
             setHasTradeHistory(hasHistory);
-            
-            // Redirect new users (without trade history) to /invest page
-            if (!hasHistory && !isLoading) {
-              router.push('/invest');
-              return;
-            }
 
             if (positionsResult.status === 'fulfilled') {
               const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);

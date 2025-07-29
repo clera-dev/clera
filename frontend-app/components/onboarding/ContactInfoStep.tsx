@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,11 +27,11 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Pre-populate email if it's not already set
-  useState(() => {
+  useEffect(() => {
     if (userEmail && !data.email) {
       onUpdate({ email: userEmail });
     }
-  });
+  }, [userEmail, data.email, onUpdate]);
   
   const validateForm = () => {
     const newErrors: Record<string, string> = {};

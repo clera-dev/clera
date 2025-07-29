@@ -65,17 +65,25 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-color: #000000 !important;
   }
   
-  /* Force black background on all pages */
+  /* Use CSS variables for consistent dark theme */
+  :root {
+    --page-background: hsl(var(--background));
+  }
+  
+  .dark {
+    --page-background: #000000;
+  }
+  
+  /* Apply dark background using CSS variables instead of !important */
   html {
-    background-color: #000000 !important;
+    background-color: var(--page-background);
   }
   
-  /* Ensure all main containers have black background */
+  /* Ensure main containers inherit the dark theme */
   main, div[class*="bg-background"] {
-    background-color: #000000 !important;
+    background-color: var(--page-background);
   }
 }
 

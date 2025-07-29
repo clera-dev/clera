@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -42,17 +42,26 @@ interface StockWatchlistProps {
 
 export default function StockWatchlist({ accountId, onStockSelect, watchlistSymbols, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockWatchlistProps) {
   const [watchlistData, setWatchlistData] = useState<WatchlistItem[]>([]);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(true); // Separate state for initial load
   const [error, setError] = useState<string | null>(null);
-  const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [isUpdatingWatchlist, setIsUpdatingWatchlist] = useState(false);
-  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false); // Track if we've attempted to load data
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
 
   // Performance optimization: Cache for chart-based percentage calculations
-  const percentageCache = useMemo(() => new Map<string, { value: number; timestamp: number }>(), []);
+  const percentageCache = useRef(new Map<string, { value: number; timestamp: number }>());
   const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache TTL
+
+  // Ref to access latest watchlistData in setInterval callbacks
+  const watchlistDataRef = useRef<WatchlistItem[]>([]);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    watchlistDataRef.current = watchlistData;
+  }, [watchlistData]);
 
   // Get company profiles for logo display
   const symbols = watchlistData.map(item => item.symbol);
@@ -61,7 +70,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
   // Optimized chart-based percentage calculation with caching
   const calculateChartBasedPercentage = async (symbol: string): Promise<number | undefined> => {
     // Check cache first
-    const cached = percentageCache.get(symbol);
+    const cached = percentageCache.current.get(symbol);
     if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
       return cached.value;
     }
@@ -201,7 +210,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
           const changePercent = ((closingPrice - openingPrice) / openingPrice) * 100;
           
           // Cache the result
-          percentageCache.set(symbol, { value: changePercent, timestamp: Date.now() });
+          percentageCache.current.set(symbol, { value: changePercent, timestamp: Date.now() });
           
           return changePercent;
         }
@@ -237,8 +246,8 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
       
       // PHASE 1: Show basic watchlist structure immediately, preserving existing data
       const basicWatchlistItems: WatchlistItem[] = result.symbols.map((symbol: string) => {
-        // Try to preserve existing item data
-        const existingItem = watchlistData.find(item => item.symbol === symbol);
+        // Try to preserve existing item data using ref for latest state
+        const existingItem = watchlistDataRef.current.find(item => item.symbol === symbol);
         return {
           ...existingItem, // Preserve existing data (company name, logo, etc.)
           symbol,
@@ -394,140 +403,22 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
   // Update watchlist data when external watchlist symbols change
   useEffect(() => {
     if (watchlistSymbols && accountId) {
-      const updateWatchlistFromSymbols = async () => {
-        const symbolsArray = Array.from(watchlistSymbols);
-        
-        // Only show initial loading if we have no data at all
-        if (watchlistData.length === 0 && symbolsArray.length > 0) {
-          setIsInitialLoading(true);
-        }
-        
-        if (symbolsArray.length === 0) {
-          setWatchlistData([]);
-          setIsInitialLoading(false);
-          return;
-        }
-        
-        try {
-          // Use batch API for better performance
-          const batchQuoteResponse = await fetch('/api/market/quotes/batch', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ symbols: symbolsArray })
-          });
-          
-          const quotesMap = new Map();
-          
-          if (batchQuoteResponse.ok) {
-            const batchData = await batchQuoteResponse.json();
-            if (batchData.quotes && Array.isArray(batchData.quotes)) {
-              batchData.quotes.forEach((quote: any) => {
-                if (quote.symbol && quote.price !== undefined) {
-                  quotesMap.set(quote.symbol.toUpperCase(), quote.price);
-                }
-              });
-            }
-          }
-          
-          // Create basic items with price data, preserving existing data when possible
-          const basicItems: WatchlistItem[] = symbolsArray.map(symbol => {
-            // Try to preserve existing item data
-            const existingItem = watchlistData.find(item => item.symbol === symbol);
-            return {
-              ...existingItem, // Preserve existing data (company name, logo, etc.)
-              symbol,
-              currentPrice: quotesMap.get(symbol.toUpperCase()) ?? existingItem?.currentPrice
-            };
-          });
-          
-          // Only update if we have data to show (smooth transition)
-          if (basicItems.length > 0) {
-            setWatchlistData(basicItems);
-            setIsInitialLoading(false);
-          }
-          
-          // Enhance with percentage data in background (non-blocking)
-          const enhancedItems = await Promise.allSettled(
-            basicItems.map(async (item) => {
-              try {
-                const chartBasedPercent = await calculateChartBasedPercentage(item.symbol);
-                return {
-                  ...item,
-                  dayChangePercent: chartBasedPercent
-                };
-              } catch (err) {
-                console.warn(`Failed to get percentage for ${item.symbol}:`, err);
-                return item;
-              }
-            })
-          );
-          
-          const finalItems = enhancedItems.map((result, index) => 
-            result.status === 'fulfilled' ? result.value : basicItems[index]
-          );
-          
-          // Update with enhanced data (smooth transition)
-          setWatchlistData(finalItems);
-          
-        } catch (err) {
-          console.warn('Batch API failed, falling back to individual calls:', err);
-          
-          // Fallback to individual calls
-          const watchlistItems: WatchlistItem[] = await Promise.allSettled(
-            symbolsArray.map(async (symbol: string) => {
-              try {
-                // Try to preserve existing item data
-                const existingItem = watchlistData.find(item => item.symbol === symbol);
-                
-                const quoteResponse = await fetch(`/api/market/quote/${symbol}`);
-                let currentPrice = existingItem?.currentPrice; // Preserve existing price
-                
-                if (quoteResponse.ok) {
-                  const quoteData = await quoteResponse.json();
-                  currentPrice = quoteData.price;
-                }
-                
-                const chartBasedPercent = await calculateChartBasedPercentage(symbol);
-                
-                return {
-                  ...existingItem, // Preserve existing data
-                  symbol,
-                  currentPrice,
-                  dayChangePercent: chartBasedPercent
-                };
-              } catch (err) {
-                console.warn(`Failed to get data for ${symbol}:`, err);
-                // Preserve existing item if available
-                const existingItem = watchlistData.find(item => item.symbol === symbol);
-                return existingItem || { symbol };
-              }
-            })
-          ).then(results => 
-            results.map(result => 
-              result.status === 'fulfilled' ? result.value : { symbol: 'UNKNOWN' }
-            )
-          );
-          
-          setWatchlistData(watchlistItems);
-          setIsInitialLoading(false);
-        }
-      };
+      // Ensure loading state is set when starting to fetch
+      setIsInitialLoading(true);
+      fetchWatchlist();
       
-      updateWatchlistFromSymbols();
-      
-      const interval = setInterval(async () => {
-        if (!isUpdatingWatchlist && !isRefreshing) {
-          setIsRefreshing(true);
-          await updateWatchlistFromSymbols();
-          setIsRefreshing(false);
+      const interval = setInterval(() => {
+        if (!isUpdatingWatchlist) {
+          fetchWatchlist();
         }
       }, 30000);
       
       return () => clearInterval(interval);
+    } else if (accountId && watchlistSymbols && watchlistData.length === 0) {
+      // If we have symbols but no data, show loading
+      setIsInitialLoading(true);
     }
-  }, [watchlistSymbols, accountId]);
+  }, [accountId, watchlistSymbols]);
 
   const addToWatchlist = async (symbol: string) => {
     if (!accountId || isUpdatingWatchlist) return;
@@ -617,25 +508,6 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
       onStockSelect(symbol);
     }
   };
-
-  useEffect(() => {
-    if (accountId && !watchlistSymbols) {
-      // Ensure loading state is set when starting to fetch
-      setIsInitialLoading(true);
-      fetchWatchlist();
-      
-      const interval = setInterval(() => {
-        if (!isUpdatingWatchlist) {
-          fetchWatchlist();
-        }
-      }, 30000);
-      
-      return () => clearInterval(interval);
-    } else if (accountId && watchlistSymbols && watchlistData.length === 0) {
-      // If we have symbols but no data, show loading
-      setIsInitialLoading(true);
-    }
-  }, [accountId, watchlistSymbols]);
 
   const renderWatchlistItem = (item: WatchlistItem) => {
     const profile = getProfile(item.symbol);

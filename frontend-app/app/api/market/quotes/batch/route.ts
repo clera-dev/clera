@@ -49,7 +49,7 @@ export async function POST(
     // 4. Make parallel requests to individual quote endpoints
     const quotePromises = symbols.map(async (symbol: string) => {
       try {
-        const targetUrl = `${backendUrl}/api/market/quote/${symbol}`;
+        const targetUrl = `${backendUrl}/api/market/quote/${encodeURIComponent(symbol)}`;
         const response = await fetch(targetUrl, {
           method: 'GET',
           headers: {

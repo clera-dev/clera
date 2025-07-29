@@ -244,17 +244,17 @@ class PIIManagementService:
                             from utils.supabase.db_client import get_supabase_client
                             supabase_admin = get_supabase_client()
                             
-                            logger.info(f"Updating Supabase Auth email for user {user_id} to new email: {updated_email}")
+                            #Auth email for user {user_id} to new email: {updated_email}")
                             
                             # Update the user's authentication email
                             auth_response = supabase_admin.auth.admin.update_user_by_id(
                                 user_id, {"email": updated_email}
                             )
                             
-                            if auth_response:
-                                logger.info(f"Successfully updated Supabase Auth email for user {user_id}")
-                            else:
-                                logger.error(f"Failed to update Supabase Auth email for user {user_id}: No response")
+                            #if auth_response:
+                                #logger.info(f"Successfully updated Supabase Auth email for user {user_id}")
+                            #else:
+                                #logger.error(f"Failed to update Supabase Auth email for user {user_id}: No response")
                                 
                         except Exception as auth_error:
                             logger.error(f"Failed to update Supabase Auth email for user {user_id}: {auth_error}")

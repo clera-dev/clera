@@ -39,39 +39,58 @@ export async function POST(request: NextRequest) {
 
     const targetUrl = `${backendUrl}${backendPath}`;
 
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': backendApiKey,
-        'X-User-ID': user.id,
-      },
-      body: JSON.stringify(requestBody),
-    });
+    // Create AbortController with timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-    const responseText = await response.text();
-    let responseData;
     try {
-      responseData = responseText ? JSON.parse(responseText) : {};
-    } catch (parseError) {
-      console.error('[API Proxy] Failed to parse backend JSON response.', parseError);
-      return NextResponse.json({ error: 'Invalid response from backend service.' }, { status: 502 });
-    }
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': backendApiKey,
+          'X-User-ID': user.id,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      // Map backend error to client-friendly message
-      let errorMessage = 'Failed to place trade order. Please try again later.';
-      if (response.status >= 500) {
-        // Hide backend details for server errors
-        return NextResponse.json({ error: errorMessage }, { status: 502 });
-      } else {
-        // For 4xx, try to pass backend error detail if available
-        const backendError = responseData?.error || responseData?.detail || errorMessage;
-        return NextResponse.json({ error: backendError }, { status: response.status });
+      // Clear the timeout since the request completed
+      clearTimeout(timeoutId);
+
+      const responseText = await response.text();
+      let responseData;
+      try {
+        responseData = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('[API Proxy] Failed to parse backend JSON response.', parseError);
+        return NextResponse.json({ error: 'Invalid response from backend service.' }, { status: 502 });
       }
-    }
 
-    return NextResponse.json(responseData, { status: 200 });
+      if (!response.ok) {
+        // Map backend error to client-friendly message
+        let errorMessage = 'Failed to place trade order. Please try again later.';
+        if (response.status >= 500) {
+          // Hide backend details for server errors
+          return NextResponse.json({ error: errorMessage }, { status: 502 });
+        } else {
+          // For 4xx, try to pass backend error detail if available
+          const backendError = responseData?.error || responseData?.detail || errorMessage;
+          return NextResponse.json({ error: backendError }, { status: response.status });
+        }
+      }
+
+      return NextResponse.json(responseData, { status: 200 });
+
+    } catch (fetchError: any) {
+      // Handle fetch errors, including AbortError if the request was cancelled
+      if (fetchError.name === 'AbortError') {
+        console.warn('[API Proxy] Request timed out for backend service.');
+        return NextResponse.json({ error: 'Backend service timed out. Please try again later.' }, { status: 504 });
+      }
+      console.error('[API Proxy] Failed to fetch from backend service.', fetchError);
+      return NextResponse.json({ error: 'An unexpected error occurred while communicating with the backend service.' }, { status: 502 });
+    }
 
   } catch (error: any) {
     console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });

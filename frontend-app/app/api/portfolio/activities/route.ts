@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
 
     // 3. Construct final backend path with query parameters
     const queryParams = new URLSearchParams();
+    queryParams.append('accountId', accountId); // Add the required accountId
     if (limit) queryParams.append('limit', limit);
     
     const backendPath = `/api/portfolio/activities?${queryParams.toString()}`;

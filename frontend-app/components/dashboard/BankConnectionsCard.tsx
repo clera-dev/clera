@@ -24,7 +24,6 @@ export default function BankConnectionsCard({
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [transferAmount, setTransferAmount] = useState<string>('');
   const [bankLast4, setBankLast4] = useState<string>('');
-  const [transferHistoryKey, setTransferHistoryKey] = useState(0);
 
   // Check for URL parameter to auto-open dialog
   useEffect(() => {
@@ -54,9 +53,6 @@ export default function BankConnectionsCard({
     setTransferAmount(amount);
     setBankLast4(last4 || '');
     setIsSuccessDialogOpen(true);
-    
-    // Refresh transfer history
-    setTransferHistoryKey(prev => prev + 1);
   };
 
   const handleSuccessDialogClose = () => {
