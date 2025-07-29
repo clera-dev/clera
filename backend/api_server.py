@@ -47,7 +47,7 @@ from utils.alpaca.account_closure import (
 )
 
 # Authentication imports
-from utils.authentication import verify_account_ownership
+from utils.authentication import verify_account_ownership, get_authenticated_user_id
 
 # Watchlist imports
 from utils.alpaca.watchlist import (
@@ -3096,7 +3096,9 @@ from utils.asset_classification import calculate_allocation, get_allocation_pie_
 @app.get("/api/portfolio/cash-stock-bond-allocation")
 async def get_cash_stock_bond_allocation(
     request: Request,
-    account_id: str = Query(..., description="The account ID")
+    account_id: str = Query(..., description="The account ID"),
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(get_authenticated_user_id)
 ):
     """
     Get portfolio allocation split into cash, stocks, and bonds.
@@ -3114,6 +3116,13 @@ async def get_cash_stock_bond_allocation(
             'pie_data': [{'name': str, 'value': float, 'rawValue': float, 'color': str}]
         }
     """
+    # Verify account ownership
+    try:
+        verify_account_ownership(account_id, user_id)
+    except Exception as e:
+        logger.error(f"Account ownership verification failed for account {account_id}: {e}")
+        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
+    
     try:
         # Get Redis client for position data
         if hasattr(request.app.state, 'redis') and request.app.state.redis:

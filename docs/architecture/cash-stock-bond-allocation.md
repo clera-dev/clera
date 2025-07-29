@@ -75,6 +75,8 @@ GET /api/portfolio/cash-stock-bond-allocation?account_id={accountId}
 - **Stock**: Medium Blue (`#4A90E2`) - Vibrant, from middle of Clera gradient
 - **Bond**: Deep Blue (`#2E5BBA`) - Rich, from bottom of Clera gradient
 
+*Note: Colors are defined in frontend constants (`frontend-app/lib/constants.ts`) and assigned by the UI layer to maintain proper separation of concerns between business logic and presentation.*
+
 #### 2. API Route (`/api/portfolio/cash-stock-bond-allocation/route.ts`)
 
 Proxies backend requests with authentication and error handling.

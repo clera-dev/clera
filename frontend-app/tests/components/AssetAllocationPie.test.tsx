@@ -3,8 +3,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AssetAllocationPie from '../../components/portfolio/AssetAllocationPie';
 
-// Mock the fetch function
-global.fetch = jest.fn();
+// Store the original fetch to restore it after tests
+const originalFetch = global.fetch;
+let mockFetch: jest.Mock;
 
 // Mock recharts components
 jest.mock('recharts', () => ({
@@ -17,25 +18,35 @@ jest.mock('recharts', () => ({
 }));
 
 // Mock UI components
-jest.mock('../../components/ui/tabs', () => ({
-  Tabs: ({ children, onValueChange, value }: any) => (
-    <div data-testid="tabs" data-value={value} onClick={() => onValueChange?.('assetClass')}>
-      {children}
-    </div>
-  ),
+jest.mock('@/components/ui/tabs', () => ({
+  Tabs: ({ children, onValueChange, value }: any) => {
+    return (
+      <div data-testid="tabs" data-value={value}>
+        {children}
+        {/* Simulate tab switching by calling onValueChange when tabs are clicked */}
+        <div style={{ display: 'none' }}>
+          <button data-testid="switch-to-assetClass" onClick={() => onValueChange?.('assetClass')} />
+          <button data-testid="switch-to-sector" onClick={() => onValueChange?.('sector')} />
+        </div>
+      </div>
+    );
+  },
   TabsList: ({ children }: any) => <div data-testid="tabs-list">{children}</div>,
   TabsTrigger: ({ children, value }: any) => (
-    <button data-testid={`tab-${value}`} data-value={value}>
+    <button 
+      data-testid={`tab-${value}`} 
+      data-value={value}
+    >
       {children}
     </button>
   ),
 }));
 
-jest.mock('../../components/ui/card', () => ({
+jest.mock('@/components/ui/card', () => ({
   CardDescription: ({ children }: any) => <div data-testid="card-description">{children}</div>,
 }));
 
-jest.mock('../../components/ui/skeleton', () => ({
+jest.mock('@/components/ui/skeleton', () => ({
   Skeleton: () => <div data-testid="skeleton" />,
 }));
 
@@ -70,25 +81,22 @@ const mockCashStockBondResponse = {
   total_value: 10000.0,
   pie_data: [
     {
-             name: 'Stock (60.0%)',
-       value: 60.0,
-       rawValue: 6000.0,
-       color: '#4A90E2',
-       category: 'stock'
-     },
-     {
-       name: 'Cash (20.0%)',
-       value: 20.0,
-       rawValue: 2000.0,
-       color: '#87CEEB',
-       category: 'cash'
-     },
-     {
-       name: 'Bond (20.0%)',
-       value: 20.0,
-       rawValue: 2000.0,
-       color: '#2E5BBA',
-       category: 'bond'
+      name: 'Stock (60.0%)',
+      value: 6000.0,
+      percentage: 60.0,
+      category: 'stock'
+    },
+    {
+      name: 'Cash (20.0%)',
+      value: 2000.0,
+      percentage: 20.0,
+      category: 'cash'
+    },
+    {
+      name: 'Bond (20.0%)',
+      value: 2000.0,
+      percentage: 20.0,
+      category: 'bond'
     }
   ]
 };
@@ -96,6 +104,16 @@ const mockCashStockBondResponse = {
 describe('AssetAllocationPie', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Create a fresh fetch mock for each test
+    mockFetch = jest.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    // Restore the original fetch to prevent test pollution
+    global.fetch = originalFetch;
+    // Clear the mock reference
+    mockFetch = undefined as any;
   });
 
   it('renders correctly with positions', () => {
@@ -113,7 +131,7 @@ describe('AssetAllocationPie', () => {
 
   it('shows loading state while fetching cash/stock/bond data', async () => {
     // Mock a slow response
-    (global.fetch as jest.Mock).mockImplementation(() => 
+    mockFetch.mockImplementation(() => 
       new Promise(resolve => setTimeout(() => resolve({
         ok: true,
         json: () => Promise.resolve(mockCashStockBondResponse)
@@ -132,7 +150,7 @@ describe('AssetAllocationPie', () => {
   });
 
   it('fetches and displays cash/stock/bond allocation', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve(mockCashStockBondResponse)
     });
@@ -146,7 +164,7 @@ describe('AssetAllocationPie', () => {
 
     // Wait for the fetch to complete
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect(mockFetch).toHaveBeenCalledWith(
         '/api/portfolio/cash-stock-bond-allocation?accountId=test-account-123'
       );
     });
@@ -160,7 +178,7 @@ describe('AssetAllocationPie', () => {
   });
 
   it('falls back to original logic when new endpoint fails', async () => {
-    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('API Error'));
+    mockFetch.mockRejectedValueOnce(new Error('API Error'));
 
     render(
       <AssetAllocationPie 
@@ -171,7 +189,7 @@ describe('AssetAllocationPie', () => {
 
     // Wait for error handling
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalled();
     });
 
     // Should still render pie chart with fallback data
@@ -200,11 +218,11 @@ describe('AssetAllocationPie', () => {
     );
 
     // Should not fetch data without account ID
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('refetches data when refresh timestamp changes', async () => {
-    (global.fetch as jest.Mock).mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve(mockCashStockBondResponse)
     });
@@ -218,7 +236,7 @@ describe('AssetAllocationPie', () => {
     );
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     // Change refresh timestamp
@@ -231,7 +249,7 @@ describe('AssetAllocationPie', () => {
     );
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -256,9 +274,9 @@ describe('AssetAllocationPie', () => {
       />
     );
 
-    // Click on sector tab (mocked)
-    const tabs = screen.getByTestId('tabs');
-    tabs.click(); // This would trigger the onValueChange in the mock
+    // Click on sector tab to switch view
+    const sectorSwitchButton = screen.getByTestId('switch-to-sector');
+    sectorSwitchButton.click();
 
     await waitFor(() => {
       expect(screen.getByTestId('sector-allocation-pie')).toBeInTheDocument();
@@ -266,7 +284,7 @@ describe('AssetAllocationPie', () => {
   });
 
   it('handles API error gracefully', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
       json: () => Promise.resolve({ detail: 'Server error' })
@@ -280,7 +298,7 @@ describe('AssetAllocationPie', () => {
     );
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalled();
     });
 
     // Should handle error and show fallback
@@ -291,7 +309,7 @@ describe('AssetAllocationPie', () => {
 
   describe('Cash/Stock/Bond Data Processing', () => {
     it('correctly processes pie data with all three categories', async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockCashStockBondResponse)
       });
@@ -318,17 +336,16 @@ describe('AssetAllocationPie', () => {
       const stockOnlyResponse = {
         ...mockCashStockBondResponse,
         pie_data: [
-                     {
-             name: 'Stock (100.0%)',
-             value: 100.0,
-             rawValue: 10000.0,
-             color: '#4A90E2',
-             category: 'stock'
-           }
+          {
+            name: 'Stock (100.0%)',
+            value: 10000.0,
+            percentage: 100.0,
+            category: 'stock'
+          }
         ]
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(stockOnlyResponse)
       });
@@ -352,7 +369,7 @@ describe('AssetAllocationPie', () => {
         pie_data: []
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(emptyResponse)
       });

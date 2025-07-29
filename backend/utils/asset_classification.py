@@ -240,32 +240,23 @@ def get_allocation_pie_data(allocation: Dict[str, Dict]) -> List[Dict]:
         allocation: Output from calculate_allocation()
         
     Returns:
-        List of pie chart data points with name, value, percentage, color
+        List of pie chart data points with name, value, percentage
+        Note: Colors should be defined by the frontend/UI layer
     """
-    # Define colors for each category - inspired by Clera logo gradient
-    colors = {
-        AssetClassification.CASH: '#87CEEB',    # Light blue (top of gradient)
-        AssetClassification.STOCK: '#4A90E2',   # Medium blue (middle of gradient)  
-        AssetClassification.BOND: '#2E5BBA'     # Deep blue (bottom of gradient)
-    }
-    
     pie_data = []
     
-    for category in [AssetClassification.CASH, AssetClassification.STOCK, AssetClassification.BOND]:
-        if category in allocation and allocation[category]['percentage'] > 0:
-            display_name = category.title()
-            percentage = allocation[category]['percentage']
-            raw_value = allocation[category]['value']
-            
-            pie_data.append({
-                'name': f"{display_name} ({percentage}%)",
-                'value': percentage,
-                'rawValue': float(raw_value),
-                'color': colors[category],
+    for category in [AssetClassification.STOCK, AssetClassification.BOND, AssetClassification.CASH]:
+        if category in allocation and allocation[category]['value'] > 0:
+            data_point = {
+                'name': f"{category.title()} ({allocation[category]['percentage']:.2f}%)",
+                'value': float(allocation[category]['value']),
+                'percentage': allocation[category]['percentage'],
                 'category': category
-            })
+            }
+            pie_data.append(data_point)
     
-    # Sort by value (descending)
-    pie_data.sort(key=lambda x: x['rawValue'], reverse=True)
+    # Sort by percentage descending for better visual hierarchy
+    pie_data.sort(key=lambda x: x['percentage'], reverse=True)
     
+    logger.debug(f"Generated pie data with {len(pie_data)} categories")
     return pie_data 

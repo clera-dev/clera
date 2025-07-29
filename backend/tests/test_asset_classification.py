@@ -230,7 +230,7 @@ class TestPieDataGeneration(unittest.TestCase):
     """Tests for pie chart data generation"""
 
     def test_pie_data_format(self):
-        """Test that pie data is formatted correctly"""
+        """Test that pie data is formatted correctly without colors (colors handled by frontend)"""
         allocation = {
             'cash': {'value': Decimal('1000.00'), 'percentage': 25.0},
             'stock': {'value': Decimal('2000.00'), 'percentage': 50.0},
@@ -242,22 +242,17 @@ class TestPieDataGeneration(unittest.TestCase):
         
         self.assertEqual(len(pie_data), 3)
         
-        # Check data structure
+        # Check data structure (colors should NOT be in backend data)
         for item in pie_data:
             self.assertIn('name', item)
             self.assertIn('value', item)
-            self.assertIn('rawValue', item)
-            self.assertIn('color', item)
+            self.assertIn('percentage', item)
             self.assertIn('category', item)
+            # Colors should be assigned by frontend, not backend
+            self.assertNotIn('color', item)
             
-        # Check sorting (should be by value descending)
-        self.assertEqual(pie_data[0]['category'], 'stock')  # Highest value
-        
-        # Check color assignments
-        colors = {item['category']: item['color'] for item in pie_data}
-        self.assertEqual(colors['cash'], '#87CEEB')
-        self.assertEqual(colors['stock'], '#4A90E2')
-        self.assertEqual(colors['bond'], '#2E5BBA')
+        # Check sorting (should be by percentage descending)
+        self.assertEqual(pie_data[0]['category'], 'stock')  # Highest percentage
 
     def test_pie_data_zero_categories(self):
         """Test pie data generation when some categories are zero"""

@@ -85,9 +85,9 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         );
       }
-      
+      // For all other errors, do not leak backend error details
       return NextResponse.json(
-        { detail: `Backend error: ${errorText}` },
+        { detail: 'An unexpected error occurred while fetching portfolio allocation.' },
         { status: response.status }
       );
     }

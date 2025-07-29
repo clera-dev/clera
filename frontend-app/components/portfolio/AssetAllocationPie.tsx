@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CardDescription } from "@/components/ui/card";
 import SectorAllocationPie from './SectorAllocationPie';
 import { Skeleton } from "@/components/ui/skeleton";
+import { ASSET_ALLOCATION_COLORS } from '@/lib/constants';
 
 // Define the structure for the fetched sector data
 interface SectorAllocationEntry {
@@ -118,7 +119,7 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             fetchSectorData();
         }
         // No explicit cleanup needed, fetch is triggered by state change
-    }, [viewType, accountId, refreshTimestamp]); // Re-run if viewType, accountId, or refreshTimestamp changes. REMOVED isSectorLoading from deps.
+    }, [viewType, accountId, refreshTimestamp, isSectorLoading]); // Re-run if viewType, accountId, refreshTimestamp, or isSectorLoading changes.
 
     const [cashStockBondData, setCashStockBondData] = useState<any[]>([]);
     const [isCashStockBondLoading, setIsCashStockBondLoading] = useState<boolean>(false);
@@ -150,12 +151,16 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             
             fetchCashStockBondData();
         }
-    }, [viewType, accountId, refreshTimestamp]);
+    }, [viewType, accountId, refreshTimestamp, isCashStockBondLoading]);
 
     const allocationDataByClass = useMemo(() => {
         // Use new cash/stock/bond data if available
         if (cashStockBondData.length > 0) {
-            return cashStockBondData;
+            // Assign colors from constants to the backend data
+            return cashStockBondData.map(item => ({
+                ...item,
+                color: ASSET_ALLOCATION_COLORS[item.category as keyof typeof ASSET_ALLOCATION_COLORS] || '#8884d8'
+            }));
         }
         
         // Fallback to original asset_class grouping

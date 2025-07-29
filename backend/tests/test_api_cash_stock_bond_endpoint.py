@@ -27,6 +27,7 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         """Set up test client"""
         self.client = TestClient(app)
         self.test_account_id = "test-account-123"
+        self.test_headers = {"x-api-key": "test-key"}
         
     def tearDown(self):
         """Clean up after tests"""
@@ -34,8 +35,17 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
 
     @patch('api_server.get_sync_redis_client')
     @patch('api_server.get_broker_client')
-    def test_mixed_portfolio_allocation(self, mock_broker_client, mock_redis_client):
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
+    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
+    def test_mixed_portfolio_allocation(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_broker_client, mock_redis_client):
         """Test allocation calculation with mixed portfolio"""
+        # Mock authentication
+        mock_get_user_id_from_api_key.return_value = "test-user-id"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
         # Mock Redis client
         mock_redis = MagicMock()
         mock_redis_client.return_value = mock_redis
@@ -61,7 +71,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         # Mock asset cache file (empty for this test)
         with patch('os.path.exists', return_value=False):
             response = self.client.get(
-                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+                headers=self.test_headers
             )
         
         self.assertEqual(response.status_code, 200)
@@ -94,8 +105,17 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
 
     @patch('api_server.get_sync_redis_client')
     @patch('api_server.get_broker_client')
-    def test_cash_only_portfolio(self, mock_broker_client, mock_redis_client):
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
+    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
+    def test_cash_only_portfolio(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_broker_client, mock_redis_client):
         """Test allocation with only cash (no positions)"""
+        # Mock authentication
+        mock_get_user_id_from_api_key.return_value = "test-user-id"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
         # Mock Redis client
         mock_redis = MagicMock()
         mock_redis_client.return_value = mock_redis
@@ -114,7 +134,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         mock_broker.get_trade_account_by_id.return_value = mock_account
         
         response = self.client.get(
-            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+            headers=self.test_headers
         )
         
         self.assertEqual(response.status_code, 200)
@@ -132,8 +153,17 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
 
     @patch('api_server.get_sync_redis_client')
     @patch('api_server.get_broker_client')
-    def test_bonds_only_portfolio(self, mock_broker_client, mock_redis_client):
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
+    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
+    def test_bonds_only_portfolio(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_broker_client, mock_redis_client):
         """Test allocation with only bond ETFs"""
+        # Mock authentication
+        mock_get_user_id_from_api_key.return_value = "test-user-id"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
         # Mock Redis client
         mock_redis = MagicMock()
         mock_redis_client.return_value = mock_redis
@@ -157,7 +187,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         
         with patch('os.path.exists', return_value=False):
             response = self.client.get(
-                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+                headers=self.test_headers
             )
         
         self.assertEqual(response.status_code, 200)
@@ -175,8 +206,17 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
 
     @patch('api_server.get_sync_redis_client')
     @patch('api_server.get_broker_client')
-    def test_crypto_portfolio_classified_as_stocks(self, mock_broker_client, mock_redis_client):
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
+    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
+    def test_crypto_portfolio_classified_as_stocks(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_broker_client, mock_redis_client):
         """Test that crypto assets are classified as stocks"""
+        # Mock authentication
+        mock_get_user_id_from_api_key.return_value = "test-user-id"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
         # Mock Redis client
         mock_redis = MagicMock()
         mock_redis_client.return_value = mock_redis
@@ -200,7 +240,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         
         with patch('os.path.exists', return_value=False):
             response = self.client.get(
-                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+                headers=self.test_headers
             )
         
         self.assertEqual(response.status_code, 200)
@@ -218,13 +259,23 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         self.assertEqual(response.status_code, 422)  # FastAPI validation error
 
     @patch('api_server.get_sync_redis_client')
-    def test_redis_connection_error(self, mock_redis_client):
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
+    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
+    def test_redis_connection_error(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_redis_client):
         """Test handling of Redis connection errors"""
+        # Mock authentication
+        mock_get_user_id_from_api_key.return_value = "test-user-id"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
         # Mock Redis connection failure
         mock_redis_client.side_effect = Exception("Redis connection failed")
         
         response = self.client.get(
-            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+            headers=self.test_headers
         )
         
         self.assertEqual(response.status_code, 500)
@@ -233,8 +284,17 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
 
     @patch('api_server.get_sync_redis_client')
     @patch('api_server.get_broker_client')
-    def test_alpaca_api_error(self, mock_broker_client, mock_redis_client):
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
+    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
+    def test_alpaca_api_error(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_broker_client, mock_redis_client):
         """Test handling of Alpaca API errors"""
+        # Mock authentication
+        mock_get_user_id_from_api_key.return_value = "test-user-id"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
         # Mock Redis client
         mock_redis = MagicMock()
         mock_redis_client.return_value = mock_redis
@@ -247,7 +307,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         mock_broker.get_trade_account_by_id.side_effect = Exception("Account fetch error")
         
         response = self.client.get(
-            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+            headers=self.test_headers
         )
         
         # API should handle errors gracefully and return 200 with empty data
@@ -262,8 +323,17 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
 
     @patch('api_server.get_sync_redis_client')
     @patch('api_server.get_broker_client')
-    def test_invalid_position_data_handling(self, mock_broker_client, mock_redis_client):
-        """Test handling of invalid position data"""
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
+    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
+    def test_invalid_position_data_handling(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_broker_client, mock_redis_client):
+        """Test handling of invalid position data - skips invalid market_value, processes empty/missing symbols as stocks"""
+        # Mock authentication
+        mock_verify_api_key.return_value = "test-api-key"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
         # Mock Redis client
         mock_redis = MagicMock()
         mock_redis_client.return_value = mock_redis
@@ -288,21 +358,32 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         
         with patch('os.path.exists', return_value=False):
             response = self.client.get(
-                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+                headers=self.test_headers
             )
         
         self.assertEqual(response.status_code, 200)
         data = response.json()
         
         # Should process valid positions and skip invalid ones
+        # AAPL (1000) + empty symbol (500) + missing symbol (300) + cash (500) = 2300
+        # MSFT with invalid market_value should be skipped
         self.assertEqual(data['total_value'], 2300.0)  # 1000 AAPL + 500 empty symbol + 300 missing symbol + 500 cash
-        self.assertEqual(data['stock']['value'], 1800.0)  # Valid positions
+        self.assertEqual(data['stock']['value'], 1800.0)  # AAPL (1000) + empty symbol (500) + missing symbol (300)
 
     @patch('api_server.get_sync_redis_client')
     @patch('api_server.get_broker_client')
     @patch('os.path.exists')
-    def test_bond_etf_name_detection(self, mock_path_exists, mock_broker_client, mock_redis_client):
+    @patch('api_server.verify_api_key')
+    @patch('api_server.get_authenticated_user_id')
+    @patch('api_server.verify_account_ownership')
+    def test_bond_etf_name_detection(self, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_verify_api_key, mock_path_exists, mock_broker_client, mock_redis_client):
         """Test bond ETF detection via asset name"""
+        # Mock authentication
+        mock_verify_api_key.return_value = "test-api-key"
+        mock_get_authenticated_user_id.return_value = "test-user-id"
+        mock_verify_account_ownership.return_value = "test-user-id"
+        
         # Mock Redis client
         mock_redis = MagicMock()
         mock_redis_client.return_value = mock_redis
@@ -330,7 +411,8 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         mock_broker.get_asset.return_value = None
         
         response = self.client.get(
-            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+            headers=self.test_headers
         )
         
         self.assertEqual(response.status_code, 200)
