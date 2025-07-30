@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { 
+  authenticateAndConfigureBackend, 
+  createBackendHeaders, 
+  handleApiError 
+} from '@/lib/utils/api-route-helpers';
 
 /**
  * Ensures this route is always treated as dynamic, preventing Next.js
@@ -16,13 +20,8 @@ export async function POST(
   request: NextRequest
 ) {
   try {
-    // 1. Authenticate user
-    const supabase = await createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
-    }
+    // 1. Authenticate user and configure backend
+    const { user, backendConfig } = await authenticateAndConfigureBackend();
 
     // 2. Parse request body to get symbols
     const body = await request.json();
@@ -37,26 +36,13 @@ export async function POST(
       return NextResponse.json({ error: 'Maximum 50 symbols allowed per batch' }, { status: 400 });
     }
 
-    // 3. Since backend doesn't have batch endpoint, implement client-side batching
-    const backendUrl = process.env.BACKEND_API_URL;
-    const backendApiKey = process.env.BACKEND_API_KEY;
-
-    if (!backendUrl || !backendApiKey) {
-      console.error('[API Proxy] Backend API URL or Key is not configured.');
-      return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
-    }
-
-    // 4. Make parallel requests to individual quote endpoints
+    // 3. Make parallel requests to individual quote endpoints
     const quotePromises = symbols.map(async (symbol: string) => {
       try {
-        const targetUrl = `${backendUrl}/api/market/quote/${encodeURIComponent(symbol)}`;
+        const targetUrl = `${backendConfig.url}/api/market/quote/${encodeURIComponent(symbol)}`;
         const response = await fetch(targetUrl, {
           method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': backendApiKey,
-            'X-User-ID': user.id,
-          },
+          headers: createBackendHeaders(backendConfig, user.id),
         });
 
         if (response.ok) {
@@ -102,7 +88,6 @@ export async function POST(
     return NextResponse.json({ quotes }, { status: 200 });
 
   } catch (error: any) {
-    console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });
-    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
+    return handleApiError(error, request.nextUrl.pathname);
   }
 } 

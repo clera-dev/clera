@@ -2112,7 +2112,7 @@ async def get_portfolio_activities(
         }
         
         # Get comprehensive account activities report
-        activities_report = get_comprehensive_account_activities(days_back=days_back, config=config)
+        activities_report = await get_comprehensive_account_activities(days_back=days_back, config=config)
         
         logger.info(f"Successfully generated activities report for account {accountId}")
         

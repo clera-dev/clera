@@ -1,35 +1,18 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, TrendingUp, TrendingDown, Minus, Star, AlertCircle, Loader2 } from "lucide-react";
+import { Plus, Minus, Star, AlertCircle, Loader2 } from "lucide-react";
 import { CompanyLogo } from "@/components/ui/CompanyLogo";
 
 import StockSearchBar from "./StockSearchBar";
 import MiniStockChart from "./MiniStockChart";
 import { useCompanyProfiles } from "@/hooks/useCompanyProfile";
-import { formatCurrency } from "@/lib/utils";
-
-interface WatchlistItem {
-  symbol: string;
-  companyName?: string;
-  currentPrice?: number;
-  dayChange?: number;
-  dayChangePercent?: number;
-  logo?: string;
-  isLoading?: boolean; // New field for progressive loading
-}
-
-interface ProcessedDataItem {
-  timestamp: number;
-  price: number;
-  utcDate: Date;
-}
+import { useWatchlistData, type WatchlistItem } from "@/hooks/useWatchlistData";
+import { useMarketPercentages } from "@/hooks/useMarketPercentages";
 
 interface StockWatchlistProps {
   accountId: string | null;
@@ -41,477 +24,55 @@ interface StockWatchlistProps {
 }
 
 export default function StockWatchlist({ accountId, onStockSelect, watchlistSymbols, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockWatchlistProps) {
-  const [watchlistData, setWatchlistData] = useState<WatchlistItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(false);
-  const [isUpdatingWatchlist, setIsUpdatingWatchlist] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
 
-  // Performance optimization: Cache for chart-based percentage calculations
-  const percentageCache = useRef(new Map<string, { value: number; timestamp: number }>());
-  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache TTL
-
-  // Ref to access latest watchlistData in setInterval callbacks
-  const watchlistDataRef = useRef<WatchlistItem[]>([]);
-  
-  // Keep ref in sync with state
-  useEffect(() => {
-    watchlistDataRef.current = watchlistData;
-  }, [watchlistData]);
+  // Use the extracted data management hook
+  const {
+    watchlistData,
+    isLoading,
+    isInitialLoading,
+    isUpdatingWatchlist,
+    hasAttemptedLoad,
+    loadingProgress,
+    error,
+    addToWatchlist,
+    removeFromWatchlist,
+    setError
+  } = useWatchlistData({
+    accountId,
+    watchlistSymbols,
+    onWatchlistChange,
+    onOptimisticAdd,
+    onOptimisticRemove,
+  });
 
   // Get company profiles for logo display
   const symbols = watchlistData.map(item => item.symbol);
   const { profiles, getProfile } = useCompanyProfiles(symbols);
 
-  // Optimized chart-based percentage calculation with caching
-  const calculateChartBasedPercentage = async (symbol: string): Promise<number | undefined> => {
-    // Check cache first
-    const cached = percentageCache.current.get(symbol);
-    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-      return cached.value;
-    }
+  // Get market percentages for the symbols
+  const { percentages, isCalculating, progress } = useMarketPercentages(symbols);
 
-    try {
-      const now = new Date();
-      const { default: MarketHolidayUtil } = await import("@/lib/marketHolidays");
-      const latestTradingDay = MarketHolidayUtil.getLastTradingDay(now);
-      const daysSinceLastTradingDay = (now.getTime() - latestTradingDay.getTime()) / (1000 * 60 * 60 * 24);
-      const isUnreasonableFutureDate = daysSinceLastTradingDay > 7;
-
-      let toDate: Date;
-      let fromDate: Date;
-      let easternToday: Date = new Date();
-      let isMarketClosed = false;
-
-      if (isUnreasonableFutureDate) {
-        easternToday = new Date(latestTradingDay);
-        isMarketClosed = true;
-        fromDate = new Date(latestTradingDay);
-        fromDate.setHours(0, 0, 0, 0);
-        toDate = new Date(latestTradingDay);
-        toDate.setHours(23, 59, 59, 999);
-      } else {
-        const easternHour = parseInt(now.toLocaleString("en-US", {
-          timeZone: "America/New_York",
-          hour: "2-digit",
-          hour12: false
-        }));
-        
-        const easternMinute = parseInt(now.toLocaleString("en-US", {
-          timeZone: "America/New_York", 
-          minute: "2-digit"
-        }));
-        
-        const easternParts = new Intl.DateTimeFormat('en-US', {
-          timeZone: 'America/New_York',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        }).formatToParts(now);
-        
-        const easternYear = parseInt(easternParts.find(part => part.type === 'year')?.value || '0');
-        const easternMonth = parseInt(easternParts.find(part => part.type === 'month')?.value || '0');
-        const easternDay = parseInt(easternParts.find(part => part.type === 'day')?.value || '0');
-        
-        const marketDate = new Date(easternYear, easternMonth - 1, easternDay);
-        const isValidTradingDay = MarketHolidayUtil.isMarketOpen(marketDate);
-        const isPreMarket = easternHour < 9 || (easternHour === 9 && easternMinute < 30);
-        
-        let chartDate: Date;
-        
-        if (isPreMarket || !isValidTradingDay) {
-          chartDate = MarketHolidayUtil.getLastTradingDay(marketDate, isValidTradingDay ? 1 : 0);
-          isMarketClosed = true;
-        } else {
-          chartDate = new Date(marketDate);
-          chartDate.setHours(0, 0, 0, 0);
-          isMarketClosed = false;
-        }
-        
-        fromDate = new Date(chartDate);
-        fromDate.setHours(0, 0, 0, 0);
-        
-        toDate = new Date(chartDate);
-        toDate.setHours(23, 59, 59, 999);
-        
-        easternToday = chartDate;
-      }
-      
-      const formatDateSafe = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
-      
-      const fromStr = formatDateSafe(fromDate);
-      const toStr = formatDateSafe(toDate);
-      
-      const response = await fetch(`/api/fmp/chart/${symbol}?interval=5min&from=${fromStr}&to=${toStr}`);
-      
-      if (!response.ok) {
-        return undefined;
-      }
-      
-      const rawData = await response.json();
-
-      if (!rawData || !Array.isArray(rawData)) {
-        return undefined;
-      }
-      
-      const { parseFMPEasternTimestamp } = await import("@/lib/timezone");
-      
-      const processedData = rawData
-        .map((item: any): ProcessedDataItem | null => {
-          const fmpTimestamp = item.date || item.datetime || item.timestamp;
-          if (!fmpTimestamp) return null;
-          
-          try {
-            const utcDate = parseFMPEasternTimestamp(fmpTimestamp);
-            if (utcDate > now) return null;
-            
-            const price = item.price !== undefined ? item.price : item.close || 0;
-            
-            return {
-              timestamp: utcDate.getTime(),
-              price,
-              utcDate
-            };
-          } catch (error) {
-            return null;
-          }
-        })
-        .filter((item): item is ProcessedDataItem => item !== null)
-        .sort((a, b) => a.timestamp - b.timestamp);
-      
-      if (processedData.length > 0) {
-        const mostRecentDate = processedData[processedData.length - 1].utcDate;
-        const mostRecentTradingDay = new Date(mostRecentDate);
-        mostRecentTradingDay.setUTCHours(0, 0, 0, 0);
-        
-        const singleDayData = processedData.filter((item) => {
-          const itemDate = new Date(item.utcDate);
-          itemDate.setUTCHours(0, 0, 0, 0);
-          return itemDate.getTime() === mostRecentTradingDay.getTime();
-        });
-        
-        if (singleDayData.length >= 2) {
-          const openingPrice = singleDayData[0].price;
-          const closingPrice = singleDayData[singleDayData.length - 1].price;
-
-          if (openingPrice === 0) {
-            return undefined;
-          }
-
-          const changePercent = ((closingPrice - openingPrice) / openingPrice) * 100;
-          
-          // Cache the result
-          percentageCache.current.set(symbol, { value: changePercent, timestamp: Date.now() });
-          
-          return changePercent;
-        }
-      }
-      
-      return undefined;
-    } catch (error) {
-      return undefined;
-    }
-  };
-
-  // Optimized fetch function with progressive loading and batch API calls
-  const fetchWatchlist = async () => {
-    if (!accountId) return;
-    
-    setError(null);
-    setHasAttemptedLoad(true);
-    setIsInitialLoading(true); // Ensure loading spinner shows
-    
-    try {
-      const response = await fetch(`/api/watchlist/${accountId}`, {
-        headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || ''
-        }
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to fetch watchlist');
-      }
-      
-      const result = await response.json();
-      
-      // PHASE 1: Show basic watchlist structure immediately, preserving existing data
-      const basicWatchlistItems: WatchlistItem[] = result.symbols.map((symbol: string) => {
-        // Try to preserve existing item data using ref for latest state
-        const existingItem = watchlistDataRef.current.find(item => item.symbol === symbol);
-        return {
-          ...existingItem, // Preserve existing data (company name, logo, etc.)
-          symbol,
-          isLoading: true // Mark as loading for progressive enhancement
-        };
-      });
-      
-      setWatchlistData(basicWatchlistItems);
-      setIsInitialLoading(false);
-      setLoadingProgress({ loaded: 0, total: basicWatchlistItems.length });
-      
-      // PHASE 2: Enhance with price data using batch API (much faster)
-      if (basicWatchlistItems.length > 0) {
-        try {
-          const batchQuoteResponse = await fetch('/api/market/quotes/batch', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              symbols: basicWatchlistItems.map(item => item.symbol)
-            })
-          });
-          
-          if (batchQuoteResponse.ok) {
-            const batchData = await batchQuoteResponse.json();
-            const quotesMap = new Map();
-            
-            // Create a map of symbol to quote data for fast lookup
-            if (batchData.quotes && Array.isArray(batchData.quotes)) {
-              batchData.quotes.forEach((quote: any) => {
-                if (quote.symbol && quote.price !== undefined) {
-                  quotesMap.set(quote.symbol.toUpperCase(), quote.price);
-                }
-              });
-            }
-            
-            // Update items with price data, preserving existing data
-            const priceEnhancedItems = basicWatchlistItems.map(item => ({
-              ...item,
-              currentPrice: quotesMap.get(item.symbol.toUpperCase()) ?? item.currentPrice,
-              isLoading: false
-            }));
-            
-            setWatchlistData(priceEnhancedItems);
-            
-            // PHASE 3: Enhance with percentage data (background, non-blocking)
-            let completedCount = 0;
-            const percentagePromises = priceEnhancedItems.map(async (item, index) => {
-              try {
-                const chartBasedPercent = await calculateChartBasedPercentage(item.symbol);
-                completedCount++;
-                setLoadingProgress({ loaded: completedCount, total: priceEnhancedItems.length });
-                return {
-                  ...item,
-                  dayChangePercent: chartBasedPercent
-                };
-              } catch (err) {
-                console.warn(`Failed to get percentage for ${item.symbol}:`, err);
-                completedCount++;
-                setLoadingProgress({ loaded: completedCount, total: priceEnhancedItems.length });
-                return item;
-              }
-            });
-            
-            // Update percentages as they complete (non-blocking)
-            Promise.allSettled(percentagePromises).then((results) => {
-              const finalItems = results.map((result, index) => 
-                result.status === 'fulfilled' ? result.value : priceEnhancedItems[index]
-              );
-              setWatchlistData(finalItems);
-              setLoadingProgress(null); // Clear progress when done
-            });
-          } else {
-            // Fallback to individual API calls if batch fails
-            console.warn('Batch quote API failed, falling back to individual calls');
-            const enhancedItems = await Promise.allSettled(
-              basicWatchlistItems.map(async (item) => {
-                try {
-                  const quoteResponse = await fetch(`/api/market/quote/${item.symbol}`);
-                  let currentPrice = undefined;
-                  
-                  if (quoteResponse.ok) {
-                    const quoteData = await quoteResponse.json();
-                    currentPrice = quoteData.price;
-                  }
-                  
-                  return {
-                    ...item,
-                    currentPrice: currentPrice ?? item.currentPrice,
-                    isLoading: false
-                  };
-                } catch (err) {
-                  console.warn(`Failed to get quote for ${item.symbol}:`, err);
-                  return {
-                    ...item,
-                    isLoading: false
-                  };
-                }
-              })
-            );
-            
-            const priceEnhancedItems = enhancedItems.map((result, index) => 
-              result.status === 'fulfilled' ? result.value : basicWatchlistItems[index]
-            );
-            
-            setWatchlistData(priceEnhancedItems);
-          }
-        } catch (err) {
-          console.warn('Batch quote API error, falling back to individual calls:', err);
-          // Fallback to individual calls
-          const enhancedItems = await Promise.allSettled(
-            basicWatchlistItems.map(async (item) => {
-              try {
-                const quoteResponse = await fetch(`/api/market/quote/${item.symbol}`);
-                let currentPrice = undefined;
-                
-                if (quoteResponse.ok) {
-                  const quoteData = await quoteResponse.json();
-                  currentPrice = quoteData.price;
-                }
-                
-                return {
-                  ...item,
-                  currentPrice: currentPrice ?? item.currentPrice,
-                  isLoading: false
-                };
-              } catch (err) {
-                console.warn(`Failed to get quote for ${item.symbol}:`, err);
-                return {
-                  ...item,
-                  isLoading: false
-                };
-              }
-            })
-          );
-          
-          const priceEnhancedItems = enhancedItems.map((result, index) => 
-            result.status === 'fulfilled' ? result.value : basicWatchlistItems[index]
-          );
-          
-          setWatchlistData(priceEnhancedItems);
-        }
-      }
-      
-    } catch (err: any) {
-      console.error('Error fetching watchlist:', err);
-      setError(err.message || 'Failed to load watchlist');
-      setIsInitialLoading(false);
-    }
-  };
-
-  // Update watchlist data when external watchlist symbols change
-  useEffect(() => {
-    if (watchlistSymbols && accountId) {
-      // Ensure loading state is set when starting to fetch
-      setIsInitialLoading(true);
-      fetchWatchlist();
-      
-      const interval = setInterval(() => {
-        if (!isUpdatingWatchlist) {
-          fetchWatchlist();
-        }
-      }, 30000);
-      
-      return () => clearInterval(interval);
-    } else if (accountId && watchlistSymbols && watchlistData.length === 0) {
-      // If we have symbols but no data, show loading
-      setIsInitialLoading(true);
-    }
-  }, [accountId, watchlistSymbols]);
-
-  const addToWatchlist = async (symbol: string) => {
-    if (!accountId || isUpdatingWatchlist) return;
-
-    setIsUpdatingWatchlist(true);
-    
-    if (onOptimisticAdd) {
-      onOptimisticAdd(symbol);
-    }
-
-    try {
-      const response = await fetch(`/api/watchlist/${accountId}/add`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ symbol: symbol.toUpperCase() })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Failed to add ${symbol} to watchlist`);
-      }
-
-      if (onWatchlistChange) {
-        onWatchlistChange();
-      }
-      
-    } catch (error) {
-      console.error('Error adding to watchlist:', error);
-      setError(`Failed to add ${symbol} to watchlist`);
-      
-      if (onOptimisticRemove) {
-        onOptimisticRemove(symbol);
-      }
-    } finally {
-      setIsUpdatingWatchlist(false);
-    }
-  };
-
-  const removeFromWatchlist = async (symbol: string) => {
-    if (!accountId || isUpdatingWatchlist) return;
-
-    setIsUpdatingWatchlist(true);
-    
-    if (onOptimisticRemove) {
-      onOptimisticRemove(symbol);
-    }
-
-    try {
-      const response = await fetch(`/api/watchlist/${accountId}/remove`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ symbol: symbol.toUpperCase() })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Failed to remove ${symbol} from watchlist`);
-      }
-
-      if (onWatchlistChange) {
-        onWatchlistChange();
-      }
-      
-    } catch (error) {
-      console.error('Error removing from watchlist:', error);
-      setError(`Failed to remove ${symbol} from watchlist`);
-      
-      if (onOptimisticAdd) {
-        onOptimisticAdd(symbol);
-      }
-    } finally {
-      setIsUpdatingWatchlist(false);
-    }
-  };
 
   const handleStockSelect = async (symbol: string) => {
     setIsSearchDialogOpen(false);
-    await addToWatchlist(symbol);
-  };
-
-  const handleWatchlistItemClick = (symbol: string) => {
     if (onStockSelect) {
       onStockSelect(symbol);
     }
   };
 
+  const handleWatchlistItemClick = (symbol: string) => {
+    handleStockSelect(symbol);
+  };
+
   const renderWatchlistItem = (item: WatchlistItem) => {
     const profile = getProfile(item.symbol);
-    const dayChangePercent = item.dayChangePercent || 0;
+    // Get percentage from the percentages map (calculated by useMarketPercentages)
+    const calculatedPercentage = percentages.get(item.symbol);
+    // Check if we have a valid calculated percentage (could be positive, negative, or zero)
+    const hasCalculatedPercentage = calculatedPercentage !== undefined;
+    // Use calculated percentage if available, otherwise treat as loading
+    const dayChangePercent = hasCalculatedPercentage ? calculatedPercentage : undefined;
     
     const getReturnColor = (percent: number) => {
       if (percent > 0) return 'text-green-500';
@@ -527,7 +88,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
     return (
       <div 
         key={item.symbol}
-        className="flex items-center p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors group"
+        className="flex items-center p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-all duration-200 group"
         onClick={() => handleWatchlistItemClick(item.symbol)}
       >
         <div className="flex items-center space-x-3 flex-1 min-w-0">
@@ -565,13 +126,17 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
             <div className="w-16 h-4 bg-muted animate-pulse rounded flex items-center justify-center">
               <span className="text-xs text-muted-foreground">...</span>
             </div>
-          ) : item.dayChangePercent !== undefined ? (
-            <div className={`text-sm font-semibold ${getReturnColor(dayChangePercent)}`}>
-              {formatReturnPercent(dayChangePercent)}
+          ) : hasCalculatedPercentage ? (
+            <div className={`text-sm font-semibold transition-all duration-300 ${getReturnColor(dayChangePercent!)}`}>
+              {formatReturnPercent(dayChangePercent!)}
+            </div>
+          ) : isCalculating ? (
+            <div className="w-16 h-4 bg-muted animate-pulse rounded flex items-center justify-center">
+              <span className="text-xs text-muted-foreground">...</span>
             </div>
           ) : (
             <div className="w-16 h-4 bg-muted animate-pulse rounded flex items-center justify-center">
-              <span className="text-xs text-muted-foreground">...</span>
+              <span className="text-xs text-muted-foreground">---</span>
             </div>
           )}
         </div>
@@ -612,7 +177,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         <CardHeader className="flex flex-row items-center justify-between py-3 px-4 flex-shrink-0">
           <CardTitle className="flex items-center text-lg">
             Stock Watchlist
-            {(isInitialLoading || isRefreshing) && <Loader2 className="h-4 w-4 ml-2 animate-spin text-muted-foreground" />}
+            {isInitialLoading && <Loader2 className="h-4 w-4 ml-2 animate-spin text-muted-foreground" />}
             {loadingProgress && !isInitialLoading && (
               <span className="text-xs text-muted-foreground ml-2">
                 ({loadingProgress.loaded}/{loadingProgress.total})

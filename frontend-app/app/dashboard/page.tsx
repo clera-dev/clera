@@ -321,12 +321,14 @@ export default function DashboardPage() {
           </div>
 
           {/* Row 4: Account Management */}
-          <div className="mt-8">
-            <DangerZone
-              accountId={alpacaAccountId || ""}
-              userName={userData.firstName}
-            />
-          </div>
+          {alpacaAccountId && (
+            <div className="mt-8">
+              <DangerZone
+                accountId={alpacaAccountId}
+                userName={userData.firstName}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

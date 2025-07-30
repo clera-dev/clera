@@ -1,5 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * Securely validates if a domain matches a wildcard pattern
+ * Prevents SSRF attacks by ensuring only proper subdomains are allowed
+ * 
+ * @param domain - The domain to validate (e.g., "api.example.com")
+ * @param wildcardPattern - The wildcard pattern (e.g., "*.example.com")
+ * @returns true if domain is a valid match, false otherwise
+ */
+const isSecureWildcardMatch = (domain: string, wildcardPattern: string): boolean => {
+  if (!wildcardPattern.startsWith('*.')) {
+    return false;
+  }
+  
+  const baseDomain = wildcardPattern.substring(2); // Remove "*.", so "*.example.com" -> "example.com"
+  
+  // Case 1: Exact match with base domain
+  if (domain === baseDomain) {
+    return true;
+  }
+  
+  // Case 2: Proper subdomain match
+  // Ensure domain ends with the base domain
+  if (!domain.endsWith(baseDomain)) {
+    return false;
+  }
+  
+  // Check that there's a dot separator before the base domain
+  const dotIndex = domain.length - baseDomain.length - 1;
+  if (dotIndex < 0 || domain.charAt(dotIndex) !== '.') {
+    return false;
+  }
+  
+  // Ensure the part before the dot is not empty (prevents "..example.com")
+  const subdomainPart = domain.substring(0, dotIndex);
+  if (subdomainPart.length === 0) {
+    return false;
+  }
+  
+  // Additional security check: ensure the subdomain part doesn't start or end with a dot
+  // This prevents domains like ".example.com" or "example.com."
+  if (subdomainPart.startsWith('.') || subdomainPart.endsWith('.')) {
+    return false;
+  }
+  
+  return true;
+};
+
 // Load allowed domains from environment variables for better security and configuration management.
 // The env var should be a comma-separated list of domains.
 const ALLOWED_DOMAINS_STRING = process.env.IMAGE_PROXY_ALLOWED_DOMAINS || '';
@@ -40,8 +87,8 @@ export async function GET(request: NextRequest) {
     const domain = url.hostname;
     const isAllowed = ALLOWED_DOMAINS.some(allowedDomain => {
       if (allowedDomain.startsWith('*.')) {
-        // Wildcard domain match (e.g., *.example.com)
-        return domain.endsWith(allowedDomain.substring(1)) || domain === allowedDomain.substring(2);
+        // Use secure wildcard matching to prevent SSRF attacks
+        return isSecureWildcardMatch(domain, allowedDomain);
       }
       // Exact domain match
       return domain === allowedDomain;

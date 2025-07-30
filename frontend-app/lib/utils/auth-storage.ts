@@ -23,7 +23,7 @@ export const clearUserSpecificLocalStorage = (context: string = 'auth-cleanup'):
     return;
   }
 
-  console.log(`[Auth Storage] Clearing user-specific localStorage - Context: ${context}`);
+  //console.log(`[Auth Storage] Clearing user-specific localStorage - Context: ${context}`);
 
   try {
     // Remove specific known keys first
@@ -42,10 +42,10 @@ export const clearUserSpecificLocalStorage = (context: string = 'auth-cleanup'):
     // Remove all collected keys
     keysToRemove.forEach(key => {
       localStorage.removeItem(key);
-      console.log(`[Auth Storage] Removed localStorage key: ${key}`);
+      //console.log(`[Auth Storage] Removed localStorage key: ${key}`);
     });
     
-    console.log(`[Auth Storage] Successfully cleared ${keysToRemove.length + 1} localStorage items`);
+    //console.log(`[Auth Storage] Successfully cleared ${keysToRemove.length + 1} localStorage items`);
     
   } catch (error) {
     console.error('[Auth Storage] Error clearing localStorage:', error);
@@ -62,7 +62,7 @@ const shouldClearKey = (key: string): boolean => {
   // Define patterns for user-specific keys that should be cleared
   const userSpecificPatterns = [
     'alpacaAccountId_',  // Account-specific data
-    'clera',             // General Clera app data
+    'clera_',            // User-specific Clera app data (narrowed from 'clera')
     'user_',             // Any user-prefixed data
     'session_',          // Session data
     'chat_',             // Chat-related data
@@ -87,7 +87,7 @@ export const clearAllLocalStorage = (context: string = 'emergency-cleanup'): voi
   
   try {
     localStorage.clear();
-    console.log('[Auth Storage] All localStorage data cleared');
+    //console.log('[Auth Storage] All localStorage data cleared');
   } catch (error) {
     console.error('[Auth Storage] Error clearing all localStorage:', error);
   }

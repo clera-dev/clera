@@ -1,6 +1,16 @@
 /**
  * Shared utilities for formatting transfer-related data
  * Used by TransferHistory.tsx and TransfersCard.tsx to avoid code duplication
+ * 
+ * TIMEZONE HANDLING:
+ * - formatTransferDate(): Uses UTC timezone to prevent server-client rendering mismatches
+ *   Use this for server-side rendering and static generation
+ * - formatTransferDateLocal(): Client-side only, respects user's local timezone
+ *   Use this in client components when you want to show dates in user's local time
+ * 
+ * IMPORTANT: Always use formatTransferDate() for server-side rendering to prevent
+ * hydration mismatches. Use formatTransferDateLocal() only in client components
+ * where you specifically want local timezone display.
  */
 
 import React from "react";
@@ -89,6 +99,7 @@ export const getTransferStatusDotColor = (status: string): string => {
       return 'bg-yellow-500';
     case 'REJECTED':
     case 'CANCELED':
+    case 'CANCELLED': // Handle both spellings for consistency
     case 'FAILED':
       return 'bg-red-500';
     default:
@@ -98,6 +109,7 @@ export const getTransferStatusDotColor = (status: string): string => {
 
 /**
  * Formats a date string into display format with date and time
+ * Uses UTC timezone to prevent server-client rendering mismatches
  * @param dateString - ISO date string
  * @returns Object with formatted date and time strings
  */
@@ -107,7 +119,39 @@ export const formatTransferDate = (dateString: string) => {
     date: date.toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric', 
-      year: 'numeric' 
+      year: 'numeric',
+      timeZone: 'UTC' // Explicitly use UTC to prevent server-client mismatches
+    }),
+    time: date.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'UTC' // Explicitly use UTC to prevent server-client mismatches
+    })
+  };
+};
+
+/**
+ * Client-side only date formatting that respects user's local timezone
+ * Use this in client components when you want to show dates in user's local time
+ * @param dateString - ISO date string
+ * @returns Object with formatted date and time strings
+ */
+export const formatTransferDateLocal = (dateString: string) => {
+  // Only run on client side to prevent hydration mismatches
+  if (typeof window === 'undefined') {
+    return {
+      date: 'Loading...',
+      time: 'Loading...'
+    };
+  }
+  
+  const date = new Date(dateString);
+  return {
+    date: date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric'
     }),
     time: date.toLocaleTimeString('en-US', { 
       hour: '2-digit', 

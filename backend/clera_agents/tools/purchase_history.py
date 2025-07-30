@@ -250,6 +250,8 @@ def fetch_account_activities_data(account_id: str, days_back: int = 60) -> dict:
     """
     Retrieve all activities, trade activities, other activities, and first purchase dates for the account.
     Returns a dictionary with all relevant data for report generation.
+    
+    This is the synchronous version - use fetch_account_activities_data_async for async operations.
     """
     days_back = min(days_back, 60)
     end_date = datetime.now(timezone.utc)
@@ -264,6 +266,53 @@ def fetch_account_activities_data(account_id: str, days_back: int = 60) -> dict:
     trade_activities = [a for a in all_activities if a.activity_type == 'FILL']
     other_activities = [a for a in all_activities if a.activity_type != 'FILL']
     first_purchases = find_first_purchase_dates(account_id)
+    return {
+        'all_activities': all_activities,
+        'trade_activities': trade_activities,
+        'other_activities': other_activities,
+        'first_purchases': first_purchases,
+        'days_back': days_back
+    }
+
+
+async def fetch_account_activities_data_async(account_id: str, days_back: int = 60) -> dict:
+    """
+    Async version of fetch_account_activities_data that prevents blocking the event loop.
+    
+    This function offloads I/O operations to a thread pool to maintain async/await patterns
+    and prevent blocking the event loop during API calls.
+    """
+    import asyncio
+    
+    days_back = min(days_back, 60)
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=days_back)
+    
+    # Run the I/O-heavy operations in a thread pool to prevent blocking
+    loop = asyncio.get_event_loop()
+    
+    # Execute the synchronous I/O operations in a thread pool
+    all_activities = await loop.run_in_executor(
+        None, 
+        get_account_activities,
+        account_id,
+        None,  # activity_types
+        start_date,
+        end_date,
+        100    # page_size
+    )
+    
+    # Process the data (CPU-bound operations can stay in the main thread)
+    trade_activities = [a for a in all_activities if a.activity_type == 'FILL']
+    other_activities = [a for a in all_activities if a.activity_type != 'FILL']
+    
+    # Run first_purchase_dates in thread pool as it also makes API calls
+    first_purchases = await loop.run_in_executor(
+        None,
+        find_first_purchase_dates,
+        account_id
+    )
+    
     return {
         'all_activities': all_activities,
         'trade_activities': trade_activities,
@@ -375,15 +424,17 @@ This report shows activities from the last {days_back} days only. For older tran
     return report
 
 
-def get_comprehensive_account_activities(days_back: int = 60, config: RunnableConfig = None) -> str:
+async def get_comprehensive_account_activities(days_back: int = 60, config: RunnableConfig = None) -> str:
     """
     Get a comprehensive formatted report of account activities including trading history,
     statistics, and first purchase dates.
+    
+    This function is now async to prevent blocking the event loop during I/O operations.
     """
     try:
         account_id = get_account_id(config=config)
         logger.info("[Portfolio Agent] Generating comprehensive account activities")
-        data = fetch_account_activities_data(account_id, days_back)
+        data = await fetch_account_activities_data_async(account_id, days_back)
         stats = calculate_account_activity_stats(data['trade_activities'])
         report = format_account_activities_report(
             all_activities=data['all_activities'],

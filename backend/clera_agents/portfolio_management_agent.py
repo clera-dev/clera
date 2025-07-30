@@ -625,7 +625,24 @@ def get_account_activities_tool(state=None, config=None) -> str:
         logger.info("[Portfolio Agent] Retrieving comprehensive account activities")
         
         # Get comprehensive activities (60 days by default)
-        activities_report = get_comprehensive_account_activities(days_back=60, config=config)
+        # Use thread pool to run async function in sync context
+        import asyncio
+        import concurrent.futures
+        
+        def run_async_in_thread():
+            """Run the async function in a new event loop within a thread."""
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(
+                    get_comprehensive_account_activities(days_back=60, config=config)
+                )
+            finally:
+                loop.close()
+        
+        # Execute in thread pool to prevent blocking
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            activities_report = executor.submit(run_async_in_thread).result()
         
         return activities_report
         

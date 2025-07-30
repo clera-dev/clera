@@ -48,21 +48,38 @@ export default function ClientAuthButtons() {
       async (event, session) => {
         console.log("Auth state changed:", event, session?.user?.email);
         
-        if (event === "SIGNED_IN" && session) {
-          setUser(session.user);
-          setLoading(false);
-          // Force a router refresh to update server components
-          router.refresh();
-        } else if (event === "SIGNED_OUT") {
-          // Clear localStorage to prevent cross-user session issues
-          clearUserSpecificLocalStorage('auth-state-signed-out');
+        try {
+          if (event === "SIGNED_IN" && session) {
+            setUser(session.user);
+            setLoading(false);
+            // Force a router refresh to update server components
+            router.refresh();
+          } else if (event === "SIGNED_OUT") {
+            // Clear localStorage to prevent cross-user session issues
+            clearUserSpecificLocalStorage('auth-state-signed-out');
 
+            setUser(null);
+            setLoading(false);
+            router.refresh();
+          } else if (event === "TOKEN_REFRESHED" && session) {
+            // Handle token refresh to ensure user state stays current
+            setUser(session.user);
+            setLoading(false);
+          } else {
+            // Handle any other auth events (PASSWORD_RECOVERY, MFA_CHALLENGE_VERIFIED, etc.)
+            // Always ensure loading state is reset for unhandled events
+            console.log(`Unhandled auth event: ${event}`, session);
+            if (session) {
+              setUser(session.user);
+            } else {
+              setUser(null);
+            }
+            setLoading(false);
+          }
+        } catch (error) {
+          // Ensure loading state is reset even if there's an error in auth event handling
+          console.error("Error handling auth state change:", error);
           setUser(null);
-          setLoading(false);
-          router.refresh();
-        } else if (event === "TOKEN_REFRESHED" && session) {
-          // Handle token refresh to ensure user state stays current
-          setUser(session.user);
           setLoading(false);
         }
       }
@@ -76,20 +93,23 @@ export default function ClientAuthButtons() {
 
   const handleSignOut = async () => {
     try {
-      // Clear localStorage to prevent cross-user session issues
-      clearUserSpecificLocalStorage('manual-sign-out');
-
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error("Error signing out:", error);
-      } else {
-        setUser(null);
-        router.refresh();
-        // Also redirect to home page
-        router.push('/');
+        // Don't clear localStorage or update UI state if sign-out failed
+        return;
       }
+      
+      // Only clear localStorage after successful sign-out
+      clearUserSpecificLocalStorage('manual-sign-out');
+      
+      setUser(null);
+      router.refresh();
+      // Also redirect to home page
+      router.push('/');
     } catch (err) {
       console.error("Exception during sign out:", err);
+      // Don't clear localStorage or update UI state if sign-out failed
     }
   };
 
@@ -98,16 +118,13 @@ export default function ClientAuthButtons() {
     return <div className="h-8 w-24 bg-gray-200 animate-pulse rounded-md"></div>;
   }
   
-  // Show loading state only briefly, then show auth buttons
+  // Show loading skeleton while checking auth state to prevent UI flashing
+  // This prevents showing sign-in buttons to authenticated users during the brief loading period
   if (loading) {
     return (
       <div className="flex gap-2">
-        <Button asChild size="sm" variant="outline">
-          <Link href="/sign-in">Sign in</Link>
-        </Button>
-        <Button asChild size="sm" variant="default">
-          <Link href="/sign-up">Sign up</Link>
-        </Button>
+        <div className="h-8 w-16 bg-gray-200 animate-pulse rounded-md"></div>
+        <div className="h-8 w-16 bg-gray-200 animate-pulse rounded-md"></div>
       </div>
     );
   }
@@ -133,4 +150,4 @@ export default function ClientAuthButtons() {
       </Button>
     </div>
   );
-} 
+}

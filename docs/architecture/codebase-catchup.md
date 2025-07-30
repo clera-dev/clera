@@ -186,6 +186,11 @@ if (path.startsWith('/api/') && !allowedApiPaths.some(p => path.startsWith(p))) 
 4. **Test with curl** to isolate frontend vs backend issues
 5. **Check middleware logs** for authentication/authorization issues
 
+Note: Use the following structure to test frontend api endpoints (pull JWT from Inspect > Application > cookies)
+``` bash
+curl -i "http://localhost:3000/api/fmp/chart/AAPL?interval=5min&from=2025-01-30&to=2025-01-30" -H "Cookie: <JTW>"
+```
+
 ---
 
 ## Key Directory Structure

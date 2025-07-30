@@ -1,5 +1,25 @@
 import { createClient } from '@/utils/supabase/client';
 
+/**
+ * Account Closure Service
+ * 
+ * ERROR LOGGING STRATEGY:
+ * This service implements a comprehensive error logging strategy that balances
+ * observability with production-friendly logging:
+ * 
+ * - Development: All errors are logged with full details for debugging
+ * - Production: 
+ *   * Server errors (500+) are logged as errors for backend health monitoring
+ *   * Client errors (400-499) are logged as warnings to maintain observability
+ *   * Network errors are logged appropriately for troubleshooting
+ * 
+ * This approach ensures that:
+ * - Backend failures are not hidden from monitoring
+ * - Error logs remain actionable and not spammy
+ * - Development debugging remains effective
+ * - Production observability is maintained
+ */
+
 export interface ClosureData {
   confirmationNumber?: string;
   initiatedAt?: string;
@@ -60,6 +80,31 @@ export class AccountClosureService {
   private constructor() {}
 
   /**
+   * Log error with appropriate level based on error type and environment
+   * @param message - Error message
+   * @param error - Error details
+   * @param isServerError - Whether this is a server-side error (500+)
+   */
+  private logError(message: string, error: any, isServerError: boolean = false): void {
+    // In development, log all errors for debugging
+    if (process.env.NODE_ENV === 'development') {
+      console.error(message, error);
+      return;
+    }
+
+    // In production, use different log levels based on error type
+    if (isServerError) {
+      // Server errors (500+) are important for monitoring backend health
+      // Log as error for observability but limit details to prevent spam
+      console.error(`[AccountClosureService] ${message} (Status: ${error?.status || 'unknown'})`);
+    } else {
+      // Client errors (400-499) are usually user-related and less critical
+      // Log as warn to maintain observability without cluttering error logs
+      console.warn(`[AccountClosureService] ${message} (Status: ${error?.status || 'unknown'})`);
+    }
+  }
+
+  /**
    * Get account ID for a user from Supabase
    */
   private async getAccountId(userId: string): Promise<string | null> {
@@ -81,10 +126,9 @@ export class AccountClosureService {
       const response = await fetch('/api/account-closure/data');
       
       if (!response.ok) {
-        // Don't log 500 errors as they're likely temporary server issues
-        if (response.status !== 500) {
-          console.warn('[AccountClosureService] Failed to fetch closure data:', response.status);
-        }
+        // Log all errors for observability, but use appropriate levels
+        const isServerError = response.status >= 500;
+        this.logError('Failed to fetch closure data', { status: response.status }, isServerError);
         return null;
       }
       
@@ -108,8 +152,8 @@ export class AccountClosureService {
       
       return null;
     } catch (error) {
-      // Don't log network errors as they're likely temporary
-      console.warn('[AccountClosureService] Network error fetching closure data (likely temporary):', error);
+      // Network errors should be logged for observability
+      this.logError('Network error fetching closure data', error, false);
       return null;
     }
   }
@@ -122,22 +166,23 @@ export class AccountClosureService {
       const accountId = await this.getAccountId(userId);
       
       if (!accountId) {
-        console.warn('[AccountClosureService] No account ID found for progress polling');
+        this.logError('No account ID found for progress polling', { userId }, false);
         return null;
       }
       
       const response = await fetch(`/api/account-closure/progress/${accountId}`);
       
       if (!response.ok) {
-        // Don't log raw response text to prevent PII exposure
-        console.error(`[AccountClosureService] Progress API responded with status ${response.status}`);
+        // Log all errors for observability, but use appropriate levels
+        const isServerError = response.status >= 500;
+        this.logError('Progress API failed', { status: response.status, accountId }, isServerError);
         return null;
       }
       
       const progressData = await response.json();
       return progressData;
     } catch (error) {
-      console.error('[AccountClosureService] Error fetching closure progress:', error);
+      this.logError('Error fetching closure progress', error, false);
       return null;
     }
   }
@@ -150,7 +195,7 @@ export class AccountClosureService {
       const accountId = await this.getAccountId(userId);
       
       if (!accountId) {
-        console.error('[AccountClosureService] No account ID found for retry');
+        this.logError('No account ID found for retry', { userId }, false);
         return { success: false };
       }
       
@@ -163,14 +208,15 @@ export class AccountClosureService {
       });
       
       if (!response.ok) {
-        // Don't log raw error text to prevent PII exposure
-        console.error('[AccountClosureService] Resume endpoint failed:', response.status);
+        // Log all errors for observability, but use appropriate levels
+        const isServerError = response.status >= 500;
+        this.logError('Resume endpoint failed', { status: response.status, accountId }, isServerError);
         return { success: false };
       }
       
       return await response.json();
     } catch (error) {
-      console.error('[AccountClosureService] Error during retry/resume:', error);
+      this.logError('Error during retry/resume', error, false);
       return { success: false };
     }
   }

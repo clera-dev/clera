@@ -42,10 +42,31 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/conversations/stream-chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/conversations/submit-message": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/conversations/handle-interrupt": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  
+  // FMP API routes - do not require authentication (use server-side API keys)
+  "/api/fmp/chart": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/profile": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/price-target": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/chart/health": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {
-  return routeConfigs[path] || null;
+  // First try exact match
+  const exactMatch = routeConfigs[path];
+  if (exactMatch) {
+    return exactMatch;
+  }
+  
+  // For API routes, try prefix matching to handle dynamic segments
+  if (path.startsWith('/api/')) {
+    for (const configPath of Object.keys(routeConfigs)) {
+      if (configPath.startsWith('/api/') && path.startsWith(configPath)) {
+        return routeConfigs[configPath];
+      }
+    }
+  }
+  
+  return null;
 };
 
 export function isPublicPath(path: string): boolean {

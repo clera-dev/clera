@@ -12,6 +12,23 @@ interface UseUserOnboardingStatusOptions {
 }
 
 /**
+ * Utility function to check if an auth error indicates a missing/invalid session
+ * Uses stable error codes instead of fragile string matching
+ */
+function isAuthSessionError(error: any): boolean {
+  // Check for known Supabase auth error codes
+  if (error?.status === 401) return true;
+  if (error?.code === 'PGRST301') return true; // JWT expired
+  if (error?.code === 'PGRST302') return true; // JWT invalid
+  
+  // Fallback to message checking for edge cases, but prefer error codes
+  const message = error?.message?.toLowerCase() || '';
+  return message.includes('auth session missing') || 
+         message.includes('invalid jwt') ||
+         message.includes('jwt expired');
+}
+
+/**
  * Custom hook to fetch and manage user onboarding status
  * Abstracts Supabase access logic from UI components
  * Gracefully handles missing auth sessions (e.g., on auth pages)
@@ -41,10 +58,8 @@ export function useUserOnboardingStatus(options: UseUserOnboardingStatusOptions 
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         
         if (userError) {
-          // Handle auth errors gracefully - this is expected on auth pages
-          if (userError.message.includes('Auth session missing') || 
-              userError.message.includes('Invalid JWT') ||
-              userError.message.includes('JWT expired')) {
+          // Handle auth errors gracefully using stable error codes
+          if (isAuthSessionError(userError)) {
             // This is not an error, it just means the user is not logged in
             setStatus(null);
             setIsLoading(false);

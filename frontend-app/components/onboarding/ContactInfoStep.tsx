@@ -175,7 +175,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
             <div className="flex items-center">
               <Label htmlFor="country">Country</Label>
               <InfoTooltip content="The country where you currently reside.">
-                <button type="button" className="ml-2">
+                <button type="button" aria-label="Learn more about country selection" className="ml-2">
                   <InfoIcon className="h-4 w-4 text-gray-400" />
                 </button>
               </InfoTooltip>

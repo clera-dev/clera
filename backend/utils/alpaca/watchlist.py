@@ -84,10 +84,16 @@ def create_default_watchlist_for_account(account_id: str, broker_client: BrokerC
         if broker_client is None:
             broker_client = get_broker_client()
         
-        # Create default watchlist
+        # Create default watchlist with starter symbols
+        # These provide a good mix of market exposure for new investors:
+        # SPY - S&P 500 ETF (broad market exposure)
+        # AGG - Aggregate Bond ETF (fixed income exposure)  
+        # DJI - Dow Jones Industrial Average (blue chip exposure)
+        default_symbols = ["SPY", "AGG", "DJI"]
+        
         watchlist_data = CreateWatchlistRequest(
             name="My Watchlist",
-            symbols=[]  # Start with empty watchlist
+            symbols=default_symbols
         )
         
         watchlist = broker_client.create_watchlist_for_account(
@@ -105,6 +111,7 @@ def create_default_watchlist_for_account(account_id: str, broker_client: BrokerC
 def get_or_create_default_watchlist(account_id: str, broker_client: BrokerClient = None) -> Optional[Watchlist]:
     """
     Get the default watchlist for an account, creating one if it doesn't exist.
+    Also ensures the watchlist has default symbols if it's empty.
     
     Args:
         account_id: Alpaca account ID
@@ -117,13 +124,26 @@ def get_or_create_default_watchlist(account_id: str, broker_client: BrokerClient
         if broker_client is None:
             broker_client = get_broker_client()
         
+        # Default symbols for new or empty watchlists
+        default_symbols = ["SPY", "AGG", "DJI"]
+        
         # First try to get existing watchlist
         watchlist = get_watchlist_for_account(account_id, broker_client=broker_client)
         
         if watchlist:
+            # Check if watchlist is empty and populate with defaults
+            symbols = get_watchlist_symbols(account_id, str(watchlist.id), broker_client=broker_client)
+            if not symbols:  # If watchlist is empty
+                logger.info(f"Watchlist {watchlist.id} for account {account_id} is empty, adding default symbols")
+                for symbol in default_symbols:
+                    try:
+                        add_symbol_to_watchlist(account_id, symbol, str(watchlist.id), broker_client=broker_client)
+                    except Exception as e:
+                        logger.warning(f"Failed to add default symbol {symbol} to watchlist: {str(e)}")
+            
             return watchlist
         
-        # If no watchlist exists, create one
+        # If no watchlist exists, create one (which now includes default symbols)
         logger.info(f"No watchlist found for account {account_id}, creating default watchlist")
         return create_default_watchlist_for_account(account_id, broker_client=broker_client)
         
