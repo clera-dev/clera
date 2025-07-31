@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { 
   authenticateAndConfigureBackend, 
   createBackendHeaders, 
-  handleApiError 
+  convertErrorToResponse 
 } from '@/lib/utils/api-route-helpers';
 
 /**
@@ -13,8 +13,12 @@ import {
 export const dynamic = 'force-dynamic';
 
 /**
- * API route to get market quotes for multiple symbols in a single request.
- * This route is a proxy to the backend service and supports batching.
+ * API route to get market quotes for multiple symbols in a single batch request.
+ * This route proxies to the backend's batch quotes endpoint, making only ONE 
+ * backend API call regardless of the number of symbols (up to 50).
+ * 
+ * Architectural Pattern: True batching - avoids N+1 anti-pattern by consolidating
+ * multiple symbol requests into a single backend call.
  */
 export async function POST(
   request: NextRequest
@@ -36,58 +40,34 @@ export async function POST(
       return NextResponse.json({ error: 'Maximum 50 symbols allowed per batch' }, { status: 400 });
     }
 
-    // 3. Make parallel requests to individual quote endpoints
-    const quotePromises = symbols.map(async (symbol: string) => {
-      try {
-        const targetUrl = `${backendConfig.url}/api/market/quote/${encodeURIComponent(symbol)}`;
-        const response = await fetch(targetUrl, {
-          method: 'GET',
-          headers: createBackendHeaders(backendConfig, user.id),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          return {
-            symbol: symbol.toUpperCase(),
-            price: data.price,
-            change: data.change,
-            changesPercentage: data.changesPercentage,
-            open: data.open,
-            previousClose: data.previousClose,
-            dayHigh: data.dayHigh,
-            dayLow: data.dayLow,
-            volume: data.volume,
-            timestamp: data.timestamp,
-            name: data.name,
-            marketCap: data.marketCap,
-            exchange: data.exchange
-          };
-        } else {
-          console.warn(`Failed to fetch quote for ${symbol}: ${response.status}`);
-          return null;
-        }
-      } catch (error) {
-        console.error(`Error fetching quote for ${symbol}:`, error);
-        return null;
-      }
+    // 3. Make a single batch request to the backend (proper batching)
+    const targetUrl = `${backendConfig.url}/api/market/quotes/batch`;
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: createBackendHeaders(backendConfig, user.id),
+      body: JSON.stringify({ symbols }),
     });
 
-    // Wait for all quote requests to complete
-    const results = await Promise.allSettled(quotePromises);
-    const quotes = results
-      .map((result, index) => {
-        if (result.status === 'fulfilled' && result.value) {
-          return result.value;
-        } else {
-          console.warn(`Failed to get quote for ${symbols[index]}`);
-          return null;
-        }
-      })
-      .filter(quote => quote !== null);
+    if (!response.ok) {
+      throw new Error(`Backend batch quotes request failed: ${response.status} ${response.statusText}`);
+    }
 
-    return NextResponse.json({ quotes }, { status: 200 });
+    const data = await response.json();
+    
+    // Backend returns { quotes: [...], errors: [...] }
+    const { quotes = [], errors = [] } = data;
+    
+    // Log any errors but still return successful quotes
+    if (errors.length > 0) {
+      console.warn('Some symbols failed in batch request:', errors);
+    }
+
+    return NextResponse.json({ 
+      quotes,
+      errors 
+    }, { status: 200 });
 
   } catch (error: any) {
-    return handleApiError(error, request.nextUrl.pathname);
+    return convertErrorToResponse(error, request.nextUrl.pathname);
   }
 } 

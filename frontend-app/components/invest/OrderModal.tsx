@@ -202,8 +202,8 @@ export default function OrderModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[95vw] max-w-md mx-auto max-h-[90vh] overflow-hidden z-[110]">
-        <DialogHeader>
+      <DialogContent className="w-[100vw] h-[100vh] sm:w-[95vw] sm:max-w-md sm:h-auto sm:max-h-[85vh] mx-auto overflow-hidden z-[110] fixed top-[0] left-[0] sm:top-[50%] sm:left-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%] translate-x-0 translate-y-0 rounded-none sm:rounded-lg flex flex-col">
+        <DialogHeader className="flex-shrink-0 px-4 pt-4 pb-2 sm:px-6 sm:pt-6">
           <DialogTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
             {isBuyOrder ? (
               <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
@@ -217,47 +217,57 @@ export default function OrderModal({
           </DialogDescription>
         </DialogHeader>
         
-        <div className="overflow-y-auto flex-1 space-y-3">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 min-h-0">
           <div className="space-y-3">
-           <div className="flex justify-between items-center bg-muted p-3 rounded-md">
-               <span className="text-sm font-medium text-muted-foreground">Order Type:</span>
-               <Badge variant="outline" className={orderTypeColor}>
-                 {isBuyOrder ? 'BUY (Market)' : 'SELL (Market)'}
-               </Badge>
-           </div>
+            <div className="flex justify-between items-center bg-muted p-3 rounded-md">
+              <span className="text-sm font-medium text-muted-foreground">Order Type:</span>
+              <Badge variant="outline" className={orderTypeColor}>
+                {isBuyOrder ? 'BUY (Market)' : 'SELL (Market)'}
+              </Badge>
+            </div>
            
             <div className="flex justify-between items-center bg-muted p-3 rounded-md">
-               <span className="text-sm font-medium text-muted-foreground">Market Price:</span>
-               <span className={`font-semibold ${priceError ? 'text-destructive' : ''}`}>{displayMarketPrice}</span>
+              <span className="text-sm font-medium text-muted-foreground">Market Price:</span>
+              <span className={`font-semibold ${priceError ? 'text-destructive' : ''}`}>{displayMarketPrice}</span>
             </div>
 
-            {/* Show current holdings for sell orders */}
+            {/* Show current holdings for sell orders - compact layout for mobile */}
             {isSellOrder && currentQuantity && currentMarketValue && (
-              <div className="flex justify-between items-center bg-muted p-3 rounded-md">
-                <span className="text-sm font-medium text-muted-foreground">Your Holdings:</span>
-                <div className="text-right">
-                  <div className="font-semibold">{formatCurrency(parseFloat(currentMarketValue))}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {parseFloat(currentQuantity).toLocaleString()} shares
+              <div className="bg-muted p-3 rounded-md">
+                <div className="flex justify-between items-center sm:hidden">
+                  <span className="text-sm font-medium text-muted-foreground">Holdings:</span>
+                  <div className="text-right">
+                    <div className="font-semibold text-sm">{formatCurrency(parseFloat(currentMarketValue))}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {parseFloat(currentQuantity).toFixed(3)} shares
+                    </div>
+                  </div>
+                </div>
+                <div className="hidden sm:flex justify-between items-center">
+                  <span className="text-sm font-medium text-muted-foreground">Your Holdings:</span>
+                  <div className="text-right">
+                    <div className="font-semibold">{formatCurrency(parseFloat(currentMarketValue))}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {parseFloat(currentQuantity).toLocaleString()} shares
+                    </div>
                   </div>
                 </div>
               </div>
             )}
-        </div>
 
-        {priceError && (
-             <Alert variant="destructive" className="mt-2">
+            {priceError && (
+              <Alert variant="destructive" className="mt-2">
                 <Terminal className="h-4 w-4" />
                 <AlertTitle>Price Fetch Error</AlertTitle>
                 <AlertDescription>{priceError}</AlertDescription>
-            </Alert>
-        )}
+              </Alert>
+            )}
 
-        <div className="mt-4">
-            <label htmlFor="amount" className="block text-sm font-medium text-muted-foreground mb-1">
-              Amount ($)
-            </label>
-            <Input
+            <div className="mt-4">
+              <label htmlFor="amount" className="block text-sm font-medium text-muted-foreground mb-1">
+                Amount ($)
+              </label>
+              <Input
                 id="amount"
                 type="text"
                 inputMode="decimal"
@@ -270,42 +280,43 @@ export default function OrderModal({
                 autoCorrect="off"
                 spellCheck="false"
                 data-form-type="other"
-            />
-        </div>
+              />
+            </div>
 
-          <div className="grid grid-cols-3 gap-2 mt-4">
-            {[
-              '1', '2', '3', 
-              '4', '5', '6', 
-              '7', '8', '9', 
-              '.', '0', '⌫'
-            ].map((btn) => (
-              <Button
-                key={btn}
-                variant="outline"
-                size="lg"
-                className="text-lg sm:text-xl font-semibold h-12 sm:h-14"
-                onClick={() => handleNumberPadInput(btn)}
-              >
-                {btn}
-              </Button>
-            ))}
-          </div>
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              {[
+                '1', '2', '3', 
+                '4', '5', '6', 
+                '7', '8', '9', 
+                '.', '0', '⌫'
+              ].map((btn) => (
+                <Button
+                  key={btn}
+                  variant="outline"
+                  size="lg"
+                  className="text-lg sm:text-xl font-semibold h-12 sm:h-14"
+                  onClick={() => handleNumberPadInput(btn)}
+                >
+                  {btn}
+                </Button>
+              ))}
+            </div>
 
-        {submitError && (
-             <Alert variant="destructive" className="mt-4">
+            {submitError && (
+              <Alert variant="destructive" className="mt-4">
                 <Terminal className="h-4 w-4" />
                 <AlertTitle>Order Submission Error</AlertTitle>
-                  <AlertDescription className="text-sm">{submitError}</AlertDescription>
-            </Alert>
-        )}
+                <AlertDescription className="text-sm">{submitError}</AlertDescription>
+              </Alert>
+            )}
+          </div>
         </div>
 
-        <div className="sticky bottom-0 bg-background pt-4 border-t mt-4">
+        <div className="flex-shrink-0 bg-background p-4 border-t sm:px-6">
           <Button 
             type="button"
             size="lg"
-            className={`w-full ${buttonColorClasses} text-white font-bold text-base sm:text-lg`}
+            className={`w-full ${buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
             onClick={handlePlaceOrder}
             disabled={isSubmitting || isLoadingPrice || !amount || parseFloat(amount) <= 0}
           >
@@ -319,4 +330,4 @@ export default function OrderModal({
       </DialogContent>
     </Dialog>
   );
-} 
+}

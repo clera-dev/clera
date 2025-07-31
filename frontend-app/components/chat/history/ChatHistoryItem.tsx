@@ -9,13 +9,15 @@ interface ChatHistoryItemProps {
   isActive: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  isMobile?: boolean;
 }
 
 export default function ChatHistoryItem({
   session,
   isActive,
   onSelect,
-  onDelete
+  onDelete,
+  isMobile = false
 }: ChatHistoryItemProps) {
   // Get first ~30 chars of title or first message as title
   const title = session.title || 
@@ -40,9 +42,12 @@ export default function ChatHistoryItem({
   })();
   
   return (
-    <div 
+        <div
       className={cn(
-        "group flex items-center justify-between rounded-md p-2 text-sm cursor-pointer",
+        "group flex items-center justify-between rounded-md cursor-pointer",
+        isMobile 
+          ? "p-1.5 text-xs" // Thinner mobile version
+          : "p-2 text-sm",   // Regular desktop version
         isActive 
           ? "bg-accent text-accent-foreground" 
           : "hover:bg-muted"
@@ -50,22 +55,32 @@ export default function ChatHistoryItem({
       onClick={onSelect}
     >
       <div className="flex-1 overflow-hidden">
-        <div className="font-medium truncate">{title}</div>
-        <div className="text-xs text-muted-foreground">
-          {formattedDate}
+        <div className={cn(
+          "font-medium truncate",
+          isMobile ? "text-xs" : "text-sm"
+        )}>
+          {isMobile ? title.substring(0, 25) + (title.length > 25 ? '...' : '') : title}
         </div>
+        {!isMobile && (
+          <div className="text-xs text-muted-foreground">
+            {formattedDate}
+          </div>
+        )}
       </div>
       <Button
         variant="ghost"
         size="icon"
-        className="opacity-0 group-hover:opacity-100"
+        className={cn(
+          "opacity-0 group-hover:opacity-100",
+          isMobile ? "w-6 h-6" : "w-8 h-8"
+        )}
         onClick={(e) => {
           e.stopPropagation();
           onDelete();
         }}
         title="Delete conversation"
       >
-        <Trash2Icon size={14} />
+        <Trash2Icon size={isMobile ? 12 : 14} />
       </Button>
     </div>
   );

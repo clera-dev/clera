@@ -9,11 +9,18 @@ interface HeaderControllerProps {
 
 /**
  * Controller for the header navigation
- * We always want to show the header with the Clera logo and sign out button,
- * even during onboarding
+ * Only show the header with sign out button on the dashboard page
+ * Other pages get more screen real estate without the header
  */
 export default function HeaderController({ children }: HeaderControllerProps) {
-  // Always show the header/top navigation bar 
-  // (the sidebar is controlled separately in ClientLayout)
+  const pathname = usePathname();
+  
+  // Only show header on dashboard page where users manage their account
+  const shouldShowHeader = pathname === '/dashboard';
+  
+  if (!shouldShowHeader) {
+    return null;
+  }
+  
   return <>{children}</>;
 } 

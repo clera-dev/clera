@@ -28,6 +28,7 @@ export default function ClientAuthButtons() {
           setUser(null);
         } else if (session) {
           setUser(session.user);
+          // SECURITY: Log only non-sensitive user information
           console.log("User authenticated:", session.user.email);
         } else {
           setUser(null);
@@ -46,6 +47,7 @@ export default function ClientAuthButtons() {
     // Subscribe to auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // Log auth event without exposing sensitive session data
         console.log("Auth state changed:", event, session?.user?.email);
         
         try {
@@ -68,7 +70,8 @@ export default function ClientAuthButtons() {
           } else {
             // Handle any other auth events (PASSWORD_RECOVERY, MFA_CHALLENGE_VERIFIED, etc.)
             // Always ensure loading state is reset for unhandled events
-            console.log(`Unhandled auth event: ${event}`, session);
+            // SECURITY: Log only the event type, not the session object which contains sensitive tokens
+            console.warn(`Unhandled auth event: ${event}`);
             if (session) {
               setUser(session.user);
             } else {
@@ -78,6 +81,7 @@ export default function ClientAuthButtons() {
           }
         } catch (error) {
           // Ensure loading state is reset even if there's an error in auth event handling
+          // SECURITY: Log error details without exposing sensitive session data
           console.error("Error handling auth state change:", error);
           setUser(null);
           setLoading(false);

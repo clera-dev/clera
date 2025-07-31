@@ -424,16 +424,61 @@ This report shows activities from the last {days_back} days only. For older tran
     return report
 
 
-async def get_comprehensive_account_activities(days_back: int = 60, config: RunnableConfig = None) -> str:
+def get_comprehensive_account_activities(days_back: int = 60, config: RunnableConfig = None) -> str:
     """
     Get a comprehensive formatted report of account activities including trading history,
     statistics, and first purchase dates.
     
-    This function is now async to prevent blocking the event loop during I/O operations.
+    This is the synchronous version for backward compatibility.
+    For new async code, use get_comprehensive_account_activities_async().
     """
     try:
         account_id = get_account_id(config=config)
-        logger.info("[Portfolio Agent] Generating comprehensive account activities")
+        logger.info("[Portfolio Agent] Generating comprehensive account activities (sync)")
+        data = fetch_account_activities_data(account_id, days_back)
+        stats = calculate_account_activity_stats(data['trade_activities'])
+        report = format_account_activities_report(
+            all_activities=data['all_activities'],
+            trade_activities=data['trade_activities'],
+            other_activities=data['other_activities'],
+            first_purchases=data['first_purchases'],
+            stats=stats,
+            days_back=data['days_back']
+        )
+        logger.info(f"[Portfolio Agent] Successfully generated comprehensive activities report with {len(data['all_activities'])} total activities")
+        return report
+    except ValueError as e:
+        logger.error(f"[Portfolio Agent] Account identification error: {e}")
+        return f"""📈 **Account Activities Report**
+
+🚫 **Authentication Error**
+
+Could not securely identify your account for this activities report. This is a security protection to prevent unauthorized access.
+
+**Error Details:** {str(e)}
+
+💡 **Next Steps:**
+• Please log out and log back in
+• Ensure you have completed account setup
+• Contact support if the issue persists
+
+**Security Note:** This error prevents unauthorized access to trading data."""
+    except Exception as e:
+        logger.error(f"[Portfolio Agent] Error generating activities report: {e}", exc_info=True)
+        return "❌ **Error:** Could not generate account activities report. Please try again later or contact support if the issue persists."
+
+
+async def get_comprehensive_account_activities_async(days_back: int = 60, config: RunnableConfig = None) -> str:
+    """
+    Get a comprehensive formatted report of account activities including trading history,
+    statistics, and first purchase dates.
+    
+    This is the async version that prevents blocking the event loop during I/O operations.
+    Use this for new async code. For backward compatibility, use get_comprehensive_account_activities().
+    """
+    try:
+        account_id = get_account_id(config=config)
+        logger.info("[Portfolio Agent] Generating comprehensive account activities (async)")
         data = await fetch_account_activities_data_async(account_id, days_back)
         stats = calculate_account_activity_stats(data['trade_activities'])
         report = format_account_activities_report(

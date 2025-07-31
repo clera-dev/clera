@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatTransferStatus, getTransferStatusDotColor } from "@/lib/utils/transfer-formatting";
+import { formatTransferStatus } from "@/lib/utils/transfer-formatting";
+import { getTransferStatusDotColor } from "@/components/ui/transfer-ui-utils";
 
 interface Transfer {
   id: string;

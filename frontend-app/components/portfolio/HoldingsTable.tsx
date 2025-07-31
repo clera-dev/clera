@@ -208,21 +208,21 @@ const HoldingsTable: React.FC<HoldingsTableProps> = ({
                   onClick={() => handleRowClick(pos.asset_id, true)}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-medium text-sm truncate pr-2" title={pos.name || pos.symbol}>
+                        <h3 className="font-medium text-sm truncate pr-2 flex-1 min-w-0" title={pos.name || pos.symbol}>
                           {pos.name || pos.symbol}
                         </h3>
-                        <span className="text-xs text-muted-foreground">{pos.symbol}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">{pos.symbol}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <div className="text-sm">
+                        <div className="text-sm flex-1 min-w-0">
                           <span className="font-medium">{formatCurrency(pos.market_value)}</span>
                           <span className="text-xs text-muted-foreground ml-2">
                             {parseFloat(pos.qty).toLocaleString()} shares
                           </span>
                         </div>
-                        <div className={`flex items-center text-sm ${gainColor}`}>
+                        <div className={`flex items-center text-sm ${gainColor} whitespace-nowrap ml-2`}>
                           {isGainPositive ? <ArrowUpRight className="h-3 w-3 mr-1"/> : <ArrowDownRight className="h-3 w-3 mr-1"/>}
                           {formatPercentage(returnPercent)}
                         </div>

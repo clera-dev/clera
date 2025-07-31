@@ -247,15 +247,15 @@ interface DocumentsEmptyProps {
 
 const DocumentsEmpty = ({ documentType, onDocumentTypeChange, onRetry }: DocumentsEmptyProps) => (
   <Card>
-    <CardHeader>
-      <div className="flex items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <FileText className="h-5 w-5" />
-          Documents and Statements
-        </CardTitle>
-        <DocumentTypeSelector documentType={documentType} onDocumentTypeChange={onDocumentTypeChange} />
-      </div>
-    </CardHeader>
+            <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Documents
+            </CardTitle>
+            <DocumentTypeSelector documentType={documentType} onDocumentTypeChange={onDocumentTypeChange} />
+          </div>
+        </CardHeader>
     <CardContent>
       <div className="text-center py-8">
         <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
@@ -301,13 +301,17 @@ const DocumentItem = ({ document, onDownload, onViewDetails, isDownloading }: Do
             <p className="font-semibold text-foreground text-sm truncate">
               {document.display_name}
             </p>
-            <Badge className={`text-xs ${getDocumentTypeColor(document.type)}`}>
+            <Badge className={`text-xs ${getDocumentTypeColor(document.type)} hidden sm:inline-flex`}>
               {getDisplayType(document.type)}
             </Badge>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3" />
             <span>{documentDate.date}</span>
+            {/* Show badge on mobile below the date */}
+            <Badge className={`text-xs ${getDocumentTypeColor(document.type)} sm:hidden ml-2`}>
+              {getDisplayType(document.type)}
+            </Badge>
           </div>
         </div>
       </div>
@@ -321,14 +325,14 @@ const DocumentItem = ({ document, onDownload, onViewDetails, isDownloading }: Do
             onDownload(document);
           }}
           disabled={isDownloading}
-          className="h-8 px-3"
+          className="h-8 px-2 sm:px-3"
         >
           {isDownloading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <>
-              <Download className="h-4 w-4 mr-1" />
-              Download
+              <Download className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">Download</span>
             </>
           )}
         </Button>
@@ -513,13 +517,13 @@ export default function DocumentsAndStatements() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Documents and Statements
+              Documents
             </CardTitle>
             <DocumentTypeSelector documentType={documentType} onDocumentTypeChange={setDocumentType} />
           </div>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[300px] pr-4">
+          <ScrollArea className="h-[300px] lg:h-[350px] pr-4">
             <div className="space-y-2">
               {documents.map((document) => (
                 <DocumentItem

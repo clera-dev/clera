@@ -13,6 +13,14 @@ from .create_account import get_broker_client
 
 logger = logging.getLogger("alpaca-watchlist-utils")
 
+# Default watchlist symbols for new accounts
+# These provide a good mix of market exposure for new investors:
+# SPY - S&P 500 ETF (broad market exposure)
+# AGG - Aggregate Bond ETF (fixed income exposure)  
+# DIA - Dow Jones Industrial Average ETF (blue chip exposure)
+# QQQ - NASDAQ-100 ETF (technology exposure)
+DEFAULT_WATCHLIST_SYMBOLS = ["SPY", "AGG", "DIA", "QQQ"]
+
 def get_watchlist_for_account(account_id: str, watchlist_id: str = None, broker_client: BrokerClient = None) -> Optional[Watchlist]:
     """
     Get a specific watchlist or the default watchlist for an account.
@@ -84,12 +92,8 @@ def create_default_watchlist_for_account(account_id: str, broker_client: BrokerC
         if broker_client is None:
             broker_client = get_broker_client()
         
-        # Create default watchlist with starter symbols
-        # These provide a good mix of market exposure for new investors:
-        # SPY - S&P 500 ETF (broad market exposure)
-        # AGG - Aggregate Bond ETF (fixed income exposure)  
-        # DJI - Dow Jones Industrial Average (blue chip exposure)
-        default_symbols = ["SPY", "AGG", "DJI"]
+        # Create default watchlist using module-level default symbols
+        default_symbols = DEFAULT_WATCHLIST_SYMBOLS
         
         watchlist_data = CreateWatchlistRequest(
             name="My Watchlist",
@@ -124,8 +128,8 @@ def get_or_create_default_watchlist(account_id: str, broker_client: BrokerClient
         if broker_client is None:
             broker_client = get_broker_client()
         
-        # Default symbols for new or empty watchlists
-        default_symbols = ["SPY", "AGG", "DJI"]
+        # Use module-level default symbols for new or empty watchlists
+        default_symbols = DEFAULT_WATCHLIST_SYMBOLS
         
         # First try to get existing watchlist
         watchlist = get_watchlist_for_account(account_id, broker_client=broker_client)

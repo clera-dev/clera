@@ -91,12 +91,14 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isRationaleExpanded, setIsRationaleExpanded] = useState(false);
   const [localIsInWatchlist, setLocalIsInWatchlist] = useState(false);
   const [isUpdatingWatchlist, setIsUpdatingWatchlist] = useState(false);
 
   // Use prop isInWatchlist if provided, otherwise use local state
   const currentIsInWatchlist = isInWatchlist !== undefined ? isInWatchlist : localIsInWatchlist;
   const DESCRIPTION_LIMIT = 150;
+  const RATIONALE_LIMIT = 120; // Shorter limit for mobile space optimization
 
   // Load Clera's stock recommendations
   const loadCleraRecommendations = async () => {
@@ -312,23 +314,30 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
 
   const description = profile.description;
   const isDescriptionLong = description && description.length > DESCRIPTION_LIMIT;
+  
+  const rationale = cleraRecommendation?.rationale;
+  const isRationaleLong = rationale && rationale.length > RATIONALE_LIMIT;
 
   const toggleDescription = () => {
       setIsDescriptionExpanded(!isDescriptionExpanded);
   }
 
+  const toggleRationale = () => {
+      setIsRationaleExpanded(!isRationaleExpanded);
+  }
+
   return (
     <div className="w-full bg-background">
-      <div className="flex flex-row items-start justify-between space-y-0 pb-2 px-4 pt-4">
+      <div className="flex flex-row items-start justify-between space-y-0 pb-2 px-2 sm:px-4 pt-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold">{profile.companyName} ({profile.symbol})</h2>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <h2 className="text-lg sm:text-2xl font-bold truncate">{profile.companyName} ({profile.symbol})</h2>
             {accountId && (
               <Button
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  "p-1 h-8 w-8 transition-all duration-200",
+                  "p-1 h-7 w-7 sm:h-8 sm:w-8 transition-all duration-200 flex-shrink-0",
                   currentIsInWatchlist 
                     ? "text-yellow-500 hover:text-yellow-600 scale-110" 
                     : "text-slate-400 hover:text-yellow-500 border border-yellow-500/30"
@@ -338,7 +347,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
               >
                 <Star 
                   className={cn(
-                    "h-5 w-5 transition-all duration-200",
+                    "h-4 w-4 sm:h-5 sm:w-5 transition-all duration-200",
                     currentIsInWatchlist 
                       ? "fill-yellow-500 text-yellow-500" 
                       : "fill-transparent"
@@ -347,80 +356,91 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
               </Button>
             )}
           </div>
-          <p className="text-muted-foreground text-sm">{profile.exchangeShortName} | {profile.sector} | {profile.industry}</p>
+          <p className="text-muted-foreground text-xs sm:text-sm">{profile.exchangeShortName} | {profile.sector} | {profile.industry}</p>
         </div>
         {profile.image && 
-            <img src={profile.image} alt={`${profile.companyName} logo`} className="h-12 w-12 rounded-md object-contain bg-muted p-1 flex-shrink-0" />
+            <img src={profile.image} alt={`${profile.companyName} logo`} className="h-10 w-10 sm:h-12 sm:w-12 rounded-md object-contain bg-muted p-1 flex-shrink-0" />
         }
       </div>
 
       {/* Clera Stock Pick Recommendation Card */}
       {cleraRecommendation && (
-        <div className="px-4 pb-4">
+        <div className="px-2 sm:px-4 pb-3">
           <Card className="clera-glow bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800 rounded-xl">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-blue-600" />
-                <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-bold">
+                <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
+                <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-bold text-sm sm:text-base">
                   Clera's Stock Pick
                 </span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm text-foreground leading-relaxed">
-                {cleraRecommendation.rationale}
+            <CardContent className="pt-0">
+              <p className="text-xs sm:text-sm text-foreground leading-relaxed">
+                {isRationaleLong && !isRationaleExpanded 
+                  ? `${rationale!.substring(0, RATIONALE_LIMIT)}...` 
+                  : rationale
+                }
               </p>
+              {isRationaleLong && (
+                <button 
+                  onClick={toggleRationale} 
+                  className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 mt-2 focus:outline-none focus:ring-0 font-medium"
+                >
+                  {isRationaleExpanded ? "Show Less" : "Show More"}
+                </button>
+              )}
             </CardContent>
           </Card>
         </div>
       )}
 
       {/* Stock Chart Section */}
-      <div className="px-4 pb-4">
+      <div className="px-2 sm:px-4 pb-3">
         <StockChart symbol={profile.symbol} />
       </div>
 
-      <div className="px-4 pb-6 space-y-4">
+      <div className="px-2 sm:px-4 pb-4 space-y-3">
         {/* Price & Market Cap */}
-        <div className="border-b pb-4">
-          <div className="grid grid-cols-2 gap-4 max-w-2xl mx-auto">
+        <div className="border-b pb-3">
+          <div className="grid grid-cols-2 gap-3 w-full">
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">Current Price</p>
-              <p className="text-xl font-semibold">{formatCurrency(profile.price, profile.currency)}</p>
+              <p className="text-xs sm:text-sm text-muted-foreground">Current Price</p>
+              <p className="text-base sm:text-lg font-semibold">{formatCurrency(profile.price, profile.currency)}</p>
             </div>
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">Market Cap</p>
-              <p className="text-xl font-semibold">{formatNumber(profile.mktCap)}</p>
+              <p className="text-xs sm:text-sm text-muted-foreground">Market Cap</p>
+              <p className="text-base sm:text-lg font-semibold">{formatNumber(profile.mktCap)}</p>
             </div>
           </div>
         </div>
 
         {/* Key Stats Grid */}
-        <div className="border-b pb-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 max-w-4xl mx-auto">
+        <div className="border-b pb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-2 gap-y-3 w-full">
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Avg Volume</p>
-              <p className="text-sm font-medium">{formatNumber(profile.volAvg)}</p>
+              <p className="text-xs sm:text-sm font-medium">{formatNumber(profile.volAvg)}</p>
             </div>
             <div className="text-center">
               <p className="text-xs text-muted-foreground">52 Week Range</p>
-              <p className="text-sm font-medium">{profile.range || 'N/A'}</p>
+              <p className="text-xs sm:text-sm font-medium">{profile.range || 'N/A'}</p>
             </div>
              <div className="text-center">
               <p className="text-xs text-muted-foreground">Beta</p>
-              <p className="text-sm font-medium">{profile.beta?.toFixed(2) ?? 'N/A'}</p>
+              <p className="text-xs sm:text-sm font-medium">{profile.beta?.toFixed(2) ?? 'N/A'}</p>
             </div>
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Last Dividend</p>
-              <p className="text-sm font-medium">{formatCurrency(profile.lastDiv, profile.currency)}</p>
+              <p className="text-xs sm:text-sm font-medium">{formatCurrency(profile.lastDiv, profile.currency)}</p>
             </div>
              <div className="text-center">
               <p className="text-xs text-muted-foreground">CEO</p>
-              <p className="text-sm font-medium truncate">{profile.ceo || 'N/A'}</p>
+              <p className="text-xs sm:text-sm font-medium truncate">{profile.ceo || 'N/A'}</p>
             </div>
              <div className="text-center">
               <p className="text-xs text-muted-foreground">Website</p>
-              <a href={profile.website} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline truncate block">
+              <a href={profile.website} target="_blank" rel="noopener noreferrer" className="text-xs sm:text-sm font-medium text-blue-600 hover:underline truncate block">
                 {profile.website?.replace(/^https?:\/\//, '') || 'N/A'}
               </a>
             </div>
@@ -429,10 +449,10 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
 
         {/* Description */}
         {description && (
-          <div className="border-b pb-4">
-            <div className="max-w-4xl mx-auto">
-              <p className="text-sm text-muted-foreground mb-1">Description</p>
-              <p className="text-sm text-foreground leading-relaxed">
+          <div className="border-b pb-3">
+            <div className="w-full">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Description</p>
+              <p className="text-xs sm:text-sm text-foreground leading-relaxed">
                  {isDescriptionLong && !isDescriptionExpanded 
                      ? `${description.substring(0, DESCRIPTION_LIMIT)}...` 
                      : description
@@ -441,7 +461,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
               {isDescriptionLong && (
                   <button 
                      onClick={toggleDescription} 
-                     className="text-sm text-muted-foreground hover:text-primary mt-1 focus:outline-none focus:ring-0 font-medium"
+                     className="text-xs sm:text-sm text-muted-foreground hover:text-primary mt-1 focus:outline-none focus:ring-0 font-medium"
                   >
                      {isDescriptionExpanded ? "Show Less" : "Show More"}
                   </button>
@@ -453,12 +473,12 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
         {/* Price Target Summary */}
         {priceTarget && (Object.keys(priceTarget).length > 0) && (
           <div>
-            <div className="max-w-4xl mx-auto">
-              <p className="text-sm text-muted-foreground mb-2 text-center">Analyst Price Targets</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="w-full">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-2 text-center">Analyst Price Targets</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="bg-muted p-2 rounded-md text-center">
                       <p className="text-xs text-muted-foreground">Last Year Avg</p>
-                      <p className="text-md font-semibold">
+                      <p className="text-xs sm:text-sm font-semibold">
                         {priceTarget.lastYearAvgPriceTarget && priceTarget.lastYearAvgPriceTarget > 0 
                           ? formatCurrency(priceTarget.lastYearAvgPriceTarget, profile.currency)
                           : 'N/A'}
@@ -467,7 +487,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
                   </div>
                    <div className="bg-muted p-2 rounded-md text-center">
                       <p className="text-xs text-muted-foreground">Last Quarter Avg</p>
-                      <p className="text-md font-semibold">
+                      <p className="text-xs sm:text-sm font-semibold">
                         {priceTarget.lastQuarterAvgPriceTarget && priceTarget.lastQuarterAvgPriceTarget > 0
                           ? formatCurrency(priceTarget.lastQuarterAvgPriceTarget, profile.currency)
                           : 'N/A'}
@@ -476,7 +496,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
                   </div>
                    <div className="bg-muted p-2 rounded-md text-center">
                       <p className="text-xs text-muted-foreground">Last Month Avg</p>
-                      <p className="text-md font-semibold">
+                      <p className="text-xs sm:text-sm font-semibold">
                         {priceTarget.lastMonthAvgPriceTarget && priceTarget.lastMonthAvgPriceTarget > 0
                           ? formatCurrency(priceTarget.lastMonthAvgPriceTarget, profile.currency) 
                           : 'N/A'}
@@ -485,7 +505,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
                   </div>
                    <div className="bg-muted p-2 rounded-md text-center">
                       <p className="text-xs text-muted-foreground">All Time Avg</p>
-                      <p className="text-md font-semibold">
+                      <p className="text-xs sm:text-sm font-semibold">
                         {priceTarget.allTimeAvgPriceTarget && priceTarget.allTimeAvgPriceTarget > 0
                           ? formatCurrency(priceTarget.allTimeAvgPriceTarget, profile.currency)
                           : 'N/A'}

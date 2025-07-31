@@ -13,6 +13,7 @@ import {
   getThreadMessages
 } from '@/utils/api/chat-client';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SendIcon, XIcon, RefreshCcw, CheckIcon, BanIcon } from 'lucide-react';
@@ -60,6 +61,9 @@ export default function Chat({
   const [pendingFirstMessage, setPendingFirstMessage] = useState<string | null>(null);
   const [isFirstMessageSent, setIsFirstMessageSent] = useState(false); // New state to prevent duplicates
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  
+  // Mobile detection state
+  const [isMobile, setIsMobile] = useState(false);
   
   // Initialize message retry hook to handle retry orchestration
   const messageRetry = useMessageRetry({
@@ -131,6 +135,17 @@ export default function Chat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentThreadId, initialMessages, chatClient.setMessages, initialSessionId]);
 
+  // Mobile detection effect
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768); // Standard mobile breakpoint
+    };
+    
+    checkMobile(); // Initial check
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // --- Effect to handle submitting the *first* message ---
   useEffect(() => {
@@ -537,13 +552,23 @@ export default function Chat({
       {/* Messages Container - Native scroll like Vercel */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4"
+        className={cn(
+          "flex-1 overflow-y-auto min-h-0",
+          // Spacing between messages and container padding
+          isMobile && isFullscreen 
+            ? "space-y-4 px-3 py-4" // Mobile: compact
+            : isSidebarMode 
+            ? "space-y-4 px-3 py-4" // Sidebar: compact
+            : "space-y-8 px-8 py-6" // Desktop full-screen: generous spacing
+        )}
       >
         {messagesToDisplay.map((msg: Message, index: number) => (
             <ChatMessage 
             key={msg.id || `msg-${index}`}
             message={msg}
             isLast={index === messagesToDisplay.length - 1}
+            isMobileMode={isMobile && isFullscreen} // Only true mobile devices in fullscreen
+            isSidebarMode={isSidebarMode}
           />
         ))}
         
@@ -586,58 +611,93 @@ export default function Chat({
         {errorMessage && (
             <div className="text-red-500 text-sm py-1 px-3">Error: {errorMessage}</div>
         )}
-        <div className="p-2">
+        <div className={cn(
+          isMobile && isFullscreen ? "p-1.5" : "p-2" // Thinner padding for mobile
+        )}>
         <form 
           onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleSendMessage(); }} 
-          className="flex items-end space-x-2"
+          className="relative"
           data-chat-form="true"
         >
-          <Textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
-            placeholder={isInterrupting ? "Confirm or deny above..." : "Ask about your portfolio..."}
-            disabled={isProcessing || isInterrupting}
-              className="flex-1 resize-none min-h-[38px] max-h-[80px]"
-            rows={1}
-            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-              if (e.key === 'Enter' && !e.shiftKey && !isProcessing && !isInterrupting) {
-                e.preventDefault(); 
-                handleSendMessage();
-              }
-            }}
-          />
-          {isProcessing && !chatClient.state.isLoading ? (
-              <Button 
-                type="button" 
-                size="icon" 
-                disabled={true} 
-                title="Creating session..."
-              >
-                  <RefreshCcw size={18} className="animate-spin" /> 
-              </Button>
-          ) : isProcessing ? (
-            <Button 
-              type="button" 
-              variant="destructive" 
-              size="icon" 
-              onClick={() => {
-                // Stop current operation by clearing client state
-                chatClient.clearError();
-              }} 
-              title="Stop generation"
-            >
-              <XIcon size={18} />
-            </Button>
-          ) : (
-            <Button 
-              type="submit" 
-              disabled={!input.trim() || isProcessing || isInterrupting}
-              size="icon"
-            >
-              <SendIcon size={18} />
-            </Button>
-          )}
+          {/* Input container with button inside */}
+          <div className="relative">
+            <Textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+              placeholder={isInterrupting ? "Confirm or deny above..." : "Ask about your portfolio..."}
+              disabled={isProcessing || isInterrupting}
+              className={cn(
+                "resize-none max-h-[120px] w-full",
+                // Height, text size, and padding based on context
+                isMobile && isFullscreen 
+                  ? "min-h-[44px] text-base pr-12 pl-3" // Mobile: thinner input, space for button
+                  : isSidebarMode 
+                  ? "min-h-[48px] text-sm pr-12 pl-3" // Sidebar: compact, space for button
+                  : "min-h-[57px] text-base pr-14 pl-4" // Desktop: standard, more space for button
+              )}
+              rows={isMobile && isFullscreen ? 1 : 2}
+              onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                if (e.key === 'Enter' && !e.shiftKey && !isProcessing && !isInterrupting) {
+                  e.preventDefault(); 
+                  handleSendMessage();
+                }
+              }}
+            />
+            
+            {/* Send button positioned inside input */}
+            <div className={cn(
+              "absolute right-2 flex items-center",
+              // Vertical positioning based on input height
+              isMobile && isFullscreen 
+                ? "top-2" // Mobile: center in thinner input
+                : isSidebarMode 
+                ? "top-2.5" // Sidebar: center in compact input
+                : "top-3" // Desktop: center in standard input
+            )}>
+              {isProcessing && !chatClient.state.isLoading ? (
+                <Button 
+                  type="button" 
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 rounded-full p-0"
+                  disabled={true} 
+                  title="Creating session..."
+                >
+                  <RefreshCcw size={16} className="animate-spin" /> 
+                </Button>
+              ) : isProcessing ? (
+                <Button 
+                  type="button" 
+                  variant="destructive" 
+                  size="sm"
+                  className="h-8 w-8 rounded-full p-0"
+                  onClick={() => {
+                    // Stop current operation by clearing client state
+                    chatClient.clearError();
+                  }} 
+                  title="Stop generation"
+                >
+                  <XIcon size={16} />
+                </Button>
+              ) : (
+                <Button 
+                  type="submit" 
+                  size="sm"
+                  className={cn(
+                    "h-8 w-8 rounded-full p-0 transition-all duration-200",
+                    // Conditional styling based on input state
+                    input.trim() && !isProcessing && !isInterrupting
+                      ? "bg-primary hover:bg-primary/90 text-primary-foreground" // Active state
+                      : "bg-muted hover:bg-muted/80 text-muted-foreground cursor-not-allowed" // Disabled state
+                  )}
+                  disabled={!input.trim() || isProcessing || isInterrupting}
+                >
+                  <SendIcon size={16} />
+                </Button>
+              )}
+            </div>
+          </div>
         </form>
         </div>
       </div>

@@ -545,7 +545,7 @@ export default function PortfolioPage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold">Your Portfolio</h1>
-            <p className="text-muted-foreground mt-1">Track your investments and performance</p>
+            <p className="text-lg text-muted-foreground mt-1">Track your investments and performance</p>
           </div>
           <div className="flex items-center gap-3">
             <Button 
@@ -667,19 +667,7 @@ export default function PortfolioPage() {
           </div>
         </div>
         
-        {/* Portfolio Summary Section - Full Width */}
-        {accountId && (
-          <PortfolioSummaryWithAssist
-            accountId={accountId}
-            portfolioHistory={portfolioHistory}
-            selectedTimeRange={selectedTimeRange}
-            setSelectedTimeRange={setSelectedTimeRange}
-            isLoading={isLoading}
-            disabled={!hasTradeHistory}
-            allTimeReturnAmount={null}
-            allTimeReturnPercent={null}
-          />
-        )}
+
 
         {/* Notification for new users */}
         {!hasTradeHistory && accountId && (
@@ -697,15 +685,31 @@ export default function PortfolioPage() {
           </Alert>
         )}
         
-        {/* Main Content Grid - Two Column Layout on Desktop */}
-        <div style={lockedSectionStyle}>
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            
-            {/* Left Column - Analytics and Allocation (2/3 width on xl screens) */}
-            <div className="xl:col-span-2 space-y-6">
-              
-              {/* Risk & Diversification + Asset Allocation Row */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Main Content Grid - New Optimized Layout */}
+        <div style={lockedSectionStyle} className="space-y-4 sm:space-y-6">
+          
+          {/* Row 1: Portfolio Chart (2/3) + Analytics & Allocation (1/3) */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 xl:grid-cols-3 gap-4 lg:gap-6">
+            {/* Portfolio Chart - 2/3 width on xl screens, 3/5 on lg screens, full width on mobile */}
+            <div className="lg:col-span-3 xl:col-span-2">
+              {accountId && (
+                <PortfolioSummaryWithAssist
+                  accountId={accountId}
+                  portfolioHistory={portfolioHistory}
+                  selectedTimeRange={selectedTimeRange}
+                  setSelectedTimeRange={setSelectedTimeRange}
+                  isLoading={isLoading}
+                  disabled={!hasTradeHistory}
+                  allTimeReturnAmount={null}
+                  allTimeReturnPercent={null}
+                />
+              )}
+            </div>
+
+            {/* Analytics & Allocation - 1/3 width on xl screens, 2/5 on lg, full width on mobile - stacked vertically */}
+            <div className="lg:col-span-2 xl:col-span-1 space-y-3 lg:space-y-4">
+              {/* Portfolio Analytics (Risk & Diversification) - Compact */}
+              <div className="h-fit">
                 {!analytics && isLoading ? (
                   <RiskDiversificationScoresWithAssist
                     accountId={accountId}
@@ -713,9 +717,9 @@ export default function PortfolioPage() {
                     isLoading={true}
                     disabled={!hasTradeHistory}
                     skeletonContent={
-                      <div className="space-y-6">
-                        <Skeleton className="h-20 w-full" />
-                        <Skeleton className="h-20 w-full" />
+                      <div className="space-y-2 lg:space-y-3">
+                        <Skeleton className="h-14 lg:h-16 w-full" />
+                        <Skeleton className="h-14 lg:h-16 w-full" />
                       </div>
                     }
                   />
@@ -733,7 +737,10 @@ export default function PortfolioPage() {
                     error={`Could not load analytics scores. ${error}`}
                   />
                 )}
+              </div>
 
+              {/* Asset Allocation */}
+              <div className="h-fit">
                 {!isLoading && positions.length === 0 && !error ? (
                   <AssetAllocationPieWithAssist
                     positions={positions}
@@ -749,7 +756,7 @@ export default function PortfolioPage() {
                     refreshTimestamp={allocationChartRefreshKey}
                     isLoading={true}
                     disabled={!hasTradeHistory}
-                    skeletonContent={<Skeleton className="h-72 w-full" />}
+                    skeletonContent={<Skeleton className="h-[220px] w-full" />}
                   />
                 ) : positions.length > 0 ? (
                   <AssetAllocationPieWithAssist
@@ -768,71 +775,73 @@ export default function PortfolioPage() {
                   />
                 )}
               </div>
+            </div>
+          </div>
 
-              {/* Holdings and Transactions Tabs */}
-              <Tabs defaultValue="holdings" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
-                  <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
-                  <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
-                </TabsList>
+          {/* Row 2: Investment Growth Projection - Full Width */}
+          <div className="w-full">
+            <InvestmentGrowthWithAssist
+              currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)}
+              isLoading={isLoading && positions.length === 0}
+              disabled={!hasTradeHistory}
+            />
+          </div>
 
-                <TabsContent value="holdings">
-                  {isLoading && positions.length === 0 && !error ? (
-                    <Card className="bg-card shadow-lg mt-4">
-                      <CardContent className="p-0">
-                        <Skeleton className="h-64 w-full rounded-t-none" />
-                      </CardContent>
-                    </Card>
-                  ) : positions.length > 0 ? (
-                    <HoldingsTableWithAssist 
-                      positions={positions} 
-                      isLoading={isLoading}
-                      disabled={!hasTradeHistory}
-                      onInvestClick={handleInvestClick}
-                      onSellClick={handleSellClick}
-                      accountId={accountId}
-                    />
-                  ) : (
-                    <Card className="bg-card shadow-lg mt-4">
-                      <CardContent className="p-0">
-                        <p className="text-muted-foreground p-6 text-center">
-                          Waiting for your first trade to display holdings.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
-                </TabsContent>
+          {/* Row 3: Holdings and Transactions Tabs - Full Width */}
+          <div className="w-full">
+            <Tabs defaultValue="holdings" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
+                <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
+                <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
+              </TabsList>
 
-                <TabsContent value="transactions">
+              <TabsContent value="holdings">
+                {isLoading && positions.length === 0 && !error ? (
                   <Card className="bg-card shadow-lg mt-4">
                     <CardContent className="p-0">
-                      {(isLoading && orders.length === 0 && !error) ? (
-                        <Skeleton className="h-64 w-full rounded-t-none" />
-                      ) : orders.length > 0 ? (
-                        <TransactionsTable
-                          initialOrders={orders}
-                          accountId={accountId}
-                          fetchData={fetchData}
-                        />
-                      ) : (
-                        <p className="text-muted-foreground p-6 text-center">
-                          No pending orders.
-                        </p>
-                      )}
+                      <Skeleton className="h-64 w-full rounded-t-none" />
                     </CardContent>
                   </Card>
-                </TabsContent>
-              </Tabs>
-            </div>
+                ) : positions.length > 0 ? (
+                  <HoldingsTableWithAssist 
+                    positions={positions} 
+                    isLoading={isLoading}
+                    disabled={!hasTradeHistory}
+                    onInvestClick={handleInvestClick}
+                    onSellClick={handleSellClick}
+                    accountId={accountId}
+                  />
+                ) : (
+                  <Card className="bg-card shadow-lg mt-4">
+                    <CardContent className="p-0">
+                      <p className="text-muted-foreground p-6 text-center">
+                        Waiting for your first trade to display holdings.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
 
-            {/* Right Column - Investment Growth (1/3 width on xl screens) */}
-            <div className="xl:col-span-1 space-y-6">
-              <InvestmentGrowthWithAssist
-                currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)}
-                isLoading={isLoading && positions.length === 0}
-                disabled={!hasTradeHistory}
-              />
-            </div>
+              <TabsContent value="transactions">
+                <Card className="bg-card shadow-lg mt-4">
+                  <CardContent className="p-0">
+                    {(isLoading && orders.length === 0 && !error) ? (
+                      <Skeleton className="h-64 w-full rounded-t-none" />
+                    ) : orders.length > 0 ? (
+                      <TransactionsTable
+                        initialOrders={orders}
+                        accountId={accountId}
+                        fetchData={fetchData}
+                      />
+                    ) : (
+                      <p className="text-muted-foreground p-6 text-center">
+                        No pending orders.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
 
@@ -861,6 +870,7 @@ export default function PortfolioPage() {
               borderRadius: '0.5rem',
               fontSize: '14px',
               padding: '12px 16px',
+              zIndex: 9999,
             },
             success: {
               iconTheme: {

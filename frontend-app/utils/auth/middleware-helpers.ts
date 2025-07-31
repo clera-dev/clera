@@ -48,6 +48,9 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/fmp/profile": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/fmp/price-target": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/fmp/chart/health": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  
+  // Image proxy route - public access for financial news images
+  "/api/image-proxy": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {
@@ -58,11 +61,23 @@ export const getRouteConfig = (path: string): RouteConfig | null => {
   }
   
   // For API routes, try prefix matching to handle dynamic segments
+  // Use longest match to ensure most specific route is selected
   if (path.startsWith('/api/')) {
+    let longestMatch: string | null = null;
+    let longestLength = 0;
+    
     for (const configPath of Object.keys(routeConfigs)) {
       if (configPath.startsWith('/api/') && path.startsWith(configPath)) {
-        return routeConfigs[configPath];
+        // Check if this is a longer (more specific) match
+        if (configPath.length > longestLength) {
+          longestMatch = configPath;
+          longestLength = configPath.length;
+        }
       }
+    }
+    
+    if (longestMatch) {
+      return routeConfigs[longestMatch];
     }
   }
   

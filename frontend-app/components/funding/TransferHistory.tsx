@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { TrendingUp } from "lucide-react";
 import { 
   formatTransferStatus, 
-  getTransferStatusIcon, 
-  getTransferStatusColorClasses, 
   formatTransferDate 
 } from "@/lib/utils/transfer-formatting";
+import { 
+  getTransferStatusIcon, 
+  getTransferStatusColorClasses 
+} from "@/components/ui/transfer-ui-utils";
 
 interface TransferHistoryItem {
   id: string;

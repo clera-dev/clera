@@ -80,8 +80,9 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               id="email"
               type="email"
               value={data.email}
-              disabled
-              className={`mt-1 ${errors.email ? "border-red-500" : "border-border/40"} rounded-md h-11 bg-muted/50`}
+              disabled={!!userEmail}
+              onChange={(e) => onUpdate({ email: e.target.value })}
+              className={`mt-1 ${errors.email ? "border-red-500" : "border-border/40"} rounded-md h-11 ${userEmail ? 'bg-muted/50' : ''}`}
               placeholder="you@example.com"
             />
             {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
@@ -93,7 +94,11 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               id="phone"
               defaultCountry="US"
               value={data.phoneNumber}
-              onChange={(value) => onUpdate({ phoneNumber: value as string })}
+              onChange={(value) => {
+                // Convert to E.164 format if not already
+                const phoneValue = value as string;
+                onUpdate({ phoneNumber: phoneValue });
+              }}
               className={`mt-1 ${errors.phoneNumber ? "border-red-500" : "border-border/40"} rounded-md`}
             />
             {errors.phoneNumber && <p className="text-red-500 text-sm mt-1">{errors.phoneNumber}</p>}

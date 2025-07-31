@@ -29,7 +29,17 @@ class AuthenticationService:
     def get_user_id_from_api_key(api_key: str) -> Optional[str]:
         # PRODUCTION: Implement real mapping here. Remove test/dev logic before deploying.
         # raise NotImplementedError("API key to user ID mapping must be implemented for production use.")
-        logger.error("API key to user ID mapping not implemented - this must be implemented for production use.")
+        
+        # DEVELOPMENT: For now, accept any valid API key and let the X-User-ID header provide the user ID
+        # This is a temporary solution for development - replace with proper mapping in production
+        expected_api_key = config("BACKEND_API_KEY", default=None)
+        
+        if api_key == expected_api_key:
+            logger.info("API key validated successfully")
+            # Return a special value that indicates the API key is valid but user ID should come from header
+            return "API_KEY_VALID"
+        
+        logger.error("Invalid API key provided")
         return None
     
     @staticmethod
@@ -110,6 +120,7 @@ def get_authenticated_user_id(
     request: Request,
     api_key: str = Header(None, alias="X-API-Key"),
     auth_token: Optional[str] = Header(None, alias="Authorization"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
 ) -> str:
     """
     Secure dependency that derives user ID from trusted sources only.
@@ -118,6 +129,7 @@ def get_authenticated_user_id(
     1. API key (if implemented)
     2. Authentication token (if implemented)
     3. Session context (if implemented)
+    4. X-User-ID header (when API key is valid but doesn't map to user ID)
     
     It NEVER accepts user ID from query parameters, request body, or other user-supplied sources.
     
@@ -125,6 +137,7 @@ def get_authenticated_user_id(
         request: The FastAPI request object
         api_key: The API key from the request
         auth_token: The authentication token from the request header
+        x_user_id: The user ID from the X-User-ID header (trusted when API key is valid)
         
     Returns:
         The authenticated user ID
@@ -138,8 +151,13 @@ def get_authenticated_user_id(
     if api_key:
         user_id = AuthenticationService.get_user_id_from_api_key(api_key)
         if user_id:
-            logger.info(f"Successfully authenticated user via API key")
-            return user_id
+            # If API key returns "API_KEY_VALID", use the X-User-ID header
+            if user_id == "API_KEY_VALID" and x_user_id:
+                logger.info(f"Successfully authenticated user via API key + X-User-ID header")
+                return x_user_id
+            elif user_id != "API_KEY_VALID":
+                logger.info(f"Successfully authenticated user via API key")
+                return user_id
     
     # Try to get user ID from auth token (trusted source)
     if auth_token:

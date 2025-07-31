@@ -2,66 +2,59 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { 
   authenticateAndConfigureBackend, 
-  handleApiError 
+  convertErrorToResponse 
 } from '@/lib/utils/api-route-helpers';
 import { AccountAuthorizationService } from '@/utils/services/AccountAuthorizationService';
 import { ApiProxyService } from '@/utils/services/ApiProxyService';
 import { ValidationService } from '@/utils/services/ValidationService';
-
-/**
- * Ensures this route is always treated as dynamic, preventing Next.js
- * from throwing errors about `params` usage.
- */
-export const dynamic = 'force-dynamic';
+import { ApiError } from '@/utils/services/errors';
 
 /**
  * API route to get portfolio activities.
- * This route is a proxy to the backend service with proper separation of concerns.
+ * This route follows a clean architecture:
+ * 1. Authentication and Configuration
+ * 2. Input Validation
+ * 3. Authorization
+ * 4. Business Logic (Proxying)
+ * 5. Response Formatting
  */
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
-    // 1. Authenticate user and configure backend
+    // 1. Authenticate and Configure
     const { user, backendConfig } = await authenticateAndConfigureBackend();
 
-    // 2. Validate and extract query parameters
+    // 2. Validate Inputs
     const validationService = ValidationService.getInstance();
-    const paramValidation = validationService.extractQueryParams(request, {
-      accountId: { 
-        required: true,
-        validate: ValidationService.validators.isNotEmpty 
-      },
-      limit: { 
-        transform: ValidationService.transformers.toInteger,
-        validate: ValidationService.validators.isPositiveInteger 
-      }
+    const { isValid, value, error } = validationService.extractQueryParams(request, {
+      accountId: { required: true, validate: ValidationService.validators.isNotEmpty },
+      limit: { transform: ValidationService.transformers.toInteger, validate: ValidationService.validators.isPositiveInteger }
     });
 
-    if (!paramValidation.isValid && paramValidation.error) {
-      return paramValidation.error;
+    if (!isValid && error) {
+      return convertErrorToResponse(error, request.nextUrl.pathname);
     }
+    const { accountId, limit } = value;
 
-    const { accountId, limit } = paramValidation.value;
+    // 3. Authorize
+    await AccountAuthorizationService.getInstance().requireAccountOwnership(user.id, accountId);
 
-    // 3. Verify account ownership
-    const authService = AccountAuthorizationService.getInstance();
-    await authService.requireAccountOwnership(user.id, accountId);
-
-    // 4. Proxy the request
+    // 4. Execute Proxy Logic
     const proxyService = ApiProxyService.getInstance();
-    const backendPath = proxyService.createBackendPath('/api/portfolio/activities', {
-      accountId,
-      limit: limit?.toString()
-    });
-
-    const result = await proxyService.proxyRequest(
+    const backendPath = proxyService.createBackendPath('/api/portfolio/activities', { account_id: accountId, limit });
+    
+    const { data, status } = await proxyService.proxy(
       backendConfig,
       user.id,
       { backendPath }
     );
 
-    return result;
+    // 5. Format and Return Response
+    return NextResponse.json(data, { status });
 
   } catch (error: any) {
-    return handleApiError(error, request.nextUrl.pathname);
+    // Centralized error handling converts ApiError and other errors to a NextResponse
+    return convertErrorToResponse(error, request.nextUrl.pathname);
   }
-} 
+}

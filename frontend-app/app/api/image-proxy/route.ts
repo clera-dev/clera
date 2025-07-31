@@ -4,6 +4,12 @@ import { NextRequest, NextResponse } from 'next/server';
  * Securely validates if a domain matches a wildcard pattern
  * Prevents SSRF attacks by ensuring only proper subdomains are allowed
  * 
+ * SECURITY: This function implements strict wildcard matching that:
+ * - Rejects base domain matches (e.g., "example.com" does NOT match "*.example.com")
+ * - Only allows proper subdomains (e.g., "api.example.com" matches "*.example.com")
+ * - Prevents SSRF attacks by maintaining strict allowlist boundaries
+ * - Ensures wildcard patterns behave as expected for security
+ * 
  * @param domain - The domain to validate (e.g., "api.example.com")
  * @param wildcardPattern - The wildcard pattern (e.g., "*.example.com")
  * @returns true if domain is a valid match, false otherwise
@@ -15,9 +21,10 @@ const isSecureWildcardMatch = (domain: string, wildcardPattern: string): boolean
   
   const baseDomain = wildcardPattern.substring(2); // Remove "*.", so "*.example.com" -> "example.com"
   
-  // Case 1: Exact match with base domain
+  // SECURITY: Wildcard patterns should NOT match the base domain
+  // This prevents SSRF attacks by ensuring only proper subdomains are allowed
   if (domain === baseDomain) {
-    return true;
+    return false;
   }
   
   // Case 2: Proper subdomain match
@@ -62,7 +69,21 @@ if (process.env.NODE_ENV === 'development' && ALLOWED_DOMAINS.length === 0) {
     'g.foolcdn.com',
     '*.alphavantage.co',
     '*.zacks.com',
-    '*.benzinga.com'
+    '*.benzinga.com',
+    // Financial news domains
+    'ml.globenewswire.com',
+    's3.cointelegraph.com',
+    '*.globenewswire.com',
+    '*.cointelegraph.com',
+    '*.reuters.com',
+    '*.bloomberg.com',
+    '*.marketwatch.com',
+    '*.cnbc.com',
+    '*.yahoo.com',
+    '*.investing.com',
+    '*.seekingalpha.com',
+    '*.fool.com',
+    '*.motleyfool.com'
   );
 }
 

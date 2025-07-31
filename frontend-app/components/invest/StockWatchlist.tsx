@@ -29,7 +29,6 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
   // Use the extracted data management hook
   const {
     watchlistData,
-    isLoading,
     isInitialLoading,
     isUpdatingWatchlist,
     hasAttemptedLoad,
@@ -237,7 +236,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto max-h-[300px]">
               <div className="p-2 space-y-1">
                 {watchlistData.map(renderWatchlistItem)}
               </div>

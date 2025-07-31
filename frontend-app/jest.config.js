@@ -6,7 +6,7 @@ module.exports = {
     '**/*.(test|spec).{js,ts,tsx}'
   ],
   transform: {
-    '^.+\\.(js|ts|tsx)$': 'babel-jest',
+    '^.+\\.(js|ts|tsx)$': ['babel-jest', { configFile: './babel.config.jest.js' }],
   },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
@@ -27,4 +27,4 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!(next|@next|react|@react|@testing-library)/)'
   ],
-}; 
+};

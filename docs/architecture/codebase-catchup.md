@@ -85,6 +85,7 @@ Clera uses a **proxy pattern** for all frontend-to-backend communication:
 | `/api/portfolio/history`                       | `/api/portfolio/{account_id}/history`            | Get portfolio value history             |
 | `/api/portfolio/sector-allocation`             | `/api/portfolio/sector-allocation`               | Get sector allocation                   |
 | `/api/assets/[assetId]`                        | `/api/assets/{symbol_or_asset_id}`               | Get asset details                       |
+| `/api/market/quotes/batch`                     | `/api/market/quotes/batch`                       | Get batch quotes (true batching)       |
 | `/api/watchlist/[accountId]`                   | `/api/watchlist/{account_id}`                    | Get user's watchlist                    |
 | `/api/watchlist/[accountId]/add`/`/remove`     | `/api/watchlist/{account_id}/add`/`/remove`      | Add/remove symbol from watchlist        |
 | `/api/account/[accountId]/balance`             | `/get-account-balance/{account_id}`              | Get account balance                     |
@@ -214,6 +215,32 @@ clera/
 
 ---
 
+## Architectural Patterns: Proper Batching Implementation
+
+### Batch API Pattern (Anti-N+1)
+
+**Problem Solved**: The `/api/market/quotes/batch` endpoint exemplifies proper batching architecture:
+
+- **Before**: Frontend made N individual backend requests (N+1 anti-pattern)
+- **After**: Frontend makes 1 backend request, backend makes 1 external API call
+- **Impact**: Reduced latency, eliminated backend overload, proper service boundaries
+
+**Implementation Pattern**:
+```typescript
+// ❌ ANTI-PATTERN: N+1 requests
+symbols.map(symbol => fetch(`/api/quote/${symbol}`))  // N backend calls
+
+// ✅ CORRECT: True batching
+fetch('/api/quotes/batch', { 
+  body: JSON.stringify({ symbols }) 
+})  // 1 backend call
+```
+
+**Key Principles**:
+- Batch endpoints must make single external API calls, not iterate over individual calls
+- Maintain batch contract even when external API fails (return empty, don't fallback to N+1)
+- Document architectural patterns clearly to prevent regression
+
 ## Core Features & Flows
 
 ### 1. User Authentication
@@ -325,6 +352,65 @@ REDIS_HOST=
    cd backend
    python -m portfolio_realtime.run_services
    ```
+
+### Testing
+
+#### Frontend Testing
+The frontend uses Jest with React Testing Library and has a production-grade configuration that separates Jest Babel configuration from Next.js SWC.
+
+**Working Test Commands:**
+```bash
+# Run all tests
+cd frontend-app
+npm test
+
+# Run specific JavaScript test file
+npm test -- --testPathPattern="market-data-service.test.js"
+
+# Run specific test by name
+npm test -- --testPathPattern="market-data-service.test.js" --testNamePattern="should calculate percentage correctly"
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run middleware tests only
+npm run test:middleware
+```
+
+**Production Configuration:**
+- **Jest Config**: `frontend-app/jest.config.js`
+- **Test Setup**: `frontend-app/tests/setup.js`
+- **Jest Babel Config**: `frontend-app/babel.config.jest.js` (Jest-specific, doesn't interfere with Next.js)
+- **Next.js**: Uses SWC for builds (no Babel conflict)
+
+**Key Features:**
+- **Separation of Concerns**: Jest uses Babel, Next.js uses SWC
+- **No Conflicts**: No `.babelrc` file prevents SWC conflicts
+- **Optimal Performance**: SWC provides faster builds than Babel
+- **TypeScript Support**: Full TypeScript/JSX support in tests
+
+**Test Structure:**
+```
+frontend-app/tests/
+├── components/          # Component tests (some have React 18 issues)
+├── api/                # API route tests
+├── hooks/              # Custom hook tests
+├── integration/        # Integration tests
+├── middleware/         # Middleware tests
+├── security/           # Security tests
+├── utils/              # Utility function tests
+├── setup.js           # Jest setup file
+└── run-all-tests.js   # Custom test runner
+```
+
+#### Backend Testing
+```bash
+cd backend
+pytest
+```
 
 ### File Watcher Configuration
 - Uses `.watchfiles.env` to ignore virtual environment changes
@@ -486,6 +572,16 @@ cd frontend-app && npm run dev
 # Run tests
 cd backend && pytest
 cd frontend-app && npm test
+
+# Run specific frontend tests
+cd frontend-app && npm test -- --testPathPattern="market-data-service.test.js"
+cd frontend-app && npm test -- --testPathPattern="market-data-service.test.js" --testNamePattern="should calculate percentage correctly"
+
+# Run tests in watch mode
+cd frontend-app && npm run test:watch
+
+# Run tests with coverage
+cd frontend-app && npm run test:coverage
 
 # Check logs
 copilot svc logs --name api-service --follow

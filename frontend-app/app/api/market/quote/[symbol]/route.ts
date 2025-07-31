@@ -3,8 +3,9 @@ import type { NextRequest } from 'next/server';
 import { 
   authenticateAndConfigureBackend, 
   createBackendHeaders, 
-  handleApiError 
+  convertErrorToResponse 
 } from '@/lib/utils/api-route-helpers';
+import { SecureErrorMapper } from '@/utils/services/errors';
 
 /**
  * Ensures this route is always treated as dynamic, preventing Next.js
@@ -46,21 +47,22 @@ export async function GET(
     }
 
     if (!response.ok) {
-      // Map backend error to client-friendly message
-      let errorMessage = 'Failed to fetch market quote. Please try again later.';
-      if (response.status >= 500) {
-        // Hide backend details for server errors
-        return NextResponse.json({ error: errorMessage }, { status: 502 });
-      } else {
-        // For 4xx, try to pass backend error detail if available
-        const backendError = responseData?.error || responseData?.detail || errorMessage;
-        return NextResponse.json({ error: backendError }, { status: response.status });
-      }
+      // Extract backend error message
+      const backendError = responseData?.error || responseData?.detail || '';
+      
+      // Log the original error for debugging (server-side only)
+      SecureErrorMapper.logError(backendError, response.status, request.nextUrl.pathname);
+      
+      // Map to safe error message using the centralized utility
+      const safeErrorMessage = SecureErrorMapper.mapError(backendError, response.status);
+      
+      // Return safe error message to client
+      return NextResponse.json({ error: safeErrorMessage }, { status: response.status });
     }
 
     return NextResponse.json(responseData, { status: 200 });
 
   } catch (error: any) {
-    return handleApiError(error, request.nextUrl.pathname);
+    return convertErrorToResponse(error, request.nextUrl.pathname);
   }
 } 

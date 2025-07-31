@@ -92,7 +92,8 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
       className="h-full border-l shadow-md bg-background flex flex-col"
       style={{ width: widthValue }}
     >
-      <div className="flex-shrink-0 p-2 border-b flex justify-between items-center">
+      {/* Header with New Chat and History buttons - fixed at top */}
+      <div className="flex-shrink-0 p-3 border-b flex justify-between items-center bg-background">
         <Button
           variant="outline"
           size="sm"
@@ -103,28 +104,17 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
           New Chat
         </Button>
         
-        <div className="flex space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="flex items-center h-8"
-          >
-            <Clock size={14} className="mr-1" />
-            History
-          </Button>
-          
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            className="h-8 w-8 p-0 flex items-center justify-center"
-            aria-label="Close chat"
-          >
-            <X size={16} />
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="flex items-center h-8"
+        >
+          <Clock size={14} className="mr-1" />
+          History
+        </Button>
       </div>
+      
       <div className="flex-1 min-h-0 overflow-hidden relative">
         <Chat
           accountId={accountId}

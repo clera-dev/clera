@@ -210,9 +210,10 @@ export default function StockSearchBar({ onStockSelect, accountId, watchlistSymb
           variant="outline"
           onClick={() => setOpen(true)}
           disabled={isLoading}
-          className="relative w-full justify-between border-slate-300 bg-white text-slate-800 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 h-12 px-4 py-2 shadow-sm rounded-lg"
+          className="relative w-full justify-start border-slate-300 bg-white text-slate-800 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 h-12 px-4 py-2 shadow-sm rounded-lg"
         >
-          <div className="flex items-center">
+          <div className="flex items-center gap-3">
+            <Search className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm">
               {isLoading ? "Loading..." : "Search for stocks..."}
             </span>

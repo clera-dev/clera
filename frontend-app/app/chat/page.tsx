@@ -232,86 +232,99 @@ export default function ChatPage() {
       );
   }
 
-  // Render Chat Page
+  // Render Chat Page - Fixed Layout
   return (
-    <div className="h-[calc(100vh-64px)] flex flex-col relative overflow-hidden">
-      {/* Main Content */}
-      <div className="flex flex-col h-full w-full max-w-screen-2xl mx-auto relative z-20">
-        {/* Header - Fixed at top */}
-        <header className="flex-shrink-0 h-16 flex items-center justify-between bg-background relative z-30 px-4 sm:px-6 lg:px-8 border-b">
-          <div>
-            <h1 className="text-xl lg:text-2xl font-bold">Ask Clera</h1>
-            <p className="text-sm text-muted-foreground hidden sm:block">Your AI financial advisor is ready to help</p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleNewChat}
-              className="flex items-center"
-              disabled={isLoading}
-            >
-              <PlusIcon size={16} className="mr-1" />
-              New Chat
-            </Button>
+    <div className="h-screen flex flex-col overflow-hidden">
+      {/* Fixed Header */}
+      <div className="flex-shrink-0 bg-background border-b">
+        <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold">Ask Clera</h1>
+              <p className="text-lg text-muted-foreground mt-1">Your AI financial advisor is ready to help</p>
+            </div>
             
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="flex items-center"
-            >
-              <Clock size={16} className="mr-1" />
-              History
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleNewChat}
+                className="flex items-center"
+                disabled={isLoading}
+              >
+                <PlusIcon size={16} className="mr-1" />
+                New Chat
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="flex items-center"
+              >
+                <Clock size={16} className="mr-1" />
+                History
+              </Button>
+            </div>
           </div>
-        </header>
-        
-        {/* Chat Container - Takes remaining height */}
-        <div className="flex-1 min-h-0 relative z-20 px-4 sm:px-6 lg:px-8">
-          <Chat 
-            accountId={accountId} 
-            userId={userId}
-            onClose={() => {}} 
-            isFullscreen={true} 
-            sessionId={currentSessionId}
-            initialMessages={initialMessages}
-            onQuerySent={handleQuerySent}
-            isLimitReached={isLimitReached}
-            onSessionCreated={handleSessionCreated}
-            onMessageSent={handleMessageSent}
-          />
         </div>
+      </div>
+      
+      {/* Chat Container - Flexible middle section */}
+      <div className="flex-1 min-h-0 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+        <Chat 
+          accountId={accountId} 
+          userId={userId}
+          onClose={() => {}} 
+          isFullscreen={true} 
+          sessionId={currentSessionId}
+          initialMessages={initialMessages}
+          onQuerySent={handleQuerySent}
+          isLimitReached={isLimitReached}
+          onSessionCreated={handleSessionCreated}
+          onMessageSent={handleMessageSent}
+        />
       </div>
       
       {/* Sidebar overlay - only render when sidebar is open */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/10 z-30"
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30 transition-all duration-300"
           onClick={() => setIsSidebarOpen(false)}
           aria-hidden="true"
         />
       )}
       
-      {/* Floating Sidebar - only render when sidebar is open */}
-      {isSidebarOpen && (
-        <div className="fixed top-16 right-4 w-80 h-[calc(100vh-80px)] bg-background border border-border rounded-lg shadow-xl z-40 overflow-hidden">
-          {accountId && (
-            <ChatSidebar 
-              accountId={accountId}
-              currentSessionId={currentSessionId}
-              onNewChat={handleNewChat}
-              onSelectSession={(sessionId) => {
-                handleSelectSession(sessionId);
-                setIsSidebarOpen(false);
-              }}
-              onClose={() => setIsSidebarOpen(false)}
-              refreshKey={refreshTrigger}
-            />
-          )}
-        </div>
-      )}
+      {/* Chat History Sidebar - slides in from right, ABSOLUTELY flush with screen edge */}
+      <div 
+        className="bg-background border-l border-border shadow-2xl z-40"
+        style={{ 
+          position: 'fixed',
+          top: '0',
+          right: isSidebarOpen ? '0px' : '-384px',
+          bottom: '0',
+          width: '384px',
+          height: '100vh',
+          margin: '0',
+          padding: '0',
+          boxSizing: 'border-box',
+          transition: 'right 300ms ease-in-out'
+        }}
+      >
+        {accountId && (
+          <ChatSidebar 
+            accountId={accountId}
+            currentSessionId={currentSessionId}
+            onNewChat={handleNewChat}
+            onSelectSession={(sessionId) => {
+              handleSelectSession(sessionId);
+              setIsSidebarOpen(false);
+            }}
+            onClose={() => setIsSidebarOpen(false)}
+            refreshKey={refreshTrigger}
+          />
+        )}
+      </div>
     </div>
   );
 } 

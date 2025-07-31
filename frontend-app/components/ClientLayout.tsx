@@ -11,6 +11,9 @@ import { CleraAssistProvider } from "@/components/ui/clera-assist-provider";
 import { Button } from "@/components/ui/button";
 import { Menu, ChevronLeft } from "lucide-react";
 import { useAccountClosure } from "@/hooks/useAccountClosure";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
+import MobileBottomNav from "@/components/mobile/MobileBottomNav";
+import MobileChatModal from "@/components/mobile/MobileChatModal";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -35,12 +38,16 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSideChatOpen, setIsSideChatOpen] = useState(false);
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [hasCompletedFunding, setHasCompletedFunding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Responsive breakpoint detection
+  const { isMobile, isDesktop } = useBreakpoint();
 
   // Get account closure state from backend (authoritative source)
   const { closureData, loading: closureLoading } = useAccountClosure();
@@ -109,7 +116,12 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     if (!sideChatEnabledPaths.includes(pathname || '')) {
       setIsSideChatOpen(false);
     }
-  }, [pathname]);
+    
+    // Close mobile chat when navigating to any page (except /chat)
+    if (pathname !== '/chat' && isMobileChatOpen) {
+      setIsMobileChatOpen(false);
+    }
+  }, [pathname, isMobileChatOpen]);
 
   // Close mobile sidebar when screen becomes desktop size
   useEffect(() => {
@@ -270,6 +282,27 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     }
   };
 
+  // Mobile chat handlers
+  const handleMobileChatOpen = () => {
+    // If we're already on the chat page, do nothing (stay on page)
+    if (pathname === '/chat') {
+      return;
+    } else {
+      // If we're on another page, open modal overlay
+      setIsMobileChatOpen(true);
+    }
+  };
+  const handleMobileChatClose = () => setIsMobileChatOpen(false);
+  
+  // Unified chat handler for Clera Assist - chooses mobile or side chat based on device
+  const handleCleraAssistChat = () => {
+    if (isMobile) {
+      handleMobileChatOpen();
+    } else if (canShowSideChat) {
+      toggleSideChat();
+    }
+  };
+
   return (
     <SidebarContext.Provider value={{ autoCollapseSidebar }}>
       <ThemeProvider
@@ -280,12 +313,12 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         disableTransitionOnChange
       >
         <CleraAssistProvider
-          onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
-          sideChatVisible={isSideChatOpen}
+          onToggleSideChat={canShowSideChat ? handleCleraAssistChat : undefined}
+          sideChatVisible={isMobile ? isMobileChatOpen : isSideChatOpen}
         >
         <div className="flex h-screen relative">
-          {/* Mobile hamburger button - OUTSIDE sidebar container so it's always visible */}
-          {shouldShowSidebar && !isMobileSidebarOpen && (
+          {/* Tablet hamburger button - only for tablet, not mobile */}
+          {shouldShowSidebar && !isMobileSidebarOpen && !isMobile && (
             <div className="lg:hidden fixed left-4 top-4 z-40 pointer-events-auto">
               <Button 
                 variant="ghost" 
@@ -298,8 +331,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             </div>
           )}
           
-          {/* Mobile sidebar overlay/backdrop */}
-          {shouldShowSidebar && isMobileSidebarOpen && (
+          {/* Tablet sidebar overlay/backdrop */}
+          {shouldShowSidebar && isMobileSidebarOpen && !isMobile && (
             <div 
               className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 lg:hidden"
               onClick={() => setIsMobileSidebarOpen(false)}
@@ -312,9 +345,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             <div className={`h-full transition-all duration-300 ease-in-out invisible hidden lg:block ${isSidebarCollapsed ? 'w-20' : 'w-64'}`} />
         )}
         
-        {/* Main content area - adjusted to account for sidebar width */}
+        {/* Main content area - adjusted to account for sidebar width and mobile nav */}
         <main className={`flex-1 overflow-hidden relative ${shouldShowSidebar ? 'ml-0' : ''}`}>
-          <div className="h-full overflow-auto">
+          <div className={`h-full overflow-auto ${isMobile && shouldShowSidebar ? 'pb-20' : ''}`}>
             {canShowSideChat ? (
               <SideBySideLayout 
                 isChatOpen={isSideChatOpen} 
@@ -362,6 +395,21 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           </div>
         )}
         </div>
+
+        {/* Mobile Navigation System - iOS-style bottom tab bar + full-screen chat */}
+        {isMobile && shouldShowSidebar && (
+          <>
+            <MobileBottomNav
+              onChatOpen={handleMobileChatOpen}
+              isChatOpen={isMobileChatOpen}
+            />
+            
+            <MobileChatModal
+              isOpen={isMobileChatOpen && pathname !== '/chat'}
+              onClose={handleMobileChatClose}
+            />
+          </>
+        )}
       </CleraAssistProvider>
     </ThemeProvider>
     </SidebarContext.Provider>

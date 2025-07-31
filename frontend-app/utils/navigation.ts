@@ -39,8 +39,14 @@ function isValidRedirectUrl(url: string): boolean {
     return false;
   }
   
-  // Prevent URL encoding attacks
-  if (url.includes('%') || url.includes('\\')) {
+  // Prevent backslash attacks (directory traversal)
+  if (url.includes('\\')) {
+    return false;
+  }
+  
+  // Allow legitimate URL encoding but prevent double-encoding attacks
+  // Check for suspicious patterns like %2e%2e (encoded ..) or %2f%2f (encoded //)
+  if (url.includes('%2e%2e') || url.includes('%2f%2f') || url.includes('%5c')) {
     return false;
   }
   

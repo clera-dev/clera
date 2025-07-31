@@ -29,6 +29,8 @@ const nextConfig = {
       // Most API calls should go through Next.js API routes for security
     ];
   },
+
+
 };
 
 export default nextConfig;

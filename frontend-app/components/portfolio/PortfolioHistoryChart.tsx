@@ -230,7 +230,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
         <ResponsiveContainer>
           <AreaChart 
             data={chartData} 
-            margin={{ top: 10, right: 30, left: 5, bottom: 20 }}
+            margin={{ top: 10, right: 5, left: 5, bottom: 20 }}
           >
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -258,7 +258,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
               axisLine={false}
               tickFormatter={formatYAxis}
               domain={yAxisDomain}
-              width={60}
+              width={50}
             />
             <Tooltip 
               content={<CustomTooltip />} 
@@ -291,15 +291,15 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
         </ResponsiveContainer>
       </div>
       
-      {/* Time Range Buttons */}
-      <div className="flex justify-center space-x-2 mt-6">
+      {/* Time Range Buttons - Fixed positioning to prevent z-index issues */}
+      <div className="flex justify-center space-x-2 mt-6 relative z-0">
         {timeRanges.map((range) => (
           <Button
             key={range}
             variant={timeRange === range ? 'default' : 'outline'}
             size="sm"
             onClick={() => handleTimeRangeChange(range)}
-            className={`text-xs rounded-full min-w-[60px] px-4 py-2 ${
+            className={`text-xs rounded-full min-w-[60px] px-4 py-2 relative z-0 ${
               timeRange === range 
                 ? 'bg-primary text-primary-foreground' 
                 : 'bg-transparent text-muted-foreground hover:text-foreground'

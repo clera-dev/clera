@@ -9,10 +9,13 @@ import HeaderController from "@/components/HeaderController";
 import ConditionalLogoLink from "@/components/ConditionalLogoLink";
 import ClientAuthButtons from "@/components/ClientAuthButtons";
 import FooterComponent from "@/components/FooterComponent";
+import MainContent from "@/components/MainContent";
 import { PostHogProvider } from "@/components/PostHogProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
+
+
 
 const defaultUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -50,9 +53,9 @@ export default function RootLayout({
               </HeaderController>
 
               {/* --- Page content ---------------------------------------------- */}
-              <main className="flex-1 w-full flex flex-col pt-10 sm:pt-16">
+              <MainContent>
                 {children}
-              </main>
+              </MainContent>
 
               {/* --- Footer ---------------------------------------------------- */}
               {/* The FooterComponent already has its own logic for when to display */}

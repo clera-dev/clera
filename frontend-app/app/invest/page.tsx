@@ -8,14 +8,14 @@ import StockWatchlist from '@/components/invest/StockWatchlist';
 import StockPicksCard from '@/components/invest/StockPicksCard';
 import InvestmentIdeasCard from '@/components/invest/InvestmentIdeasCard';
 import ResearchSourcesCard from '@/components/invest/ResearchSourcesCard';
-import { Card, CardContent } from '@/components/ui/card';
+
 import { Button } from '@/components/ui/button';
 import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
 import { useSidebarCollapse } from "@/components/ClientLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Search, AlertCircle, X } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -333,6 +333,14 @@ export default function InvestPage() {
   return (
     <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="py-4 space-y-6 bg-background text-foreground w-full h-full">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold">Discover Your Investment Opportunities</h1>
+            <p className="text-lg text-muted-foreground mt-1">Find and research stocks to build your portfolio</p>
+          </div>
+        </div>
+        
         <Toaster 
           position="bottom-center"
           toastOptions={{
@@ -344,6 +352,7 @@ export default function InvestPage() {
               borderRadius: '0.5rem',
               fontSize: '14px',
               padding: '12px 16px',
+              zIndex: 9999,
             },
             success: {
               iconTheme: {
@@ -365,31 +374,15 @@ export default function InvestPage() {
             },
           }}
         />
-
-        {/* Header Section */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-bold">Discover Your Investment Opportunities</h1>
-            <p className="text-muted-foreground mt-1">Find and research stocks to build your portfolio</p>
-          </div>
-        </div>
         
         {/* Search Bar Section */}
-        <Card className="bg-gradient-to-r from-slate-900 to-slate-800 border-slate-700 shadow-lg">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Search className="text-primary h-5 w-5" />
-              <h2 className="text-xl font-semibold text-white">Find Investment Opportunities</h2>
-            </div>
-            <StockSearchBar 
-              onStockSelect={handleStockSelect} 
-              accountId={accountId}
-              watchlistSymbols={watchlistSymbols}
-              onWatchlistChange={refreshWatchlist}
-              onOptimisticAdd={optimisticAddToWatchlist}
-            />
-          </CardContent>
-        </Card>
+        <StockSearchBar 
+          onStockSelect={handleStockSelect} 
+          accountId={accountId}
+          watchlistSymbols={watchlistSymbols}
+          onWatchlistChange={refreshWatchlist}
+          onOptimisticAdd={optimisticAddToWatchlist}
+        />
         
         {/* Balance Error Alert */}
         {!isLoadingBalance && balanceError && !isLoadingAccountId && (
@@ -481,14 +474,14 @@ export default function InvestPage() {
 
         {/* Stock Information Dialog */}
         <Dialog open={!!selectedSymbol} onOpenChange={(open) => !open && setSelectedSymbol(null)}>
-          <DialogContent className="sm:max-w-[85vw] lg:max-w-[70vw] xl:max-w-[60vw] p-0 max-h-[90vh] overflow-auto border-0 shadow-xl rounded-lg left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-[50]">
+          <DialogContent className="w-[100vw] h-[100vh] sm:w-[95vw] sm:h-[95vh] lg:max-w-[70vw] xl:max-w-[60vw] p-0 sm:max-h-[90vh] overflow-hidden border-0 shadow-xl sm:rounded-lg left-0 top-0 sm:left-1/2 sm:top-1/2 translate-x-0 translate-y-0 sm:-translate-x-1/2 sm:-translate-y-1/2 z-[50] flex flex-col">
             <DialogHeader className="bg-slate-950 p-4 flex flex-row items-center justify-between sticky top-0 z-10 border-b border-slate-800">
               <DialogTitle className="text-white text-xl font-semibold">{selectedSymbol}</DialogTitle>
               <DialogClose className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded-full p-1">
                 <X className="h-5 w-5" />
               </DialogClose>
             </DialogHeader>
-            <div className="p-0">
+            <div className="flex-1 overflow-y-auto min-h-0">
               {selectedSymbol && (
                 <StockInfoCard 
                   symbol={selectedSymbol} 
