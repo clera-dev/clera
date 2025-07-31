@@ -27,17 +27,20 @@ class AuthenticationService:
     
     @staticmethod
     def get_user_id_from_api_key(api_key: str) -> Optional[str]:
-        # PRODUCTION: Implement real mapping here. Remove test/dev logic before deploying.
-        # raise NotImplementedError("API key to user ID mapping must be implemented for production use.")
+        """
+        SECURITY: API keys are for service-to-service authentication only.
+        They should NOT be used for user identity - use JWT tokens instead.
         
-        # DEVELOPMENT: For now, accept any valid API key and let the X-User-ID header provide the user ID
-        # This is a temporary solution for development - replace with proper mapping in production
+        In a production system, API keys could map to specific service accounts,
+        but user identity must come from signed JWT tokens to prevent account takeover.
+        """
         expected_api_key = config("BACKEND_API_KEY", default=None)
         
         if api_key == expected_api_key:
             logger.info("API key validated successfully")
-            # Return a special value that indicates the API key is valid but user ID should come from header
-            return "API_KEY_VALID"
+            # API key is valid but provides no user identity information
+            # User identity MUST come from JWT tokens for security
+            return None
         
         logger.error("Invalid API key provided")
         return None
@@ -120,46 +123,48 @@ def get_authenticated_user_id(
     request: Request,
     api_key: str = Header(None, alias="X-API-Key"),
     auth_token: Optional[str] = Header(None, alias="Authorization"),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
 ) -> str:
     """
-    Secure dependency that derives user ID from trusted sources only.
+    Secure dependency that derives user ID from JWT tokens only.
     
-    This function attempts to get the user ID from multiple trusted sources:
-    1. API key (if implemented)
-    2. Authentication token (if implemented)
-    3. Session context (if implemented)
-    4. X-User-ID header (when API key is valid but doesn't map to user ID)
+    SECURITY: This function ONLY accepts user identity from cryptographically
+    signed JWT tokens to prevent account takeover attacks. Client-supplied
+    headers like X-User-ID are NEVER trusted for user identity.
     
-    It NEVER accepts user ID from query parameters, request body, or other user-supplied sources.
+    Authentication flow:
+    1. Validate API key for service access
+    2. Extract and validate JWT token for user identity 
+    3. Return user ID from validated JWT claims
     
     Args:
         request: The FastAPI request object
-        api_key: The API key from the request
-        auth_token: The authentication token from the request header
-        x_user_id: The user ID from the X-User-ID header (trusted when API key is valid)
+        api_key: The API key for service authentication
+        auth_token: The JWT token for user authentication
         
     Returns:
-        The authenticated user ID
+        The authenticated user ID from JWT claims
         
     Raises:
-        HTTPException: If no valid user ID can be derived from trusted sources
+        HTTPException: If authentication fails or no valid JWT provided
     """
-    user_id = None
+    # First validate API key for service access
+    if not api_key:
+        logger.warning("Authentication failed - no API key provided")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required - API key missing"
+        )
     
-    # Try to get user ID from API key (trusted source)
-    if api_key:
-        user_id = AuthenticationService.get_user_id_from_api_key(api_key)
-        if user_id:
-            # If API key returns "API_KEY_VALID", use the X-User-ID header
-            if user_id == "API_KEY_VALID" and x_user_id:
-                logger.info(f"Successfully authenticated user via API key + X-User-ID header")
-                return x_user_id
-            elif user_id != "API_KEY_VALID":
-                logger.info(f"Successfully authenticated user via API key")
-                return user_id
+    # Validate the API key
+    expected_api_key = config("BACKEND_API_KEY", default=None)
+    if not expected_api_key or api_key != expected_api_key:
+        logger.warning("Authentication failed - invalid API key")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required - invalid API key"
+        )
     
-    # Try to get user ID from auth token (trusted source)
+    # Now extract user identity from JWT token (the ONLY trusted source)
     if auth_token:
         # Remove "Bearer " prefix if present
         if auth_token.startswith("Bearer "):
@@ -167,20 +172,20 @@ def get_authenticated_user_id(
         
         user_id = AuthenticationService.get_user_id_from_auth_token(auth_token)
         if user_id:
-            logger.info(f"Successfully authenticated user via auth token")
+            logger.info(f"Successfully authenticated user via JWT token")
             return user_id
     
-    # Try to get user ID from session (trusted source)
+    # Try session as fallback (if implemented)
     user_id = AuthenticationService.get_user_id_from_session(request)
     if user_id:
         logger.info(f"Successfully authenticated user via session")
         return user_id
     
     # If no trusted source provided a valid user ID, authentication fails
-    logger.warning("Authentication failed - no valid user ID could be derived from trusted sources")
+    logger.warning("Authentication failed - no valid JWT token provided")
     raise HTTPException(
         status_code=401,
-        detail="Authentication required - no valid credentials provided"
+        detail="Authentication required - valid JWT token required"
     )
 
 

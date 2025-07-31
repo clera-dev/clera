@@ -132,11 +132,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
     }
     
     try {
-      const response = await fetch(`/api/watchlist/${accountId}/check/${symbol}`, {
-        headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || ''
-        }
-      });
+      const response = await fetch(`/api/watchlist/${accountId}/check/${symbol}`);
       
       if (response.ok) {
         const result = await response.json();
@@ -219,6 +215,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
       setProfile(null);
       setPriceTarget(null);
       setIsDescriptionExpanded(false);
+      setIsRationaleExpanded(false);
       
       try {
         // Load Clera recommendations first

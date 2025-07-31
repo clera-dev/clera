@@ -62,12 +62,16 @@ export function useMarketDataCache(): MarketDataCacheControls {
  * @returns Function to trigger refresh and current refresh state
  */
 export function useMarketDataRefresh(symbols: string[]) {
-  const { clearCache } = useMarketDataCache();
+  const { invalidateSymbol } = useMarketDataCache();
   
   const forceRefresh = useCallback(() => {
-    console.log(`[MarketDataRefresh] Force refreshing ${symbols.length} symbols`);
-    clearCache();
-  }, [clearCache, symbols]);
+    console.log(`[MarketDataRefresh] Force refreshing ${symbols.length} symbols: ${symbols.join(', ')}`);
+    
+    // Selectively invalidate only the specified symbols
+    symbols.forEach(symbol => {
+      invalidateSymbol(symbol);
+    });
+  }, [invalidateSymbol, symbols]);
 
   return {
     forceRefresh,

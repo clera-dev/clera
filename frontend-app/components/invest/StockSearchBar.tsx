@@ -90,11 +90,7 @@ export default function StockSearchBar({ onStockSelect, accountId, watchlistSymb
       }
       
       try {
-        const response = await fetch(`/api/watchlist/${accountId}`, {
-          headers: {
-            'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || ''
-          }
-        });
+        const response = await fetch(`/api/watchlist/${accountId}`);
         
         if (response.ok) {
           const result = await response.json();

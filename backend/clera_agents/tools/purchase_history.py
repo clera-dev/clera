@@ -112,7 +112,7 @@ class ActivityRecord:
             
         except Exception as e:
             logger.error(f"[Purchase History] Failed to parse activity: {e}")
-            raise ValueError(f"Could not parse activity: {e}")
+            raise ValueError("Could not parse activity data")
     
     @staticmethod
     def _create_description(activity_type: str, symbol: Optional[str], side: Optional[str], 
@@ -187,7 +187,8 @@ def get_account_activities(
                 record = ActivityRecord.from_alpaca_activity(activity)
                 activity_records.append(record)
             except Exception as e:
-                logger.warning(f"[Purchase History] Failed to parse activity {getattr(activity, 'id', 'unknown')}: {e}")
+                activity_id = getattr(activity, 'id', 'unknown')
+                logger.warning(f"[Purchase History] Failed to parse activity {activity_id}: {e}")
                 continue
         
         # Sort by transaction time (most recent first)
@@ -289,7 +290,7 @@ async def fetch_account_activities_data_async(account_id: str, days_back: int = 
     start_date = end_date - timedelta(days=days_back)
     
     # Run the I/O-heavy operations in a thread pool to prevent blocking
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     
     # Execute the synchronous I/O operations in a thread pool
     all_activities = await loop.run_in_executor(
@@ -449,13 +450,13 @@ def get_comprehensive_account_activities(days_back: int = 60, config: RunnableCo
         return report
     except ValueError as e:
         logger.error(f"[Portfolio Agent] Account identification error: {e}")
-        return f"""📈 **Account Activities Report**
+        return """📈 **Account Activities Report**
 
 🚫 **Authentication Error**
 
 Could not securely identify your account for this activities report. This is a security protection to prevent unauthorized access.
 
-**Error Details:** {str(e)}
+**Error Details:** _redacted for security_
 
 💡 **Next Steps:**
 • Please log out and log back in
@@ -493,13 +494,13 @@ async def get_comprehensive_account_activities_async(days_back: int = 60, config
         return report
     except ValueError as e:
         logger.error(f"[Portfolio Agent] Account identification error: {e}")
-        return f"""📈 **Account Activities Report**
+        return """📈 **Account Activities Report**
 
 🚫 **Authentication Error**
 
 Could not securely identify your account for this activities report. This is a security protection to prevent unauthorized access.
 
-**Error Details:** {str(e)}
+**Error Details:** _redacted for security_
 
 💡 **Next Steps:**
 • Please log out and log back in

@@ -547,10 +547,11 @@ export default function PortfolioPage() {
             <h1 className="text-2xl lg:text-3xl font-bold">Your Portfolio</h1>
             <p className="text-lg text-muted-foreground mt-1">Track your investments and performance</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Button 
               variant="outline" 
-              size="sm" 
+              size="sm"
+              className="h-8 px-3 text-sm sm:h-9 sm:px-4"
               disabled={isLoading}
               onClick={() => {
                 if (accountId) {
@@ -660,7 +661,7 @@ export default function PortfolioPage() {
                 }
               }}
             >
-              <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
               {isLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
             <AddFundsButton accountId={accountId} />

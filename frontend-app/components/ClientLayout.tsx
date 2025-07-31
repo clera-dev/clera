@@ -39,6 +39,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSideChatOpen, setIsSideChatOpen] = useState(false);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [currentMobilePage, setCurrentMobilePage] = useState<string>('');
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -48,6 +49,13 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
   // Responsive breakpoint detection
   const { isMobile, isDesktop } = useBreakpoint();
+
+  // Initialize and track current mobile page
+  useEffect(() => {
+    if (pathname) {
+      setCurrentMobilePage(pathname);
+    }
+  }, [pathname]);
 
   // Get account closure state from backend (authoritative source)
   const { closureData, loading: closureLoading } = useAccountClosure();
@@ -117,11 +125,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       setIsSideChatOpen(false);
     }
     
-    // Close mobile chat when navigating to any page (except /chat)
-    if (pathname !== '/chat' && isMobileChatOpen) {
-      setIsMobileChatOpen(false);
-    }
-  }, [pathname, isMobileChatOpen]);
+    // Note: Mobile chat should NOT auto-close on navigation
+    // Users should manually close it when they're done
+  }, [pathname]);
 
   // Close mobile sidebar when screen becomes desktop size
   useEffect(() => {
@@ -243,9 +249,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   // Hide sidebar for any account closure activity (in progress or completed)
   const hasAccountClosureActivity = Boolean(closureData && !closureLoading);
   
-  // CRITICAL FIX: Wait for both auth/onboarding AND closure data to load
-  // This prevents race conditions where sidebar shows/hides incorrectly
-  const isDataLoading = isLoading || closureLoading;
+  // CRITICAL FIX: Wait for auth/onboarding to load, but don't let closure check block forever
+  // If closure check takes too long, we'll show the sidebar anyway (better UX)
+  const isDataLoading = isLoading;
   
   const shouldShowSidebar = 
     isClient && 
@@ -257,6 +263,18 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     !isFundingPage &&
     !hasAccountClosureActivity && // CRITICAL: No sidebar for any account closure activity
     hasCompletedFunding; // Must be funded to see sidebar
+
+  // Mobile navigation should be more persistent - show during loading for better UX
+  const shouldShowMobileNav = 
+    isClient && 
+    isAuthenticated && 
+    pathname !== null && 
+    !nonSidebarPaths.includes(pathname) && 
+    !isOnboardingPage &&
+    !isFundingPage &&
+    !hasAccountClosureActivity; // Account closure is the only state that hides mobile nav
+
+
 
   // Check if current path supports side chat
   const canShowSideChat = sideChatEnabledPaths.includes(pathname || '');
@@ -284,15 +302,43 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
   // Mobile chat handlers
   const handleMobileChatOpen = () => {
-    // If we're already on the chat page, do nothing (stay on page)
-    if (pathname === '/chat') {
-      return;
+    // Always open mobile chat modal on mobile devices
+    setIsMobileChatOpen(true);
+  };
+
+  const handleMobileChatClose = () => {
+    setIsMobileChatOpen(false);
+  };
+
+  const handleMobileChatToggle = () => {
+    if (isMobileChatOpen) {
+      // If chat is open, close it and stay on current page
+      handleMobileChatClose();
     } else {
-      // If we're on another page, open modal overlay
-      setIsMobileChatOpen(true);
+      // If chat is closed, open it
+      handleMobileChatOpen();
     }
   };
-  const handleMobileChatClose = () => setIsMobileChatOpen(false);
+
+  // Unified mobile navigation handler
+  const handleMobileNavigation = (targetPath: string) => {
+    if (isMobileChatOpen) {
+      // If chat is open, close it first then navigate
+      setIsMobileChatOpen(false);
+      
+      // Update page state immediately for visual feedback
+      setCurrentMobilePage(targetPath);
+      
+      // Small delay to allow chat to slide down before navigation
+      setTimeout(() => {
+        window.location.href = targetPath;
+      }, 250); // Slightly less than the 300ms animation for smooth transition
+    } else {
+      // If chat is closed, navigate directly
+      setCurrentMobilePage(targetPath);
+      window.location.href = targetPath;
+    }
+  };
   
   // Unified chat handler for Clera Assist - chooses mobile or side chat based on device
   const handleCleraAssistChat = () => {
@@ -347,7 +393,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         
         {/* Main content area - adjusted to account for sidebar width and mobile nav */}
         <main className={`flex-1 overflow-hidden relative ${shouldShowSidebar ? 'ml-0' : ''}`}>
-          <div className={`h-full overflow-auto ${isMobile && shouldShowSidebar ? 'pb-20' : ''}`}>
+          <div className={`h-full overflow-auto ${isMobile && shouldShowMobileNav ? 'pb-20' : ''}`}>
             {canShowSideChat ? (
               <SideBySideLayout 
                 isChatOpen={isSideChatOpen} 
@@ -397,19 +443,22 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         </div>
 
         {/* Mobile Navigation System - iOS-style bottom tab bar + full-screen chat */}
-        {isMobile && shouldShowSidebar && (
+        {isMobile && shouldShowMobileNav && (
           <>
             <MobileBottomNav
-              onChatOpen={handleMobileChatOpen}
+              onChatToggle={handleMobileChatToggle}
+              onNavigate={handleMobileNavigation}
+              currentPage={currentMobilePage}
               isChatOpen={isMobileChatOpen}
             />
             
             <MobileChatModal
-              isOpen={isMobileChatOpen && pathname !== '/chat'}
+              isOpen={isMobileChatOpen}
               onClose={handleMobileChatClose}
             />
           </>
         )}
+
       </CleraAssistProvider>
     </ThemeProvider>
     </SidebarContext.Provider>

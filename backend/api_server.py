@@ -2175,21 +2175,19 @@ async def get_portfolio_activities(
     account_id: str = Query(..., description="Alpaca account ID"),
     limit: Optional[int] = 100,
     days_back: Optional[int] = 60,
-    api_key: str = Depends(verify_api_key),
-    x_user_id: str = Header(..., alias="X-User-ID"),
     user_id: str = Depends(verify_account_ownership)
 ):
     """
     Get comprehensive account activities including trading history, statistics, and first purchase dates.
     """
     try:
-        logger.info(f"Activities endpoint requested for account {account_id} by user {x_user_id}")
+        logger.info(f"Activities endpoint requested for account {account_id} by user {user_id}")
         
         # Create a config object with both account_id and user_id for the purchase history function
         config = {
             "configurable": {
                 "account_id": account_id,
-                "user_id": x_user_id
+                "user_id": user_id
             }
         }
         
@@ -2200,7 +2198,7 @@ async def get_portfolio_activities(
         
         return {
             "account_id": account_id,
-            "user_id": x_user_id,
+            "user_id": user_id,
             "days_back": days_back,
             "limit": limit,
             "report": activities_report,
@@ -2926,7 +2924,6 @@ async def check_symbol_in_watchlist(
 async def get_account_pii(
     account_id: str, 
     broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key),
     user_id: str = Depends(verify_account_ownership)
 ):
     """Get all personally identifiable information for an account."""
@@ -2949,7 +2946,6 @@ async def update_account_pii(
     account_id: str, 
     request: Request, 
     broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key),
     user_id: str = Depends(verify_account_ownership)
 ):
     """Update personally identifiable information for an account."""
@@ -2976,7 +2972,6 @@ async def update_account_pii(
 async def get_updateable_pii_fields(
     account_id: str, 
     broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key),
     user_id: str = Depends(verify_account_ownership)
 ):
     """Get the list of PII fields that can be updated for this account."""

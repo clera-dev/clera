@@ -113,16 +113,62 @@ Clera uses a **proxy pattern** for all frontend-to-backend communication:
 
 ### Authentication & Authorization Flow
 - **Frontend API routes** use Supabase Auth to verify the user and check account ownership before proxying.
-- **Backend endpoints** require an API key (passed from the Next.js API route, never exposed to the browser).
+- **Backend endpoints** require BOTH:
+  - **API key** for service authentication (never exposed to browser)
+  - **JWT token** for user authentication (cryptographically signed by Supabase)
 - **WebSocket connections** are proxied through a Next.js API route for auth, then connect to the backend's WebSocket service.
+
+#### **CRITICAL SECURITY REQUIREMENT**: All Frontend → Backend Communication
+
+**ALL frontend API routes MUST send both headers when calling backend endpoints:**
+
+```typescript
+// ✅ REQUIRED: Secure authentication pattern
+headers: {
+  'Content-Type': 'application/json',
+  'X-API-KEY': process.env.BACKEND_API_KEY,        // Service authentication
+  'Authorization': `Bearer ${user.access_token}`,  // User authentication (JWT)
+}
+```
+
+**❌ FORBIDDEN: Never use client-supplied user identifiers:**
+```typescript
+// ❌ SECURITY VULNERABILITY - Never do this:
+headers: {
+  'X-API-KEY': backendApiKey,
+  'X-User-ID': user.id  // Enables account takeover attacks!
+}
+```
+
+**Secure Implementation Patterns:**
+
+1. **For new routes** - Use `AuthService.authenticateAndAuthorize()`:
+```typescript
+// Secure pattern for account-specific routes
+const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
+// authContext.authToken contains the validated JWT
+```
+
+2. **For general routes** - Use `authenticateWithJWT()`:
+```typescript
+// Secure pattern for general routes  
+const { user, accessToken } = await authenticateWithJWT(request);
+const headers = await createSecureBackendHeaders(accessToken);
+```
 
 ### Adding a New API Feature
 1. **Implement the backend endpoint** in FastAPI (`backend/api_server.py`).
+   - Use `get_authenticated_user_id()` dependency for JWT validation
+   - Use `verify_account_ownership()` for account-specific endpoints
 2. **Add a Next.js API route** in `frontend-app/app/api/` to:
-   - Authenticate the user (if needed)
-   - Proxy the request to the backend (using env vars for URL and API key)
+   - **ALWAYS authenticate with JWT**: Use `AuthService` or `authenticateWithJWT()`  
+   - **Send secure headers**: Include both API key and JWT token to backend
+   - Proxy the request following the secure patterns above
 3. **Call the new API route** from your React component or hook.
-4. **Test end-to-end** (frontend → Next.js API route → backend → response).
+4. **Test end-to-end** security:
+   - Verify JWT token is required (401 without it)
+   - Verify account ownership is enforced  
+   - Test the complete flow (frontend → Next.js API route → backend → response)
 
 ---
 
@@ -231,7 +277,7 @@ clera/
 symbols.map(symbol => fetch(`/api/quote/${symbol}`))  // N backend calls
 
 // ✅ CORRECT: True batching
-fetch('/api/quotes/batch', { 
+fetch('/api/market/quotes/batch', { 
   body: JSON.stringify({ symbols }) 
 })  // 1 backend call
 ```

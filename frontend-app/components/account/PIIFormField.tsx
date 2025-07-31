@@ -165,9 +165,10 @@ export const PIIFormField: React.FC<PIIFormFieldProps> = ({
           {...commonProps}
           type="text"
           inputMode="numeric"
-          pattern="[0-9]*"
+          pattern="[0-9-]*"
           placeholder="12345 or 12345-6789"
           maxLength={10} // xxxxx-xxxx
+          autoComplete="postal-code"
         />
       );
     }

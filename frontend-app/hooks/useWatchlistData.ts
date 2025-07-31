@@ -143,11 +143,7 @@ export function useWatchlistData({
     }
     
     try {
-      const response = await fetch(`/api/watchlist/${accountId}`, {
-        headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || ''
-        }
-      });
+      const response = await fetch(`/api/watchlist/${accountId}`);
       
       if (!response.ok) {
         const errorData = await response.json();

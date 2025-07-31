@@ -253,7 +253,7 @@ def rebalance_instructions(state=None, config=None) -> str:
         
     except Exception as e:
         logger.error(f"[Portfolio Agent] Error in rebalance_instructions: {e}", exc_info=True)
-        return f"❌ **Error:** Could not generate rebalancing instructions. Please try again later.\n\nError details: {str(e)}"
+        return "❌ **Error:** Could not generate rebalancing instructions. Please try again later."
 
 
 @tool("get_portfolio_summary")
@@ -482,7 +482,7 @@ Could not securely identify your account. This is a security protection to preve
         
     except Exception as e:
         logger.error(f"[Portfolio Agent] Error generating portfolio summary: {e}", exc_info=True)
-        return f"❌ **Error:** Could not generate portfolio summary. Please try again later.\n\nError details: {str(e)}"
+        return "❌ **Error:** Could not generate portfolio summary. Please try again later."
 
 
 def get_user_investment_strategy(state=None, config=None) -> Dict:
@@ -642,7 +642,7 @@ def get_account_activities_tool(state=None, config=None) -> str:
 
 Could not securely identify your account. This is a security protection to prevent unauthorized access.
 
-**Error Details:** {str(e)}
+**Error Details:** _redacted for security_
 
 💡 **Next Steps:**
 • Please log out and log back in  
@@ -655,7 +655,7 @@ Could not securely identify your account. This is a security protection to preve
 
 ❌ **Error Retrieving Activities**
 
-Could not retrieve account activities: {str(e)}
+Could not retrieve account activities.
 
 💡 **Troubleshooting:**
 • Check your internet connection

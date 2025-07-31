@@ -515,7 +515,7 @@ def _calculate_investment_performance_impl(
         return analysis
     except Exception as e:
         logger.error(f"[Performance Analysis] Unexpected error in calculate_investment_performance: {e}", exc_info=True)
-        return f"❌ **Unexpected Error:** An error occurred while analyzing {symbol}. Please try again later.\n\nError details: {str(e)}"
+        return f"❌ **Unexpected Error:** An error occurred while analyzing {symbol}. Please try again later."
 
 @tool("calculate_investment_performance")
 def calculate_investment_performance(

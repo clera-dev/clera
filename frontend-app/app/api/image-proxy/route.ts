@@ -57,7 +57,7 @@ const isSecureWildcardMatch = (domain: string, wildcardPattern: string): boolean
 // Load allowed domains from environment variables for better security and configuration management.
 // The env var should be a comma-separated list of domains.
 const ALLOWED_DOMAINS_STRING = process.env.IMAGE_PROXY_ALLOWED_DOMAINS || '';
-const ALLOWED_DOMAINS = ALLOWED_DOMAINS_STRING.split(',').map(d => d.trim()).filter(Boolean);
+const ALLOWED_DOMAINS = ALLOWED_DOMAINS_STRING.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
 
 // Add default domains for development if the env var is not set.
 if (process.env.NODE_ENV === 'development' && ALLOWED_DOMAINS.length === 0) {
@@ -105,13 +105,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Domain Allowlist Validation
-    const domain = url.hostname;
+    const domain = url.hostname.toLowerCase(); // Normalize domain to lowercase for case-insensitive comparison
     const isAllowed = ALLOWED_DOMAINS.some(allowedDomain => {
       if (allowedDomain.startsWith('*.')) {
         // Use secure wildcard matching to prevent SSRF attacks
         return isSecureWildcardMatch(domain, allowedDomain);
       }
-      // Exact domain match
+      // Exact domain match (case-insensitive)
       return domain === allowedDomain;
     });
 

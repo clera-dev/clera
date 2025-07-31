@@ -190,10 +190,19 @@ export default function MainSidebar({
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div 
+                          role="button"
+                          tabIndex={0}
                           className="relative flex items-center justify-center cursor-pointer"
                           onMouseEnter={() => setIsLogoHovered(true)}
                           onMouseLeave={() => setIsLogoHovered(false)}
                           onClick={toggleCollapse}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleCollapse();
+                            }
+                          }}
+                          aria-label="Open sidebar"
                         >
                           {/* Logo - hidden when hovering */}
                           <img 

@@ -48,7 +48,7 @@ export async function GET(
       headers: {
         'Content-Type': 'application/json',
         'X-API-KEY': backendApiKey,
-        'X-User-ID': user.id,
+        // No user authentication needed - this is public market data
       },
       cache: 'no-store', // Ensure we always get fresh data for latest trade prices
     });

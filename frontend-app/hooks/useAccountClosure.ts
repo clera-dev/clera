@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { accountClosureService, ClosureData, ClosureState } from '@/utils/services/accountClosureService';
 import { createClient } from '@/utils/supabase/client';
 
@@ -22,57 +22,105 @@ export function useAccountClosure(): UseAccountClosureReturn {
   const [closureData, setClosureData] = useState<ClosureData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Use refs to track cleanup and prevent memory leaks
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
+    // Create abort controller for this effect
+    abortControllerRef.current = new AbortController();
     
     const fetchClosureDataWrapper = async () => {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        setLoading(false);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
         return;
       }
       
       try {
-        setLoading(true);
-        setError(null);
+        if (isMountedRef.current) {
+          setLoading(true);
+          setError(null);
+        }
         
         const data = await accountClosureService.fetchClosureData();
-        setClosureData(data);
+        
+        if (isMountedRef.current) {
+          setClosureData(data);
+        }
         
       } catch (err) {
-        // Don't log temporary network errors
-        console.warn('[useAccountClosure] Temporary error fetching closure data (will retry)');
-        setError(null); // Don't show error for temporary issues
+        // Check if component is still mounted before updating state
+        if (!isMountedRef.current) return;
+        
+        // Store the original error for potential retry failure
+        const originalError = err instanceof Error ? err.message : 'Failed to load closure data';
+        
+        // Don't show error immediately - try retry first
+        console.warn('[useAccountClosure] Temporary error fetching closure data (will retry):', originalError);
         setClosureData(null);
         
+        // Clear any existing timeout
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+        
         // Retry once after a short delay for temporary server issues
-        timeoutId = setTimeout(async () => {
+        timeoutRef.current = setTimeout(async () => {
+          // Check if component is still mounted before retry
+          if (!isMountedRef.current) return;
+          
           try {
             const retryData = await accountClosureService.fetchClosureData();
-            setClosureData(retryData);
+            
+            if (isMountedRef.current) {
+              setClosureData(retryData);
+              setError(null); // Clear error on successful retry
+            }
           } catch (retryErr) {
-            // Silent fail on retry
+            // Retry failed - now show the error to the user
+            if (isMountedRef.current) {
+              const retryError = retryErr instanceof Error ? retryErr.message : 'Failed to load closure data';
+              console.error('[useAccountClosure] Retry failed, showing error to user:', retryError);
+              setError(`Failed to load closure data. Please try again later. (${retryError})`);
+            }
           }
         }, 2000);
       } finally {
-        setLoading(false);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
     };
 
     fetchClosureDataWrapper();
     
-    // Cleanup function to clear timeout if component unmounts
+    // Cleanup function to clear timeout and abort controller if component unmounts
     return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      isMountedRef.current = false;
+      
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
 
   const refetch = async (): Promise<void> => {
+    // Check if component is still mounted
+    if (!isMountedRef.current) return;
+    
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -81,19 +129,30 @@ export function useAccountClosure(): UseAccountClosureReturn {
     }
 
     try {
-      setLoading(true);
-      setError(null);
+      if (isMountedRef.current) {
+        setLoading(true);
+        setError(null);
+      }
       
       const data = await accountClosureService.fetchClosureData();
-      setClosureData(data);
+      
+      if (isMountedRef.current) {
+        setClosureData(data);
+      }
       
     } catch (err) {
-      // Don't log temporary network errors
-      console.warn('[useAccountClosure] Temporary error refetching closure data (will retry)');
-      setError(null); // Don't show error for temporary issues
+      // Check if component is still mounted before updating state
+      if (!isMountedRef.current) return;
+      
+      // Show error immediately for manual refetch attempts
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load closure data';
+      console.error('[useAccountClosure] Error refetching closure data:', errorMessage);
+      setError(`Failed to load closure data. Please try again later. (${errorMessage})`);
       setClosureData(null);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 

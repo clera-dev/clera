@@ -36,6 +36,9 @@ def get_stock_quotes_batch(symbols: list) -> list:
     
     Returns:
         List of quote dictionaries, one per symbol
+        
+    Raises:
+        Exception: If the API request fails, allowing callers to handle errors appropriately
     """
     if not symbols:
         return []
@@ -44,10 +47,6 @@ def get_stock_quotes_batch(symbols: list) -> list:
     symbols_str = ','.join(symbols)
     url = f"https://financialmodelingprep.com/api/v3/quote/{symbols_str}?apikey={fin_modeling_prep_api_key}"
     
-    try:
-        return get_jsonparsed_data(url)
-    except Exception as e:
-        # If batch fails, return empty list rather than falling back to individual calls
-        # This maintains the batch contract and prevents N+1 fallback anti-pattern
-        print(f"Batch quote request failed for symbols {symbols}: {e}")
-        return [] 
+    # Let exceptions bubble up to callers for proper error handling
+    # This maintains separation of concerns and allows callers to decide how to handle failures
+    return get_jsonparsed_data(url) 

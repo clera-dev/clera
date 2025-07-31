@@ -116,7 +116,7 @@ export default function MobileChatModal({
       {/* Modal container with slide-up animation - fills available space */}
       <div 
         className={cn(
-          "fixed inset-x-0 z-60 bg-background shadow-2xl transition-transform duration-500 ease-out flex flex-col",
+          "fixed inset-x-0 z-60 bg-background shadow-2xl transition-transform duration-300 ease-in-out flex flex-col",
           isOpen ? "translate-y-0" : "translate-y-full"
         )}
         style={{

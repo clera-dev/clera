@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
         headers: {
           'Content-Type': 'application/json',
           'X-API-KEY': backendApiKey,
-          'X-User-ID': user.id,
+          // Note: Backend trade endpoint doesn't currently use JWT auth
         },
         body: JSON.stringify(requestBody),
         signal: controller.signal,

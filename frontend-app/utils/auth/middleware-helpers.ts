@@ -54,6 +54,11 @@ export const routeConfigs: Record<string, RouteConfig> = {
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {
+  // Handle null/undefined/empty path inputs
+  if (!path || typeof path !== 'string') {
+    return null;
+  }
+  
   // First try exact match
   const exactMatch = routeConfigs[path];
   if (exactMatch) {
@@ -67,7 +72,7 @@ export const getRouteConfig = (path: string): RouteConfig | null => {
     let longestLength = 0;
     
     for (const configPath of Object.keys(routeConfigs)) {
-      if (configPath.startsWith('/api/') && path.startsWith(configPath)) {
+      if (configPath.startsWith('/api/') && (path === configPath || path.startsWith(`${configPath}/`))) {
         // Check if this is a longer (more specific) match
         if (configPath.length > longestLength) {
           longestMatch = configPath;

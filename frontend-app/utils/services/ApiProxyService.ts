@@ -9,7 +9,7 @@
  * responses (`NextResponse`) to the API route layer. This ensures separation of
  * concerns and high testability.
  */
-import { type BackendConfig, createBackendHeaders } from '@/lib/utils/api-route-helpers';
+import { type BackendConfig, createSecureBackendHeaders } from '@/utils/api/secure-backend-helpers';
 import { ApiError, SecureErrorMapper } from './errors';
 
 export interface ProxyRequest {
@@ -41,7 +41,8 @@ export class ApiProxyService {
    * Proxy a request to the backend service and get raw data.
    * 
    * SECURITY: This method prevents header injection by ensuring critical headers
-   * (`X-API-KEY`, `X-User-ID`) cannot be overridden by `additionalHeaders`.
+   * (`X-API-KEY`, `Authorization`) cannot be overridden by `additionalHeaders`.
+   * Uses JWT tokens for secure user authentication.
    * 
    * @throws {ApiError} - Throws a structured `ApiError` for any request failures,
    *                      which can be caught and converted to a `NextResponse`
@@ -49,13 +50,13 @@ export class ApiProxyService {
    */
   public async proxy<T = any>(
     config: BackendConfig,
-    userId: string,
+    userAccessToken: string,
     request: ProxyRequest
   ): Promise<ProxyResponse<T>> {
     try {
       const targetUrl = `${config.url}${request.backendPath}`;
       
-      const secureHeaders = createBackendHeaders(config, userId);
+      const secureHeaders = await createSecureBackendHeaders(userAccessToken);
       const safeAdditionalHeaders = this.sanitizeAdditionalHeaders(request.additionalHeaders);
       
       const headers = {

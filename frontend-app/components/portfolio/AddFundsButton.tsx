@@ -22,8 +22,13 @@ const AddFundsButton: React.FC<AddFundsButtonProps> = ({ accountId }) => {
     const isDisabled = !accountId;
 
     return (
-        <Button onClick={handleAddFunds} disabled={isDisabled}>
-            <DollarSign className="mr-2 h-4 w-4" /> Add Funds
+        <Button 
+            onClick={handleAddFunds} 
+            disabled={isDisabled}
+            size="sm"
+            className="h-8 px-3 text-sm sm:h-9 sm:px-4"
+        >
+            <DollarSign className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" /> Add Funds
         </Button>
     );
 };

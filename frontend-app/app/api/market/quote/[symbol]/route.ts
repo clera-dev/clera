@@ -1,11 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { 
-  authenticateAndConfigureBackend, 
-  createBackendHeaders, 
-  convertErrorToResponse 
-} from '@/lib/utils/api-route-helpers';
-import { SecureErrorMapper } from '@/utils/services/errors';
+import { createClient } from '@/utils/supabase/server';
 
 /**
  * Ensures this route is always treated as dynamic, preventing Next.js
@@ -25,16 +20,35 @@ export async function GET(
     const params = await context.params;
     const { symbol } = params;
 
-    // 1. Authenticate user and configure backend
-    const { user, backendConfig } = await authenticateAndConfigureBackend();
+    // 1. Authenticate user
+    const supabase = await createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-    // 2. Construct target URL and make request
+    if (userError || !user) {
+      return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
+    }
+
+    // 2. Construct final backend path
     const backendPath = `/api/market/quote/${symbol}`;
-    const targetUrl = `${backendConfig.url}${backendPath}`;
+
+    // 3. Proxy the request
+    const backendUrl = process.env.BACKEND_API_URL;
+    const backendApiKey = process.env.BACKEND_API_KEY;
+
+    if (!backendUrl || !backendApiKey) {
+      console.error('[API Proxy] Backend API URL or Key is not configured.');
+      return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
+    }
+
+    const targetUrl = `${backendUrl}${backendPath}`;
 
     const response = await fetch(targetUrl, {
       method: 'GET',
-      headers: createBackendHeaders(backendConfig, user.id),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-KEY': backendApiKey,
+        // No user authentication needed - this is public market data
+      },
     });
 
     const responseText = await response.text();
@@ -47,22 +61,22 @@ export async function GET(
     }
 
     if (!response.ok) {
-      // Extract backend error message
-      const backendError = responseData?.error || responseData?.detail || '';
-      
-      // Log the original error for debugging (server-side only)
-      SecureErrorMapper.logError(backendError, response.status, request.nextUrl.pathname);
-      
-      // Map to safe error message using the centralized utility
-      const safeErrorMessage = SecureErrorMapper.mapError(backendError, response.status);
-      
-      // Return safe error message to client
-      return NextResponse.json({ error: safeErrorMessage }, { status: response.status });
+      // Map backend error to client-friendly message
+      let errorMessage = 'Failed to fetch market quote. Please try again later.';
+      if (response.status >= 500) {
+        // Hide backend details for server errors
+        return NextResponse.json({ error: errorMessage }, { status: 502 });
+      } else {
+        // For 4xx, try to pass backend error detail if available
+        const backendError = responseData?.error || responseData?.detail || errorMessage;
+        return NextResponse.json({ error: backendError }, { status: response.status });
+      }
     }
 
     return NextResponse.json(responseData, { status: 200 });
 
   } catch (error: any) {
-    return convertErrorToResponse(error, request.nextUrl.pathname);
+    console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });
+    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 } 

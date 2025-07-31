@@ -9,14 +9,23 @@ interface HeaderControllerProps {
 
 /**
  * Controller for the header navigation
- * Only show the header with sign out button on the dashboard page
- * Other pages get more screen real estate without the header
+ * Show the header on authentication pages (with Clera logo + auth buttons)
+ * and on the dashboard page (where users manage their account)
+ * Other app pages get more screen real estate without the header
  */
 export default function HeaderController({ children }: HeaderControllerProps) {
   const pathname = usePathname();
   
-  // Only show header on dashboard page where users manage their account
-  const shouldShowHeader = pathname === '/dashboard';
+  // Pages that should show the auth header
+  const authPages = [
+    '/',               // Landing page
+    '/sign-in',        // Sign in page
+    '/sign-up',        // Sign up page  
+    '/forgot-password', // Password reset page
+    '/dashboard'       // User dashboard
+  ];
+  
+  const shouldShowHeader = authPages.includes(pathname);
   
   if (!shouldShowHeader) {
     return null;

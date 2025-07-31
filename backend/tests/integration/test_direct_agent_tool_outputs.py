@@ -334,7 +334,7 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
 
 Could not securely identify your account. This is a security protection to prevent unauthorized access.
 
-**Error Details:** {str(e)}
+**Error Details:** _redacted for security_
 
 💡 **Next Steps:**
 • Please log out and log back in
@@ -345,7 +345,7 @@ Could not securely identify your account. This is a security protection to preve
         
     except Exception as e:
         logger.error(f"[Portfolio Agent] Error generating portfolio summary: {e}", exc_info=True)
-        return f"❌ **Error:** Could not generate portfolio summary. Please try again later.\n\nError details: {str(e)}"
+        return "❌ **Error:** Could not generate portfolio summary. Please try again later."
 
 def direct_rebalance_instructions(config, target_type="balanced"):
     account_id = get_account_id(config)

@@ -1,7 +1,6 @@
 "use client";
 
 import React from 'react';
-import { usePathname, useRouter } from 'next/navigation';
 import { 
   Home, 
   TrendingUp, 
@@ -12,7 +11,9 @@ import {
 import { cn } from '@/lib/utils';
 
 interface MobileBottomNavProps {
-  onChatOpen: () => void;
+  onChatToggle: () => void;
+  onNavigate: (path: string) => void;
+  currentPage: string;
   isChatOpen: boolean;
 }
 
@@ -54,15 +55,13 @@ const navItems: NavItem[] = [
  * iOS-style bottom navigation with elevated center chat button
  * Follows Apple HIG guidelines for tab bars
  */
-export default function MobileBottomNav({ onChatOpen, isChatOpen }: MobileBottomNavProps) {
-  const pathname = usePathname();
-  const router = useRouter();
-
-  const isActive = (path: string) => pathname === path;
-
-  const handleNavigation = (path: string) => {
-    router.push(path);
-  };
+export default function MobileBottomNav({ 
+  onChatToggle, 
+  onNavigate, 
+  currentPage, 
+  isChatOpen 
+}: MobileBottomNavProps) {
+  const isActive = (path: string) => currentPage === path;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">
@@ -77,7 +76,7 @@ export default function MobileBottomNav({ onChatOpen, isChatOpen }: MobileBottom
           {navItems.slice(0, 2).map((item) => (
             <button
               key={item.id}
-              onClick={() => handleNavigation(item.path)}
+              onClick={() => onNavigate(item.path)}
               className={cn(
                 "flex flex-col items-center justify-center min-w-0 flex-1 transition-colors duration-200",
                 isActive(item.path) 
@@ -101,13 +100,15 @@ export default function MobileBottomNav({ onChatOpen, isChatOpen }: MobileBottom
             </button>
           ))}
 
-          {/* Center: Chat Button (Clera Logo) - Consistent with other nav items */}
+          {/* Center: Chat Button (Clera Logo) - Shows overlay state */}
           <button
-            onClick={onChatOpen}
+            onClick={onChatToggle}
             className={cn(
               "flex flex-col items-center justify-center flex-1 transition-all duration-200",
               "hover:scale-105 active:scale-95",
-              isChatOpen && "scale-95"
+              isChatOpen 
+                ? "text-primary scale-95" 
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             {/* Clera Circle Logo - same size as other icons */}
@@ -130,7 +131,7 @@ export default function MobileBottomNav({ onChatOpen, isChatOpen }: MobileBottom
           {navItems.slice(2, 4).map((item) => (
             <button
               key={item.id}
-              onClick={() => handleNavigation(item.path)}
+              onClick={() => onNavigate(item.path)}
               className={cn(
                 "flex flex-col items-center justify-center min-w-0 flex-1 transition-colors duration-200",
                 isActive(item.path) 
