@@ -6,26 +6,24 @@ Tests the full API flow from request to response.
 
 import unittest
 import json
-import sys
-import os
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
 from fastapi.testclient import TestClient
 
-# Add the project root to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, '..'))
-sys.path.insert(0, project_root)
-
-# Import the FastAPI app
-from api_server import app
-
 class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     """Tests for the /api/portfolio/cash-stock-bond-allocation endpoint"""
 
+    @classmethod
+    def setUpClass(cls):
+        """Set up test class with patched environment before importing app"""
+        with patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'}):
+            # Import the FastAPI app after patching environment
+            from api_server import app
+            cls.app = app
+
     def setUp(self):
         """Set up test client"""
-        self.client = TestClient(app)
+        self.client = TestClient(self.app)
         self.test_account_id = "test-account-123"
         self.test_headers = {"x-api-key": "test-key"}
         
@@ -38,7 +36,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_mixed_portfolio_allocation(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_get_cash_balance, mock_get_positions):
         """Test allocation calculation with mixed portfolio"""
         # Mock authentication
@@ -96,7 +93,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_cash_only_portfolio(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_get_cash_balance, mock_get_positions):
         """Test allocation with only cash (no positions)"""
         # Mock authentication
@@ -133,7 +129,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_bonds_only_portfolio(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_get_cash_balance, mock_get_positions):
         """Test allocation with only bond ETFs"""
         # Mock authentication
@@ -175,7 +170,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_crypto_portfolio_classified_as_stocks(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_get_cash_balance, mock_get_positions):
         """Test that crypto assets are classified as stocks"""
         # Mock authentication
@@ -216,7 +210,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_missing_account_id(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id):
         """Test handling of missing account ID parameter"""
         # Mock authentication
@@ -235,7 +228,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_redis_connection_error(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_get_positions):
         """Test handling of Redis connection errors"""
         # Mock authentication
@@ -258,7 +250,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_alpaca_api_error(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_get_cash_balance, mock_get_positions):
         """Test handling of Alpaca API errors"""
         # Mock authentication
@@ -283,7 +274,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_invalid_position_data_handling(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_get_asset_name, mock_get_cash_balance, mock_get_positions):
         """Test handling of invalid position data - skips invalid market_value, processes empty/missing symbols as stocks"""
         # Mock authentication
@@ -321,7 +311,6 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_authenticated_user_id')
     @patch('api_server.verify_account_ownership')
     @patch('utils.authentication.AuthenticationService.get_user_id_from_api_key')
-    @patch.dict('os.environ', {'BACKEND_API_KEY': 'test-key'})
     def test_bond_etf_name_detection(self, mock_get_user_id_from_api_key, mock_verify_account_ownership, mock_get_authenticated_user_id, mock_get_asset_name, mock_get_cash_balance, mock_get_positions):
         """Test bond ETF detection via asset name"""
         # Mock authentication

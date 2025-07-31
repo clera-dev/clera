@@ -62,7 +62,7 @@ function getBackendConfig(): BackendConfig {
 
 // Backend proxy helper
 async function fetchFromBackend(config: BackendConfig, accountId: string): Promise<any> {
-  const targetUrl = `${config.url}/api/portfolio/cash-stock-bond-allocation?account_id=${accountId}`;
+  const targetUrl = `${config.url}/api/portfolio/cash-stock-bond-allocation?account_id=${encodeURIComponent(accountId)}`;
   console.log('Cash/Stock/Bond Allocation API: Proxying request to backend');
 
   const headers: HeadersInit = {
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
   try {
     // Extract account ID from request
     const searchParams = request.nextUrl.searchParams;
-    const accountId = searchParams.get('accountId');
+    const accountId = searchParams.get('account_id');
 
     if (!accountId) {
       return NextResponse.json({ detail: 'Account ID is required' }, { status: 400 });

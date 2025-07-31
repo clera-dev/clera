@@ -94,7 +94,9 @@ class PortfolioCalculator:
                     logger.warning(f"No positions found for account {account_id}")
                     return 0.0, 0.0
             else:
-                positions = json.loads(positions_json)
+                # Decode bytes to string before parsing JSON
+                positions_data_str = positions_json.decode('utf-8') if isinstance(positions_json, bytes) else positions_json
+                positions = json.loads(positions_data_str)
                 logger.debug(f"Loaded {len(positions)} positions from Redis for account {account_id}")
 
             total_todays_gain = 0.0
@@ -116,8 +118,11 @@ class PortfolioCalculator:
                 yesterday_price_str = self.redis_client.get(f"yesterday_close:{symbol}")
                 
                 if current_price_str and yesterday_price_str:
-                    current_price = float(current_price_str)
-                    yesterday_price = float(yesterday_price_str)
+                    # Decode bytes to string before converting to float
+                    current_price_str_decoded = current_price_str.decode('utf-8') if isinstance(current_price_str, bytes) else current_price_str
+                    yesterday_price_str_decoded = yesterday_price_str.decode('utf-8') if isinstance(yesterday_price_str, bytes) else yesterday_price_str
+                    current_price = float(current_price_str_decoded)
+                    yesterday_price = float(yesterday_price_str_decoded)
                     
                     # Calculate today's gain for this position
                     position_value = quantity * current_price
@@ -289,7 +294,9 @@ class PortfolioCalculator:
                     logger.warning(f"No positions found for account {account_id}")
                     return None
             else:
-                positions = json.loads(positions_json)
+                # Decode bytes to string before parsing JSON
+                positions_data_str = positions_json.decode('utf-8') if isinstance(positions_json, bytes) else positions_json
+                positions = json.loads(positions_data_str)
                 logger.debug(f"Loaded {len(positions)} positions from Redis for account {account_id}")
             
             # Get account information for cash balance
@@ -349,7 +356,9 @@ class PortfolioCalculator:
                 account_id = key.decode('utf-8').split(':')[1]
                 positions_json = self.redis_client.get(key)
                 if positions_json:
-                    positions = json.loads(positions_json)
+                    # Decode bytes to string before parsing JSON
+                    positions_data_str = positions_json.decode('utf-8') if isinstance(positions_json, bytes) else positions_json
+                    positions = json.loads(positions_data_str)
                     if isinstance(positions, list) and any(
                         (isinstance(pos, dict) and pos.get('symbol') == symbol) for pos in positions
                     ):

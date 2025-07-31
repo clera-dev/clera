@@ -132,7 +132,7 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                 setIsCashStockBondLoading(true);
                 setCashStockBondError(null);
                 try {
-                    const response = await fetch(`/api/portfolio/cash-stock-bond-allocation?accountId=${accountId}`);
+                    const response = await fetch(`/api/portfolio/cash-stock-bond-allocation?account_id=${accountId}`);
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({ detail: "Failed to fetch cash/stock/bond allocation data." }));
                         throw new Error(errorData.detail || `HTTP error ${response.status}`);

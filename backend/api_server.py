@@ -2139,9 +2139,11 @@ async def get_sector_allocation(request: Request, account_id: str = Query(..., d
             raise HTTPException(status_code=404, detail=f"No positions found for account ID: {account_id}")
             
         try:
-            positions = json.loads(positions_data_json)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to decode JSON for positions for account {account_id} from key {positions_key}")
+            # Decode bytes to string before parsing JSON
+            positions_data_str = positions_data_json.decode('utf-8') if isinstance(positions_data_json, bytes) else positions_data_json
+            positions = json.loads(positions_data_str)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.error(f"Failed to decode JSON for positions for account {account_id} from key {positions_key}: {e}")
             raise HTTPException(status_code=500, detail="Error reading position data.")
 
         if not positions: # Empty list of positions
@@ -2160,9 +2162,11 @@ async def get_sector_allocation(request: Request, account_id: str = Query(..., d
             sector_lookup = {}
         else:
             try:
-                sector_lookup = json.loads(sector_data_json)
-            except json.JSONDecodeError:
-                logger.error("Failed to decode JSON for 'sector_data' from Redis.")
+                # Decode bytes to string before parsing JSON
+                sector_data_str = sector_data_json.decode('utf-8') if isinstance(sector_data_json, bytes) else sector_data_json
+                sector_lookup = json.loads(sector_data_str)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.error(f"Failed to decode JSON for 'sector_data' from Redis: {e}")
                 # Proceed with empty sector_lookup, categorizing all as Unknown
                 sector_lookup = {}
 
@@ -3093,21 +3097,6 @@ def cleanup_temp_file(file_path: str):
 # Import the portfolio service layer
 from utils.portfolio_service import PortfolioService
 
-async def create_async_redis_client():
-    """Create an async Redis client for this request"""
-    try:
-        import aioredis
-        redis_db = int(os.getenv("REDIS_DB", "0"))
-        return aioredis.Redis(
-            host=CANONICAL_REDIS_HOST,
-            port=CANONICAL_REDIS_PORT,
-            db=redis_db,
-            decode_responses=True,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to create async Redis client: {e}")
-        raise
-
 @app.get("/api/portfolio/cash-stock-bond-allocation")
 async def get_cash_stock_bond_allocation(
     request: Request,
@@ -3141,7 +3130,8 @@ async def get_cash_stock_bond_allocation(
     try:
         # Use sync Redis client and run in separate thread to avoid blocking
         sync_redis = get_sync_redis_client()
-        portfolio_service = PortfolioService(sync_redis)
+        broker_client = get_broker_client()
+        portfolio_service = PortfolioService(sync_redis, broker_client)
         return await asyncio.to_thread(portfolio_service.get_cash_stock_bond_allocation, account_id)
         
     except Exception as e:

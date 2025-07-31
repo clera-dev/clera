@@ -35,7 +35,7 @@ def get_sync_redis_client():
     )
 
 
-async def get_async_redis_client():
+def get_async_redis_client():
     """
     Create an asynchronous Redis client.
     

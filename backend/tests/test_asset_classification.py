@@ -100,10 +100,10 @@ class TestAllocationCalculation(unittest.TestCase):
         allocation = calculate_allocation(positions, cash_balance)
         
         # Check totals
-        self.assertEqual(allocation['total_value'], Decimal('3000.00'))
-        self.assertEqual(allocation['cash']['value'], Decimal('400.00'))
-        self.assertEqual(allocation['stock']['value'], Decimal('1800.00'))
-        self.assertEqual(allocation['bond']['value'], Decimal('800.00'))
+        self.assertEqual(allocation['total_value'], 3000.00)
+        self.assertEqual(allocation['cash']['value'], 400.00)
+        self.assertEqual(allocation['stock']['value'], 1800.00)
+        self.assertEqual(allocation['bond']['value'], 800.00)
         
         # Check percentages (allowing for rounding)
         self.assertAlmostEqual(allocation['cash']['percentage'], 13.33, places=2)
@@ -117,7 +117,7 @@ class TestAllocationCalculation(unittest.TestCase):
         
         allocation = calculate_allocation(positions, cash_balance)
         
-        self.assertEqual(allocation['total_value'], Decimal('5000.00'))
+        self.assertEqual(allocation['total_value'], 5000.00)
         self.assertEqual(allocation['cash']['percentage'], 100.0)
         self.assertEqual(allocation['stock']['percentage'], 0.0)
         self.assertEqual(allocation['bond']['percentage'], 0.0)
@@ -133,7 +133,7 @@ class TestAllocationCalculation(unittest.TestCase):
         
         allocation = calculate_allocation(positions, cash_balance)
         
-        self.assertEqual(allocation['total_value'], Decimal('4500.00'))
+        self.assertEqual(allocation['total_value'], 4500.00)
         self.assertEqual(allocation['cash']['percentage'], 0.0)
         self.assertEqual(allocation['stock']['percentage'], 100.0)
         self.assertEqual(allocation['bond']['percentage'], 0.0)
@@ -149,7 +149,7 @@ class TestAllocationCalculation(unittest.TestCase):
         
         allocation = calculate_allocation(positions, cash_balance)
         
-        self.assertEqual(allocation['total_value'], Decimal('6000.00'))
+        self.assertEqual(allocation['total_value'], 6000.00)
         self.assertEqual(allocation['cash']['percentage'], 0.0)
         self.assertEqual(allocation['stock']['percentage'], 0.0)
         self.assertEqual(allocation['bond']['percentage'], 100.0)
@@ -165,8 +165,8 @@ class TestAllocationCalculation(unittest.TestCase):
         
         allocation = calculate_allocation(positions, cash_balance)
         
-        self.assertEqual(allocation['total_value'], Decimal('11000.00'))
-        self.assertEqual(allocation['stock']['value'], Decimal('10000.00'))  # All crypto + AAPL
+        self.assertEqual(allocation['total_value'], 11000.00)
+        self.assertEqual(allocation['stock']['value'], 10000.00)  # All crypto + AAPL
         self.assertAlmostEqual(allocation['stock']['percentage'], 90.91, places=2)
 
     def test_zero_value_positions(self):
@@ -182,9 +182,9 @@ class TestAllocationCalculation(unittest.TestCase):
         allocation = calculate_allocation(positions, cash_balance)
         
         # Should only count positive value positions
-        self.assertEqual(allocation['total_value'], Decimal('2000.00'))
-        self.assertEqual(allocation['stock']['value'], Decimal('1000.00'))
-        self.assertEqual(allocation['bond']['value'], Decimal('500.00'))
+        self.assertEqual(allocation['total_value'], 2000.00)
+        self.assertEqual(allocation['stock']['value'], 1000.00)
+        self.assertEqual(allocation['bond']['value'], 500.00)
 
     def test_negative_cash_balance(self):
         """Test handling of negative cash balance"""
@@ -196,8 +196,8 @@ class TestAllocationCalculation(unittest.TestCase):
         allocation = calculate_allocation(positions, cash_balance)
         
         # Negative cash should be treated as 0 for allocation purposes
-        self.assertEqual(allocation['cash']['value'], Decimal('0.00'))
-        self.assertEqual(allocation['total_value'], Decimal('1000.00'))
+        self.assertEqual(allocation['cash']['value'], 0.00)
+        self.assertEqual(allocation['total_value'], 1000.00)
         self.assertEqual(allocation['stock']['percentage'], 100.0)
 
     def test_invalid_position_data(self):
@@ -215,8 +215,8 @@ class TestAllocationCalculation(unittest.TestCase):
         
         # Should process: AAPL (1000), empty symbol (500), missing symbol (300) = 1800 total stocks
         # Invalid GOOGL and missing market_value MSFT should be skipped
-        self.assertEqual(allocation['stock']['value'], Decimal('1800.00'))
-        self.assertEqual(allocation['total_value'], Decimal('2300.00'))  # 1800 + 500 cash
+        self.assertEqual(allocation['stock']['value'], 1800.00)
+        self.assertEqual(allocation['total_value'], 2300.00)  # 1800 + 500 cash
 
 
 class TestPieDataGeneration(unittest.TestCase):
@@ -225,10 +225,10 @@ class TestPieDataGeneration(unittest.TestCase):
     def test_pie_data_format(self):
         """Test that pie data is formatted correctly without colors (colors handled by frontend)"""
         allocation = {
-            'cash': {'value': Decimal('1000.00'), 'percentage': 25.0},
-            'stock': {'value': Decimal('2000.00'), 'percentage': 50.0},
-            'bond': {'value': Decimal('1000.00'), 'percentage': 25.0},
-            'total_value': Decimal('4000.00')
+            'cash': {'value': 1000.00, 'percentage': 25.0},
+            'stock': {'value': 2000.00, 'percentage': 50.0},
+            'bond': {'value': 1000.00, 'percentage': 25.0},
+            'total_value': 4000.00
         }
         
         pie_data = get_allocation_pie_data(allocation)
@@ -250,10 +250,10 @@ class TestPieDataGeneration(unittest.TestCase):
     def test_pie_data_zero_categories(self):
         """Test pie data generation when some categories are zero"""
         allocation = {
-            'cash': {'value': Decimal('0.00'), 'percentage': 0.0},
-            'stock': {'value': Decimal('3000.00'), 'percentage': 100.0},
-            'bond': {'value': Decimal('0.00'), 'percentage': 0.0},
-            'total_value': Decimal('3000.00')
+            'cash': {'value': 0.00, 'percentage': 0.0},
+            'stock': {'value': 3000.00, 'percentage': 100.0},
+            'bond': {'value': 0.00, 'percentage': 0.0},
+            'total_value': 3000.00
         }
         
         pie_data = get_allocation_pie_data(allocation)
@@ -265,10 +265,10 @@ class TestPieDataGeneration(unittest.TestCase):
     def test_pie_data_category_names(self):
         """Test that category names are provided without presentation formatting"""
         allocation = {
-            'cash': {'value': Decimal('333.33'), 'percentage': 33.33},
-            'stock': {'value': Decimal('333.33'), 'percentage': 33.33},
-            'bond': {'value': Decimal('333.34'), 'percentage': 33.34},
-            'total_value': Decimal('1000.00')
+            'cash': {'value': 333.33, 'percentage': 33.33},
+            'stock': {'value': 333.33, 'percentage': 33.33},
+            'bond': {'value': 333.34, 'percentage': 33.34},
+            'total_value': 1000.00
         }
         
         pie_data = get_allocation_pie_data(allocation)

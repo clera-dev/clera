@@ -143,7 +143,9 @@ class MarketDataConsumer:
             # Get list of symbols from Redis
             symbols_json = self.redis_client.get('tracked_symbols')
             if symbols_json:
-                symbols = json.loads(symbols_json)
+                # Decode bytes to string before parsing JSON
+                symbols_data_str = symbols_json.decode('utf-8') if isinstance(symbols_json, bytes) else symbols_json
+                symbols = json.loads(symbols_data_str)
                 if symbols:
                     logger.info(f"Initializing with {len(symbols)} symbols from Redis")
                     self.stock_stream.subscribe_quotes(self.handle_quote, *symbols)

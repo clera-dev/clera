@@ -165,10 +165,10 @@ def calculate_allocation(positions: List[Dict], cash_balance: Decimal) -> Dict[s
     Returns:
         Dict with allocation data:
         {
-            'cash': {'value': Decimal, 'percentage': float},
-            'stock': {'value': Decimal, 'percentage': float}, 
-            'bond': {'value': Decimal, 'percentage': float},
-            'total_value': Decimal
+            'cash': {'value': float, 'percentage': float},
+            'stock': {'value': float, 'percentage': float}, 
+            'bond': {'value': float, 'percentage': float},
+            'total_value': float
         }
     """
     allocations = {
@@ -216,11 +216,11 @@ def calculate_allocation(positions: List[Dict], cash_balance: Decimal) -> Dict[s
     for category, value in allocations.items():
         percentage = float(value / total_value * 100) if total_value > 0 else 0.0
         result[category] = {
-            'value': value,
+            'value': float(value),  # Convert Decimal to float for JSON serialization
             'percentage': round(percentage, 2)
         }
     
-    result['total_value'] = total_value
+    result['total_value'] = float(total_value)  # Convert Decimal to float for JSON serialization
     
     logger.info(f"Allocation calculation completed successfully - "
                f"Categories: {', '.join([cat for cat, data in result.items() if cat != 'total_value' and data['value'] > 0])}")

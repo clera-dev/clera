@@ -6,16 +6,9 @@ Tests the hybrid async-first approach with fallback to sync.
 
 import unittest
 import json
-import sys
-import os
 from unittest.mock import patch, MagicMock, AsyncMock
 from decimal import Decimal
 from fastapi.testclient import TestClient
-
-# Add the project root to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, '..'))
-sys.path.insert(0, project_root)
 
 # Import the FastAPI app
 from api_server import app
