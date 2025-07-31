@@ -165,7 +165,7 @@ describe('AssetAllocationPie', () => {
     // Wait for the fetch to complete
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/portfolio/cash-stock-bond-allocation?accountId=test-account-123'
+        '/api/portfolio/cash-stock-bond-allocation?account_id=test-account-123'
       );
     });
 

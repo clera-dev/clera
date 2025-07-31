@@ -131,10 +131,10 @@ export async function GET(request: NextRequest) {
     // Handle specific error types
     if (error instanceof Error) {
       if (error.message === 'Authentication required') {
-        return NextResponse.json({ error: error.message }, { status: 401 });
+        return NextResponse.json({ detail: error.message }, { status: 401 });
       }
       if (error.message === 'Account not found or access denied') {
-        return NextResponse.json({ error: error.message }, { status: 403 });
+        return NextResponse.json({ detail: error.message }, { status: 403 });
       }
       if (error.message === 'No positions found for this account') {
         return NextResponse.json({ detail: error.message }, { status: 404 });

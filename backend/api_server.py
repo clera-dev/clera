@@ -212,6 +212,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
 # Define request model
 class ChatMessage(BaseModel):
     role: str
@@ -475,25 +477,8 @@ except ImportError as e:
     startup_errors.append(error_msg)
     logger.warning("Some functionality relying on utils may be unavailable.")
 
-# --- API key authentication (moved here for clarity) ---
-def verify_api_key(x_api_key: str = Header(None)):
-    expected_key = os.getenv("BACKEND_API_KEY")
-    if not expected_key:
-        logger.error("BACKEND_API_KEY environment variable is not set on the server.")
-        raise HTTPException(status_code=500, detail="Server configuration error: API key not set.")
-    
-    # Handle None values safely
-    if x_api_key is None:
-        logger.warning("API key is missing")
-        raise HTTPException(status_code=401, detail="API key is required")
-        
-    if x_api_key != expected_key:
-        # Safe slicing for logging
-        key_preview = x_api_key[:5] if len(x_api_key) > 5 else x_api_key
-        logger.warning(f"Invalid API key received: {key_preview}...")
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    
-    return x_api_key
+# Import authentication utilities to avoid duplication
+from utils.auth_utils import verify_api_key
 
 
 
@@ -1648,77 +1633,7 @@ def get_trading_client():
         logger.error(f"Failed to initialize TradingClient: {e}")
         raise HTTPException(status_code=503, detail="Trading service initialization failed")
 
-@app.get("/api/portfolio/{account_id}/history", response_model=PortfolioHistoryResponse)
-async def get_portfolio_history(
-    account_id: str,
-    period: Optional[str] = '1M',
-    timeframe: Optional[str] = None,
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
-    intraday_reporting: Optional[str] = 'market_hours',
-    pnl_reset: Optional[str] = 'no_reset',
-    extended_hours: Optional[bool] = None,
-    broker_client = Depends(get_broker_client), # Use BrokerClient instead of TradingClient
-    api_key: str = Depends(verify_api_key)
-):
-    if not broker_client:
-        raise HTTPException(status_code=503, detail="Broker service unavailable")
-    if not GetPortfolioHistoryRequest: # Check if the class was imported successfully
-        raise HTTPException(status_code=503, detail="Portfolio history request type unavailable due to import error.")
 
-    # Convert period format to what Alpaca accepts
-    # Alpaca only accepts D, W, M, A (not Y) - A = Year / Annual
-    alpaca_period = period
-    if period == 'MAX':
-        # Use '1A' (annual) for maximum timeframe allowed by Alpaca
-        alpaca_period = '1A'
-    elif period and 'Y' in period:
-        # Replace 'Y' with 'A' for year (e.g., '1Y' becomes '1A')
-        alpaca_period = period.replace('Y', 'A')
-    
-    logger.info(f"Converting period '{period}' to alpaca_period '{alpaca_period}'")
-
-    # Create the request object using the correct class from trading.requests
-    history_filter = GetPortfolioHistoryRequest(
-        period=alpaca_period,
-        timeframe=timeframe,
-        start=start,
-        end=end,
-        intraday_reporting=intraday_reporting,
-        pnl_reset=pnl_reset,
-        extended_hours=extended_hours
-    )
-    
-    try:
-        # Call the Alpaca Broker API method with the history_filter object
-        history_data = broker_client.get_portfolio_history_for_account(
-            account_id=account_id,
-            history_filter=history_filter # Pass the request object here
-        )
-
-        # Convert the Alpaca response object to our Pydantic response model
-        response = PortfolioHistoryResponse(
-            timestamp=history_data.timestamp,
-            equity=[float(e) if e is not None else None for e in history_data.equity],
-            profit_loss=[float(pl) if pl is not None else None for pl in history_data.profit_loss],
-            profit_loss_pct=[float(plp) if plp is not None else None for plp in history_data.profit_loss_pct],
-            base_value=float(history_data.base_value) if history_data.base_value is not None else None,
-            timeframe=history_data.timeframe
-        )
-        
-        # Handle the optional field
-        if hasattr(history_data, 'base_value_asof') and history_data.base_value_asof:
-            response.base_value_asof = str(history_data.base_value_asof) # Ensure it's a string if needed
-            
-        return response
-    except Exception as e:
-        error_msg = f"Error retrieving portfolio history for account {account_id}: {str(e)}"
-        logger.error(error_msg)
-        
-        # Log traceback for debugging
-        logger.error(traceback.format_exc())
-        
-        raise HTTPException(status_code=500, detail=error_msg)
 
 @app.get("/api/portfolio/{account_id}/positions", response_model=List[PositionResponse])
 async def get_account_positions(
@@ -2088,19 +2003,8 @@ async def websocket_health_check():
 
 # Placeholder for get_redis_client - replace with actual implementation
 # This is a common pattern. If it's different, the code will need adjustment.
-# For instance, it might be `request.app.state.redis`
-import redis # Ensure redis is imported
-
-def get_sync_redis_client(): # Renamed from get_redis_client
-    # This is a simplified way; ideally, use a connection pool managed by the app lifecycle.
-    # Or, if it's already on `request.app.state.redis`, use that.
-    # Check existing code for how Redis is accessed.
-    # Use canonical Redis host and port resolved at module import.
-    # REDIS_DB can still be fetched from env here or defaulted.
-    db = int(os.getenv("REDIS_DB", "0"))
-    
-    logger.info(f"Creating Redis client (sync) with canonical host='{CANONICAL_REDIS_HOST}', port={CANONICAL_REDIS_PORT}, db: {db}")
-    return redis.Redis(host=CANONICAL_REDIS_HOST, port=CANONICAL_REDIS_PORT, db=db, decode_responses=True)
+# Import Redis utilities to avoid duplication
+from utils.redis_utils import get_sync_redis_client
 
 # Create a new router for portfolio related endpoints if it doesn't exist
 # or add to an existing one.
@@ -3094,49 +2998,13 @@ def cleanup_temp_file(file_path: str):
     except Exception as e:
         logger.error(f"Unexpected error cleaning up temporary file {file_path}: {e}")
 
-# Import the portfolio service layer
-from utils.portfolio_service import PortfolioService
+# Import routers for better separation of concerns
+from routers.portfolio import router as portfolio_router
 
-@app.get("/api/portfolio/cash-stock-bond-allocation")
-async def get_cash_stock_bond_allocation(
-    request: Request,
-    account_id: str = Query(..., description="The account ID"),
-    api_key: str = Depends(verify_api_key),
-    user_id: str = Depends(get_authenticated_user_id)
-):
-    """
-    Get portfolio allocation split into cash, stocks, and bonds.
-    
-    This endpoint provides a more accurate allocation breakdown compared to 
-    the simple asset_class grouping, specifically identifying bond ETFs as bonds
-    rather than equities.
-    
-    Returns:
-        {
-            'cash': {'value': float, 'percentage': float},
-            'stock': {'value': float, 'percentage': float}, 
-            'bond': {'value': float, 'percentage': float},
-            'total_value': float,
-            'pie_data': [{'name': str, 'value': float, 'percentage': float, 'category': str}]
-        }
-    """
-    # Verify account ownership
-    try:
-        verify_account_ownership(account_id, user_id)
-    except Exception as e:
-        logger.error(f"Account ownership verification failed for account {account_id}: {e}")
-        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
-    
-    try:
-        # Use sync Redis client and run in separate thread to avoid blocking
-        sync_redis = get_sync_redis_client()
-        broker_client = get_broker_client()
-        portfolio_service = PortfolioService(sync_redis, broker_client)
-        return await asyncio.to_thread(portfolio_service.get_cash_stock_bond_allocation, account_id)
-        
-    except Exception as e:
-        logger.error(f"Error calculating cash/stock/bond allocation for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error occurred while calculating allocation")
+# Include routers for better separation of concerns
+app.include_router(portfolio_router)
+
+
 
 if __name__ == "__main__":
     import uvicorn
