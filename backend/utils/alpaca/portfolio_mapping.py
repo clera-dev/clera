@@ -54,7 +54,7 @@ def map_alpaca_position_to_portfolio_position(alpaca_pos, asset_details_map: Dic
             is_etf_by_name = False
             try:
                 if os.path.exists(ASSET_CACHE_FILE):
-                    with open(ASSET_CACHE_FILE, 'r') as f:
+                    with open(ASSET_CACHE_FILE, 'r', encoding='utf-8') as f:
                         cached_assets = json.load(f)
                         cached_asset = next((asset for asset in cached_assets if asset.get('symbol') == alpaca_pos.symbol), None)
                         if cached_asset and cached_asset.get('name'):

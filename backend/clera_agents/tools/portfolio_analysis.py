@@ -189,7 +189,7 @@ class PortfolioAnalyzer:
                 # Try to read asset details from the cached assets file
                 asset_cache_file = os.path.join(os.path.dirname(__file__), "..", "..", "data", "tradable_assets.json")
                 if os.path.exists(asset_cache_file):
-                    with open(asset_cache_file, 'r') as f:
+                    with open(asset_cache_file, 'r', encoding='utf-8') as f:
                         cached_assets = json.load(f)
                         cached_asset = next((asset for asset in cached_assets if asset.get('symbol') == position.symbol), None)
                         if cached_asset and cached_asset.get('name'):

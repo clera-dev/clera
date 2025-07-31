@@ -6,10 +6,11 @@ and maintain proper separation of concerns.
 """
 
 import os
+import secrets
 from fastapi import HTTPException, Header
 from typing import Optional
 
-def verify_api_key(x_api_key: str = Header(None)) -> str:
+def verify_api_key(x_api_key: Optional[str] = Header(None)) -> str:
     """
     Verify API key from request headers.
     
@@ -31,7 +32,8 @@ def verify_api_key(x_api_key: str = Header(None)) -> str:
     if not expected_api_key:
         raise HTTPException(status_code=500, detail="Backend API key not configured")
     
-    if x_api_key != expected_api_key:
+    # Use constant-time comparison to prevent timing attacks
+    if not secrets.compare_digest(x_api_key, expected_api_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
     
     return x_api_key 

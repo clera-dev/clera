@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import logging
+import secrets
 from typing import List, Dict, Any, Optional
 from enum import Enum, auto
 import asyncio
@@ -972,7 +973,8 @@ async def create_manual_ach_relationship(
     api_key_env = os.getenv("BACKEND_API_KEY")
     logger.info(f"Validating API key: received='{x_api_key[:3]}...' vs env='{api_key_env[:3] if api_key_env else None}...'")
     
-    if x_api_key != api_key_env:
+    # Use constant-time comparison to prevent timing attacks
+    if not secrets.compare_digest(x_api_key, api_key_env):
         logger.error("API key validation failed")
         raise HTTPException(status_code=401, detail="Invalid API key")
     
@@ -1018,7 +1020,8 @@ async def initiate_ach_transfer(
     x_api_key: str = Header(None)
 ):
     # Validate API key
-    if x_api_key != os.getenv("BACKEND_API_KEY"):
+    # Use constant-time comparison to prevent timing attacks
+    if not secrets.compare_digest(x_api_key, os.getenv("BACKEND_API_KEY")):
         raise HTTPException(status_code=401, detail="Invalid API key")
     
     try:
@@ -1160,7 +1163,8 @@ async def get_ach_relationships_for_account(
 ):
     # Validate API key
     api_key_env = os.getenv("BACKEND_API_KEY")
-    if x_api_key != api_key_env:
+    # Use constant-time comparison to prevent timing attacks
+    if not secrets.compare_digest(x_api_key, api_key_env):
         logger.error("API key validation failed")
         raise HTTPException(status_code=401, detail="Invalid API key")
     
@@ -1508,7 +1512,7 @@ async def _fetch_and_cache_assets():
         if os.path.exists(ASSET_CACHE_FILE):
              logger.warning("Returning potentially stale asset cache due to fetch error.")
              try:
-                 with open(ASSET_CACHE_FILE, 'r') as f:
+                 with open(ASSET_CACHE_FILE, 'r', encoding='utf-8') as f:
                      return json.load(f)
              except Exception as read_err:
                   logger.error(f"Failed to read stale cache file {ASSET_CACHE_FILE}: {read_err}")
@@ -1531,7 +1535,7 @@ async def get_tradable_assets():
                     refresh_needed = True
                 else:
                     logger.info(f"Reading tradable assets from cache file: {ASSET_CACHE_FILE}")
-                    with open(ASSET_CACHE_FILE, 'r') as f:
+                    with open(ASSET_CACHE_FILE, 'r', encoding='utf-8') as f:
                         assets_data = json.load(f)
             except Exception as e:
                 logger.error(f"Error reading or checking cache file {ASSET_CACHE_FILE}, attempting refresh: {e}")
@@ -2476,7 +2480,8 @@ async def resume_account_closure_endpoint(
 async def websocket_portfolio_endpoint(websocket: WebSocket, account_id: str, api_key: str = Query(...)):
     try:
         # Validate API key
-        if api_key != os.getenv("BACKEND_API_KEY"):
+        # Use constant-time comparison to prevent timing attacks
+        if not secrets.compare_digest(api_key, os.getenv("BACKEND_API_KEY")):
             await websocket.close(code=4001, reason="Invalid API key")
             return
         

@@ -62,7 +62,7 @@ class CompanyProfileCollector:
         assets_file = os.path.join(backend_dir, 'data', 'tradable_assets.json')
         
         try:
-            with open(assets_file, 'r') as f:
+            with open(assets_file, 'r', encoding='utf-8') as f:
                 assets = json.load(f)
             
             logger.info(f"Loaded {len(assets)} tradable assets")

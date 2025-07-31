@@ -63,15 +63,12 @@ class PortfolioService:
             # 6. Format response
             response = self._format_allocation_response(allocation, pie_data)
             
-            logger.info(f"Cash/Stock/Bond allocation calculated for account {account_id}: "
-                       f"Cash: {response['cash']['percentage']}%, "
-                       f"Stock: {response['stock']['percentage']}%, "
-                       f"Bond: {response['bond']['percentage']}%")
+            logger.info("Cash/Stock/Bond allocation calculated successfully")
             
             return response
             
         except Exception as e:
-            logger.error(f"Error calculating cash/stock/bond allocation for account {account_id}: {e}", exc_info=True)
+            logger.error(f"Error calculating cash/stock/bond allocation: {e}", exc_info=True)
             raise
     
     def _get_positions(self, account_id: str) -> List[Dict]:
@@ -81,7 +78,7 @@ class PortfolioService:
         
         if not positions_data_json:
             # Fallback: Fetch positions directly from Alpaca
-            logger.info(f"Positions not in Redis for account {account_id}, fetching from Alpaca")
+            logger.info("Positions not in Redis, fetching from Alpaca")
             return self._fetch_positions_from_alpaca(account_id)
         
         try:
@@ -89,7 +86,7 @@ class PortfolioService:
             positions_data_str = positions_data_json.decode('utf-8') if isinstance(positions_data_json, bytes) else positions_data_json
             return json.loads(positions_data_str)
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            logger.error(f"Failed to decode positions JSON for account {account_id}: {e}")
+            logger.error(f"Failed to decode positions JSON: {e}")
             return []
     
     def _fetch_positions_from_alpaca(self, account_id: str) -> List[Dict]:
@@ -113,7 +110,7 @@ class PortfolioService:
                 })
             return positions
         except Exception as e:
-            logger.error(f"Error fetching positions from Alpaca for account {account_id}: {e}")
+            logger.error(f"Error fetching positions from Alpaca: {e}")
             return []
     
     def _get_cash_balance(self, account_id: str) -> Decimal:
@@ -126,7 +123,7 @@ class PortfolioService:
             account = self.broker_client.get_trade_account_by_id(account_id)
             return Decimal(str(account.cash))
         except Exception as e:
-            logger.error(f"Error fetching cash balance for account {account_id}: {e}")
+            logger.error(f"Error fetching cash balance: {e}")
             return Decimal('0')
     
     def _enrich_positions(self, positions: List[Dict]) -> List[Dict]:
@@ -157,7 +154,7 @@ class PortfolioService:
         
         try:
             if os.path.exists(ASSET_CACHE_FILE):
-                with open(ASSET_CACHE_FILE, 'r') as f:
+                with open(ASSET_CACHE_FILE, 'r', encoding='utf-8') as f:
                     cached_assets_list = json.load(f)
                     self._asset_cache = {asset.get('symbol'): asset for asset in cached_assets_list}
                     self._asset_cache_loaded = True

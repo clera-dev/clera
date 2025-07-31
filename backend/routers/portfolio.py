@@ -16,7 +16,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from utils.portfolio_service import PortfolioService
+from services.portfolio_orchestrator import PortfolioOrchestrator
 from utils.authentication import get_authenticated_user_id, verify_account_ownership
 from utils.auth_utils import verify_api_key
 from utils.alpaca.broker_client_factory import get_broker_client
@@ -96,11 +96,11 @@ async def get_cash_stock_bond_allocation(
         raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
     
     try:
-        # Use sync Redis client and run in separate thread to avoid blocking
+        # Use orchestrator with proper layering
         sync_redis = get_sync_redis_client()
         broker_client = get_broker_client()
-        portfolio_service = PortfolioService(redis_client=sync_redis, broker_client=broker_client)
-        return await asyncio.to_thread(portfolio_service.get_cash_stock_bond_allocation, account_id)
+        portfolio_orchestrator = PortfolioOrchestrator(redis_client=sync_redis, broker_client=broker_client)
+        return await asyncio.to_thread(portfolio_orchestrator.get_cash_stock_bond_allocation, account_id)
         
     except Exception as e:
         logger.error(f"Error calculating cash/stock/bond allocation for account {account_id}: {e}", exc_info=True)
@@ -117,9 +117,17 @@ async def get_portfolio_history(
     pnl_reset: Optional[str] = 'no_reset',
     extended_hours: Optional[bool] = None,
     broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get portfolio history with various timeframes and parameters"""
+    # Verify account ownership
+    try:
+        verify_account_ownership(account_id, user_id)
+    except Exception as e:
+        logger.error(f"Account ownership verification failed for account {account_id}: {e}")
+        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
+    
     try:
         # Implementation would go here
         # For now, return a placeholder response
@@ -139,9 +147,17 @@ async def get_portfolio_history(
 async def get_account_positions(
     account_id: str,
     client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get account positions"""
+    # Verify account ownership
+    try:
+        verify_account_ownership(account_id, user_id)
+    except Exception as e:
+        logger.error(f"Account ownership verification failed for account {account_id}: {e}")
+        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
+    
     try:
         # Implementation would go here
         # For now, return empty list
@@ -154,9 +170,17 @@ async def get_account_positions(
 async def get_portfolio_analytics(
     account_id: str,
     client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get portfolio analytics"""
+    # Verify account ownership
+    try:
+        verify_account_ownership(account_id, user_id)
+    except Exception as e:
+        logger.error(f"Account ownership verification failed for account {account_id}: {e}")
+        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
+    
     try:
         # Implementation would go here
         # For now, return placeholder response
@@ -179,9 +203,17 @@ async def get_account_orders(
     nested: Optional[bool] = False,
     symbols: Optional[List[str]] = None,
     broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get account orders"""
+    # Verify account ownership
+    try:
+        verify_account_ownership(account_id, user_id)
+    except Exception as e:
+        logger.error(f"Account ownership verification failed for account {account_id}: {e}")
+        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
+    
     try:
         # Implementation would go here
         # For now, return empty list
@@ -191,8 +223,19 @@ async def get_account_orders(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/value")
-async def get_portfolio_value(accountId: str = Query(..., description="Alpaca account ID")):
+async def get_portfolio_value(
+    accountId: str = Query(..., description="Alpaca account ID"),
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(get_authenticated_user_id)
+):
     """Get portfolio value"""
+    # Verify account ownership
+    try:
+        verify_account_ownership(accountId, user_id)
+    except Exception as e:
+        logger.error(f"Account ownership verification failed for account {accountId}: {e}")
+        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
+    
     try:
         # Implementation would go here
         # For now, return placeholder response
@@ -204,9 +247,18 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
 @router.get("/activities")
 async def get_portfolio_activities(
     accountId: str = Query(..., description="Alpaca account ID"),
-    limit: Optional[int] = 100
+    limit: Optional[int] = 100,
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get portfolio activities"""
+    # Verify account ownership
+    try:
+        verify_account_ownership(accountId, user_id)
+    except Exception as e:
+        logger.error(f"Account ownership verification failed for account {accountId}: {e}")
+        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
+    
     try:
         # Implementation would go here
         # For now, return empty list
@@ -218,9 +270,18 @@ async def get_portfolio_activities(
 @router.get("/sector-allocation")
 async def get_sector_allocation(
     request: Request, 
-    account_id: str = Query(..., description="The account ID")
+    account_id: str = Query(..., description="The account ID"),
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(get_authenticated_user_id)
 ):
     """Get sector allocation"""
+    # Verify account ownership
+    try:
+        verify_account_ownership(account_id, user_id)
+    except Exception as e:
+        logger.error(f"Account ownership verification failed for account {account_id}: {e}")
+        raise HTTPException(status_code=403, detail="Access denied - account ownership verification failed")
+    
     try:
         # Implementation would go here
         # For now, return placeholder response
