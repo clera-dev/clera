@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { validateAndSanitizeSymbols } from '@/utils/security';
 
 /**
  * Ensures this route is always treated as dynamic, preventing Next.js
@@ -37,7 +38,14 @@ export async function POST(
       return NextResponse.json({ error: 'Maximum 50 symbols allowed per batch' }, { status: 400 });
     }
 
-    // 3. Since backend doesn't have batch endpoint, implement client-side batching
+    // 3. Validate and sanitize all symbols to prevent SSRF attacks
+    const validatedSymbols = validateAndSanitizeSymbols(symbols);
+
+    if (validatedSymbols.length === 0) {
+      return NextResponse.json({ error: 'No valid symbols provided' }, { status: 400 });
+    }
+
+    // 4. Use backend's existing batch endpoint for true batching
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
 
@@ -46,60 +54,43 @@ export async function POST(
       return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
     }
 
-    // 4. Make parallel requests to individual quote endpoints
-    const quotePromises = symbols.map(async (symbol: string) => {
-      try {
-        const targetUrl = `${backendUrl}/api/market/quote/${symbol}`;
-        const response = await fetch(targetUrl, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': backendApiKey,
-            // No user authentication needed - this is public market data
-          },
-        });
+    // 5. Make single request to backend's batch endpoint (true batching)
+    const targetUrl = `${backendUrl}/api/market/quotes/batch`;
+    
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': backendApiKey,
+          // No user authentication needed - this is public market data
+        },
+        body: JSON.stringify({
+          symbols: validatedSymbols
+        }),
+      });
 
-        if (response.ok) {
-          const data = await response.json();
-          return {
-            symbol: symbol.toUpperCase(),
-            price: data.price,
-            change: data.change,
-            changesPercentage: data.changesPercentage,
-            open: data.open,
-            previousClose: data.previousClose,
-            dayHigh: data.dayHigh,
-            dayLow: data.dayLow,
-            volume: data.volume,
-            timestamp: data.timestamp,
-            name: data.name,
-            marketCap: data.marketCap,
-            exchange: data.exchange
-          };
-        } else {
-          console.warn(`Failed to fetch quote for ${symbol}: ${response.status}`);
-          return null;
-        }
-      } catch (error) {
-        console.error(`Error fetching quote for ${symbol}:`, error);
-        return null;
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Backend returns { quotes: [...], errors: [...] }
+        // Return the same format for consistency
+        return NextResponse.json({ 
+          quotes: data.quotes || [],
+          errors: data.errors || []
+        }, { status: 200 });
+      } else {
+        console.error(`Backend batch request failed: ${response.status}`);
+        return NextResponse.json({ 
+          error: 'Failed to fetch quotes from backend service.' 
+        }, { status: 502 });
       }
-    });
-
-    // Wait for all quote requests to complete
-    const results = await Promise.allSettled(quotePromises);
-    const quotes = results
-      .map((result, index) => {
-        if (result.status === 'fulfilled' && result.value) {
-          return result.value;
-        } else {
-          console.warn(`Failed to get quote for ${symbols[index]}`);
-          return null;
-        }
-      })
-      .filter(quote => quote !== null);
-
-    return NextResponse.json({ quotes }, { status: 200 });
+    } catch (error) {
+      console.error('Error calling backend batch endpoint:', error);
+      return NextResponse.json({ 
+        error: 'Failed to communicate with backend service.' 
+      }, { status: 502 });
+    }
 
   } catch (error: any) {
     console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });

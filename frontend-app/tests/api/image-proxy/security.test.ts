@@ -6,51 +6,9 @@
  */
 
 import { jest, describe, it, expect } from '@jest/globals';
-
-// Import the function to test (we'll need to extract it for testing)
-// For now, we'll test the logic directly
+import { isSecureWildcardMatch } from '@/utils/security';
 
 describe('Image Proxy - Wildcard Security', () => {
-  // Recreate the secure wildcard matching function for testing
-  const isSecureWildcardMatch = (domain: string, wildcardPattern: string): boolean => {
-    if (!wildcardPattern.startsWith('*.')) {
-      return false;
-    }
-    
-    const baseDomain = wildcardPattern.substring(2); // Remove "*.", so "*.example.com" -> "example.com"
-    
-    // SECURITY: Wildcard patterns should NOT match the base domain
-    // This prevents SSRF attacks by ensuring only proper subdomains are allowed
-    if (domain === baseDomain) {
-      return false;
-    }
-    
-    // Case 2: Proper subdomain match
-    // Ensure domain ends with the base domain
-    if (!domain.endsWith(baseDomain)) {
-      return false;
-    }
-    
-    // Check that there's a dot separator before the base domain
-    const dotIndex = domain.length - baseDomain.length - 1;
-    if (dotIndex < 0 || domain.charAt(dotIndex) !== '.') {
-      return false;
-    }
-    
-    // Ensure the part before the dot is not empty (prevents "..example.com")
-    const subdomainPart = domain.substring(0, dotIndex);
-    if (subdomainPart.length === 0) {
-      return false;
-    }
-    
-    // Additional security check: ensure the subdomain part doesn't start or end with a dot
-    // This prevents domains like ".example.com" or "example.com."
-    if (subdomainPart.startsWith('.') || subdomainPart.endsWith('.')) {
-      return false;
-    }
-    
-    return true;
-  };
 
   describe('Base Domain Security (CRITICAL)', () => {
     it('should NOT allow base domain to match wildcard pattern', () => {

@@ -102,21 +102,26 @@ export function useMarketPercentages(symbols: string[], options?: { forceRefresh
     }
   }, [marketDataService]);
 
-  // Recalculate when symbols change
+  // Recalculate when symbols change or force refresh is requested
   useEffect(() => {
     // Check if symbols actually changed
     const symbolsChanged = 
       symbols.length !== prevSymbolsRef.current.length ||
       symbols.some((symbol, index) => symbol !== prevSymbolsRef.current[index]);
 
-    if (symbolsChanged) {
+    // Check if force refresh was requested
+    const forceRefreshRequested = options?.forceRefresh && forceRefreshRef.current;
+
+    if (symbolsChanged || forceRefreshRequested) {
       prevSymbolsRef.current = symbols;
-      // Reset force refresh flag when symbols change
+      // Reset force refresh flag when symbols change or after processing force refresh
       forceRefreshRef.current = false;
       
       if (symbols.length > 0) {
-        // Only calculate for symbols we haven't initiated calculation for
-        const symbolsToCalculate = symbols.filter(symbol => !calculatedSymbolsRef.current.has(symbol));
+        // For force refresh, calculate all symbols. For symbol changes, only calculate new ones
+        const symbolsToCalculate = forceRefreshRequested 
+          ? symbols 
+          : symbols.filter(symbol => !calculatedSymbolsRef.current.has(symbol));
         
         if (symbolsToCalculate.length > 0) {
           // Mark these symbols as being calculated
@@ -125,7 +130,7 @@ export function useMarketPercentages(symbols: string[], options?: { forceRefresh
         }
       }
     }
-  }, [symbols, calculatePercentages]);
+  }, [symbols, options?.forceRefresh, calculatePercentages]);
 
   // Clean up percentages and refs for symbols that are no longer needed
   useEffect(() => {

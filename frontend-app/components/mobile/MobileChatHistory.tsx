@@ -31,13 +31,24 @@ export default function MobileChatHistory({
   // Prevent body scroll when sidebar is open
   useEffect(() => {
     if (isOpen) {
+      // Store current overflow value before hiding it
+      const currentOverflow = document.body.style.overflow;
+      document.body.dataset.previousOverflow = currentOverflow;
       document.body.style.overflow = 'hidden';
     } else {
-      document.body.style.overflow = 'unset';
+      // Restore previous overflow value instead of unconditionally setting to 'unset'
+      const previousOverflow = document.body.dataset.previousOverflow || 'unset';
+      document.body.style.overflow = previousOverflow;
+      delete document.body.dataset.previousOverflow;
     }
 
     return () => {
-      document.body.style.overflow = 'unset';
+      // Cleanup: restore previous overflow value if component unmounts while open
+      if (isOpen) {
+        const previousOverflow = document.body.dataset.previousOverflow || 'unset';
+        document.body.style.overflow = previousOverflow;
+        delete document.body.dataset.previousOverflow;
+      }
     };
   }, [isOpen]);
 

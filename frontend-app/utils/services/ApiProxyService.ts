@@ -20,7 +20,7 @@ export interface ProxyRequest {
 }
 
 export interface ProxyResponse<T = any> {
-  data: T;
+  data: T | null;
   status: number;
   headers?: Record<string, string>;
 }
@@ -67,7 +67,7 @@ export class ApiProxyService {
       const response = await fetch(targetUrl, {
         method: request.method || 'GET',
         headers,
-        body: request.body ? JSON.stringify(request.body) : undefined,
+        body: request.method && request.method !== 'GET' && request.body ? JSON.stringify(request.body) : undefined,
       });
 
       return await this.processResponse<T>(response, request.backendPath);
@@ -92,16 +92,51 @@ export class ApiProxyService {
     const contentType = response.headers.get('content-type') || '';
     const isJsonResponse = contentType.includes('application/json');
 
-    if (!isJsonResponse) {
-      console.error(`[API Proxy] Received non-JSON response from backend. Content-Type: ${contentType}, Path: ${path}`);
-      if (!response.ok) {
-        throw new ApiError('Backend service returned an invalid response format.', response.status);
+    // Handle successful responses first
+    if (response.ok) {
+      // Handle 204 No Content responses (common for DELETE operations)
+      if (response.status === 204) {
+        return {
+          data: null as T,
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries())
+        };
       }
+
+      // Handle non-JSON responses (file downloads, etc.)
+      if (!isJsonResponse) {
+        // For successful non-JSON responses, return the raw response data
+        // This handles file downloads, binary data, etc.
+        const responseData = await response.arrayBuffer();
+        return {
+          data: responseData as T,
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries())
+        };
+      }
+
+      // Handle JSON responses
+      const responseText = await response.text();
+      let responseData;
       
-      // For successful non-JSON responses, we can't return structured data.
-      // This case should be handled based on specific needs. For now, we'll
-      // treat it as an error because our proxy expects JSON.
-      throw new ApiError('Unsupported content type received from backend.', 502);
+      try {
+        responseData = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('[API Proxy] Failed to parse backend JSON response:', parseError);
+        throw new ApiError('Invalid JSON response from backend service.', 502);
+      }
+
+      return {
+        data: responseData as T,
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries())
+      };
+    }
+
+    // Handle error responses
+    if (!isJsonResponse) {
+      console.error(`[API Proxy] Received non-JSON error response from backend. Content-Type: ${contentType}, Path: ${path}`);
+      throw new ApiError('Backend service returned an invalid error response format.', response.status);
     }
     
     const responseText = await response.text();
@@ -110,18 +145,11 @@ export class ApiProxyService {
     try {
       responseData = responseText ? JSON.parse(responseText) : {};
     } catch (parseError) {
-      console.error('[API Proxy] Failed to parse backend JSON response:', parseError);
-      throw new ApiError('Invalid JSON response from backend service.', 502);
+      console.error('[API Proxy] Failed to parse backend error JSON response:', parseError);
+      throw new ApiError('Invalid error response from backend service.', 502);
     }
 
-    if (!response.ok) {
-      this.handleErrorResponse(response, responseData, path);
-    }
-
-    return {
-      data: responseData as T,
-      status: response.status
-    };
+    this.handleErrorResponse(response, responseData, path);
   }
 
   /**

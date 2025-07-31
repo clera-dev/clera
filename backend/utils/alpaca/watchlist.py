@@ -144,6 +144,19 @@ def get_or_create_default_watchlist(account_id: str, broker_client: BrokerClient
                         add_symbol_to_watchlist(account_id, symbol, str(watchlist.id), broker_client=broker_client)
                     except Exception as e:
                         logger.warning(f"Failed to add default symbol {symbol} to watchlist: {str(e)}")
+                
+                # 🔧 FIX: Fetch the updated watchlist with newly added symbols
+                # This ensures callers get the fresh watchlist instance with populated assets
+                updated_watchlist = broker_client.get_watchlist_for_account_by_id(
+                    account_id=account_id,
+                    watchlist_id=str(watchlist.id)
+                )
+                if updated_watchlist:
+                    logger.info(f"Successfully fetched updated watchlist {updated_watchlist.id} with {len(updated_watchlist.assets or [])} assets")
+                    return updated_watchlist
+                else:
+                    logger.warning(f"Failed to fetch updated watchlist after adding default symbols, returning original")
+                    return watchlist
             
             return watchlist
         

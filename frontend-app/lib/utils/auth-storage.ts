@@ -62,7 +62,7 @@ const shouldClearKey = (key: string): boolean => {
   // Define patterns for user-specific keys that should be cleared
   const userSpecificPatterns = [
     'alpacaAccountId_',  // Account-specific data
-    'clera_',            // User-specific Clera app data (narrowed from 'clera')
+    'clera',             // All Clera app data (broadened from 'clera_' to catch all Clera keys)
     'user_',             // Any user-prefixed data
     'session_',          // Session data
     'chat_',             // Chat-related data

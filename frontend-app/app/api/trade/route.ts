@@ -59,6 +59,12 @@ export async function POST(request: NextRequest) {
       // Clear the timeout since the request completed
       clearTimeout(timeoutId);
 
+      // Handle 204 No Content responses properly (no body allowed)
+      if (response.status === 204) {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      // For all other responses, read and parse the body
       const responseText = await response.text();
       let responseData;
       try {
@@ -80,11 +86,6 @@ export async function POST(request: NextRequest) {
         
         // Return safe error message to client
         return NextResponse.json({ error: safeErrorMessage }, { status: response.status });
-      }
-
-      // Handle 204 No Content responses properly (no body allowed)
-      if (response.status === 204) {
-        return new NextResponse(null, { status: 204 });
       }
 
       return NextResponse.json(responseData, { status: response.status });

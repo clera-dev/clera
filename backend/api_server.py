@@ -745,10 +745,10 @@ async def get_stock_quote_with_changes(ticker: str):
         ticker = ticker.upper().strip()
         logger.info(f"Received quote request for ticker: {ticker}")
 
-        # Import the function from market_data utility
-        from utils.market_data import get_stock_quote_full
+        # Import the async function from market_data utility
+        from utils.market_data import get_stock_quote_full_async
         
-        quote_data = get_stock_quote_full(ticker)
+        quote_data = await get_stock_quote_full_async(ticker)
         
         if not quote_data or len(quote_data) == 0:
             logger.warning(f"No quote data found for ticker: {ticker}")
@@ -806,11 +806,11 @@ async def get_stock_quotes_batch(request: BatchQuoteRequest):
         symbols = [symbol.upper().strip() for symbol in request.symbols]
         logger.info(f"Received batch quote request for {len(symbols)} symbols: {symbols}")
 
-        # Import the batch function from market_data utility
-        from utils.market_data import get_stock_quotes_batch
+        # Import the async batch function from market_data utility
+        from utils.market_data import get_stock_quotes_batch_async
         
         # Get batch quotes from FMP API (single API call)
-        quotes_data = get_stock_quotes_batch(symbols)
+        quotes_data = await get_stock_quotes_batch_async(symbols)
         
         if not quotes_data:
             logger.warning(f"No quote data found for symbols: {symbols}")

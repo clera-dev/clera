@@ -30,6 +30,10 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    
+    // SECURITY: Fix prototype chain for proper instanceof checks after transpilation
+    // This ensures ApiError instances are correctly recognized across the app
+    Object.setPrototypeOf(this, ApiError.prototype);
   }
 }
 
@@ -51,74 +55,76 @@ export class SecureErrorMapper {
    * while providing actionable error messages to users.
    */
   private static readonly ERROR_MAPPINGS = {
-    // Authentication errors
-    'authentication failed': 'Authentication failed. Please log in again.',
-    'invalid token': 'Authentication failed. Please log in again.',
+    // SPECIFIC PATTERNS FIRST (Most specific to least specific within each category)
+    
+    // Authentication errors - Specific first
     'token expired': 'Your session has expired. Please log in again.',
-    'unauthorized': 'You are not authorized to perform this action.',
+    'invalid token': 'Authentication failed. Please log in again.',
     'invalid credentials': 'Authentication failed. Please check your credentials and try again.',
     'login required': 'Please log in to access this resource.',
+    'authentication failed': 'Authentication failed. Please log in again.',
+    'unauthorized': 'You are not authorized to perform this action.',
     
-    // Authorization errors
-    'forbidden': 'You do not have permission to access this resource.',
+    // Authorization errors - Specific first
     'insufficient permissions': 'You do not have permission to perform this action.',
-    'access denied': 'Access denied. Please contact support if you believe this is an error.',
     'permission denied': 'You do not have the required permissions for this action.',
     'role required': 'You need additional permissions to perform this action.',
+    'access denied': 'Access denied. Please contact support if you believe this is an error.',
+    'forbidden': 'You do not have permission to access this resource.',
     
-    // Resource errors
-    'not found': 'The requested resource was not found.',
-    'resource not found': 'The requested resource was not found.',
+    // Resource errors - Specific first
     'symbol not found': 'The requested symbol was not found.',
-    'invalid symbol': 'The provided symbol is not valid.',
     'account not found': 'The requested account was not found.',
     'order not found': 'The requested order was not found.',
     'position not found': 'The requested position was not found.',
+    'resource not found': 'The requested resource was not found.',
+    'invalid symbol': 'The provided symbol is not valid.',
+    'not found': 'The requested resource was not found.',
     
-    // Validation errors
-    'validation error': 'The provided data is invalid. Please check your input and try again.',
-    'invalid input': 'The provided data is invalid. Please check your input and try again.',
-    'bad request': 'The request is invalid. Please check your input and try again.',
+    // Validation errors - Specific first
     'missing required field': 'Required information is missing. Please check your input and try again.',
     'invalid format': 'The data format is invalid. Please check your input and try again.',
     'out of range': 'The provided value is outside the allowed range.',
+    'validation error': 'The provided data is invalid. Please check your input and try again.',
+    'invalid input': 'The provided data is invalid. Please check your input and try again.',
+    'bad request': 'The request is invalid. Please check your input and try again.',
     
-    // Rate limiting
+    // Rate limiting - Specific first
     'rate limit exceeded': 'Too many requests. Please wait a moment and try again.',
     'too many requests': 'Too many requests. Please wait a moment and try again.',
-    'rate limit': 'Rate limit exceeded. Please wait before making another request.',
     'throttled': 'Request throttled. Please wait before trying again.',
+    'rate limit': 'Rate limit exceeded. Please wait before making another request.',
     
-    // Market data errors
-    'market data unavailable': 'Market data is currently unavailable. Please try again later.',
-    'trading hours': 'This action is only available during market hours.',
-    'market closed': 'The market is currently closed.',
-    'market data error': 'Unable to retrieve market data. Please try again later.',
+    // Market data errors - Specific first
     'price feed unavailable': 'Price information is temporarily unavailable.',
+    'market data error': 'Unable to retrieve market data. Please try again later.',
+    'market data unavailable': 'Market data is currently unavailable. Please try again later.',
+    'market closed': 'The market is currently closed.',
+    'trading hours': 'This action is only available during market hours.',
     
-    // Trading errors
-    'insufficient funds': 'Insufficient funds to complete this trade.',
-    'invalid order': 'The order is invalid. Please check your order details.',
-    'order rejected': 'The order was rejected. Please try again or contact support.',
-    'position limit': 'You have reached the maximum position limit for this symbol.',
-    'order size limit': 'The order size exceeds the allowed limit.',
-    'trading suspended': 'Trading is currently suspended for this symbol.',
+    // Trading errors - Specific first
     'order type not supported': 'This order type is not supported.',
+    'order size limit': 'The order size exceeds the allowed limit.',
+    'position limit': 'You have reached the maximum position limit for this symbol.',
     'price out of range': 'The order price is outside the allowed range.',
+    'trading suspended': 'Trading is currently suspended for this symbol.',
+    'order rejected': 'The order was rejected. Please try again or contact support.',
+    'invalid order': 'The order is invalid. Please check your order details.',
+    'insufficient funds': 'Insufficient funds to complete this trade.',
     
-    // Network and connection errors
-    'connection error': 'Unable to connect to the service. Please try again later.',
-    'timeout': 'The request timed out. Please try again later.',
-    'network error': 'Network connection error. Please check your connection and try again.',
-    'service unavailable': 'The service is temporarily unavailable. Please try again later.',
+    // Network and connection errors - Specific first
     'gateway timeout': 'The service is taking too long to respond. Please try again later.',
+    'service unavailable': 'The service is temporarily unavailable. Please try again later.',
+    'network error': 'Network connection error. Please check your connection and try again.',
+    'timeout': 'The request timed out. Please try again later.',
+    'connection error': 'Unable to connect to the service. Please try again later.',
     
-    // Generic errors
-    'internal server error': 'An internal error occurred. Please try again later.',
-    'server error': 'A server error occurred. Please try again later.',
+    // GENERIC PATTERNS LAST (Most generic patterns at the end)
+    'processing error': 'An error occurred while processing your request.',
     'unexpected error': 'An unexpected error occurred. Please try again later.',
     'system error': 'A system error occurred. Please try again later.',
-    'processing error': 'An error occurred while processing your request.',
+    'internal server error': 'An internal error occurred. Please try again later.',
+    'server error': 'A server error occurred. Please try again later.',
   };
 
   /**
@@ -207,7 +213,7 @@ export class SecureErrorMapper {
       statusCode,
       path,
       backendError,
-      ...additionalContext
+      ...(additionalContext ?? {})
     };
     
     // Log the error for debugging but don't expose it to the client

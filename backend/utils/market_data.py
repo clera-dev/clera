@@ -6,6 +6,7 @@ from urllib.request import urlopen
 import certifi
 import json
 from dotenv import load_dotenv
+import httpx
 
 # Load environment variables
 load_dotenv(override=True)
@@ -17,15 +18,32 @@ def get_jsonparsed_data(url):
     data = response.read().decode("utf-8")
     return json.loads(data)
 
+async def get_jsonparsed_data_async(url: str) -> dict:
+    """Asynchronously get the JSON data from a URL."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        return response.json()
+
 def get_stock_quote(symbol: str) -> dict:
     """Get the stock quote for a given symbol using the Financial Modeling Prep API."""
     url = (f"https://financialmodelingprep.com/api/v3/quote-short/{symbol}?apikey={fin_modeling_prep_api_key}")
     return get_jsonparsed_data(url)
 
+async def get_stock_quote_async(symbol: str) -> dict:
+    """Asynchronously get the stock quote for a given symbol."""
+    url = (f"https://financialmodelingprep.com/api/v3/quote-short/{symbol}?apikey={fin_modeling_prep_api_key}")
+    return await get_jsonparsed_data_async(url)
+
 def get_stock_quote_full(symbol: str) -> dict:
     """Get the full stock quote with changes and percentages using the Financial Modeling Prep API."""
     url = (f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={fin_modeling_prep_api_key}")
     return get_jsonparsed_data(url)
+
+async def get_stock_quote_full_async(symbol: str) -> dict:
+    """Asynchronously get the full stock quote with changes and percentages."""
+    url = (f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={fin_modeling_prep_api_key}")
+    return await get_jsonparsed_data_async(url)
 
 def get_stock_quotes_batch(symbols: list) -> list:
     """
@@ -49,4 +67,15 @@ def get_stock_quotes_batch(symbols: list) -> list:
     
     # Let exceptions bubble up to callers for proper error handling
     # This maintains separation of concerns and allows callers to decide how to handle failures
-    return get_jsonparsed_data(url) 
+    return get_jsonparsed_data(url)
+
+async def get_stock_quotes_batch_async(symbols: list) -> list:
+    """
+    Asynchronously get full stock quotes for multiple symbols in a single API call.
+    """
+    if not symbols:
+        return []
+    
+    symbols_str = ','.join(symbols)
+    url = f"https://financialmodelingprep.com/api/v3/quote/{symbols_str}?apikey={fin_modeling_prep_api_key}"
+    return await get_jsonparsed_data_async(url)

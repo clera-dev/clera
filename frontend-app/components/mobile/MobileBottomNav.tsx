@@ -61,7 +61,17 @@ export default function MobileBottomNav({
   currentPage, 
   isChatOpen 
 }: MobileBottomNavProps) {
-  const isActive = (path: string) => currentPage === path;
+  const isActive = (path: string) => {
+    // Use prefix matching to keep tabs active on sub-routes
+    // This ensures navigation state remains clear when users are within a section
+    if (path === '/') {
+      // Home path should only match exactly
+      return currentPage === path;
+    }
+    // For other paths, check if currentPage starts with the path
+    // This handles sub-routes like /portfolio/analytics, /dashboard/settings, etc.
+    return currentPage.startsWith(path);
+  };
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">

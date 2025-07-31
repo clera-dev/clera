@@ -43,14 +43,14 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/conversations/submit-message": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/conversations/handle-interrupt": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   
-  // FMP API routes - do not require authentication (use server-side API keys)
-  "/api/fmp/chart": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/fmp/profile": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/fmp/price-target": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/fmp/chart/health": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  // FMP API routes - require authentication to prevent abuse (authenticated users have natural rate limiting)
+  "/api/fmp/chart": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/profile": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/price-target": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/chart/health": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   
-  // Image proxy route - public access for financial news images
-  "/api/image-proxy": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  // Image proxy route - require authentication to prevent bandwidth abuse
+  "/api/image-proxy": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {

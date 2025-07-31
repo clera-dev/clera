@@ -103,7 +103,7 @@ export function proxyApiRoute(backendPath: string, httpMethod: 'GET' | 'POST' | 
     const supabase = await createClient();
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !session?.access_token) {
-      throw new Error('Session token required for backend authentication');
+      throw Object.assign(new Error('Session token required for backend authentication'), { status: 401 });
     }
     
     // console.log(`[API Proxy] Forwarding ${httpMethod} request for user ${user.id} to: ${targetUrl}`);
@@ -115,7 +115,7 @@ export function proxyApiRoute(backendPath: string, httpMethod: 'GET' | 'POST' | 
         'X-API-KEY': backendApiKey,
         'Authorization': `Bearer ${session.access_token}`, // Send JWT token for secure authentication
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: httpMethod !== 'GET' && body ? JSON.stringify(body) : undefined,
     });
 
     // Handle cases where the backend response might be empty

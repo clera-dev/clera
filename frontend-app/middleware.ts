@@ -13,56 +13,7 @@ import {
   shouldRestartOnboarding
 } from './utils/auth/middleware-helpers';
 import { AUTH_ROUTES } from './lib/constants';
-
-/**
- * Validates that a redirect URL is safe and same-origin
- * @param url The URL to validate
- * @returns true if the URL is safe, false otherwise
- */
-function isValidRedirectUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') {
-    return false;
-  }
-  
-  // Must start with '/' to be a relative path
-  if (!url.startsWith('/')) {
-    return false;
-  }
-  
-  // Prevent directory traversal attacks
-  if (url.includes('..') || url.includes('//')) {
-    return false;
-  }
-  
-  // Only allow safe paths within the application
-  const allowedPaths = [
-    '/dashboard',
-    '/portfolio', 
-    '/invest',
-    '/news',
-    '/chat',
-    '/settings',
-    '/account',
-    '/info'
-  ];
-  
-  // Check if the URL starts with any allowed path
-  const isAllowedPath = allowedPaths.some(path => url.startsWith(path));
-  
-  // Additional safety: ensure it's not trying to access sensitive routes
-  const blockedPatterns = [
-    '/api/',
-    '/_next/',
-    '/admin/',
-    '/internal/',
-    '/debug/',
-    '/test/'
-  ];
-  
-  const isBlockedPath = blockedPatterns.some(pattern => url.startsWith(pattern));
-  
-  return isAllowedPath && !isBlockedPath;
-}
+import { isValidRedirectUrl, validateAndSanitizeRedirectUrl } from './utils/security';
 
 // Paths that are always accessible regardless of auth state
 const publicPaths = [
@@ -314,22 +265,13 @@ export async function middleware(request: NextRequest) {
             const redirectUrl = new URL('/protected', request.url);
             const redirectResponse = NextResponse.redirect(redirectUrl);
             
-            // Validate the path before setting it as intended redirect to prevent open-redirect attacks
-            if (isValidRedirectUrl(path)) {
-              redirectResponse.cookies.set('intended_redirect', path, {
-                maxAge: 3600,
-                path: '/',
-                sameSite: 'strict'
-              });
-            } else {
-              console.warn(`[Middleware] Invalid redirect path detected: ${path}`);
-              // Set a safe default redirect instead
-              redirectResponse.cookies.set('intended_redirect', '/portfolio', {
-                maxAge: 3600,
-                path: '/',
-                sameSite: 'strict'
-              });
-            }
+            // Validate and sanitize the path before setting it as intended redirect to prevent open-redirect attacks
+            const safeRedirectPath = validateAndSanitizeRedirectUrl(path);
+            redirectResponse.cookies.set('intended_redirect', safeRedirectPath, {
+              maxAge: 3600,
+              path: '/',
+              sameSite: 'strict'
+            });
             return redirectResponse;
           }
         }
@@ -368,22 +310,13 @@ export async function middleware(request: NextRequest) {
               const redirectUrl = new URL('/protected', request.url);
               const redirectResponse = NextResponse.redirect(redirectUrl);
               
-              // Validate the path before setting it as intended redirect to prevent open-redirect attacks
-              if (isValidRedirectUrl(path)) {
-                redirectResponse.cookies.set('intended_redirect', path, {
-                  maxAge: 3600,
-                  path: '/',
-                  sameSite: 'strict'
-                });
-              } else {
-                console.warn(`[Middleware] Invalid redirect path detected: ${path}`);
-                // Set a safe default redirect instead
-                redirectResponse.cookies.set('intended_redirect', '/portfolio', {
-                  maxAge: 3600,
-                  path: '/',
-                  sameSite: 'strict'
-                });
-              }
+              // Validate and sanitize the path before setting it as intended redirect to prevent open-redirect attacks
+              const safeRedirectPath = validateAndSanitizeRedirectUrl(path);
+              redirectResponse.cookies.set('intended_redirect', safeRedirectPath, {
+                maxAge: 3600,
+                path: '/',
+                sameSite: 'strict'
+              });
               return redirectResponse;
             }
           }

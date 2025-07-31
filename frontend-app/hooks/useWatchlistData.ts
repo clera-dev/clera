@@ -15,6 +15,11 @@
  * - isUpdatingWatchlist: True during add/remove operations
  * - loadingProgress: Detailed progress tracking for initial loads
  * - No generic isLoading to avoid confusion with specific states
+ * 
+ * RACE CONDITION PROTECTION: This hook prevents overlapping fetchWatchlist calls:
+ * - Uses AbortController to cancel previous requests when new ones start
+ * - Tracks request sequence to ignore stale responses
+ * - Ensures only the most recent request's response is processed
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -67,22 +72,34 @@ export function useWatchlistData({
   const [isUpdatingWatchlist, setIsUpdatingWatchlist] = useState(false);
   const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState<{ loaded: number; total: number } | null>(null);
-  const [loadedItemsCount, setLoadedItemsCount] = useState(0);
 
   // Ref to access latest watchlistData in setInterval callbacks
   const watchlistDataRef = useRef<WatchlistItem[]>([]);
+  
+  // Race condition protection: track current request and abort controller
+  const currentRequestRef = useRef<AbortController | null>(null);
+  const requestSequenceRef = useRef<number>(0);
   
   // Keep ref in sync with state
   useEffect(() => {
     watchlistDataRef.current = watchlistData;
   }, [watchlistData]);
 
-  const handleIndividualQuoteFallback = useCallback(async (items: WatchlistItem[]) => {
+  const handleIndividualQuoteFallback = useCallback(async (items: WatchlistItem[], requestId: number) => {
+    // Check if this request is still current
+    if (requestId !== requestSequenceRef.current) {
+      return; // Ignore stale request
+    }
+    
     let loadedCount = 0;
     const totalItems = items.length;
     
     // Update progress for each completed item
     const updateProgress = () => {
+      // Check if this request is still current before updating state
+      if (requestId !== requestSequenceRef.current) {
+        return;
+      }
       loadedCount++;
       setLoadingProgress({ loaded: loadedCount, total: totalItems });
     };
@@ -90,6 +107,11 @@ export function useWatchlistData({
     const enhancedItems = await Promise.allSettled(
       items.map(async (item) => {
         try {
+          // Check if request was aborted before each individual call
+          if (requestId !== requestSequenceRef.current) {
+            throw new Error('Request aborted');
+          }
+          
           const quoteResponse = await fetch(`/api/market/quote/${item.symbol}`);
           let currentPrice = undefined;
           
@@ -120,6 +142,11 @@ export function useWatchlistData({
       })
     );
     
+    // Final check before updating state
+    if (requestId !== requestSequenceRef.current) {
+      return; // Ignore stale request
+    }
+    
     const priceEnhancedItems = enhancedItems.map((result, index) => 
       result.status === 'fulfilled' ? result.value : items[index]
     );
@@ -127,23 +154,44 @@ export function useWatchlistData({
     setWatchlistData(priceEnhancedItems);
     
     // Clear progress after a brief delay to show completion
-    setTimeout(() => setLoadingProgress(null), 500);
+    setTimeout(() => {
+      if (requestId === requestSequenceRef.current) {
+        setLoadingProgress(null);
+      }
+    }, 500);
   }, []);
 
   const fetchWatchlist = useCallback(async () => {
     if (!accountId) return;
     
+    // Cancel any existing request
+    if (currentRequestRef.current) {
+      currentRequestRef.current.abort();
+    }
+    
+    // Create new abort controller and increment request sequence
+    const abortController = new AbortController();
+    currentRequestRef.current = abortController;
+    const requestId = ++requestSequenceRef.current;
+    
     setError(null);
     setHasAttemptedLoad(true);
     
     // Only show initial loading spinner if this is the first load (no existing data)
-    const isFirstLoad = watchlistData.length === 0;
+    const isFirstLoad = watchlistDataRef.current.length === 0;
     if (isFirstLoad) {
       setIsInitialLoading(true);
     }
     
     try {
-      const response = await fetch(`/api/watchlist/${accountId}`);
+      const response = await fetch(`/api/watchlist/${accountId}`, {
+        signal: abortController.signal
+      });
+      
+      // Check if this request is still current
+      if (requestId !== requestSequenceRef.current) {
+        return; // Ignore stale response
+      }
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -151,6 +199,11 @@ export function useWatchlistData({
       }
       
       const result = await response.json();
+      
+      // Check again before processing response
+      if (requestId !== requestSequenceRef.current) {
+        return; // Ignore stale response
+      }
       
       // PHASE 1: Show basic watchlist structure immediately, preserving existing data
       const basicWatchlistItems: WatchlistItem[] = result.symbols.map((symbol: string) => {
@@ -169,12 +222,16 @@ export function useWatchlistData({
       // Only show progress for initial loads, not background refreshes
       if (isFirstLoad) {
         setLoadingProgress({ loaded: 0, total: basicWatchlistItems.length });
-        setLoadedItemsCount(0);
       }
       
       // PHASE 2: Enhance with price data using batch API
       if (basicWatchlistItems.length > 0) {
         try {
+          // Check if request was aborted before batch call
+          if (requestId !== requestSequenceRef.current) {
+            return; // Ignore stale request
+          }
+          
           const batchQuoteResponse = await fetch('/api/market/quotes/batch', {
             method: 'POST',
             headers: {
@@ -182,8 +239,14 @@ export function useWatchlistData({
             },
             body: JSON.stringify({
               symbols: basicWatchlistItems.map(item => item.symbol)
-            })
+            }),
+            signal: abortController.signal
           });
+          
+          // Check if this request is still current
+          if (requestId !== requestSequenceRef.current) {
+            return; // Ignore stale response
+          }
           
           if (batchQuoteResponse.ok) {
             const batchData = await batchQuoteResponse.json();
@@ -203,32 +266,59 @@ export function useWatchlistData({
               isLoading: false
             }));
             
+            // Final check before updating state
+            if (requestId !== requestSequenceRef.current) {
+              return; // Ignore stale response
+            }
+            
             setWatchlistData(priceEnhancedItems);
             
             // Update progress to show all items loaded
             if (isFirstLoad) {
               setLoadingProgress({ loaded: basicWatchlistItems.length, total: basicWatchlistItems.length });
               // Clear progress after a brief delay to show completion
-              setTimeout(() => setLoadingProgress(null), 500);
+              setTimeout(() => {
+                if (requestId === requestSequenceRef.current) {
+                  setLoadingProgress(null);
+                }
+              }, 500);
             } else {
               setLoadingProgress(null);
             }
           } else {
             console.warn('Batch quote API failed, falling back to individual calls');
-            await handleIndividualQuoteFallback(basicWatchlistItems);
+            await handleIndividualQuoteFallback(basicWatchlistItems, requestId);
           }
         } catch (err) {
+          // Check if this was an abort error
+          if (err instanceof Error && err.name === 'AbortError') {
+            return; // Request was aborted, ignore
+          }
+          
           console.warn('Batch quote API error, falling back to individual calls:', err);
-          await handleIndividualQuoteFallback(basicWatchlistItems);
+          await handleIndividualQuoteFallback(basicWatchlistItems, requestId);
         }
       }
       
     } catch (err: any) {
-      console.error('Error fetching watchlist:', err);
-      setError(err.message || 'Failed to load watchlist');
-      setIsInitialLoading(false);
+      // Check if this was an abort error
+      if (err instanceof Error && err.name === 'AbortError') {
+        return; // Request was aborted, ignore
+      }
+      
+      // Only update error state if this is still the current request
+      if (requestId === requestSequenceRef.current) {
+        console.error('Error fetching watchlist:', err);
+        setError(err.message || 'Failed to load watchlist');
+        setIsInitialLoading(false);
+      }
+    } finally {
+      // Clean up abort controller if this was the current request
+      if (currentRequestRef.current === abortController) {
+        currentRequestRef.current = null;
+      }
     }
-  }, [accountId, watchlistData.length, handleIndividualQuoteFallback]);
+  }, [accountId, handleIndividualQuoteFallback]);
 
   const addToWatchlist = useCallback(async (symbol: string) => {
     if (!accountId || isUpdatingWatchlist) return;
@@ -320,17 +410,25 @@ export function useWatchlistData({
       fetchWatchlist();
       
       const interval = setInterval(() => {
-        if (!isUpdatingWatchlist) {
+        // Only start a new request if we're not currently updating the watchlist
+        // and there's no active fetch request
+        if (!isUpdatingWatchlist && !currentRequestRef.current) {
           // Background refresh - don't show loading spinner, just update data seamlessly
           fetchWatchlist();
         }
       }, 30000);
       
-      return () => clearInterval(interval);
+      return () => {
+        clearInterval(interval);
+        // Cancel any pending request when component unmounts
+        if (currentRequestRef.current) {
+          currentRequestRef.current.abort();
+        }
+      };
     } else if (accountId && watchlistSymbols && watchlistData.length === 0) {
       setIsInitialLoading(true);
     }
-  }, [accountId, watchlistSymbols, fetchWatchlist, isUpdatingWatchlist, watchlistData.length, hasAttemptedLoad]);
+  }, [accountId, watchlistSymbols, fetchWatchlist, isUpdatingWatchlist, hasAttemptedLoad]);
 
   return {
     // State

@@ -18,69 +18,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-
-/**
- * Validates that a redirect URL is safe and same-origin
- * @param url The URL to validate
- * @returns true if the URL is safe, false otherwise
- */
-function isValidRedirectUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') {
-    return false;
-  }
-  
-  // Must start with '/' to be a relative path
-  if (!url.startsWith('/')) {
-    return false;
-  }
-  
-  // Prevent directory traversal attacks
-  if (url.includes('..') || url.includes('//')) {
-    return false;
-  }
-  
-  // Prevent backslash attacks (directory traversal)
-  if (url.includes('\\')) {
-    return false;
-  }
-  
-  // Allow legitimate URL encoding but prevent double-encoding attacks
-  // Check for suspicious patterns like %2e%2e (encoded ..) or %2f%2f (encoded //)
-  if (url.includes('%2e%2e') || url.includes('%2f%2f') || url.includes('%5c')) {
-    return false;
-  }
-  
-  // Only allow safe paths within the application
-  const allowedPaths = [
-    '/dashboard',
-    '/portfolio', 
-    '/invest',
-    '/news',
-    '/chat',
-    '/settings',
-    '/account',
-    '/info'
-  ];
-  
-  // Check if the URL starts with any allowed path
-  const isAllowedPath = allowedPaths.some(path => url.startsWith(path));
-  
-  // Additional safety: ensure it's not trying to access sensitive routes
-  const blockedPatterns = [
-    '/api/',
-    '/_next/',
-    '/admin/',
-    '/internal/',
-    '/debug/',
-    '/test/',
-    '/protected/',
-    '/auth/'
-  ];
-  
-  const isBlockedPath = blockedPatterns.some(pattern => url.startsWith(pattern));
-  
-  return isAllowedPath && !isBlockedPath;
-}
+import { isValidRedirectUrl } from './security';
 
 /**
  * Get the intended redirect URL from cookies after onboarding is complete
@@ -93,8 +31,9 @@ export function getIntendedRedirect(): string {
   const redirectCookie = cookies.find(cookie => cookie.trim().startsWith('intended_redirect='));
   
   if (redirectCookie) {
-    // Extract the intended URL
-    const intendedUrl = redirectCookie.split('=')[1];
+    // Extract and URL-decode the intended URL
+    const encodedUrl = redirectCookie.split('=')[1];
+    const intendedUrl = decodeURIComponent(encodedUrl);
     
     // Validate the URL before returning it
     if (isValidRedirectUrl(intendedUrl)) {

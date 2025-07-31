@@ -15,9 +15,9 @@ export class MarketDataProcessorService {
                     const utcDate = parseFMPEasternTimestamp(fmpTimestamp);
                     if (utcDate > now) return null;
 
-                    // Coerce openPrice to a number to avoid string issues
+                    // Coerce prices to numbers to avoid string issues in calculations
                     const openPrice = Number(item.open) || 0;
-                    const closePrice = item.close || 0;
+                    const closePrice = Number(item.close) || 0;
                     const price = closePrice; 
 
                     return {

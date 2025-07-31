@@ -1,57 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isSecureWildcardMatch } from '@/utils/security';
 
 /**
- * Securely validates if a domain matches a wildcard pattern
- * Prevents SSRF attacks by ensuring only proper subdomains are allowed
+ * Checks if a hostname resolves to a private/internal IP address
+ * Prevents SSRF attacks by blocking access to internal network ranges
  * 
- * SECURITY: This function implements strict wildcard matching that:
- * - Rejects base domain matches (e.g., "example.com" does NOT match "*.example.com")
- * - Only allows proper subdomains (e.g., "api.example.com" matches "*.example.com")
- * - Prevents SSRF attacks by maintaining strict allowlist boundaries
- * - Ensures wildcard patterns behave as expected for security
- * 
- * @param domain - The domain to validate (e.g., "api.example.com")
- * @param wildcardPattern - The wildcard pattern (e.g., "*.example.com")
- * @returns true if domain is a valid match, false otherwise
+ * @param hostname - The hostname to check
+ * @returns true if the hostname is a private IP, false otherwise
  */
-const isSecureWildcardMatch = (domain: string, wildcardPattern: string): boolean => {
-  if (!wildcardPattern.startsWith('*.')) {
-    return false;
-  }
-  
-  const baseDomain = wildcardPattern.substring(2); // Remove "*.", so "*.example.com" -> "example.com"
-  
-  // SECURITY: Wildcard patterns should NOT match the base domain
-  // This prevents SSRF attacks by ensuring only proper subdomains are allowed
-  if (domain === baseDomain) {
-    return false;
-  }
-  
-  // Case 2: Proper subdomain match
-  // Ensure domain ends with the base domain
-  if (!domain.endsWith(baseDomain)) {
-    return false;
-  }
-  
-  // Check that there's a dot separator before the base domain
-  const dotIndex = domain.length - baseDomain.length - 1;
-  if (dotIndex < 0 || domain.charAt(dotIndex) !== '.') {
-    return false;
-  }
-  
-  // Ensure the part before the dot is not empty (prevents "..example.com")
-  const subdomainPart = domain.substring(0, dotIndex);
-  if (subdomainPart.length === 0) {
-    return false;
-  }
-  
-  // Additional security check: ensure the subdomain part doesn't start or end with a dot
-  // This prevents domains like ".example.com" or "example.com."
-  if (subdomainPart.startsWith('.') || subdomainPart.endsWith('.')) {
-    return false;
-  }
-  
-  return true;
+const isPrivateIP = (hostname: string): boolean => {
+  // Check for common private IP patterns
+  const privateIPPatterns = [
+    /^10\./,                    // 10.0.0.0/8
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
+    /^192\.168\./,              // 192.168.0.0/16
+    /^127\./,                   // 127.0.0.0/8 (localhost)
+    /^169\.254\./,              // 169.254.0.0/16 (link-local)
+    /^0\./,                     // 0.0.0.0/8
+    /^::1$/,                    // IPv6 localhost
+    /^fe80:/,                   // IPv6 link-local
+    /^fc00:/,                   // IPv6 unique local
+    /^fd00:/,                   // IPv6 unique local
+  ];
+
+  return privateIPPatterns.some(pattern => pattern.test(hostname));
 };
 
 // Load allowed domains from environment variables for better security and configuration management.
@@ -120,7 +92,7 @@ export async function GET(request: NextRequest) {
       return new NextResponse(`Domain not allowed: ${domain}`, { status: 403 });
     }
 
-    // 3. Fetch the image with timeout protection
+    // 3. Fetch the image with redirect validation and timeout protection
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
@@ -131,18 +103,83 @@ export async function GET(request: NextRequest) {
           'User-Agent': 'Clera-Image-Proxy/1.0',
         },
         signal: controller.signal,
+        // SECURITY: Disable automatic redirect following to prevent SSRF attacks
+        redirect: 'manual',
       });
+
+      // SECURITY: Handle redirects manually to validate each redirect target
+      let finalResponse = response;
+      let finalUrl = imageUrl;
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('Location');
+        if (!location) {
+          console.warn(`[Image Proxy] Redirect response without Location header from ${imageUrl}`);
+          return new NextResponse('Invalid redirect response', { status: 400 });
+        }
+
+        try {
+          const redirectUrl = new URL(location, imageUrl); // Resolve relative URLs
+          
+          // Validate redirect target protocol
+          if (redirectUrl.protocol !== 'https:') {
+            console.warn(`[Image Proxy] Blocked redirect to non-HTTPS protocol: ${redirectUrl.protocol} from ${imageUrl}`);
+            return new NextResponse('Redirect to non-HTTPS URL not allowed', { status: 400 });
+          }
+
+          // Validate redirect target domain against allowlist
+          const redirectDomain = redirectUrl.hostname.toLowerCase();
+          const isRedirectAllowed = ALLOWED_DOMAINS.some(allowedDomain => {
+            if (allowedDomain.startsWith('*.')) {
+              return isSecureWildcardMatch(redirectDomain, allowedDomain);
+            }
+            return redirectDomain === allowedDomain;
+          });
+
+          if (!isRedirectAllowed) {
+            console.warn(`[Image Proxy] Blocked redirect to non-whitelisted domain: ${redirectDomain} from ${imageUrl}`);
+            return new NextResponse(`Redirect to disallowed domain: ${redirectDomain}`, { status: 403 });
+          }
+
+          // SECURITY: Block redirects to internal/private IP ranges
+          const redirectHostname = redirectUrl.hostname;
+          if (isPrivateIP(redirectHostname)) {
+            console.warn(`[Image Proxy] Blocked redirect to private IP: ${redirectHostname} from ${imageUrl}`);
+            return new NextResponse('Redirect to private IP not allowed', { status: 403 });
+          }
+
+          // Follow the validated redirect manually
+          const redirectResponse = await fetch(redirectUrl.toString(), {
+            headers: {
+              'User-Agent': 'Clera-Image-Proxy/1.0',
+            },
+            signal: controller.signal,
+          });
+
+          if (!redirectResponse.ok) {
+            console.error(`[Image Proxy] Failed to fetch redirected image from ${redirectUrl}. Status: ${redirectResponse.status}`);
+            return new NextResponse('Failed to fetch redirected image', { status: redirectResponse.status });
+          }
+
+          // Use the redirected response for further processing
+          finalResponse = redirectResponse;
+          finalUrl = redirectUrl.toString();
+        } catch (redirectError) {
+          console.error(`[Image Proxy] Error processing redirect from ${imageUrl}:`, redirectError);
+          return new NextResponse('Invalid redirect URL', { status: 400 });
+        }
+      }
 
       // Clear the timeout since the request completed
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        console.error(`[Image Proxy] Failed to fetch image from ${imageUrl}. Status: ${response.status}`);
-        return new NextResponse('Failed to fetch image', { status: response.status });
+      if (!finalResponse.ok) {
+        console.error(`[Image Proxy] Failed to fetch image from ${finalUrl}. Status: ${finalResponse.status}`);
+        return new NextResponse('Failed to fetch image', { status: finalResponse.status });
       }
 
       // 4. Stream the image response back to the client
-      const imageContentType = response.headers.get('Content-Type') || 'application/octet-stream';
+      const imageContentType = finalResponse.headers.get('Content-Type') || 'application/octet-stream';
       
       // Ensure we only proxy image content types (case-insensitive check)
       if (!imageContentType.toLowerCase().startsWith('image/')) {
@@ -150,7 +187,7 @@ export async function GET(request: NextRequest) {
           return new NextResponse('URL does not point to a valid image.', { status: 400 });
       }
 
-      return new NextResponse(response.body, {
+      return new NextResponse(finalResponse.body, {
         status: 200,
         headers: {
           'Content-Type': imageContentType,

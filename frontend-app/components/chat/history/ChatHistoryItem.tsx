@@ -19,10 +19,23 @@ export default function ChatHistoryItem({
   onDelete,
   isMobile = false
 }: ChatHistoryItemProps) {
-  // Get first ~30 chars of title or first message as title
-  const title = session.title || 
-    (session.messages[0]?.content.substring(0, 30) + 
-    (session.messages[0]?.content.length > 30 ? '...' : ''));
+  // Get first ~30 chars of title or first message as title with proper null checks
+  const title = (() => {
+    // If session has a title, use it
+    if (session.title) {
+      return session.title;
+    }
+    
+    // If no title, try to get from first message
+    const firstMessage = session.messages?.[0];
+    if (firstMessage?.content) {
+      const content = firstMessage.content;
+      return content.length > 30 ? content.substring(0, 30) + '...' : content;
+    }
+    
+    // Fallback for empty sessions
+    return 'New Conversation';
+  })();
   
   // Format the date or provide a fallback
   const formattedDate = (() => {
@@ -59,7 +72,7 @@ export default function ChatHistoryItem({
           "font-medium truncate",
           isMobile ? "text-xs" : "text-sm"
         )}>
-          {isMobile ? title.substring(0, 25) + (title.length > 25 ? '...' : '') : title}
+          {isMobile && title.length > 25 ? title.substring(0, 25) + '...' : title}
         </div>
         {!isMobile && (
           <div className="text-xs text-muted-foreground">

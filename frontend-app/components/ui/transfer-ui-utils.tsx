@@ -18,7 +18,7 @@ import { CheckCircle, Clock, XCircle, AlertCircle } from "lucide-react";
  * @returns React icon component with appropriate styling
  */
 export const getTransferStatusIcon = (status: string): React.ReactElement => {
-  switch (status.toUpperCase()) {
+  switch ((status ?? "").toUpperCase()) {
     case 'COMPLETE':
     case 'SETTLED':
     case 'FILLED':
@@ -47,7 +47,7 @@ export const getTransferStatusIcon = (status: string): React.ReactElement => {
  * @returns CSS class string for styling the status badge
  */
 export const getTransferStatusColorClasses = (status: string): string => {
-  switch (status.toUpperCase()) {
+  switch ((status ?? "").toUpperCase()) {
     case 'COMPLETE':
     case 'SETTLED':
     case 'FILLED':
@@ -76,7 +76,7 @@ export const getTransferStatusColorClasses = (status: string): string => {
  * @returns CSS class string for the status indicator dot
  */
 export const getTransferStatusDotColor = (status: string): string => {
-  switch (status.toUpperCase()) {
+  switch ((status ?? "").toUpperCase()) {
     case 'COMPLETE':
     case 'SETTLED':
     case 'FILLED':
@@ -84,6 +84,9 @@ export const getTransferStatusDotColor = (status: string): string => {
       return 'bg-green-500';
     case 'PENDING':
     case 'QUEUED':
+    case 'SUBMITTED':
+    case 'APPROVAL_PENDING':
+    case 'SENT_TO_CLEARING':
       return 'bg-yellow-500';
     case 'REJECTED':
     case 'CANCELED':

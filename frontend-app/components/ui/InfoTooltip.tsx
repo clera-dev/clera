@@ -185,7 +185,7 @@ export function InfoTooltip({ children, content }: InfoTooltipProps) {
   const handleTriggerClick = (e: React.MouseEvent) => {
     if (isMobile()) {
       e.preventDefault() // Prevent any default behavior
-      setOpen(!open)
+      setOpen(prev => !prev)
     }
   }
 

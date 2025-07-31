@@ -177,140 +177,30 @@ export async function GET(
           },
           { status: 404 }
         );
+      } else {
+        return NextResponse.json(
+          { 
+            error: `FMP API error: ${response.status} ${response.statusText}`,
+            details: errorData
+          },
+          { status: response.status }
+        );
       }
-      
-      return NextResponse.json(
-        { 
-          error: `Failed to fetch chart data from FMP: ${response.statusText}`,
-          details: `FMP API returned ${response.status} status code`
-        },
-        { status: response.status }
-      );
     }
 
     const data = await response.json();
-    console.log(`FMP response for ${symbol}: ${Array.isArray(data) ? data.length + ' data points' : 'unexpected format'}`);
-
-    if (!Array.isArray(data)) {
-      console.error(`Unexpected FMP API response format for chart ${symbol} (${interval}):`, data);
-      
-      // Check if it's an error response from FMP
-      if (data && typeof data === 'object' && data.error) {
-        return NextResponse.json({ 
-          error: `FMP API Error: ${data.error}`,
-          details: 'The Financial Modeling Prep API returned an error response'
-        }, { status: 400 });
-      }
-      
-      return NextResponse.json({ 
-        error: 'Received unexpected data format from FMP.',
-        details: 'Expected an array of chart data points'
-      }, { status: 500 });
-    }
-
-    if (data.length === 0) {
-      console.warn(`No chart data found for ${symbol} with interval ${interval} from ${from} to ${to}`);
-      
-      // Provide context-aware error messages
-      const now = new Date();
-      const isWeekend = now.getDay() === 0 || now.getDay() === 6;
-      const currentHour = now.getHours();
-      const isAfterHours = currentHour >= 16 || currentHour < 9; // Rough market hours
-      
-      let contextualMessage = '';
-      if (interval.includes('min') || interval.includes('hour')) {
-        if (isWeekend) {
-          contextualMessage = ' Markets are closed on weekends - try using daily interval or select a different date range covering weekdays.';
-        } else if (isAfterHours) {
-          contextualMessage = ' Markets may be closed - try using daily interval or select data from previous trading days.';
-        }
-      }
-      
-      return NextResponse.json({ 
-        error: `No chart data found for symbol: ${symbol}`,
-        details: `No data available for ${interval} interval from ${from || 'start'} to ${to || 'end'}.${contextualMessage}`,
-        suggestion: interval.includes('min') || interval.includes('hour') ? 'try_daily_interval' : 'try_different_date_range',
-        metadata: {
-          symbol,
-          interval,
-          dateRange: { from, to },
-          isWeekend,
-          isAfterHours
-        }
-      }, { status: 404 });
-    }
-
-    // Validate data structure
-    const firstDataPoint = data[0];
-    const hasValidStructure = firstDataPoint && (
-      firstDataPoint.date || firstDataPoint.datetime || firstDataPoint.timestamp
-    ) && (
-      typeof firstDataPoint.close === 'number' || 
-      typeof firstDataPoint.price === 'number'
-    );
-
-    if (!hasValidStructure) {
-      console.error(`Invalid data structure from FMP for ${symbol}:`, firstDataPoint);
-      return NextResponse.json({ 
-        error: 'Invalid data structure received from FMP',
-        details: 'Chart data points are missing required fields (date/timestamp and price/close)'
-      }, { status: 500 });
-    }
-
-    // Get appropriate TTL for this interval
-    const cacheTTL = getCacheTTL(interval);
-
-    // Store in Redis cache with TTL (Upstash Redis)
-    try {
-      await redisClient.setex(cacheKey, cacheTTL, JSON.stringify(data));
-      console.log(`Cached chart data for ${cacheKey} with TTL ${cacheTTL} seconds`);
-    } catch (cacheError) {
-      console.error(`Failed to cache data for ${cacheKey}:`, cacheError);
-      // Continue without caching - don't fail the request
-    }
-
+    
+    // Cache the response
+    const ttl = getCacheTTL(interval);
+    await redisClient.setex(cacheKey, ttl, JSON.stringify(data));
+    
+    console.log(`Cached chart data for ${cacheKey} with TTL: ${ttl}s`);
+    
     return NextResponse.json(data);
-
   } catch (error) {
-    console.error(`Error fetching FMP chart data for ${symbol}:`, error);
-    
-    // If Redis fails, still try to serve fresh data
-    if (error instanceof Error && error.message.includes('redis')) {
-      console.warn('Redis error, proceeding without cache');
-      try {
-        const fmpUrl = buildFmpUrl(symbol, interval, from, to, apiKey);
-        const response = await fetch(fmpUrl, {
-          headers: {
-            'User-Agent': 'Clera-StockChart/1.0'
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (Array.isArray(data) && data.length > 0) {
-            return NextResponse.json(data);
-          }
-        }
-      } catch (fallbackError) {
-        console.error('Fallback API call also failed:', fallbackError);
-      }
-    }
-    
-    // Handle network errors
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      return NextResponse.json(
-        { 
-          error: 'Network error occurred while fetching chart data',
-          details: 'Unable to connect to Financial Modeling Prep API. Please try again later.'
-        },
-        { status: 503 }
-      );
-    }
-    
+    console.error(`Error fetching chart data for ${symbol}:`, error);
     return NextResponse.json(
-      { 
-        error: 'An internal server error occurred while fetching chart data',
-        details: process.env.NODE_ENV === 'development' ? error instanceof Error ? error.message : String(error) : 'Please try again later'
-      },
+      { error: 'Failed to fetch chart data. Please try again later.' },
       { status: 500 }
     );
   }

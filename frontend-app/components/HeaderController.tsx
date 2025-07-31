@@ -25,7 +25,7 @@ export default function HeaderController({ children }: HeaderControllerProps) {
     '/dashboard'       // User dashboard
   ];
   
-  const shouldShowHeader = authPages.includes(pathname);
+  const shouldShowHeader = authPages.some((p) => pathname.startsWith(p));
   
   if (!shouldShowHeader) {
     return null;
