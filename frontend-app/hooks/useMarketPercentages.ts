@@ -42,8 +42,15 @@ export function useMarketPercentages(symbols: string[], options?: { forceRefresh
       calculatedSymbolsRef.current.clear();
       // Clear current percentages to show loading state
       setPercentages(new Map());
+      
+      // Trigger recalculation for all current symbols
+      if (symbols.length > 0) {
+        // Mark these symbols as being calculated
+        symbols.forEach(symbol => calculatedSymbolsRef.current.add(symbol));
+        calculatePercentages(symbols);
+      }
     }
-  }, [options?.forceRefresh, marketDataService]);
+  }, [options?.forceRefresh, marketDataService, symbols, calculatePercentages]);
 
   const calculatePercentages = useCallback(async (symbolsToCalculate: string[]) => {
     if (symbolsToCalculate.length === 0) return;
