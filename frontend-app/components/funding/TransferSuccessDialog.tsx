@@ -22,14 +22,6 @@ export default function TransferSuccessDialog({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md bg-card border-border shadow-xl z-50">
         <DialogHeader className="relative">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="absolute right-0 top-0 h-6 w-6 p-0 hover:bg-accent"
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" />
-          </Button>
           <DialogTitle className="sr-only">Transfer Success</DialogTitle>
         </DialogHeader>
 

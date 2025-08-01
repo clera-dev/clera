@@ -4,7 +4,15 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { TrendingUp } from "lucide-react";
+import { 
+  formatTransferStatus, 
+  formatTransferDate 
+} from "@/lib/utils/transfer-formatting";
+import { 
+  getTransferStatusIcon, 
+  getTransferStatusColorClasses 
+} from "@/components/ui/transfer-ui-utils";
 
 interface TransferHistoryItem {
   id: string;
@@ -19,69 +27,7 @@ interface TransferHistoryProps {
   // No props needed - parent uses key prop to force refresh
 }
 
-const getStatusIcon = (status: string) => {
-  switch (status.toUpperCase()) {
-    case 'COMPLETE':
-    case 'SETTLED':
-    case 'FILLED':
-    case 'APPROVED':
-      return <CheckCircle className="h-4 w-4 text-emerald-600" />;
-    case 'QUEUED':
-    case 'SUBMITTED':
-    case 'APPROVAL_PENDING':
-    case 'PENDING':
-    case 'SENT_TO_CLEARING':
-      return <Clock className="h-4 w-4 text-blue-600" />;
-    case 'FAILED':
-    case 'CANCELLED':
-    case 'REJECTED':
-    case 'RETURNED':
-    case 'CANCELED': // Handle both spellings
-      return <XCircle className="h-4 w-4 text-red-600" />;
-    default:
-      return <AlertCircle className="h-4 w-4 text-yellow-600" />;
-  }
-};
-
-const getStatusColor = (status: string) => {
-  switch (status.toUpperCase()) {
-    case 'COMPLETE':
-    case 'SETTLED':
-    case 'FILLED':
-    case 'APPROVED':
-      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-200';
-    case 'QUEUED':
-    case 'SUBMITTED':
-    case 'APPROVAL_PENDING':
-    case 'PENDING':
-    case 'SENT_TO_CLEARING':
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-950/20 dark:text-blue-200';
-    case 'FAILED':
-    case 'CANCELLED':
-    case 'REJECTED':
-    case 'RETURNED':
-    case 'CANCELED': // Handle both spellings
-      return 'bg-red-100 text-red-800 dark:bg-red-950/20 dark:text-red-200';
-    default:
-      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/20 dark:text-yellow-200';
-  }
-};
-
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return {
-    date: date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    }),
-    time: date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true
-    })
-  };
-};
+// All utility functions moved to @/lib/utils/transfer-formatting
 
 export default function TransferHistory() {
   const [transfers, setTransfers] = useState<TransferHistoryItem[]>([]);
@@ -217,8 +163,8 @@ export default function TransferHistory() {
         <ScrollArea className="h-[300px] pr-4">
           <div className="space-y-3">
             {transfers.map((transfer, index) => {
-              const initiated = formatDate(transfer.created_at);
-              const completed = transfer.updated_at ? formatDate(transfer.updated_at) : null;
+              const initiated = formatTransferDate(transfer.created_at);
+              const completed = transfer.updated_at ? formatTransferDate(transfer.updated_at) : null;
               
               return (
                 <div
@@ -227,15 +173,15 @@ export default function TransferHistory() {
                 >
                   <div className="flex items-center space-x-4">
                     <div className="flex-shrink-0">
-                      {getStatusIcon(transfer.status)}
+                      {getTransferStatusIcon(transfer.status)}
                     </div>
                     <div className="flex-grow min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <p className="font-semibold text-foreground">
                           {`$${transfer.amount.toFixed(2)}`}
                         </p>
-                        <Badge className={`text-xs ${getStatusColor(transfer.status)}`}>
-                          {transfer.status}
+                        <Badge className={`text-xs ${getTransferStatusColorClasses(transfer.status)}`}>
+                          {formatTransferStatus(transfer.status)}
                         </Badge>
                       </div>
                       <div className="space-y-1">

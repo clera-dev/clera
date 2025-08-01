@@ -28,6 +28,7 @@ interface ChatSidebarProps {
   onSelectSession: (sessionId: string) => void;
   onClose: () => void;
   refreshKey?: number;
+  isMobile?: boolean;
 }
 
 export default function ChatSidebar({
@@ -36,7 +37,8 @@ export default function ChatSidebar({
   onNewChat,
   onSelectSession,
   onClose,
-  refreshKey = 0
+  refreshKey = 0,
+  isMobile = false
 }: ChatSidebarProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -128,16 +130,17 @@ export default function ChatSidebar({
               <div>
                 <h3 className="text-xs text-muted-foreground mb-2 px-2">Today</h3>
                 {groupedSessions.today.map(session => (
-                  <ChatHistoryItem
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === currentSessionId}
-                    onSelect={() => onSelectSession(session.id)}
-                    onDelete={() => {
-                      setDeleteId(session.id);
-                      setShowDeleteDialog(true);
-                    }}
-                  />
+                                  <ChatHistoryItem
+                  key={session.id}
+                  session={session}
+                  isActive={session.id === currentSessionId}
+                  onSelect={() => onSelectSession(session.id)}
+                  onDelete={() => {
+                    setDeleteId(session.id);
+                    setShowDeleteDialog(true);
+                  }}
+                  isMobile={isMobile}
+                />
                 ))}
               </div>
             )}
@@ -146,16 +149,17 @@ export default function ChatSidebar({
               <div>
                 <h3 className="text-xs text-muted-foreground mb-2 px-2">Yesterday</h3>
                 {groupedSessions.yesterday.map(session => (
-                  <ChatHistoryItem
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === currentSessionId}
-                    onSelect={() => onSelectSession(session.id)}
-                    onDelete={() => {
-                      setDeleteId(session.id);
-                      setShowDeleteDialog(true);
-                    }}
-                  />
+                                  <ChatHistoryItem
+                  key={session.id}
+                  session={session}
+                  isActive={session.id === currentSessionId}
+                  onSelect={() => onSelectSession(session.id)}
+                  onDelete={() => {
+                    setDeleteId(session.id);
+                    setShowDeleteDialog(true);
+                  }}
+                  isMobile={isMobile}
+                />
                 ))}
               </div>
             )}
@@ -164,16 +168,17 @@ export default function ChatSidebar({
               <div>
                 <h3 className="text-xs text-muted-foreground mb-2 px-2">Last 7 Days</h3>
                 {groupedSessions.lastWeek.map(session => (
-                  <ChatHistoryItem
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === currentSessionId}
-                    onSelect={() => onSelectSession(session.id)}
-                    onDelete={() => {
-                      setDeleteId(session.id);
-                      setShowDeleteDialog(true);
-                    }}
-                  />
+                                  <ChatHistoryItem
+                  key={session.id}
+                  session={session}
+                  isActive={session.id === currentSessionId}
+                  onSelect={() => onSelectSession(session.id)}
+                  onDelete={() => {
+                    setDeleteId(session.id);
+                    setShowDeleteDialog(true);
+                  }}
+                  isMobile={isMobile}
+                />
                 ))}
               </div>
             )}
@@ -182,16 +187,17 @@ export default function ChatSidebar({
               <div>
                 <h3 className="text-xs text-muted-foreground mb-2 px-2">Last 30 Days</h3>
                 {groupedSessions.lastMonth.map(session => (
-                  <ChatHistoryItem
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === currentSessionId}
-                    onSelect={() => onSelectSession(session.id)}
-                    onDelete={() => {
-                      setDeleteId(session.id);
-                      setShowDeleteDialog(true);
-                    }}
-                  />
+                                  <ChatHistoryItem
+                  key={session.id}
+                  session={session}
+                  isActive={session.id === currentSessionId}
+                  onSelect={() => onSelectSession(session.id)}
+                  onDelete={() => {
+                    setDeleteId(session.id);
+                    setShowDeleteDialog(true);
+                  }}
+                  isMobile={isMobile}
+                />
                 ))}
               </div>
             )}
@@ -200,16 +206,17 @@ export default function ChatSidebar({
               <div>
                 <h3 className="text-xs text-muted-foreground mb-2 px-2">Older</h3>
                 {groupedSessions.older.map(session => (
-                  <ChatHistoryItem
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === currentSessionId}
-                    onSelect={() => onSelectSession(session.id)}
-                    onDelete={() => {
-                      setDeleteId(session.id);
-                      setShowDeleteDialog(true);
-                    }}
-                  />
+                                  <ChatHistoryItem
+                  key={session.id}
+                  session={session}
+                  isActive={session.id === currentSessionId}
+                  onSelect={() => onSelectSession(session.id)}
+                  onDelete={() => {
+                    setDeleteId(session.id);
+                    setShowDeleteDialog(true);
+                  }}
+                  isMobile={isMobile}
+                />
                 ))}
               </div>
             )}

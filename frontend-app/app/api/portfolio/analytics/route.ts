@@ -1,67 +1,49 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { AuthService } from '@/utils/api/auth-service';
+import { BackendService } from '@/utils/api/backend-service';
 
+/**
+ * API route to get portfolio analytics.
+ * 
+ * SECURITY: This route implements proper authentication and authorization
+ * to prevent privilege escalation attacks. Users can only access analytics for accounts they own.
+ */
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const accountId = searchParams.get('accountId');
-
-  if (!accountId) {
-    return NextResponse.json({ detail: 'Account ID is required' }, { status: 400 });
-  }
-
-  // --- Fetch from actual backend ---
-  const backendUrl = process.env.BACKEND_API_URL;
-  const backendApiKey = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    console.error("Portfolio Analytics API Route Error: Backend URL not configured.");
-    return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
-  }
-
-  const targetUrl = `${backendUrl}/api/portfolio/${accountId}/analytics`;
-  console.log(`Proxying request to: ${targetUrl}`);
-
   try {
-    // Prepare headers
-    const headers: HeadersInit = {
-      'Accept': 'application/json'
-    };
+    // 1. Get query parameters to extract accountId
+    const searchParams = request.nextUrl.searchParams;
+    const accountId = searchParams.get('accountId');
+
+    if (!accountId) {
+      return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
+    }
+
+    // 2. SECURITY: Authenticate user and verify account ownership
+    // This prevents any logged-in user from accessing other users' portfolio analytics
+    const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
+
+    // 3. Use BackendService for secure communication with proper JWT forwarding
+    const backendService = new BackendService();
+    const result = await backendService.getPortfolioAnalytics(
+      authContext.accountId,
+      authContext.user.id,
+      authContext.authToken
+    );
+
+    return NextResponse.json(result);
+
+  } catch (error: any) {
+    console.error('Portfolio Analytics API: Error fetching analytics:', error instanceof Error ? error.message : 'Unknown error');
     
-    // Add API key if available
-    if (backendApiKey) {
-      headers['x-api-key'] = backendApiKey;
+    // Handle authentication/authorization errors
+    if (error && typeof error === 'object' && 'status' in error) {
+      const authError = AuthService.handleAuthError(error);
+      return NextResponse.json({ error: authError.message }, { status: authError.status });
     }
     
-    const backendResponse = await fetch(targetUrl, {
-      method: 'GET',
-      headers,
-      cache: 'no-store' // Ensure fresh data
-    });
-
-    const responseBody = await backendResponse.text();
-
-    if (!backendResponse.ok) {
-      let errorDetail = `Backend request failed with status: ${backendResponse.status}`;
-      try {
-        const errorJson = JSON.parse(responseBody);
-        errorDetail = errorJson.detail || errorDetail;
-      } catch (e) { /* Ignore if not JSON */ }
-      console.error(`Portfolio Analytics API Route: Backend Error - ${errorDetail}`);
-      return NextResponse.json({ detail: errorDetail }, { status: backendResponse.status >= 500 ? 502 : backendResponse.status });
-    }
-
-    let data;
-    try {
-        data = JSON.parse(responseBody);
-    } catch (e) {
-        console.error("Portfolio Analytics API Route: Failed to parse backend JSON response.", e);
-        return NextResponse.json({ detail: 'Invalid response from backend service' }, { status: 502 });
-    }
-
-    return NextResponse.json(data, { status: 200 });
-
-  } catch (error) {
-    console.error("Portfolio Analytics API Route: Unexpected error", error);
-    return NextResponse.json({ detail: 'Internal server error' }, { status: 500 });
+    // Handle backend service errors
+    const backendError = BackendService.handleBackendError(error);
+    return NextResponse.json({ error: backendError.message }, { status: backendError.status });
   }
 } 

@@ -141,10 +141,6 @@ export default function UserDashboard({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Hello, {firstName}</h1>
-        <p className="text-muted-foreground">Welcome to your account dashboard.</p>
-      </div>
       
       {statusError && (
           <Alert variant="default" className="mb-4">
@@ -220,27 +216,24 @@ export default function UserDashboard({
             </div>
 
             {/* Account Created */}
-            <div className="md:col-span-2">
+            <div>
               <p className="text-sm font-medium text-muted-foreground mb-1">Account Created</p>
               <p className="text-base font-medium flex items-center gap-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 {formatDate(accountCreated)}
               </p>
             </div>
-          </div>
-          
-          {/* Update Information Button */}
-          <div className="pt-4 border-t">
-            <Button 
-              variant="outline" 
-              onClick={() => router.push('/account/update-information')}
-              className="w-full md:w-auto"
-            >
-              Update Information
-            </Button>
-            <p className="text-xs text-muted-foreground mt-2">
-              View and update your personal information
-            </p>
+
+            {/* Update Information Button - aligned with right column */}
+            <div>
+              <Button 
+                variant="outline" 
+                onClick={() => router.push('/account/update-information')}
+                className="w-full"
+              >
+                Update Information
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

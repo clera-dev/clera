@@ -1,31 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { AuthService } from '@/utils/api/auth-service';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    // Authenticate user
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get account ID from params
-    const { accountId } = await params;
-    
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Account ID is required' },
-        { status: 400 }
-      );
-    }
+    // SECURITY: Authenticate and authorize user for this specific account
+    // This prevents any authenticated user from modifying watchlists from other accounts
+    const authContext = await AuthService.authenticateAndAuthorize(request, (await params).accountId);
 
     // Parse request body
     const requestData = await request.json();
@@ -51,12 +35,13 @@ export async function DELETE(
     }
 
     // Call backend API to remove symbol from watchlist
-    console.log(`Removing symbol ${symbol} from watchlist for account ${accountId}`);
-    const response = await fetch(`${backendUrl}/api/watchlist/${accountId}/remove`, {
+    console.log(`Removing symbol ${symbol} from watchlist for account ${authContext.accountId}`);
+    const response = await fetch(`${backendUrl}/api/watchlist/${authContext.accountId}/remove`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': backendApiKey,
+        'X-API-Key': backendApiKey,
+        'Authorization': `Bearer ${authContext.authToken}`, // Use validated JWT token
       },
       body: JSON.stringify({ symbol }),
       cache: 'no-store'
@@ -93,11 +78,9 @@ export async function DELETE(
 
     return NextResponse.json(data);
 
-  } catch (error) {
-    console.error('Error removing from watchlist:', error);
-    return NextResponse.json(
-      { error: 'Failed to remove symbol from watchlist' },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    // Handle authentication and authorization errors
+    const authError = AuthService.handleAuthError(error);
+    return NextResponse.json({ error: authError.message }, { status: authError.status });
   }
 } 

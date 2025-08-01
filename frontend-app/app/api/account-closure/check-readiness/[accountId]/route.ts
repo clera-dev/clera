@@ -1,31 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { AuthService } from '@/utils/api/auth-service';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    // Authenticate user
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get account ID from params
-    const { accountId } = await params;
-    
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Account ID is required' },
-        { status: 400 }
-      );
-    }
+    // SECURITY: Authenticate and authorize user for this specific account
+    // This prevents any authenticated user from checking closure readiness for other accounts
+    const authContext = await AuthService.authenticateAndAuthorize(request, (await params).accountId);
 
     // Get backend configuration
     const backendUrl = process.env.BACKEND_API_URL;
@@ -40,12 +24,13 @@ export async function GET(
     }
 
     // Call backend API
-    console.log(`Checking account closure readiness for account ${accountId}`);
-    const response = await fetch(`${backendUrl}/account-closure/check-readiness/${accountId}`, {
+    console.log(`Checking account closure readiness for account ${authContext.accountId}`);
+    const response = await fetch(`${backendUrl}/account-closure/check-readiness/${authContext.accountId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': backendApiKey,
+        'Authorization': `Bearer ${authContext.authToken}`, // Use validated JWT token
       },
       cache: 'no-store'
     });
@@ -80,11 +65,9 @@ export async function GET(
 
     return NextResponse.json(data, { status: 200 });
 
-  } catch (error) {
-    console.error("Account closure readiness check error:", error);
-    return NextResponse.json(
-      { detail: 'Internal server error' },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    // Handle authentication and authorization errors
+    const authError = AuthService.handleAuthError(error);
+    return NextResponse.json({ error: authError.message }, { status: authError.status });
   }
 } 

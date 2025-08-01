@@ -103,15 +103,15 @@ export const cleanupGlobalLocalStorage = async (): Promise<void> => {
 
 /**
  * Retrieves the Alpaca Account ID for the current authenticated user.
- * SECURITY FIX: Always fetches from Supabase first to ensure correct user context.
- * Only uses localStorage as a secondary cache for the SAME user.
+ * ALWAYS fetches from Supabase to ensure correct user context and avoid localStorage issues.
+ * No caching to prevent authentication issues when switching between accounts.
  * 
  * @returns {Promise<string | null>} The Alpaca Account ID or null if not found.
  */
 export const getAlpacaAccountId = async (): Promise<string | null> => {
   console.log("Alpaca Account ID: Starting secure user-specific lookup.");
   
-  // 1. SECURITY CRITICAL: Get current authenticated user first
+  // SECURITY CRITICAL: Get current authenticated user first
   const supabase = createClient();
   
   try {
@@ -129,20 +129,7 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
 
     console.log("Alpaca Account ID: User found.");
     
-    // 2. Check user-specific localStorage key (SECURITY FIX)
-    const userSpecificKey = `alpacaAccountId_${user.id}`;
-    try {
-      const storedId = localStorage.getItem(userSpecificKey);
-      if (storedId && storedId !== 'null' && storedId !== 'undefined' && storedId !== 'Missing') {
-        console.log("Retrieved Alpaca Account ID from user-specific localStorage");
-        // Still validate this cached ID against Supabase periodically for security
-        return storedId;
-      }
-    } catch (error) {
-      console.error("Error reading user-specific Alpaca Account ID from localStorage:", error);
-    }
-
-    // 3. Fetch from Supabase (PRIMARY SOURCE)
+    // Always fetch from Supabase (NO localStorage caching)
     console.log("Alpaca Account ID: Fetching from Supabase.");
     const { data: onboardingData, error: dbError } = await supabase
       .from('user_onboarding')
@@ -160,18 +147,6 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
     if (onboardingData && onboardingData.alpaca_account_id) {
       const fetchedId = onboardingData.alpaca_account_id;
       console.log("Alpaca Account ID: Retrieved from Supabase.");
-      
-      // 4. Store in user-specific localStorage (SECURITY FIX)
-      try {
-        // Clear any old global localStorage entries
-        await cleanupGlobalLocalStorage();
-        
-        // Store with user-specific key
-        localStorage.setItem(userSpecificKey, fetchedId);
-        console.log("Alpaca Account ID: Stored in user-specific localStorage.");
-      } catch (storageError) {
-        console.error("Alpaca Account ID: Error storing to user-specific localStorage:", storageError);
-      }
       return fetchedId;
     } else {
       console.warn("Alpaca Account ID: Not found in Supabase onboarding data for user:", user.id);

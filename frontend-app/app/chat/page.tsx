@@ -73,13 +73,42 @@ export default function ChatPage() {
           throw new Error("Failed to get user ID before fetching query count."); 
         }
 
-        // 4. Restore current chat session ID from localStorage (if exists)
+        // 4. Restore current chat session ID from localStorage (if exists) - with user validation
         if (typeof window !== 'undefined') {
           const storedSessionId = localStorage.getItem(CURRENT_SESSION_KEY);
           if (storedSessionId) {
-            setCurrentSessionId(storedSessionId);
-            // Messages will be loaded by the Chat component based on sessionId
-            setInitialMessages([]);
+            // SECURITY FIX: Validate that the stored session belongs to the current user
+            // by checking if we can load its messages without error
+            try {
+              //console.log(`[ChatPage] Found stored session ${storedSessionId}, validating ownership for user ${currentUserId}`);
+              
+              // Try to validate the session by making a test call
+              const testResponse = await fetch('/api/conversations/get-thread-messages', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  thread_id: storedSessionId,
+                }),
+              });
+
+              if (testResponse.ok) {
+                //console.log(`[ChatPage] Session ${storedSessionId} validated, restoring for user ${currentUserId}`);
+                setCurrentSessionId(storedSessionId);
+                setInitialMessages([]);
+              } else {
+                console.warn(`[ChatPage] Session ${storedSessionId} validation failed (${testResponse.status}), clearing for user ${currentUserId}`);
+                localStorage.removeItem(CURRENT_SESSION_KEY);
+                setCurrentSessionId(undefined);
+                setInitialMessages([]);
+              }
+            } catch (error) {
+              console.warn(`[ChatPage] Session validation error for ${storedSessionId}, clearing:`, error);
+              localStorage.removeItem(CURRENT_SESSION_KEY);
+              setCurrentSessionId(undefined);
+              setInitialMessages([]);
+            }
           } else {
              // Start with empty messages to show suggested questions
             setInitialMessages([]);
@@ -203,81 +232,99 @@ export default function ChatPage() {
       );
   }
 
-  // Render Chat Page
+  // Render Chat Page - Fixed Layout
   return (
-    <div className="h-[calc(100vh-64px)] flex flex-col relative overflow-hidden -m-4">
-      {/* Main Content */}
-      <div className="flex flex-col h-full max-w-7xl mx-auto w-full relative z-20">
-        {/* Header - Fixed at top */}
-        <header className="flex-shrink-0 h-16 flex items-center justify-between bg-background relative z-30 px-5 border-b">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleNewChat}
-            className="flex items-center"
-            disabled={isLoading}
-          >
-            <PlusIcon size={16} className="mr-1" />
-            New Chat
-          </Button>
-          
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="flex items-center"
-          >
-            <Clock size={16} className="mr-1" />
-            History
-          </Button>
-        </header>
-        
-        {/* Chat Container - Takes remaining height */}
-        <div className="flex-1 min-h-0 relative z-20">
-          <Chat 
-            accountId={accountId} 
-            userId={userId}
-            onClose={() => {}} 
-            isFullscreen={true} 
-            sessionId={currentSessionId}
-            initialMessages={initialMessages}
-            onQuerySent={handleQuerySent}
-            isLimitReached={isLimitReached}
-            onSessionCreated={handleSessionCreated}
-            onMessageSent={handleMessageSent}
-          />
+    <div className="h-screen flex flex-col overflow-hidden">
+      {/* Fixed Header */}
+      <div className="flex-shrink-0 bg-background border-b">
+        <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold">Ask Clera</h1>
+              <p className="text-lg text-muted-foreground mt-1">Your AI financial advisor is ready to help</p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleNewChat}
+                className="flex items-center"
+                disabled={isLoading}
+              >
+                <PlusIcon size={16} className="mr-1" />
+                New Chat
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="flex items-center"
+              >
+                <Clock size={16} className="mr-1" />
+                History
+              </Button>
+            </div>
+          </div>
         </div>
+      </div>
+      
+      {/* Chat Container - Flexible middle section */}
+      <div className="flex-1 min-h-0 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+        <Chat 
+          accountId={accountId} 
+          userId={userId}
+          onClose={() => {}} 
+          isFullscreen={true} 
+          sessionId={currentSessionId}
+          initialMessages={initialMessages}
+          onQuerySent={handleQuerySent}
+          isLimitReached={isLimitReached}
+          onSessionCreated={handleSessionCreated}
+          onMessageSent={handleMessageSent}
+        />
       </div>
       
       {/* Sidebar overlay - only render when sidebar is open */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/10 z-30"
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30 transition-all duration-300"
           onClick={() => setIsSidebarOpen(false)}
           aria-hidden="true"
         />
       )}
       
-      {/* Floating Sidebar - only render when sidebar is open */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed top-16 right-0 bottom-0 w-72 bg-background border-l shadow-lg z-40"
-        >
-          {accountId && (
-            <ChatSidebar 
-              accountId={accountId}
-              currentSessionId={currentSessionId}
-              onNewChat={handleNewChat}
-              onSelectSession={(sessionId) => {
-                handleSelectSession(sessionId);
-                setIsSidebarOpen(false);
-              }}
-              onClose={() => setIsSidebarOpen(false)}
-              refreshKey={refreshTrigger}
-            />
-          )}
-        </div>
-      )}
+      {/* Chat History Sidebar - slides in from right, ABSOLUTELY flush with screen edge */}
+      <div 
+        className="bg-background border-l border-border shadow-2xl z-40"
+        style={{ 
+          position: 'fixed',
+          top: '0',
+          right: isSidebarOpen ? '0px' : '-384px',
+          bottom: '0',
+          width: '384px',
+          height: '100vh',
+          margin: '0',
+          padding: '0',
+          boxSizing: 'border-box',
+          transition: 'right 300ms ease-in-out'
+        }}
+      >
+        {accountId && (
+          <ChatSidebar 
+            accountId={accountId}
+            currentSessionId={currentSessionId}
+            onNewChat={handleNewChat}
+            onSelectSession={(sessionId) => {
+              handleSelectSession(sessionId);
+              setIsSidebarOpen(false);
+            }}
+            onClose={() => setIsSidebarOpen(false)}
+            refreshKey={refreshTrigger}
+          />
+        )}
+      </div>
     </div>
   );
 } 

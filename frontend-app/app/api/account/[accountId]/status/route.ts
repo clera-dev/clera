@@ -1,30 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { AuthService } from '@/utils/api/auth-service';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    const { accountId } = await params;
-    const supabase = await createClient();
-    
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    // Verify account ownership - user should own this account
-    const { data: onboardingData } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (!onboardingData || onboardingData.alpaca_account_id !== accountId) {
-      return NextResponse.json({ error: 'Account access denied' }, { status: 403 });
-    }
+    // SECURITY: Authenticate and authorize user for this specific account
+    // This prevents any authenticated user from accessing status from other accounts
+    const authContext = await AuthService.authenticateAndAuthorize(request, (await params).accountId);
 
     // Proxy request to backend
     const backendUrl = process.env.BACKEND_API_URL;
@@ -35,11 +20,12 @@ export async function GET(
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    const response = await fetch(`${backendUrl}/api/account/${accountId}/status`, {
+    const response = await fetch(`${backendUrl}/api/account/${authContext.accountId}/status`, {
       method: 'GET',
       headers: {
         'X-API-Key': backendApiKey,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authContext.authToken}`, // Use validated JWT token
       },
     });
 
@@ -55,12 +41,10 @@ export async function GET(
     const data = await response.json();
     return NextResponse.json(data);
 
-  } catch (error) {
-    console.error('Error in account status API route:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    // Handle authentication and authorization errors
+    const authError = AuthService.handleAuthError(error);
+    return NextResponse.json({ error: authError.message }, { status: authError.status });
   }
 }
 
@@ -69,25 +53,9 @@ export async function POST(
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    const { accountId } = await params;
-    const supabase = await createClient();
-    
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    // Verify account ownership - user should own this account
-    const { data: onboardingData } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (!onboardingData || onboardingData.alpaca_account_id !== accountId) {
-      return NextResponse.json({ error: 'Account access denied' }, { status: 403 });
-    }
+    // SECURITY: Authenticate and authorize user for this specific account
+    // This prevents any authenticated user from syncing status from other accounts
+    const authContext = await AuthService.authenticateAndAuthorize(request, (await params).accountId);
 
     // Proxy sync request to backend
     const backendUrl = process.env.BACKEND_API_URL;
@@ -98,11 +66,12 @@ export async function POST(
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    const response = await fetch(`${backendUrl}/api/account/${accountId}/status/sync`, {
+    const response = await fetch(`${backendUrl}/api/account/${authContext.accountId}/status/sync`, {
       method: 'POST',
       headers: {
         'X-API-Key': backendApiKey,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authContext.authToken}`, // Use validated JWT token
       },
     });
 
@@ -118,11 +87,9 @@ export async function POST(
     const data = await response.json();
     return NextResponse.json(data);
 
-  } catch (error) {
-    console.error('Error in account status sync API route:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    // Handle authentication and authorization errors
+    const authError = AuthService.handleAuthError(error);
+    return NextResponse.json({ error: authError.message }, { status: authError.status });
   }
 } 

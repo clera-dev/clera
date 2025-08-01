@@ -32,11 +32,11 @@
   }
 
   .dark {
-    --background: 0 0% 3.9%;
+    --background: 0 0% 0%;
     --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
+    --card: 0 0% 0%;
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
+    --popover: 0 0% 0%;
     --popover-foreground: 0 0% 98%;
     --primary: 0 0% 98%;
     --primary-foreground: 0 0% 9%;
@@ -65,6 +65,25 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  
+  /* Use CSS variables for consistent dark theme */
+  :root {
+    --page-background: hsl(var(--background));
+  }
+  
+  .dark {
+    --page-background: #000000;
+  }
+  
+  /* Apply dark background using CSS variables instead of !important */
+  html {
+    background-color: var(--page-background);
+  }
+  
+  /* Ensure main containers inherit the dark theme */
+  main, div[class*="bg-background"] {
+    background-color: var(--page-background);
   }
 }
 
@@ -364,3 +383,4 @@ body > div:last-child:not([id]):not([class]) {
     z-index: 55 !important;
   }
 }
+

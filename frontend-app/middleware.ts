@@ -12,6 +12,8 @@ import {
   isAccountClosed,
   shouldRestartOnboarding
 } from './utils/auth/middleware-helpers';
+import { AUTH_ROUTES } from './lib/constants';
+import { isValidRedirectUrl, validateAndSanitizeRedirectUrl } from './utils/security';
 
 // Paths that are always accessible regardless of auth state
 const publicPaths = [
@@ -23,7 +25,7 @@ const publicPaths = [
 ];
 
 // Auth pages that authenticated users should not access
-const authPages = ['/sign-in', '/sign-up', '/forgot-password'];
+const authPages = AUTH_ROUTES;
 
 // Paths that require authentication AND completed onboarding
 const protectedPaths = [
@@ -61,7 +63,6 @@ const protectedApiPaths = [
 const authRequiredApiPaths = [
   '/api/investment',
   '/api/companies/profiles',
-  '/api/fmp',
   '/api/market',
   '/api/broker/create-account',
 ];
@@ -263,7 +264,10 @@ export async function middleware(request: NextRequest) {
           } else {
             const redirectUrl = new URL('/protected', request.url);
             const redirectResponse = NextResponse.redirect(redirectUrl);
-            redirectResponse.cookies.set('intended_redirect', path, {
+            
+            // Validate and sanitize the path before setting it as intended redirect to prevent open-redirect attacks
+            const safeRedirectPath = validateAndSanitizeRedirectUrl(path);
+            redirectResponse.cookies.set('intended_redirect', safeRedirectPath, {
               maxAge: 3600,
               path: '/',
               sameSite: 'strict'
@@ -305,7 +309,10 @@ export async function middleware(request: NextRequest) {
             } else {
               const redirectUrl = new URL('/protected', request.url);
               const redirectResponse = NextResponse.redirect(redirectUrl);
-              redirectResponse.cookies.set('intended_redirect', path, {
+              
+              // Validate and sanitize the path before setting it as intended redirect to prevent open-redirect attacks
+              const safeRedirectPath = validateAndSanitizeRedirectUrl(path);
+              redirectResponse.cookies.set('intended_redirect', safeRedirectPath, {
                 maxAge: 3600,
                 path: '/',
                 sameSite: 'strict'

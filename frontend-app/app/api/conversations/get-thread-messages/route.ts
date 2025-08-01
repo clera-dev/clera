@@ -17,10 +17,12 @@ export async function POST(request: NextRequest) {
     // Use centralized authentication service (user auth only, thread ownership validated separately)
     const authResult = await ConversationAuthService.authenticateUser(request);
     if (!authResult.success) {
+      console.error('Authentication failed for user in get-thread-messages');
       return authResult.error!;
     }
 
     const { user } = authResult;
+    //console.log(`[get-thread-messages] Authenticated user: ${user.id}, thread: ${thread_id}`);
 
     // Validate required environment variables for LangGraph
     const langGraphApiUrl = process.env.LANGGRAPH_API_URL;
@@ -43,8 +45,41 @@ export async function POST(request: NextRequest) {
     });
 
     // Authorization check: ensure the thread belongs to the authenticated user
-    const thread = await langGraphClient.threads.get(thread_id);
-    if (!thread || !thread.metadata || thread.metadata.user_id !== user.id) {
+    let thread;
+    try {
+      thread = await langGraphClient.threads.get(thread_id);
+    } catch (threadError: any) {
+      console.error(`[get-thread-messages] Error fetching thread ${thread_id}:`, threadError);
+      // SECURITY: Return 403 Forbidden for all thread access errors to prevent resource enumeration
+      // This includes both "thread not found" and "thread exists but not accessible" cases
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
+    // Strict authorization check: require proper thread ownership
+    if (!thread) {
+      console.error(`[get-thread-messages] Thread ${thread_id} not found`);
+      // SECURITY: Return 403 Forbidden instead of 404 to prevent resource enumeration
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
+    // Require metadata and user_id to be present for security
+    if (!thread.metadata || !thread.metadata.user_id) {
+      console.error(`[get-thread-messages] Thread ${thread_id} missing required metadata or user_id`);
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
+    // Verify thread ownership
+    if (thread.metadata.user_id !== user.id) {
+      console.error(`[get-thread-messages] Thread ownership mismatch: thread user_id=${thread.metadata.user_id}, authenticated user_id=${user.id}`);
       return NextResponse.json(
         { error: 'Forbidden' },
         { status: 403 }
@@ -103,7 +138,7 @@ export async function POST(request: NextRequest) {
         };
       });
     
-    console.log(`Retrieved ${formattedMessages.length} messages for thread.`);
+    //console.log(`[get-thread-messages] Retrieved ${formattedMessages.length} messages for thread ${thread_id}`);
     
     return NextResponse.json({ messages: formattedMessages });
   } catch (error: any) {

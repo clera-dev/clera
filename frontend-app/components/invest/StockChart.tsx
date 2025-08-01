@@ -484,10 +484,11 @@ export default function StockChart({ symbol }: StockChartProps) {
     }
   };
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload, label, coordinate }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       const localDate = data.localDate;
+      const price = payload[0].value;
       
       // Format tooltip based on interval - for 1D and 1W, show full time + timezone + date
       let tooltipDate: string;
@@ -500,10 +501,10 @@ export default function StockChart({ symbol }: StockChartProps) {
       }
       
       return (
-        <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg px-2 py-1.5 shadow-lg">
-          <p className="text-xs font-medium text-foreground mb-0.5">{tooltipDate}</p>
-          <p className="text-sm font-semibold text-foreground">
-            {formatCurrency(payload[0].value)}
+        <div className="bg-black border border-[#007AFF] rounded-lg px-2 py-1 shadow-lg transition-all duration-150 ease-out">
+          <p className="text-[10px] font-medium text-white/80 leading-tight">{tooltipDate}</p>
+          <p className="text-sm font-semibold text-white leading-tight">
+            {formatCurrency(price)}
           </p>
         </div>
       );
@@ -514,16 +515,26 @@ export default function StockChart({ symbol }: StockChartProps) {
   if (loading) {
     return (
       <Card className="w-full">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <Skeleton className="h-6 w-32" />
-            <div className="flex gap-2">
-              {TIME_INTERVALS.map(interval => (
-                <Skeleton key={interval.key} className="h-8 w-12" />
-              ))}
+        <CardContent className="p-6 lg:p-6 px-2 sm:px-4">
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4 lg:mb-0">
+              <Skeleton className="h-6 w-32" />
+              <div className="hidden lg:flex gap-2">
+                {TIME_INTERVALS.map(interval => (
+                  <Skeleton key={interval.key} className="h-8 w-12" />
+                ))}
+              </div>
             </div>
           </div>
           <Skeleton className="h-80 w-full" />
+          {/* Mobile skeleton buttons */}
+          <div className="lg:hidden mt-6 pt-4 border-t border-border">
+            <div className="flex flex-wrap gap-2 justify-center">
+              {TIME_INTERVALS.map(interval => (
+                <Skeleton key={`mobile-${interval.key}`} className="h-8 w-12" />
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
     );
@@ -532,7 +543,7 @@ export default function StockChart({ symbol }: StockChartProps) {
   if (error) {
     return (
       <Card className="w-full">
-        <CardContent className="p-6">
+        <CardContent className="p-6 lg:p-6 px-2 sm:px-4">
           <Alert variant="destructive">
             <Terminal className="h-4 w-4" />
             <AlertTitle>Error Loading Chart for {symbol}</AlertTitle>
@@ -546,45 +557,48 @@ export default function StockChart({ symbol }: StockChartProps) {
   const isPositive = (priceChangePercent || 0) >= 0;
 
   return (
-    <Card className="w-full chart-container">
-      <CardContent className="p-6">
-        {/* Header with price change and interval buttons */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <h3 className="text-lg font-semibold">Price Chart</h3>
-            {priceChange !== null && priceChangePercent !== null && (
-              <div className={`flex items-center gap-1 px-3 py-2 rounded-lg ${
-                isPositive ? 'price-indicator-positive text-green-700 dark:text-green-400' :
-                           'price-indicator-negative text-red-700 dark:text-red-400'
-              }`}>
-                {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                <span className="text-sm font-medium">
-                  {formatCurrency(priceChange)} ({priceChangePercent.toFixed(2)}%)
-                </span>
-              </div>
-            )}
-          </div>
-          
-          {/* Time interval buttons */}
-          <div className="flex gap-1">
-            {TIME_INTERVALS.map(interval => (
-              <Button
-                key={interval.key}
-                variant={selectedInterval === interval.key ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedInterval(interval.key)}
-                className={selectedInterval === interval.key ? 'clera-assist-button text-white' : ''}
-              >
-                {interval.label}
-              </Button>
-            ))}
+          <Card className="w-full chart-container">
+        <CardContent className="p-6 lg:p-6 px-2 sm:px-4">
+        {/* Header with price change - responsive layout */}
+        <div className="mb-6">
+          {/* Header section */}
+          <div className="flex items-center justify-between mb-4 lg:mb-0">
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <h3 className="text-lg font-semibold">Price Chart</h3>
+              {priceChange !== null && priceChangePercent !== null && (
+                <div className={`flex items-center gap-1 px-3 py-2 rounded-lg ${
+                  isPositive ? 'price-indicator-positive text-green-700 dark:text-green-400' :
+                             'price-indicator-negative text-red-700 dark:text-red-400'
+                }`}>
+                  {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                  <span className="text-sm font-medium">
+                    {formatCurrency(priceChange)} ({priceChangePercent.toFixed(2)}%)
+                  </span>
+                </div>
+              )}
+            </div>
+            
+            {/* Time interval buttons - desktop only */}
+            <div className="hidden lg:flex gap-1">
+              {TIME_INTERVALS.map(interval => (
+                <Button
+                  key={interval.key}
+                  variant={selectedInterval === interval.key ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedInterval(interval.key)}
+                  className={selectedInterval === interval.key ? 'clera-assist-button text-white' : ''}
+                >
+                  {interval.label}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Chart */}
         <div className="h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <LineChart data={data} margin={{ top: 5, right: 15, left: 5, bottom: 5 }}>
               <defs>
                 <linearGradient id="cleraGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#007AFF" stopOpacity={0.3}/>
@@ -613,15 +627,22 @@ export default function StockChart({ symbol }: StockChartProps) {
                 interval={0}
               />
               
-              <YAxis 
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                domain={['dataMin - dataMin * 0.02', 'dataMax + dataMax * 0.02']}
-                tickFormatter={(value) => formatCurrency(value, 'USD', { compact: true })}
-              />
+                              <YAxis 
+                  axisLine={false}
+                  tickLine={false}
+                  tick={false}
+                  domain={['dataMin - dataMin * 0.02', 'dataMax + dataMax * 0.02']}
+                  width={0}
+                />
               
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip 
+                content={<CustomTooltip />}
+                position={{ x: 0, y: 0 }}
+                offset={-60}
+                allowEscapeViewBox={{ x: false, y: false }}
+                animationDuration={150}
+                wrapperStyle={{ zIndex: 1000 }}
+              />
               
               <Line 
                 type="monotone"
@@ -638,6 +659,23 @@ export default function StockChart({ symbol }: StockChartProps) {
               />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+
+        {/* Time interval buttons - mobile only (below chart) */}
+        <div className="lg:hidden mt-6 pt-4 border-t border-border">
+          <div className="flex flex-wrap gap-2 justify-center">
+            {TIME_INTERVALS.map(interval => (
+              <Button
+                key={interval.key}
+                variant={selectedInterval === interval.key ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedInterval(interval.key)}
+                className={selectedInterval === interval.key ? 'clera-assist-button text-white' : ''}
+              >
+                {interval.label}
+              </Button>
+            ))}
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -214,10 +214,13 @@ class PIIManagementService:
             if user_id:
                 # Map the updated fields back to Supabase onboarding_data format
                 supabase_updates = {}
+                updated_email = None
+                
                 for alpaca_field, value in contact_updates.items():
                     # Map Alpaca field names back to Supabase field names
                     if alpaca_field == "email_address":
                         supabase_updates["email"] = value
+                        updated_email = value  # Store the new email for auth update
                     elif alpaca_field == "phone_number":
                         supabase_updates["phoneNumber"] = value
                     elif alpaca_field == "street_address":
@@ -229,11 +232,34 @@ class PIIManagementService:
                     elif alpaca_field == "postal_code":
                         supabase_updates["postalCode"] = value
                 
-                # Update Supabase
+                # Update Supabase onboarding data
                 supabase_success = update_user_onboarding_data(user_id, supabase_updates)
                 
                 if supabase_success:
                     logger.info(f"Successfully synced updates to Supabase for user: (redacted)")
+                    
+                    # CRITICAL: Update Supabase Auth email if email was changed
+                    if updated_email:
+                        try:
+                            from utils.supabase.db_client import get_supabase_client
+                            supabase_admin = get_supabase_client()
+                            
+                            #Auth email for user {user_id} to new email: {updated_email}")
+                            
+                            # Update the user's authentication email
+                            auth_response = supabase_admin.auth.admin.update_user_by_id(
+                                user_id, {"email": updated_email}
+                            )
+                            
+                            #if auth_response:
+                                #logger.info(f"Successfully updated Supabase Auth email for user {user_id}")
+                            #else:
+                                #logger.error(f"Failed to update Supabase Auth email for user {user_id}: No response")
+                                
+                        except Exception as auth_error:
+                            logger.error(f"Failed to update Supabase Auth email for user: {auth_error}")
+                            # Don't fail the entire request - the PII update was successful
+                            # This is logged for monitoring and manual intervention if needed
                 else:
                     logger.warning(f"Failed to sync updates to Supabase for user: (redacted)")
             else:

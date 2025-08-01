@@ -75,7 +75,7 @@ export function handleApiRoute<T extends Record<string, string | string[] | unde
  * @returns A Next.js API route handler.
  */
 export function proxyApiRoute(backendPath: string, httpMethod: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET') {
-  return handleApiRoute(async (user, { params, body }) => {
+  return handleApiRoute(async (user, { params, body, request }) => {
     
     // Replace dynamic path segments like [symbol] with actual values from params
     let finalBackendPath = backendPath;
@@ -99,6 +99,13 @@ export function proxyApiRoute(backendPath: string, httpMethod: 'GET' | 'POST' | 
 
     const targetUrl = `${backendUrl}${finalBackendPath}`;
     
+    // Get JWT token from session
+    const supabase = await createClient();
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session?.access_token) {
+      throw Object.assign(new Error('Session token required for backend authentication'), { status: 401 });
+    }
+    
     // console.log(`[API Proxy] Forwarding ${httpMethod} request for user ${user.id} to: ${targetUrl}`);
 
     const response = await fetch(targetUrl, {
@@ -106,9 +113,9 @@ export function proxyApiRoute(backendPath: string, httpMethod: 'GET' | 'POST' | 
       headers: {
         'Content-Type': 'application/json',
         'X-API-KEY': backendApiKey,
-        'X-User-ID': user.id, // Forward user context
+        'Authorization': `Bearer ${session.access_token}`, // Send JWT token for secure authentication
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: httpMethod !== 'GET' && body ? JSON.stringify(body) : undefined,
     });
 
     // Handle cases where the backend response might be empty

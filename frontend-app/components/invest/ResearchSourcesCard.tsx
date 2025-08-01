@@ -45,7 +45,7 @@ export default function ResearchSourcesCard({ citations, isLoading = false }: Re
       <CardHeader>
         <CardTitle className="text-xl font-semibold">Research Sources</CardTitle>
         <p className="text-sm text-muted-foreground">
-          All sources used to generate your personalized investment themes
+          Sources used to generate your personalized investment themes and stock picks
         </p>
       </CardHeader>
       <CardContent>

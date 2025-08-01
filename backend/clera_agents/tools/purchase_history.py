@@ -112,7 +112,7 @@ class ActivityRecord:
             
         except Exception as e:
             logger.error(f"[Purchase History] Failed to parse activity: {e}")
-            raise ValueError(f"Could not parse activity: {e}")
+            raise ValueError("Could not parse activity data")
     
     @staticmethod
     def _create_description(activity_type: str, symbol: Optional[str], side: Optional[str], 
@@ -187,7 +187,8 @@ def get_account_activities(
                 record = ActivityRecord.from_alpaca_activity(activity)
                 activity_records.append(record)
             except Exception as e:
-                logger.warning(f"[Purchase History] Failed to parse activity {getattr(activity, 'id', 'unknown')}: {e}")
+                activity_id = getattr(activity, 'id', 'unknown')
+                logger.warning(f"[Purchase History] Failed to parse activity {activity_id}: {e}")
                 continue
         
         # Sort by transaction time (most recent first)
@@ -250,6 +251,8 @@ def fetch_account_activities_data(account_id: str, days_back: int = 60) -> dict:
     """
     Retrieve all activities, trade activities, other activities, and first purchase dates for the account.
     Returns a dictionary with all relevant data for report generation.
+    
+    This is the synchronous version - use fetch_account_activities_data_async for async operations.
     """
     days_back = min(days_back, 60)
     end_date = datetime.now(timezone.utc)
@@ -264,6 +267,53 @@ def fetch_account_activities_data(account_id: str, days_back: int = 60) -> dict:
     trade_activities = [a for a in all_activities if a.activity_type == 'FILL']
     other_activities = [a for a in all_activities if a.activity_type != 'FILL']
     first_purchases = find_first_purchase_dates(account_id)
+    return {
+        'all_activities': all_activities,
+        'trade_activities': trade_activities,
+        'other_activities': other_activities,
+        'first_purchases': first_purchases,
+        'days_back': days_back
+    }
+
+
+async def fetch_account_activities_data_async(account_id: str, days_back: int = 60) -> dict:
+    """
+    Async version of fetch_account_activities_data that prevents blocking the event loop.
+    
+    This function offloads I/O operations to a thread pool to maintain async/await patterns
+    and prevent blocking the event loop during API calls.
+    """
+    import asyncio
+    
+    days_back = min(days_back, 60)
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=days_back)
+    
+    # Run the I/O-heavy operations in a thread pool to prevent blocking
+    loop = asyncio.get_running_loop()
+    
+    # Execute the synchronous I/O operations in a thread pool
+    all_activities = await loop.run_in_executor(
+        None, 
+        get_account_activities,
+        account_id,
+        None,  # activity_types
+        start_date,
+        end_date,
+        100    # page_size
+    )
+    
+    # Process the data (CPU-bound operations can stay in the main thread)
+    trade_activities = [a for a in all_activities if a.activity_type == 'FILL']
+    other_activities = [a for a in all_activities if a.activity_type != 'FILL']
+    
+    # Run first_purchase_dates in thread pool as it also makes API calls
+    first_purchases = await loop.run_in_executor(
+        None,
+        find_first_purchase_dates,
+        account_id
+    )
+    
     return {
         'all_activities': all_activities,
         'trade_activities': trade_activities,
@@ -379,10 +429,13 @@ def get_comprehensive_account_activities(days_back: int = 60, config: RunnableCo
     """
     Get a comprehensive formatted report of account activities including trading history,
     statistics, and first purchase dates.
+    
+    This is the synchronous version for backward compatibility.
+    For new async code, use get_comprehensive_account_activities_async().
     """
     try:
         account_id = get_account_id(config=config)
-        logger.info("[Portfolio Agent] Generating comprehensive account activities")
+        logger.info("[Portfolio Agent] Generating comprehensive account activities (sync)")
         data = fetch_account_activities_data(account_id, days_back)
         stats = calculate_account_activity_stats(data['trade_activities'])
         report = format_account_activities_report(
@@ -397,13 +450,57 @@ def get_comprehensive_account_activities(days_back: int = 60, config: RunnableCo
         return report
     except ValueError as e:
         logger.error(f"[Portfolio Agent] Account identification error: {e}")
-        return f"""📈 **Account Activities Report**
+        return """📈 **Account Activities Report**
 
 🚫 **Authentication Error**
 
 Could not securely identify your account for this activities report. This is a security protection to prevent unauthorized access.
 
-**Error Details:** {str(e)}
+**Error Details:** _redacted for security_
+
+💡 **Next Steps:**
+• Please log out and log back in
+• Ensure you have completed account setup
+• Contact support if the issue persists
+
+**Security Note:** This error prevents unauthorized access to trading data."""
+    except Exception as e:
+        logger.error(f"[Portfolio Agent] Error generating activities report: {e}", exc_info=True)
+        return "❌ **Error:** Could not generate account activities report. Please try again later or contact support if the issue persists."
+
+
+async def get_comprehensive_account_activities_async(days_back: int = 60, config: RunnableConfig = None) -> str:
+    """
+    Get a comprehensive formatted report of account activities including trading history,
+    statistics, and first purchase dates.
+    
+    This is the async version that prevents blocking the event loop during I/O operations.
+    Use this for new async code. For backward compatibility, use get_comprehensive_account_activities().
+    """
+    try:
+        account_id = get_account_id(config=config)
+        logger.info("[Portfolio Agent] Generating comprehensive account activities (async)")
+        data = await fetch_account_activities_data_async(account_id, days_back)
+        stats = calculate_account_activity_stats(data['trade_activities'])
+        report = format_account_activities_report(
+            all_activities=data['all_activities'],
+            trade_activities=data['trade_activities'],
+            other_activities=data['other_activities'],
+            first_purchases=data['first_purchases'],
+            stats=stats,
+            days_back=data['days_back']
+        )
+        logger.info(f"[Portfolio Agent] Successfully generated comprehensive activities report with {len(data['all_activities'])} total activities")
+        return report
+    except ValueError as e:
+        logger.error(f"[Portfolio Agent] Account identification error: {e}")
+        return """📈 **Account Activities Report**
+
+🚫 **Authentication Error**
+
+Could not securely identify your account for this activities report. This is a security protection to prevent unauthorized access.
+
+**Error Details:** _redacted for security_
 
 💡 **Next Steps:**
 • Please log out and log back in

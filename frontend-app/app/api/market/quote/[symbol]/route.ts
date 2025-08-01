@@ -47,7 +47,7 @@ export async function GET(
       headers: {
         'Content-Type': 'application/json',
         'X-API-KEY': backendApiKey,
-        'X-User-ID': user.id,
+        // No user authentication needed - this is public market data
       },
     });
 

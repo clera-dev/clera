@@ -1,5 +1,6 @@
 import { unstable_noStore as noStore } from 'next/cache';
 import { NextResponse } from "next/server";
+import { AUTH_ROUTES } from '@/lib/constants';
 
 export interface RouteConfig {
   requiresAuth: boolean;
@@ -41,10 +42,51 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/conversations/stream-chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/conversations/submit-message": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/conversations/handle-interrupt": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  
+  // FMP API routes - require authentication to prevent abuse (authenticated users have natural rate limiting)
+  "/api/fmp/chart": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/profile": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/price-target": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/chart/health": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  
+  // Image proxy route - require authentication to prevent bandwidth abuse
+  "/api/image-proxy": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {
-  return routeConfigs[path] || null;
+  // Handle null/undefined/empty path inputs
+  if (!path || typeof path !== 'string') {
+    return null;
+  }
+  
+  // First try exact match
+  const exactMatch = routeConfigs[path];
+  if (exactMatch) {
+    return exactMatch;
+  }
+  
+  // For API routes, try prefix matching to handle dynamic segments
+  // Use longest match to ensure most specific route is selected
+  if (path.startsWith('/api/')) {
+    let longestMatch: string | null = null;
+    let longestLength = 0;
+    
+    for (const configPath of Object.keys(routeConfigs)) {
+      if (configPath.startsWith('/api/') && (path === configPath || path.startsWith(`${configPath}/`))) {
+        // Check if this is a longer (more specific) match
+        if (configPath.length > longestLength) {
+          longestMatch = configPath;
+          longestLength = configPath.length;
+        }
+      }
+    }
+    
+    if (longestMatch) {
+      return routeConfigs[longestMatch];
+    }
+  }
+  
+  return null;
 };
 
 export function isPublicPath(path: string): boolean {
@@ -54,17 +96,14 @@ export function isPublicPath(path: string): boolean {
     '/protected/reset-password', 
     '/ingest',
     '/.well-known',
-    '/sign-in',
-    '/sign-up', 
-    '/forgot-password'
+    ...AUTH_ROUTES
   ];
   
   return publicPaths.some(publicPath => path.startsWith(publicPath));
 }
 
 export function isAuthPage(path: string): boolean {
-  const authPages = ['/sign-in', '/sign-up', '/forgot-password'];
-  return authPages.some(authPage => path.startsWith(authPage));
+  return AUTH_ROUTES.some(authPage => path.startsWith(authPage));
 }
 
 // Real-time onboarding status check - no caching for critical user flows
@@ -82,6 +121,11 @@ export async function getOnboardingStatus(supabase: any, userId: string): Promis
       .single();
     
     if (error) {
+      // GRACEFUL HANDLING: If no row is found, it simply means the user hasn't started onboarding.
+      // This is an expected state for new users, not an error.
+      if (error.code === 'PGRST116') {
+        return null;
+      }
       console.error('Onboarding status check error:', error);
       return null;
     }
@@ -125,6 +169,9 @@ export async function getAlpacaAccountId(supabase: any, userId: string): Promise
       .single();
     
     if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
       console.error('Error fetching Alpaca account ID:', error);
       return null;
     }

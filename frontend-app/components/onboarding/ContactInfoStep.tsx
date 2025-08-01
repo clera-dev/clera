@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,16 +14,25 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 interface ContactInfoStepProps {
   data: OnboardingData;
   onUpdate: (data: Partial<OnboardingData>) => void;
   onContinue: () => void;
+  userEmail?: string;
 }
 
-export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactInfoStepProps) {
+export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail }: ContactInfoStepProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Pre-populate email if it's not already set
+  useEffect(() => {
+    if (userEmail && !data.email) {
+      onUpdate({ email: userEmail });
+    }
+  }, [userEmail, data.email, onUpdate]);
+  
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
@@ -53,19 +62,27 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
     <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-8">
       <div className="mb-8">
         <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Contact Information</h2>
-        <p className="text-muted-foreground">Please provide your contact details to continue with your account setup.</p>
+        <p className="text-muted-foreground">Please provide your contact details to start your account setup.</p>
       </div>
       
       <div className="space-y-6 bg-card/50 p-6 rounded-lg border border-border/30 shadow-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div>
-            <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
+            <div className="flex items-center">
+              <Label htmlFor="email">Email Address</Label>
+              <InfoTooltip content="Your primary email for account communications.">
+                <button type="button" aria-label="Learn more about email address" className="ml-2">
+                  <InfoIcon className="h-4 w-4 text-gray-400" />
+                </button>
+              </InfoTooltip>
+            </div>
             <Input
               id="email"
               type="email"
               value={data.email}
+              disabled={!!userEmail}
               onChange={(e) => onUpdate({ email: e.target.value })}
-              className={`mt-1 ${errors.email ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`mt-1 ${errors.email ? "border-red-500" : "border-border/40"} rounded-md h-11 ${userEmail ? 'bg-muted/50' : ''}`}
               placeholder="you@example.com"
             />
             {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
@@ -77,7 +94,11 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
               id="phone"
               defaultCountry="US"
               value={data.phoneNumber}
-              onChange={(value) => onUpdate({ phoneNumber: value as string })}
+              onChange={(value) => {
+                // Convert to E.164 format if not already
+                const phoneValue = value as string;
+                onUpdate({ phoneNumber: phoneValue });
+              }}
               className={`mt-1 ${errors.phoneNumber ? "border-red-500" : "border-border/40"} rounded-md`}
             />
             {errors.phoneNumber && <p className="text-red-500 text-sm mt-1">{errors.phoneNumber}</p>}
@@ -89,6 +110,8 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
             <Label htmlFor="streetAddress" className="text-sm font-medium">Permanent Residential Address</Label>
             <Input
               id="streetAddress"
+              type="text"
+              inputMode="text"
               value={data.streetAddress[0]}
               onChange={(e) => onUpdate({ streetAddress: [e.target.value] })}
               className={`mt-1 ${errors.streetAddress ? "border-red-500" : "border-border/40"} rounded-md h-11`}
@@ -101,6 +124,8 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
             <Label htmlFor="unit" className="text-sm font-medium">Unit / Apt #</Label>
             <Input
               id="unit"
+              type="text"
+              inputMode="text"
               value={data.unit || ''}
               onChange={(e) => onUpdate({ unit: e.target.value })}
               className="mt-1 border-border/40 rounded-md h-11"
@@ -140,6 +165,9 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
             <Label htmlFor="postalCode" className="text-sm font-medium">Postal Code</Label>
             <Input
               id="postalCode"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={data.postalCode}
               onChange={(e) => onUpdate({ postalCode: e.target.value })}
               className={`mt-1 ${errors.postalCode ? "border-red-500" : "border-border/40"} rounded-md h-11`}
@@ -149,18 +177,13 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
           </div>
           
           <div>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="country" className="text-sm font-medium">Country</Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <InfoIcon tabIndex={0} className="h-4 w-4 text-muted-foreground cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>We are currently only available in the USA.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+            <div className="flex items-center">
+              <Label htmlFor="country">Country</Label>
+              <InfoTooltip content="The country where you currently reside.">
+                <button type="button" aria-label="Learn more about country selection" className="ml-2">
+                  <InfoIcon className="h-4 w-4 text-gray-400" />
+                </button>
+              </InfoTooltip>
             </div>
             <Input
               id="country"
@@ -178,7 +201,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue }: ContactI
           type="submit" 
           className="px-8 py-6 text-base font-medium rounded-md bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg transition-all"
         >
-          Continue to Next Step
+        Continue
         </Button>
       </div>
     </form>

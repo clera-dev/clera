@@ -20,24 +20,45 @@ function getUserLockKey(userId: string): string {
 // Function to acquire a Redis lock for user summary generation
 async function acquireUserLock(userId: string): Promise<boolean> {
   const lockKey = getUserLockKey(userId);
-  const result = await redisClient.set(lockKey, Date.now().toString(), {
-    ex: USER_SUMMARY_LOCK_TTL,
-    nx: true
-  });
-  return result === 'OK';
+  try {
+    const result = await redisClient.set(lockKey, Date.now().toString(), {
+      ex: USER_SUMMARY_LOCK_TTL,
+      nx: true
+    });
+    return result === 'OK';
+  } catch (redisError) {
+    console.warn(`Redis lock acquisition failed for user ${userId}:`, redisError);
+    // ARCHITECTURAL FIX: Treat Redis connectivity failures as unlocked state
+    // This prevents silent failures that leave data stale when Redis is down
+    // Instead of blocking refresh, we allow it to proceed when Redis is unavailable
+    return true; // Treat as unlocked to allow refresh to proceed
+  }
 }
 
 // Function to release a Redis lock
 async function releaseUserLock(userId: string): Promise<void> {
   const lockKey = getUserLockKey(userId);
-  await redisClient.del(lockKey);
+  try {
+    await redisClient.del(lockKey);
+  } catch (redisError) {
+    console.warn(`Redis lock release failed for user ${userId}:`, redisError);
+    // Don't throw - lock will expire automatically
+  }
 }
 
 // Function to check if a user lock exists and is still valid
 async function isUserLockActive(userId: string): Promise<boolean> {
   const lockKey = getUserLockKey(userId);
-  const lockExists = await redisClient.exists(lockKey);
-  return lockExists === 1;
+  try {
+    const lockExists = await redisClient.exists(lockKey);
+    return lockExists === 1;
+  } catch (redisError) {
+    console.warn(`Redis lock check failed for user ${userId}:`, redisError);
+    // ARCHITECTURAL FIX: Treat Redis connectivity failures as no active lock
+    // This prevents silent failures that leave data stale when Redis is down
+    // Instead of blocking operations, we allow them to proceed when Redis is unavailable
+    return false; // Treat as no active lock to allow operations to proceed
+  }
 }
 
 // Helper function to sanitize a string that is almost JSON by escaping control characters.

@@ -42,6 +42,11 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
   // Maximum number of trending articles to display to prevent layout issues
   const MAX_TRENDING_ARTICLES = 7;
   
+  // Helper function to generate proxied image URL
+  const getProxiedImageUrl = (imageUrl: string): string => {
+    return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
+  };
+  
   // Extract news context for dynamic prompts
   const hasNews = trendingNews.length > 0;
   const newsCount = trendingNews.length;
@@ -138,7 +143,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                       <div className="flex items-center gap-2">
                         {news.banner_image ? (
                           <img 
-                            src={news.banner_image} 
+                            src={getProxiedImageUrl(news.banner_image)} 
                             alt={news.source}
                             className="w-6 h-6 rounded-md object-cover" 
                             onError={(e) => {
@@ -153,7 +158,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                         <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
                           <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
                         </div>
-                        <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
+                        <span className="font-medium text-xs sm:text-sm line-clamp-2 leading-tight">{news.title}</span>
                       </div>
                     </a>
                   ))}
@@ -217,7 +222,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                     <div className="flex items-center gap-2">
                       {news.banner_image ? (
                         <img 
-                          src={news.banner_image} 
+                          src={getProxiedImageUrl(news.banner_image)} 
                           alt={news.source}
                           className="w-6 h-6 rounded-md object-cover" 
                           onError={(e) => {
@@ -232,7 +237,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
                       <div className={`w-6 h-6 rounded-md flex items-center justify-center ${getSourceColor(news.source)} ${news.banner_image ? 'hidden' : ''}`}>
                         <span className="font-semibold text-xs">{getSourceInitials(news.source)}</span>
                       </div>
-                      <span className="font-medium text-xs sm:text-sm truncate">{news.title}</span>
+                                              <span className="font-medium text-xs sm:text-sm line-clamp-2 leading-tight">{news.title}</span>
                     </div>
                   </a>
                 ))}

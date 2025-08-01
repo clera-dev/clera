@@ -3,7 +3,7 @@
  * Handles input rendering, validation, and formatting
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +13,15 @@ import { Button } from '@/components/ui/button';
 import { formatValue, isFieldUpdateable, getFieldDescription } from '@/lib/utils/pii-helpers';
 import { validateField } from '@/lib/validation';
 import { ValidationErrors } from '@/lib/validation';
+import { PhoneInput } from '@/components/ui/phone-input';
+import { isValidPhoneNumber } from 'react-phone-number-input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { InfoIcon, AlertTriangle } from "lucide-react";
 
 interface PIIFormFieldProps {
   section: string;
@@ -24,18 +33,6 @@ interface PIIFormFieldProps {
   showSSN?: boolean;
   onToggleSSN?: () => void;
 }
-
-// Format phone number as user types
-const formatPhoneNumber = (value: string): string => {
-  const digits = value.replace(/\D/g, '');
-  const match = digits.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
-  if (!match) return value;
-  
-  const [, area, exchange, number] = match;
-  if (digits.length <= 3) return area;
-  if (digits.length <= 6) return `(${area}) ${exchange}`;
-  return `(${area}) ${exchange}-${number}`;
-};
 
 // Format postal code to support both 5-digit and 9-digit ZIP codes
 const formatPostalCode = (value: string): string => {
@@ -60,16 +57,30 @@ export const PIIFormField: React.FC<PIIFormFieldProps> = ({
   const error = validationErrors[fieldPath];
   const isReadOnly = !isUpdateable;
 
+  // Track email changes for highlighting
+  const [originalEmail, setOriginalEmail] = useState<string>('');
+  const [emailChanged, setEmailChanged] = useState(false);
+
+  // Initialize original email value
+  useEffect(() => {
+    if (section === 'contact' && field === 'email' && value && !originalEmail) {
+      setOriginalEmail(value);
+    }
+  }, [section, field, value, originalEmail]);
+
   // Handle input change with validation and formatting
   const handleChange = (newValue: any) => {
     if (isReadOnly) return;
     
     let formattedValue = newValue;
     
+    // Check for email changes
+    if (section === 'contact' && field === 'email') {
+      setEmailChanged(Boolean(originalEmail && newValue !== originalEmail));
+    }
+    
     // Apply formatting based on field type
-    if (field === 'phone') {
-      formattedValue = formatPhoneNumber(newValue);
-    } else if (field === 'postal_code') {
+    if (field === 'postal_code') {
       formattedValue = formatPostalCode(newValue);
     }
     
@@ -111,37 +122,53 @@ export const PIIFormField: React.FC<PIIFormFieldProps> = ({
       );
     }
 
-    // Special handling for email field
-    if (field === 'email') {
+    // Special handling for email field with change warning
+    if (section === 'contact' && field === 'email') {
       return (
-        <Input
-          {...commonProps}
-          type="email"
-          placeholder="you@example.com"
-        />
+        <div className="space-y-2">
+          <Input
+            {...commonProps}
+            type="email"
+            placeholder="you@example.com"
+            className={`w-full ${error ? 'border-red-500' : ''} ${isReadOnly ? 'bg-gray-50' : ''} ${emailChanged ? 'border-orange-400' : ''}`}
+          />
+          {emailChanged && (
+            <div className="flex items-center gap-2 p-3 bg-orange-50 border border-orange-200 rounded-md">
+              <AlertTriangle className="h-4 w-4 text-orange-600 flex-shrink-0" />
+              <p className="text-sm text-orange-800">
+                Updates to email address will also change sign in credentials.
+              </p>
+            </div>
+          )}
+        </div>
       );
     }
-
-    // Special handling for phone field with formatting
+    
+    // Special handling for phone field with PhoneInput component
     if (field === 'phone') {
       return (
-        <Input
-          {...commonProps}
-          type="tel"
-          placeholder="(555) 123-4567"
-          maxLength={14} // (xxx) xxx-xxxx
+        <PhoneInput
+          id={fieldPath}
+          defaultCountry="US"
+          value={value || ''}
+          onChange={(phoneValue) => handleChange(phoneValue)}
+          disabled={isReadOnly}
+          className={`${error ? 'border-red-500' : ''} ${isReadOnly ? 'bg-gray-50' : ''}`}
         />
       );
     }
 
-    // Special handling for postal code with formatting
+    // Special handling for postal code with numeric input mode
     if (field === 'postal_code') {
       return (
         <Input
           {...commonProps}
           type="text"
+          inputMode="numeric"
+          pattern="[0-9-]*"
           placeholder="12345 or 12345-6789"
           maxLength={10} // xxxxx-xxxx
+          autoComplete="postal-code"
         />
       );
     }

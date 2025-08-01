@@ -149,14 +149,14 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
         if (viewType === 'assetClass') {
              if (positions.length === 0) {
                  return (
-                     <div className="h-[280px] flex items-center justify-center">
+                     <div className="h-[240px] flex items-center justify-center">
                          <CardDescription className="text-center p-4">No position data available.</CardDescription>
                      </div>
                  );
              }
             if (allocationDataByClass.length === 0) {
                 return (
-                    <div className="h-[280px] flex items-center justify-center">
+                    <div className="h-[240px] flex items-center justify-center">
                          <CardDescription className="text-center p-4">Could not calculate asset class allocation.</CardDescription>
                      </div>
                 );
@@ -168,19 +168,19 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                 legendLayout: "horizontal" as const,
                 legendAlign: "center" as const,
                 legendVerticalAlign: "bottom" as const,
-                pieOuterRadius: 70,
+                pieOuterRadius: 60,
                 pieCenterY: "45%", // Move pie up slightly to make room for legend below
             } : {
                 // Standard layout: vertical legend on right (when chat is closed)
                 legendLayout: "vertical" as const,
                 legendAlign: "right" as const,
                 legendVerticalAlign: "middle" as const,
-                pieOuterRadius: 85,
+                pieOuterRadius: 70,
                 pieCenterY: "50%",
             };
 
             return (
-                <div className="w-full h-[280px]" aria-label="Asset class allocation pie chart"> 
+                <div className="w-full h-[240px]" aria-label="Asset class allocation pie chart"> 
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie

@@ -80,7 +80,7 @@ export class BackendClient {
       const response = await fetch(url, {
         method: options.method || 'GET',
         headers,
-        body: options.body ? JSON.stringify(options.body) : undefined,
+        body: options.method && options.method !== 'GET' && options.body ? JSON.stringify(options.body) : undefined,
       });
 
       const responseText = await response.text();

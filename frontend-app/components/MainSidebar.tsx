@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface MainSidebarProps {
   isMobileSidebarOpen: boolean;
@@ -40,6 +41,7 @@ export default function MainSidebar({
   const [isMounted, setIsMounted] = useState(false);
   const [lastClickTime, setLastClickTime] = useState<number>(0);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [isLogoHovered, setIsLogoHovered] = useState(false);
   const router = useRouter();
   
   // Set mounted state for client-side rendering
@@ -137,28 +139,16 @@ export default function MainSidebar({
     },
   ];
 
-  // Bottom icons (these will be placed above the user profile)
-  const bottomIcons = [
-    {
-      name: 'Account',
-      href: '/dashboard',
-      icon: User,
-    },
-    {
-      name: 'Information',
-      href: '/info',
-      icon: Info,
-    },
-    {
-      name: 'Settings',
-      href: '/settings',
-      icon: Settings,
-    },
-  ];
+  // Bottom icons section removed - functionality consolidated into user profile section
 
   const toggleCollapse = () => {
     const newState = !isCollapsed;
     setIsCollapsed(newState);
+    
+    // Reset hover state when collapsing to ensure chevron doesn't stay visible
+    if (newState) {
+      setIsLogoHovered(false);
+    }
     
     // Update localStorage immediately
     localStorage.setItem('sidebarCollapsed', newState.toString());
@@ -196,13 +186,47 @@ export default function MainSidebar({
             <div className="flex items-center h-16 px-4 border-b justify-between flex-shrink-0">
               {isCollapsed ? (
                 <div className="w-full flex justify-center items-center">
-                  <div className="flex items-center justify-center">
-                    <img 
-                      src="/clera-favicon copy.png" 
-                      alt="Clera" 
-                      className="h-8 w-auto"
-                    />
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div 
+                          role="button"
+                          tabIndex={0}
+                          className="relative flex items-center justify-center cursor-pointer"
+                          onMouseEnter={() => setIsLogoHovered(true)}
+                          onMouseLeave={() => setIsLogoHovered(false)}
+                          onClick={toggleCollapse}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleCollapse();
+                            }
+                          }}
+                          aria-label="Open sidebar"
+                        >
+                          {/* Logo - hidden when hovering */}
+                          <img 
+                            src="/clera-favicon copy.png" 
+                            alt="Clera" 
+                            className={cn(
+                              "h-8 w-auto transition-opacity duration-200",
+                              isLogoHovered ? "opacity-0" : "opacity-100"
+                            )}
+                          />
+                          {/* Chevron button - shown when hovering */}
+                          <div className={cn(
+                            "absolute inset-0 flex items-center justify-center transition-opacity duration-200",
+                            isLogoHovered ? "opacity-100" : "opacity-0"
+                          )}>
+                            <ChevronRight size={20} className="text-foreground" />
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={8}>
+                        <p>Open sidebar</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               ) : (
                 <div className="w-full flex justify-between items-center">
@@ -275,84 +299,34 @@ export default function MainSidebar({
               </nav>
             </div>
 
-            {/* Bottom Icons Section - Above the user profile */}
-            <div className="flex-shrink-0">
-              <div className="space-y-1 p-2">
-                {bottomIcons.map((item) => {
-                  const isActive = pathname === item.href;
-                  
-                  return (
-                    <Link 
-                      key={item.href}
-                      href={item.href} 
-                      className={cn(
-                        "flex items-center py-2 hover:text-primary transition-colors",
-                        isActive ? "text-primary" : "text-muted-foreground",
-                        isCollapsed ? "justify-center" : "px-3"
-                      )}
-                      onClick={(e) => {
-                        // Use the same navigation handler for bottom icons
-                        handleNavigation(item.href, e);
-                      }}
-                      title={item.name}
-                    >
-                      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                        {item.name === 'Account' && (
-                          <div className="border border-current rounded-full w-6 h-6 flex items-center justify-center">
-                            <User size={14} />
-                          </div>
-                        )}
-                        {item.name === 'Information' && (
-                          <div className="border border-current rounded-full w-6 h-6 flex items-center justify-center">
-                            <Info size={14} />
-                          </div>
-                        )}
-                        {item.name === 'Settings' && (
-                          <Settings size={20} />
-                        )}
-                      </div>
-                      {!isCollapsed && (
-                        <span className="ml-3">{item.name}</span>
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
 
-            {/* User section - Fixed at bottom */}
+
+            {/* User section - Fixed at bottom, now navigates to dashboard */}
             <div className="border-t p-4 flex-shrink-0 mt-auto">
-              <div className={cn(
-                "flex items-center gap-3",
-                isCollapsed ? "justify-center" : ""
-              )}>
+              <Link 
+                href="/dashboard"
+                className={cn(
+                  "flex items-center gap-3 hover:bg-accent hover:text-accent-foreground rounded-md p-2 transition-colors",
+                  pathname === '/dashboard' ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                  isCollapsed ? "justify-center" : ""
+                )}
+                onClick={(e) => handleNavigation('/dashboard', e)}
+                title={isCollapsed ? "Dashboard" : undefined}
+              >
                 <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
                   <User size={16} className="text-muted-foreground" />
                 </div>
                 {!isCollapsed && (
                   <div className="flex-1 overflow-hidden">
-                    <p className="text-sm font-medium truncate">User Profile</p>
-                    <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+                    <p className="text-sm font-medium truncate">Dashboard</p>
+                    <p className="text-xs text-muted-foreground truncate">Account & Settings</p>
                   </div>
                 )}
-              </div>
+              </Link>
             </div>
           </aside>
           
-          {/* Expand button - when sidebar is collapsed */}
-          {isCollapsed && (
-            <div className="hidden lg:block fixed top-4 left-24 z-60">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="flex items-center justify-center"
-                onClick={toggleCollapse}
-                aria-label="Expand sidebar"
-              >
-                <ChevronRight size={16} />
-              </Button>
-            </div>
-          )}
+          {/* Remove the fixed expand button - functionality moved to logo hover */}
         </>
       )}
     </>

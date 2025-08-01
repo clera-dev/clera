@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PlusCircle } from "lucide-react";
 import ManualBankForm from "@/components/funding/ManualBankForm";
-import TransferHistory from "@/components/funding/TransferHistory";
 import TransferSuccessDialog from "@/components/funding/TransferSuccessDialog";
 import { useRouter } from "next/navigation";
 
@@ -25,7 +24,6 @@ export default function BankConnectionsCard({
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [transferAmount, setTransferAmount] = useState<string>('');
   const [bankLast4, setBankLast4] = useState<string>('');
-  const [transferHistoryKey, setTransferHistoryKey] = useState(0);
 
   // Check for URL parameter to auto-open dialog
   useEffect(() => {
@@ -55,9 +53,6 @@ export default function BankConnectionsCard({
     setTransferAmount(amount);
     setBankLast4(last4 || '');
     setIsSuccessDialogOpen(true);
-    
-    // Refresh transfer history
-    setTransferHistoryKey(prev => prev + 1);
   };
 
   const handleSuccessDialogClose = () => {
@@ -69,7 +64,7 @@ export default function BankConnectionsCard({
   return (
     <>
     <Card>
-      <CardContent className="space-y-4 pt-6">
+      <CardContent className="space-y-2 pt-6">
         <Button 
           onClick={handleOpenDialog}
           className="w-full flex gap-2 items-center justify-center bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white border-0 hover:shadow-lg transition-all duration-200 font-medium h-12 rounded-lg shadow-blue-500/20 shadow-md"
@@ -95,12 +90,10 @@ export default function BankConnectionsCard({
           </DialogContent>
         </Dialog>
       </CardContent>
-    </Card>
 
-      {/* Transfer History */}
-      <div className="mt-6">
-        <TransferHistory key={transferHistoryKey} />
-      </div>
+      {/* The TransferHistory component will now be rendered directly on the dashboard page */}
+      {/* <TransferHistory key={transferHistoryKey} /> */}
+    </Card>
 
       {/* Success Dialog */}
       <TransferSuccessDialog

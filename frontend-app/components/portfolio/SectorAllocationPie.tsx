@@ -72,6 +72,19 @@ const CustomTooltipContent = ({ active, payload }: any) => {
 
 const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, initialData, error, useCompactLayout = false }) => {
   const allocationData = initialData;
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Update mobile state on resize
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile(); // Initial check
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const pieDataForChart = useMemo(() => {
     if (!allocationData || !allocationData.sectors) return [];
@@ -91,37 +104,38 @@ const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, in
   }, [allocationData]);
 
   if (error) {
-    return <p className="text-sm text-red-500 text-center p-4 h-[280px] flex items-center justify-center">Error: {error}</p>;
+    return <p className="text-sm text-red-500 text-center p-4 h-[240px] flex items-center justify-center">Error: {error}</p>;
   }
   
   if (!accountId) {
-    return <p className="text-sm text-muted-foreground text-center p-4 h-[280px] flex items-center justify-center">Account ID not available.</p>;
+    return <p className="text-sm text-muted-foreground text-center p-4 h-[240px] flex items-center justify-center">Account ID not available.</p>;
   }
 
   if (!allocationData || allocationData.sectors.length === 0) {
-    return <p className="text-sm text-muted-foreground text-center p-4 h-[280px] flex items-center justify-center">No sector allocation data to display.</p>;
+    return <p className="text-sm text-muted-foreground text-center p-4 h-[240px] flex items-center justify-center">No sector allocation data to display.</p>;
   }
 
-  // Responsive chart configuration
-  const chartConfig = useCompactLayout ? {
-    // Compact layout: horizontal legend below chart
+  // Responsive chart configuration based on chat sidebar state AND mobile screen size
+  const shouldUseCompactLayout = useCompactLayout || isMobile;
+  
+  const chartConfig = shouldUseCompactLayout ? {
+    // Compact layout: horizontal legend below chart (when chat is open OR on mobile)
     legendLayout: "horizontal" as const,
     legendAlign: "center" as const,
     legendVerticalAlign: "bottom" as const,
-    pieOuterRadius: 70,
-    pieCenterY: "45%", // Move pie up slightly to make room for legend below
+    pieOuterRadius: 60,
+    pieCenterY: "40%", // Move pie up more to make room for legend below
   } : {
-    // Standard layout: vertical legend on right
+    // Standard layout: vertical legend on right (when chat is closed AND on desktop)
     legendLayout: "vertical" as const,
     legendAlign: "right" as const,
     legendVerticalAlign: "middle" as const,
-    pieOuterRadius: 85,
+    pieOuterRadius: 70,
     pieCenterY: "50%",
   };
 
   return (
-    // Match height of AssetAllocationPie's chart container
-    <div className="w-full h-[280px]" aria-label="Sector allocation pie chart">
+    <div className="w-full h-[240px]">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
@@ -154,7 +168,8 @@ const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, in
             iconSize={10} 
             wrapperStyle={{ 
               fontSize: '12px',
-              paddingTop: useCompactLayout ? '10px' : '0px'
+              paddingTop: shouldUseCompactLayout ? '15px' : '0px',
+              paddingLeft: shouldUseCompactLayout ? '0px' : '10px'
             }}
           />
         </PieChart>

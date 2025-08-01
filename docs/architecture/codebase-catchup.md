@@ -85,6 +85,7 @@ Clera uses a **proxy pattern** for all frontend-to-backend communication:
 | `/api/portfolio/history`                       | `/api/portfolio/{account_id}/history`            | Get portfolio value history             |
 | `/api/portfolio/sector-allocation`             | `/api/portfolio/sector-allocation`               | Get sector allocation                   |
 | `/api/assets/[assetId]`                        | `/api/assets/{symbol_or_asset_id}`               | Get asset details                       |
+| `/api/market/quotes/batch`                     | `/api/market/quotes/batch`                       | Get batch quotes (true batching)       |
 | `/api/watchlist/[accountId]`                   | `/api/watchlist/{account_id}`                    | Get user's watchlist                    |
 | `/api/watchlist/[accountId]/add`/`/remove`     | `/api/watchlist/{account_id}/add`/`/remove`      | Add/remove symbol from watchlist        |
 | `/api/account/[accountId]/balance`             | `/get-account-balance/{account_id}`              | Get account balance                     |
@@ -111,17 +112,78 @@ Clera uses a **proxy pattern** for all frontend-to-backend communication:
 > **Note:** Not all backend endpoints are exposed to the frontend; only those listed above are actively used.
 
 ### Authentication & Authorization Flow
-- **Frontend API routes** use Supabase Auth to verify the user and check account ownership before proxying.
-- **Backend endpoints** require an API key (passed from the Next.js API route, never exposed to the browser).
+
+**Dual Authentication Pattern (Industry Best Practice):**
+The system supports both authentication patterns for maximum compatibility:
+
+1. **Session-based (Cookies)** - For client-side fetch requests from React components
+   - Uses Supabase session cookies automatically
+   - No manual token management required
+   - Example: `fetch('/api/account/123/balance')`
+
+2. **JWT-based (Authorization Header)** - For service-to-service calls with explicit tokens
+   - Uses `Authorization: Bearer <token>` headers
+   - Required for BackendService, ApiProxyService, and internal API proxying
+   - Example: `BackendService.placeTrade(accountId, userId, data, authToken)`
+
+**Implementation:**
+- **Frontend API routes** use `AuthService.authenticateAndAuthorize()` which automatically detects and validates both patterns
+- **Backend endpoints** require BOTH:
+  - **API key** for service authentication (never exposed to browser)
+  - **JWT token** for user authentication (cryptographically signed by Supabase)
 - **WebSocket connections** are proxied through a Next.js API route for auth, then connect to the backend's WebSocket service.
+
+#### **CRITICAL SECURITY REQUIREMENT**: All Frontend → Backend Communication
+
+**ALL frontend API routes MUST send both headers when calling backend endpoints:**
+
+```typescript
+// ✅ REQUIRED: Secure authentication pattern
+headers: {
+  'Content-Type': 'application/json',
+  'X-API-KEY': process.env.BACKEND_API_KEY,        // Service authentication
+  'Authorization': `Bearer ${user.access_token}`,  // User authentication (JWT)
+}
+```
+
+**❌ FORBIDDEN: Never use client-supplied user identifiers:**
+```typescript
+// ❌ SECURITY VULNERABILITY - Never do this:
+headers: {
+  'X-API-KEY': backendApiKey,
+  'X-User-ID': user.id  // Enables account takeover attacks!
+}
+```
+
+**Secure Implementation Patterns:**
+
+1. **For new routes** - Use `AuthService.authenticateAndAuthorize()`:
+```typescript
+// Secure pattern for account-specific routes
+const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
+// authContext.authToken contains the validated JWT
+```
+
+2. **For general routes** - Use `authenticateWithJWT()`:
+```typescript
+// Secure pattern for general routes  
+const { user, accessToken } = await authenticateWithJWT(request);
+const headers = await createSecureBackendHeaders(accessToken);
+```
 
 ### Adding a New API Feature
 1. **Implement the backend endpoint** in FastAPI (`backend/api_server.py`).
+   - Use `get_authenticated_user_id()` dependency for JWT validation
+   - Use `verify_account_ownership()` for account-specific endpoints
 2. **Add a Next.js API route** in `frontend-app/app/api/` to:
-   - Authenticate the user (if needed)
-   - Proxy the request to the backend (using env vars for URL and API key)
+   - **ALWAYS authenticate with JWT**: Use `AuthService` or `authenticateWithJWT()`  
+   - **Send secure headers**: Include both API key and JWT token to backend
+   - Proxy the request following the secure patterns above
 3. **Call the new API route** from your React component or hook.
-4. **Test end-to-end** (frontend → Next.js API route → backend → response).
+4. **Test end-to-end** security:
+   - Verify JWT token is required (401 without it)
+   - Verify account ownership is enforced  
+   - Test the complete flow (frontend → Next.js API route → backend → response)
 
 ---
 
@@ -186,6 +248,11 @@ if (path.startsWith('/api/') && !allowedApiPaths.some(p => path.startsWith(p))) 
 4. **Test with curl** to isolate frontend vs backend issues
 5. **Check middleware logs** for authentication/authorization issues
 
+Note: Use the following structure to test frontend api endpoints (pull JWT from Inspect > Application > cookies)
+``` bash
+curl -i "http://localhost:3000/api/fmp/chart/AAPL?interval=5min&from=2025-01-30&to=2025-01-30" -H "Cookie: <JWT>"
+```
+
 ---
 
 ## Key Directory Structure
@@ -208,6 +275,32 @@ clera/
 ```
 
 ---
+
+## Architectural Patterns: Proper Batching Implementation
+
+### Batch API Pattern (Anti-N+1)
+
+**Problem Solved**: The `/api/market/quotes/batch` endpoint exemplifies proper batching architecture:
+
+- **Before**: Frontend made N individual backend requests (N+1 anti-pattern)
+- **After**: Frontend makes 1 backend request, backend makes 1 external API call
+- **Impact**: Reduced latency, eliminated backend overload, proper service boundaries
+
+**Implementation Pattern**:
+```typescript
+// ❌ ANTI-PATTERN: N+1 requests
+symbols.map(symbol => fetch(`/api/quote/${symbol}`))  // N backend calls
+
+// ✅ CORRECT: True batching
+fetch('/api/market/quotes/batch', { 
+  body: JSON.stringify({ symbols }) 
+})  // 1 backend call
+```
+
+**Key Principles**:
+- Batch endpoints must make single external API calls, not iterate over individual calls
+- Maintain batch contract even when external API fails (return empty, don't fallback to N+1)
+- Document architectural patterns clearly to prevent regression
 
 ## Core Features & Flows
 
@@ -320,6 +413,65 @@ REDIS_HOST=
    cd backend
    python -m portfolio_realtime.run_services
    ```
+
+### Testing
+
+#### Frontend Testing
+The frontend uses Jest with React Testing Library and has a production-grade configuration that separates Jest Babel configuration from Next.js SWC.
+
+**Working Test Commands:**
+```bash
+# Run all tests
+cd frontend-app
+npm test
+
+# Run specific JavaScript test file
+npm test -- --testPathPattern="market-data-service.test.js"
+
+# Run specific test by name
+npm test -- --testPathPattern="market-data-service.test.js" --testNamePattern="should calculate percentage correctly"
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run middleware tests only
+npm run test:middleware
+```
+
+**Production Configuration:**
+- **Jest Config**: `frontend-app/jest.config.js`
+- **Test Setup**: `frontend-app/tests/setup.js`
+- **Jest Babel Config**: `frontend-app/babel.config.jest.js` (Jest-specific, doesn't interfere with Next.js)
+- **Next.js**: Uses SWC for builds (no Babel conflict)
+
+**Key Features:**
+- **Separation of Concerns**: Jest uses Babel, Next.js uses SWC
+- **No Conflicts**: No `.babelrc` file prevents SWC conflicts
+- **Optimal Performance**: SWC provides faster builds than Babel
+- **TypeScript Support**: Full TypeScript/JSX support in tests
+
+**Test Structure:**
+```
+frontend-app/tests/
+├── components/          # Component tests (some have React 18 issues)
+├── api/                # API route tests
+├── hooks/              # Custom hook tests
+├── integration/        # Integration tests
+├── middleware/         # Middleware tests
+├── security/           # Security tests
+├── utils/              # Utility function tests
+├── setup.js           # Jest setup file
+└── run-all-tests.js   # Custom test runner
+```
+
+#### Backend Testing
+```bash
+cd backend
+pytest
+```
 
 ### File Watcher Configuration
 - Uses `.watchfiles.env` to ignore virtual environment changes
@@ -481,6 +633,16 @@ cd frontend-app && npm run dev
 # Run tests
 cd backend && pytest
 cd frontend-app && npm test
+
+# Run specific frontend tests
+cd frontend-app && npm test -- --testPathPattern="market-data-service.test.js"
+cd frontend-app && npm test -- --testPathPattern="market-data-service.test.js" --testNamePattern="should calculate percentage correctly"
+
+# Run tests in watch mode
+cd frontend-app && npm run test:watch
+
+# Run tests with coverage
+cd frontend-app && npm run test:coverage
 
 # Check logs
 copilot svc logs --name api-service --follow

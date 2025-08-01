@@ -106,8 +106,8 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
                              timeRange === '6M' ? 180 * 86400 : 365 * 86400);
       
       return [
-        { timestamp: pastDate, date: fromUnixTime(pastDate), equity: 1 },
-        { timestamp: now, date: fromUnixTime(now), equity: 1 }
+        { timestamp: pastDate, date: fromUnixTime(pastDate), equity: 0 },
+        { timestamp: now, date: fromUnixTime(now), equity: 0 }
       ];
     }
     
@@ -128,8 +128,8 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
       
       if (first && last) {
         return [
-          { ...first, equity: 1 },
-          { ...last, equity: 1 }
+          { ...first, equity: 0 },
+          { ...last, equity: 0 }
         ];
       }
     }
@@ -157,10 +157,13 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
 
   // Get Y-axis domain with proper padding for better visibility
   const yAxisDomain = useMemo(() => {
-    if (!chartData || chartData.length === 0) return [0, 100];
+    if (!chartData || chartData.length === 0) return [0, 1];
     
-    const values = chartData.map(d => d.equity || 0).filter(v => v > 0);
-    if (values.length === 0) return [0, 100];
+    const values = chartData.map(d => d.equity || 0);
+    if (values.length === 0) return [0, 1];
+    
+    // If all values are 0, show a small range for better visibility
+    if (values.every(v => v === 0)) return [0, 1];
     
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -191,7 +194,8 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
   // Current value (most recent data point)
   const currentValue = useMemo(() => {
     if (!chartData || chartData.length === 0) return null;
-    return chartData[chartData.length - 1]?.equity || null;
+    // Use nullish coalescing operator (??) to correctly handle 0 as a valid value
+    return chartData[chartData.length - 1]?.equity ?? null;
   }, [chartData]);
   
   // Format with commas for large numbers
@@ -226,7 +230,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
         <ResponsiveContainer>
           <AreaChart 
             data={chartData} 
-            margin={{ top: 10, right: 30, left: 5, bottom: 20 }}
+            margin={{ top: 10, right: 5, left: 5, bottom: 20 }}
           >
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -254,7 +258,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
               axisLine={false}
               tickFormatter={formatYAxis}
               domain={yAxisDomain}
-              width={60}
+              width={50}
             />
             <Tooltip 
               content={<CustomTooltip />} 
@@ -276,7 +280,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
               animationDuration={750}
             />
             {/* Add reference line for current value */}
-            {currentValue && (
+            {currentValue !== null && (
               <ReferenceLine 
                 y={currentValue} 
                 stroke="rgba(255, 255, 255, 0.3)" 
@@ -287,15 +291,15 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
         </ResponsiveContainer>
       </div>
       
-      {/* Time Range Buttons */}
-      <div className="flex justify-center space-x-2 mt-6">
+      {/* Time Range Buttons - Fixed positioning to prevent z-index issues */}
+      <div className="flex justify-center space-x-2 mt-6 relative z-0">
         {timeRanges.map((range) => (
           <Button
             key={range}
             variant={timeRange === range ? 'default' : 'outline'}
             size="sm"
             onClick={() => handleTimeRangeChange(range)}
-            className={`text-xs rounded-full min-w-[60px] px-4 py-2 ${
+            className={`text-xs rounded-full min-w-[60px] px-4 py-2 relative z-0 ${
               timeRange === range 
                 ? 'bg-primary text-primary-foreground' 
                 : 'bg-transparent text-muted-foreground hover:text-foreground'

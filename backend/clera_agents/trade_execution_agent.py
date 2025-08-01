@@ -109,7 +109,7 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
             return result
         except Exception as e:
             logger.error(f"[Trade Agent] Error submitting BUY order for {ticker}: {e}", exc_info=True)
-            return f"❌ Error executing trade: {str(e)}. Please verify the ticker symbol and try again."
+            return "❌ Error executing trade. Please verify the ticker symbol and try again."
             
     except ValueError as e:
         logger.error(f"[Trade Agent] Account identification error: {e}")
@@ -117,7 +117,7 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
 
 Could not securely identify your account for this trade. This is a security protection to prevent unauthorized trading.
 
-**Error Details:** {str(e)}
+**Error Details:** _redacted for security_
 
 💡 **Next Steps:**
 • Please log out and log back in
@@ -200,7 +200,7 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
             return result
         except Exception as e:
             logger.error(f"[Trade Agent] Error submitting SELL order for {ticker}: {e}", exc_info=True)
-            return f"❌ Error executing trade: {str(e)}. Please verify the ticker symbol and try again."
+            return "❌ Error executing trade. Please verify the ticker symbol and try again."
             
     except ValueError as e:
         logger.error(f"[Trade Agent] Account identification error: {e}")
@@ -208,7 +208,7 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
 
 Could not securely identify your account for this trade. This is a security protection to prevent unauthorized trading.
 
-**Error Details:** {str(e)}
+**Error Details:** _redacted for security_
 
 💡 **Next Steps:**
 • Please log out and log back in

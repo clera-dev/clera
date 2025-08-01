@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { AuthService } from '@/utils/api/auth-service';
 
 // Function to fetch account balance from Alpaca API
 export async function GET(
@@ -7,30 +8,9 @@ export async function GET(
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    // Create supabase server client to authenticate the user
-    const supabase = await createClient();
-    
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized access' },
-        { status: 401 }
-      );
-    }
-    
-    // Extract account ID from path params
-    const { accountId } = await params;
-    
-    if (!accountId) {
-      return NextResponse.json(
-        { success: false, message: 'Account ID is required' },
-        { status: 400 }
-      );
-    }
+    // SECURITY: Authenticate and authorize user for this specific account
+    // This prevents any authenticated user from accessing balance data from other accounts
+    const authContext = await AuthService.authenticateAndAuthorize(request, (await params).accountId);
 
     // Get backend API URL and key from environment variables
     const backendUrl = process.env.BACKEND_API_URL;
@@ -45,7 +25,7 @@ export async function GET(
     }
 
     // Sanitize accountId to prevent path-injection or request-smuggling attacks
-    const safeAccountId = encodeURIComponent(accountId);
+    const safeAccountId = encodeURIComponent(authContext.accountId);
 
     // Call backend API to get account balance
     console.log(`Fetching balance for account ${safeAccountId} from backend`);
@@ -54,6 +34,7 @@ export async function GET(
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': backendApiKey,
+        'Authorization': `Bearer ${authContext.authToken}`, // Use validated JWT token
       },
       cache: 'no-store' // Ensure fresh data is fetched
     });
@@ -108,14 +89,12 @@ export async function GET(
       return NextResponse.json({ success: false, message: msg }, { status });
     }
 
-  } catch (error) {
-    console.error('Error fetching account balance:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'An unexpected error occurred'
-      },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    // Handle authentication and authorization errors
+    const authError = AuthService.handleAuthError(error);
+    return NextResponse.json({ 
+      success: false, 
+      message: authError.message 
+    }, { status: authError.status });
   }
 } 

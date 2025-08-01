@@ -164,7 +164,7 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
 
     return (
         <TooltipProvider>
-            <div className="space-y-6">
+            <div className="space-y-4">
                 {/* Risk Score */}
                 <div>
                     <Tooltip>

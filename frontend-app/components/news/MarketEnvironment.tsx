@@ -115,12 +115,6 @@ export default function MarketEnvironment({ className = "" }: MarketEnvironmentP
           <div className="flex items-center gap-2">
             Current Market Environment
           </div>
-          {lastUpdated && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Database className="h-3 w-3" />
-              Updated: {lastUpdated}
-            </div>
-          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

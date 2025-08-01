@@ -146,11 +146,6 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                         articleUrl={article.url}
                       />
                     ))}
-                    {portfolioSummary.referenced_articles.filter(article => article.shouldDisplay !== false).length > MAX_PORTFOLIO_ARTICLES && (
-                      <p className="text-xs text-muted-foreground italic">
-                        Showing {MAX_PORTFOLIO_ARTICLES} of {portfolioSummary.referenced_articles.filter(article => article.shouldDisplay !== false).length} referenced articles
-                      </p>
-                    )}
                   </div>
                 ) : (
                   <p className="text-muted-foreground text-sm mt-2">
@@ -218,11 +213,6 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                         articleUrl={article.url}
                       />
                     ))}
-                    {portfolioSummary.referenced_articles.filter(article => article.shouldDisplay !== false).length > MAX_PORTFOLIO_ARTICLES && (
-                      <p className="text-xs text-muted-foreground italic">
-                        Showing {MAX_PORTFOLIO_ARTICLES} of {portfolioSummary.referenced_articles.filter(article => article.shouldDisplay !== false).length} referenced articles
-                      </p>
-                    )}
                   </div>
                 ) : (
                   <p className="text-muted-foreground text-sm mt-2">

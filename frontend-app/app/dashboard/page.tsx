@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getAlpacaAccountId } from "@/lib/utils"; // Import reliable account ID utility
+import TransferHistory from "@/components/funding/TransferHistory";
 
 // Define a more accurate type for account details based on Supabase fetch
 interface FetchedAccountDetails {
@@ -173,7 +174,7 @@ export default function DashboardPage() {
         
       } catch (err: any) {
         console.error("Error fetching dashboard data:", err);
-        setError(err.message || "Failed to load dashboard data.");
+        setError("Some account information may be incomplete. Please try again later.");
         
         // Try to recover using more reliable sources
         try {
@@ -245,137 +246,90 @@ export default function DashboardPage() {
   }
   
   return (
-    <div className="flex-1 w-full flex flex-col p-4 sm:p-6 md:p-8">
-      {error && (
-        <Alert className="mb-6">
-          <Terminal className="h-4 w-4" />
-          <AlertTitle>Note</AlertTitle>
-          <AlertDescription>
-            Some account information may be incomplete. {error}
-          </AlertDescription>
-        </Alert>
-      )}
-      
-      <UserDashboard 
-        firstName={userData.firstName}
-        lastName={userData.lastName}
-        email={userEmail || ""}
-        accountDetails={accountDetails || {}}
-        alpacaAccountId={alpacaAccountId}
-      />
-      
-      {/* Bank Account Details */}
-      <div className="mt-6">
-        <BankAccountDetails 
-          accountDetails={accountDetails || {}}
-        />
-      </div>
-      
-      {/* Add Funds Button */}
-      <div className="mt-6">
-        <BankConnectionsCard 
-          alpacaAccountId={alpacaAccountId || undefined}
-          email={userEmail || undefined}
-          userName={userData.firstName}
-        />
-      </div>
-      
-      {/* Order History */}
-      <div className="mt-6">
-        <OrderHistory />
-      </div>
-      
-      {/* Documents and Statements */}
-      <div className="mt-6">
-        <DocumentsAndStatements />
-      </div>
-      
-      {/* Required Disclosures */}
-      <div className="mt-6">
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h3 className="text-lg font-semibold mb-4">Required Disclosures</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            The following disclosures are provided for your reference and regulatory compliance.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <a 
-                href="https://files.alpaca.markets/disclosures/library/UseAndRisk.pdf" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                Use and Risk Disclosures
-              </a>
-              <a 
-                href="https://files.alpaca.markets/disclosures/library/TermsAndConditions.pdf" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                Terms and Conditions
-              </a>
-              <a 
-                href="https://files.alpaca.markets/disclosures/library/PrivacyNotice.pdf" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                Privacy Notice
-              </a>
-              <a 
-                href="https://files.alpaca.markets/disclosures/library/PFOF.pdf" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                Payment for Order Flow Disclosure
-              </a>
-            </div>
-            <div className="space-y-2">
-              <a 
-                href="https://files.alpaca.markets/disclosures/library/MarginDiscStmt.pdf" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                Margin Disclosure Statement
-              </a>
-              <a 
-                href="https://files.alpaca.markets/disclosures/library/ExtHrsRisk.pdf" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                Extended Hours Risk Disclosure
-              </a>
-              <a 
-                href="https://files.alpaca.markets/disclosures/library/BCPSummary.pdf" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                Business Continuity Plan Summary
-              </a>
-              <a 
-                href="https://files.alpaca.markets/disclosures/library/FormCRS.pdf" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                Form CRS
-              </a>
-            </div>
+    <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="py-4 space-y-6 flex-1 w-full flex flex-col">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold">Account Dashboard</h1>
+            <p className="text-muted-foreground mt-1">Manage your account settings and view statements</p>
           </div>
         </div>
-      </div>
-      
-      {/* Danger Zone - Account Closure */}
-      <div className="mt-6">
-        <DangerZone 
-          accountId={alpacaAccountId || ""}
-          userName={userData.firstName}
-        />
+
+        {error && (
+          <Alert className="mb-6">
+            <Terminal className="h-4 w-4" />
+            <AlertTitle>Note</AlertTitle>
+            <AlertDescription>
+              Some account information may be incomplete. Please try again later.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Main Content Grid */}
+        <div className="space-y-6">
+          {/* Row 1: Personal Info and Bank Details */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <UserDashboard
+                firstName={userData.firstName}
+                lastName={userData.lastName}
+                email={userEmail || ""}
+                accountDetails={accountDetails || {}}
+                alpacaAccountId={alpacaAccountId}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <BankAccountDetails accountDetails={accountDetails || {}} />
+              <BankConnectionsCard
+                alpacaAccountId={alpacaAccountId || undefined}
+                email={userEmail || undefined}
+                userName={userData.firstName}
+              />
+            </div>
+          </div>
+
+          {/* Row 2: Order History and Transfer History */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <OrderHistory />
+            <TransferHistory />
+          </div>
+
+          {/* Row 3: Documents and Disclosures */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <DocumentsAndStatements />
+            <div className="bg-card border border-border rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-4">Required Disclosures</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                The following disclosures are provided for your reference and regulatory compliance.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <a href="https://files.alpaca.markets/disclosures/library/UseAndRisk.pdf" target="_blank" rel="noopener noreferrer" className="block text-sm text-primary hover:underline">Use and Risk Disclosures</a>
+                  <a href="https://files.alpaca.markets/disclosures/library/TermsAndConditions.pdf" target="_blank" rel="noopener noreferrer" className="block text-sm text-primary hover:underline">Terms and Conditions</a>
+                  <a href="https://files.alpaca.markets/disclosures/library/PrivacyNotice.pdf" target="_blank" rel="noopener noreferrer" className="block text-sm text-primary hover:underline">Privacy Notice</a>
+                  <a href="https://files.alpaca.markets/disclosures/library/PFOF.pdf" target="_blank" rel="noopener noreferrer" className="block text-sm text-primary hover:underline">Payment for Order Flow Disclosure</a>
+                </div>
+                <div className="space-y-3">
+                  <a href="https://files.alpaca.markets/disclosures/library/MarginDiscStmt.pdf" target="_blank" rel="noopener noreferrer" className="block text-sm text-primary hover:underline">Margin Disclosure Statement</a>
+                  <a href="https://files.alpaca.markets/disclosures/library/ExtHrsRisk.pdf" target="_blank" rel="noopener noreferrer" className="block text-sm text-primary hover:underline">Extended Hours Risk Disclosure</a>
+                  <a href="https://files.alpaca.markets/disclosures/library/BCPSummary.pdf" target="_blank" rel="noopener noreferrer" className="block text-sm text-primary hover:underline">Business Continuity Plan Summary</a>
+                  <a href="https://files.alpaca.markets/disclosures/library/FormCRS.pdf" target="_blank" rel="noopener noreferrer" className="block text-sm text-primary hover:underline">Form CRS</a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 4: Account Management */}
+          {alpacaAccountId && (
+            <div className="mt-8">
+              <DangerZone
+                accountId={alpacaAccountId}
+                userName={userData.firstName}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

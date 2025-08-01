@@ -93,11 +93,17 @@ frontend-app/
 
 ### Authentication System
 
-The application uses Supabase for authentication with features including:
+The application uses Supabase for authentication with a **dual authentication pattern** that supports both client-side and service-to-service authentication:
 
+**Dual Authentication Support:**
+- **Session-based (Cookies)**: For React component fetch requests - automatic cookie handling
+- **JWT-based (Headers)**: For service-to-service calls - explicit `Authorization: Bearer <token>` headers
+
+**Features:**
 - User sign-up and sign-in
 - Email verification
 - Password reset functionality
+- Automatic pattern detection in `AuthService.authenticateAndAuthorize()`
 - Protected routes that require authentication
 - Server-side authentication using middleware
 

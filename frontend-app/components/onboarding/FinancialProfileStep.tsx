@@ -15,12 +15,7 @@ import {
   EMPLOYMENT_STATUS_DESCRIPTIONS
 } from "@/lib/types/onboarding";
 import { InfoIcon } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { InfoTooltip } from "@/components/ui/InfoTooltip"
 
 interface FinancialProfileStepProps {
   data: OnboardingData;
@@ -150,16 +145,11 @@ export default function FinancialProfileStep({
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium">Investible / Liquid Assets</Label>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[320px]">
-                  <p>Your net worth minus assets that cannot be converted quickly and easily into cash, such as real estate, business equity, personal property and automobiles, expected inheritances, assets earmarked for other purposes, and investments or accounts subject to substantial penalties if they were sold or if assets were withdrawn from them.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <InfoTooltip content="Your net worth minus assets that cannot be converted quickly and easily into cash, such as real estate, business equity, personal property and automobiles, expected inheritances, assets earmarked for other purposes, and investments or accounts subject to substantial penalties if they were sold or if assets were withdrawn from them.">
+              <button type="button" className="ml-2" aria-label="Learn more about investible and liquid assets">
+                <InfoIcon className="h-4 w-4 text-gray-400" />
+              </button>
+            </InfoTooltip>
           </div>
           <Select 
             value={data.liquidNetWorthRange} 
@@ -183,37 +173,32 @@ export default function FinancialProfileStep({
         <div className="space-y-4">
           <Label className="text-sm font-medium">Account Funding Sources (select all that apply)</Label>
           <div className="grid grid-cols-1 gap-3">
-            <TooltipProvider>
-              {Object.values(FundingSource).map((source) => (
-                <div key={source} className="flex items-center space-x-3">
-                  <Checkbox 
-                    id={`source-${source}`}
-                    checked={data.fundingSource.includes(source)}
-                    onCheckedChange={(checked) => 
-                      handleFundingSourceChange(source, checked as boolean)
-                    }
-                  />
-                  <div className="flex items-center space-x-2 flex-1">
-                    <Label 
-                      htmlFor={`source-${source}`}
-                      className="font-normal cursor-pointer"
-                    >
-                      {source.split('_').map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      ).join(' ')}
-                    </Label>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-[320px]">
-                        <p>{fundingSourceDescriptions[source]}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
+            {Object.values(FundingSource).map((source) => (
+              <div key={source} className="flex items-center space-x-3">
+                <Checkbox 
+                  id={`source-${source}`}
+                  checked={data.fundingSource.includes(source)}
+                  onCheckedChange={(checked) => 
+                    handleFundingSourceChange(source, checked as boolean)
+                  }
+                />
+                <div className="flex items-center space-x-2 flex-1">
+                  <Label 
+                    htmlFor={`source-${source}`}
+                    className="font-normal cursor-pointer"
+                  >
+                    {source.split('_').map(word => 
+                      word.charAt(0).toUpperCase() + word.slice(1)
+                    ).join(' ')}
+                  </Label>
+                  <InfoTooltip content={fundingSourceDescriptions[source]}>
+                    <button type="button" className="ml-2" aria-label={`Learn more about ${source.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} funding source`}>
+                      <InfoIcon className="h-4 w-4 text-gray-400" />
+                    </button>
+                  </InfoTooltip>
                 </div>
-              ))}
-            </TooltipProvider>
+              </div>
+            ))}
           </div>
           {errors.fundingSource && <p className="text-red-500 text-sm mt-1">{errors.fundingSource}</p>}
         </div>

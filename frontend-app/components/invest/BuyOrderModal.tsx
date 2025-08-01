@@ -174,36 +174,36 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="w-[100vw] h-[100vh] sm:w-[95vw] sm:max-w-md sm:h-auto sm:max-h-[85vh] mx-auto overflow-hidden z-[110] fixed top-[0] left-[0] sm:top-[50%] sm:left-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%] translate-x-0 translate-y-0 rounded-none sm:rounded-lg flex flex-col">
+        <DialogHeader className="flex-shrink-0 px-4 pt-2 pb-1 sm:px-6 sm:pt-6">
           <DialogTitle className="text-xl font-semibold">Buy {symbol} Confirmation</DialogTitle>
           <DialogDescription>
             Enter the dollar amount you wish to invest.
           </DialogDescription>
         </DialogHeader>
         
-        <div className="mt-4 space-y-3">
-           <div className="flex justify-between items-center bg-muted p-3 rounded-md">
-               <span className="text-sm font-medium text-muted-foreground">Order Type:</span>
-               <span className="font-semibold">BUY (Market)</span>
-           </div>
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 min-h-0">
+          <div className="space-y-3">
             <div className="flex justify-between items-center bg-muted p-3 rounded-md">
-               <span className="text-sm font-medium text-muted-foreground">Market Price:</span>
-               <span className={`font-semibold ${priceError ? 'text-destructive' : ''}`}>{displayMarketPrice}</span>
-           </div>
-        </div>
+              <span className="text-sm font-medium text-muted-foreground">Order Type:</span>
+              <span className="font-semibold">BUY (Market)</span>
+            </div>
+            <div className="flex justify-between items-center bg-muted p-3 rounded-md">
+              <span className="text-sm font-medium text-muted-foreground">Market Price:</span>
+              <span className={`font-semibold ${priceError ? 'text-destructive' : ''}`}>{displayMarketPrice}</span>
+            </div>
 
-        {priceError && (
-             <Alert variant="destructive" className="mt-2">
+            {priceError && (
+              <Alert variant="destructive" className="mt-2">
                 <Terminal className="h-4 w-4" />
                 <AlertTitle>Price Fetch Error</AlertTitle>
                 <AlertDescription>{priceError}</AlertDescription>
-            </Alert>
-        )}
+              </Alert>
+            )}
 
-        <div className="mt-4">
-            <label htmlFor="amount" className="block text-sm font-medium text-muted-foreground mb-1">Amount ($)</label>
-            <Input
+            <div className="mt-4">
+              <label htmlFor="amount" className="block text-sm font-medium text-muted-foreground mb-1">Amount ($)</label>
+              <Input
                 id="amount"
                 type="text" // Use text to allow decimal input management
                 inputMode="decimal" // Hint for mobile keyboards
@@ -216,34 +216,36 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
                 autoCorrect="off"
                 spellCheck="false"
                 data-form-type="other"
-            />
-        </div>
+              />
+            </div>
 
-        <NumberPad onInput={handleNumberPadInput} />
+            <NumberPad onInput={handleNumberPadInput} />
 
-        {submitError && (
-             <Alert variant="destructive" className="mt-4">
+            {submitError && (
+              <Alert variant="destructive" className="mt-4">
                 <Terminal className="h-4 w-4" />
                 <AlertTitle>Order Submission Error</AlertTitle>
                 <AlertDescription>{submitError}</AlertDescription>
-            </Alert>
-        )}
+              </Alert>
+            )}
+          </div>
+        </div>
 
-        <DialogFooter className="mt-6">
+        <div className="flex-shrink-0 bg-background p-4 border-t sm:px-6 mb-20 sm:mb-0 relative z-[130]">
           <Button 
             type="button"
             size="lg"
-            className="w-full bg-gradient-to-r from-teal-500 to-green-500 hover:from-teal-600 hover:to-green-600 text-white font-bold text-lg"
+            className="w-full bg-gradient-to-r from-teal-500 to-green-500 hover:from-teal-600 hover:to-green-600 text-white font-bold text-base sm:text-lg h-12 sm:h-14"
             onClick={handlePlaceOrder}
             disabled={isSubmitting || isLoadingPrice || !amount || parseFloat(amount) <= 0}
           >
             {isSubmitting ? (
               <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Placing Order...</>
             ) : (
-              "Place Order"
+              "Place Buy Order"
             )}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

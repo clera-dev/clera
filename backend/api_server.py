@@ -30,7 +30,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from langgraph.errors import GraphInterrupt
 from langgraph.graph.message import add_messages
@@ -48,6 +48,7 @@ from utils.alpaca.account_closure import (
 
 # Authentication imports
 from utils.authentication import verify_account_ownership
+from utils.supabase.db_client import get_supabase_client
 
 # Watchlist imports
 from utils.alpaca.watchlist import (
@@ -67,6 +68,9 @@ from utils.alpaca.account_status_service import (
     get_current_account_status,
     sync_account_status_to_supabase
 )
+
+# Purchase History imports
+from clera_agents.tools.purchase_history import get_comprehensive_account_activities, get_comprehensive_account_activities_async
 
 # Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
@@ -741,10 +745,10 @@ async def get_stock_quote_with_changes(ticker: str):
         ticker = ticker.upper().strip()
         logger.info(f"Received quote request for ticker: {ticker}")
 
-        # Import the function from market_data utility
-        from utils.market_data import get_stock_quote_full
+        # Import the async function from market_data utility
+        from utils.market_data import get_stock_quote_full_async
         
-        quote_data = get_stock_quote_full(ticker)
+        quote_data = await get_stock_quote_full_async(ticker)
         
         if not quote_data or len(quote_data) == 0:
             logger.warning(f"No quote data found for ticker: {ticker}")
@@ -789,6 +793,88 @@ async def get_stock_quote_with_changes(ticker: str):
     except Exception as e:
         logger.error(f"Error fetching quote for {ticker}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching quote data: {str(e)}")
+
+
+class BatchQuoteRequest(BaseModel):
+    symbols: List[str] = Field(..., description="List of stock symbols to get quotes for", max_items=50)
+
+
+@app.post("/api/market/quotes/batch")
+async def get_stock_quotes_batch(request: BatchQuoteRequest):
+    """Get stock quotes for multiple symbols in a single batch request."""
+    try:
+        symbols = [symbol.upper().strip() for symbol in request.symbols]
+        logger.info(f"Received batch quote request for {len(symbols)} symbols: {symbols}")
+
+        # Import the async batch function from market_data utility
+        from utils.market_data import get_stock_quotes_batch_async
+        
+        # Get batch quotes from FMP API (single API call)
+        quotes_data = await get_stock_quotes_batch_async(symbols)
+        
+        if not quotes_data:
+            logger.warning(f"No quote data found for symbols: {symbols}")
+            return JSONResponse({
+                "quotes": [],
+                "errors": [f"No data available for symbols: {', '.join(symbols)}"]
+            }, status_code=200)
+
+        # Process each quote with consistent calculation logic
+        processed_quotes = []
+        found_symbols = set()
+        
+        for quote in quotes_data:
+            if not quote:
+                continue
+                
+            symbol = quote.get('symbol', '').upper()
+            found_symbols.add(symbol)
+            
+            # Calculate 1D percentage correctly (current vs market open, not previous close)
+            current_price = quote.get('price', 0)
+            open_price = quote.get('open', 0)
+            
+            # Calculate 1D change and percentage (market open to current)
+            if open_price > 0:
+                day_change = current_price - open_price
+                day_change_percent = (day_change / open_price) * 100
+            else:
+                # Fallback to FMP's calculation if open price is not available
+                day_change = quote.get('change', 0)
+                day_change_percent = quote.get('changesPercentage', 0)
+            
+            processed_quote = {
+                'symbol': symbol,
+                'price': current_price,
+                'change': day_change,
+                'changesPercentage': day_change_percent,
+                'open': open_price,
+                'previousClose': quote.get('previousClose', 0),
+                'dayHigh': quote.get('dayHigh', 0),
+                'dayLow': quote.get('dayLow', 0),
+                'volume': quote.get('volume', 0),
+                'timestamp': quote.get('timestamp', int(datetime.now().timestamp())),
+                # Include additional useful fields
+                'name': quote.get('name', ''),
+                'marketCap': quote.get('marketCap', 0),
+                'exchange': quote.get('exchange', '')
+            }
+            processed_quotes.append(processed_quote)
+
+        # Track any symbols that weren't found
+        missing_symbols = [s for s in symbols if s not in found_symbols]
+        errors = [f"No data found for: {symbol}" for symbol in missing_symbols] if missing_symbols else []
+        
+        logger.info(f"Returning {len(processed_quotes)} quotes for batch request. Missing: {len(missing_symbols)}")
+        
+        return JSONResponse({
+            "quotes": processed_quotes,
+            "errors": errors
+        }, status_code=200)
+        
+    except Exception as e:
+        logger.error(f"Error fetching batch quotes: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching batch quote data: {str(e)}")
 
 
 @app.get("/api/health")
@@ -1702,7 +1788,7 @@ async def get_portfolio_history(
             equity=[float(e) if e is not None else None for e in history_data.equity],
             profit_loss=[float(pl) if pl is not None else None for pl in history_data.profit_loss],
             profit_loss_pct=[float(plp) if plp is not None else None for plp in history_data.profit_loss_pct],
-            base_value=float(history_data.base_value) if history_data.base_value is not None else None,
+            base_value=float(history_data.base_value) if history_data.base_value is not None else 0.0,
             timeframe=history_data.timeframe
         )
         
@@ -1711,6 +1797,17 @@ async def get_portfolio_history(
             response.base_value_asof = str(history_data.base_value_asof) # Ensure it's a string if needed
             
         return response
+    except ValidationError:
+        # This occurs for new accounts with no trading history
+        logger.warning(f"Validation error for account {account_id}, likely a new account. Returning empty history.")
+        return PortfolioHistoryResponse(
+            timestamp=[],
+            equity=[],
+            profit_loss=[],
+            profit_loss_pct=[],
+            base_value=0.0,
+            timeframe="1D"
+        )
     except Exception as e:
         error_msg = f"Error retrieving portfolio history for account {account_id}: {str(e)}"
         logger.error(error_msg)
@@ -2075,22 +2172,45 @@ async def get_redis_client():
 
 @app.get("/api/portfolio/activities")
 async def get_portfolio_activities(
-    accountId: str = Query(..., description="Alpaca account ID"),
-    limit: Optional[int] = 100
+    account_id: str = Query(..., description="Alpaca account ID"),
+    limit: Optional[int] = 100,
+    days_back: Optional[int] = 60,
+    user_id: str = Depends(verify_account_ownership)
 ):
     """
-    Get transaction and account activities for a portfolio.
-    
-    This endpoint is not yet implemented, but is handled to properly return
-    a 404 status code with a clear message so the frontend can gracefully degrade.
+    Get comprehensive account activities including trading history, statistics, and first purchase dates.
     """
-    logger.info(f"Activities endpoint requested for account {accountId}, but not implemented yet")
-    
-    # Return a 404 to indicate that the feature is not available
-    raise HTTPException(
-        status_code=404,
-        detail="Portfolio activities endpoint not yet implemented"
-    )
+    try:
+        logger.info(f"Activities endpoint requested for account {account_id} by user {user_id}")
+        
+        # Create a config object with both account_id and user_id for the purchase history function
+        config = {
+            "configurable": {
+                "account_id": account_id,
+                "user_id": user_id
+            }
+        }
+        
+        # Get comprehensive account activities report
+        activities_report = await get_comprehensive_account_activities_async(days_back=days_back, config=config)
+        
+        logger.info(f"Successfully generated activities report for account {account_id}")
+        
+        return {
+            "account_id": account_id,
+            "user_id": user_id,
+            "days_back": days_back,
+            "limit": limit,
+            "report": activities_report,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating activities report for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate account activities report: {str(e)}"
+        )
 
 # Add this health endpoint for websocket proxy health checks
 @app.get("/ws/health")
@@ -2385,7 +2505,6 @@ async def get_account_closure_progress_endpoint(
         # Get Supabase data for confirmation number and initiation date
         supabase_data = {}
         try:
-            from utils.supabase.db_client import get_supabase_client
             supabase = get_supabase_client()
             
             # Find user by account_id
@@ -2805,7 +2924,6 @@ async def check_symbol_in_watchlist(
 async def get_account_pii(
     account_id: str, 
     broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key),
     user_id: str = Depends(verify_account_ownership)
 ):
     """Get all personally identifiable information for an account."""
@@ -2828,7 +2946,6 @@ async def update_account_pii(
     account_id: str, 
     request: Request, 
     broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key),
     user_id: str = Depends(verify_account_ownership)
 ):
     """Update personally identifiable information for an account."""
@@ -2855,7 +2972,6 @@ async def update_account_pii(
 async def get_updateable_pii_fields(
     account_id: str, 
     broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key),
     user_id: str = Depends(verify_account_ownership)
 ):
     """Get the list of PII fields that can be updated for this account."""

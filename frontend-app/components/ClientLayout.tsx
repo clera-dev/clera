@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, createContext, useContext } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ThemeProvider } from "next-themes";
 import MainSidebar from "@/components/MainSidebar";
 import { createClient } from "@/utils/supabase/client";
@@ -11,6 +11,9 @@ import { CleraAssistProvider } from "@/components/ui/clera-assist-provider";
 import { Button } from "@/components/ui/button";
 import { Menu, ChevronLeft } from "lucide-react";
 import { useAccountClosure } from "@/hooks/useAccountClosure";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
+import MobileBottomNav from "@/components/mobile/MobileBottomNav";
+import MobileChatModal from "@/components/mobile/MobileChatModal";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -35,12 +38,25 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSideChatOpen, setIsSideChatOpen] = useState(false);
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [currentMobilePage, setCurrentMobilePage] = useState<string>('');
   const pathname = usePathname();
+  const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [hasCompletedFunding, setHasCompletedFunding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Responsive breakpoint detection
+  const { isMobile, isDesktop } = useBreakpoint();
+
+  // Initialize and track current mobile page
+  useEffect(() => {
+    if (pathname) {
+      setCurrentMobilePage(pathname);
+    }
+  }, [pathname]);
 
   // Get account closure state from backend (authoritative source)
   const { closureData, loading: closureLoading } = useAccountClosure();
@@ -109,6 +125,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     if (!sideChatEnabledPaths.includes(pathname || '')) {
       setIsSideChatOpen(false);
     }
+    
+    // Note: Mobile chat should NOT auto-close on navigation
+    // Users should manually close it when they're done
   }, [pathname]);
 
   // Close mobile sidebar when screen becomes desktop size
@@ -181,7 +200,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           setHasCompletedOnboarding(completed);
           setHasCompletedFunding(funded);
         } else {
-          // Clear localStorage if not logged in
+          // Clear localStorage if not logged in - CRITICAL for multi-user devices
           localStorage.removeItem("userId");
           localStorage.removeItem("onboardingStatus");
           localStorage.removeItem("fundingStatus");
@@ -189,6 +208,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           localStorage.removeItem("isClosed");
           setHasCompletedOnboarding(false);
           setHasCompletedFunding(false);
+          // Also clear closure status state
+          setUserClosureStatus(null);
         }
       } catch (error) {
         console.error("Error checking auth/onboarding status:", error);
@@ -226,25 +247,77 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const isOnboardingPage = pathname === '/protected' && !hasCompletedOnboarding;
   const isFundingPage = pathname === '/protected' && hasCompletedOnboarding && !hasCompletedFunding;
   
-  // Determine account closure state from backend data (authoritative source)
-  // If closureData exists, it means account closure has been initiated
-  // Hide sidebar for any account closure activity (in progress or completed)
-  const hasAccountClosureActivity = Boolean(closureData && !closureLoading);
+  // PRODUCTION UX FIX: Check for account closure status from database
+  // Navigation shows immediately, then hides ONLY if confirmed account closure
+  // SECURITY: Use database state, not localStorage (prevents cross-user contamination)
+  const [userClosureStatus, setUserClosureStatus] = useState<string | null>(null);
+  const [closureStatusLoading, setClosureStatusLoading] = useState(false);
   
-  // CRITICAL FIX: Wait for both auth/onboarding AND closure data to load
-  // This prevents race conditions where sidebar shows/hides incorrectly
-  const isDataLoading = isLoading || closureLoading;
+  // Fetch closure status independently in background
+  useEffect(() => {
+    const checkClosureStatus = async () => {
+      if (!isAuthenticated || isLoading) return;
+      
+      setClosureStatusLoading(true);
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data: onboardingData } = await supabase
+            .from('user_onboarding')
+            .select('status')
+            .eq('user_id', user.id)
+            .single();
+          
+          setUserClosureStatus(onboardingData?.status || null);
+        }
+      } catch (error) {
+        console.warn('[ClientLayout] Could not check closure status:', error);
+        setUserClosureStatus(null);
+      } finally {
+        setClosureStatusLoading(false);
+      }
+    };
+    
+    checkClosureStatus();
+  }, [isAuthenticated, isLoading]);
   
+  // SECURITY: Reset closure status when user signs out
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setUserClosureStatus(null);
+    }
+  }, [isAuthenticated]);
+  
+  const hasConfirmedAccountClosure = Boolean(
+    userClosureStatus === 'pending_closure' || userClosureStatus === 'closed'
+  );
+  
+  // CRITICAL UX IMPROVEMENT: Show sidebar immediately, don't wait for loading
+  // Only hide after confirming specific exclusion conditions
   const shouldShowSidebar = 
     isClient && 
-    !isDataLoading && // Wait for ALL data to load
     isAuthenticated && 
     pathname !== null && 
     !nonSidebarPaths.includes(pathname) && 
     !isOnboardingPage &&
     !isFundingPage &&
-    !hasAccountClosureActivity && // CRITICAL: No sidebar for any account closure activity
-    hasCompletedFunding; // Must be funded to see sidebar
+    !hasConfirmedAccountClosure && // Only hide AFTER confirming closure
+    (!isLoading || hasCompletedFunding); // Show during loading if previously funded
+
+  // CRITICAL UX IMPROVEMENT: Show mobile nav immediately, don't wait for loading  
+  // Mobile users need consistent navigation even more than desktop
+  const shouldShowMobileNav = 
+    isClient && 
+    isAuthenticated && 
+    pathname !== null && 
+    !nonSidebarPaths.includes(pathname) && 
+    !isOnboardingPage &&
+    !isFundingPage &&
+    !hasConfirmedAccountClosure; // Only hide AFTER confirming closure
+
+
 
   // Check if current path supports side chat
   const canShowSideChat = sideChatEnabledPaths.includes(pathname || '');
@@ -270,21 +343,71 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     }
   };
 
+  // Mobile chat handlers
+  const handleMobileChatOpen = () => {
+    // Always open mobile chat modal on mobile devices
+    setIsMobileChatOpen(true);
+  };
+
+  const handleMobileChatClose = () => {
+    setIsMobileChatOpen(false);
+  };
+
+  const handleMobileChatToggle = () => {
+    if (isMobileChatOpen) {
+      // If chat is open, close it and stay on current page
+      handleMobileChatClose();
+    } else {
+      // If chat is closed, open it
+      handleMobileChatOpen();
+    }
+  };
+
+  // Unified mobile navigation handler
+  const handleMobileNavigation = (targetPath: string) => {
+    if (isMobileChatOpen) {
+      // If chat is open, close it first then navigate
+      setIsMobileChatOpen(false);
+      
+      // Update page state immediately for visual feedback
+      setCurrentMobilePage(targetPath);
+      
+      // Small delay to allow chat to slide down before navigation
+      setTimeout(() => {
+        router.push(targetPath);
+      }, 250); // Slightly less than the 300ms animation for smooth transition
+    } else {
+      // If chat is closed, navigate directly
+      setCurrentMobilePage(targetPath);
+      router.push(targetPath);
+    }
+  };
+  
+  // Unified chat handler for Clera Assist - chooses mobile or side chat based on device
+  const handleCleraAssistChat = () => {
+    if (isMobile) {
+      handleMobileChatOpen();
+    } else if (canShowSideChat) {
+      toggleSideChat();
+    }
+  };
+
   return (
     <SidebarContext.Provider value={{ autoCollapseSidebar }}>
       <ThemeProvider
         attribute="class"
-        defaultTheme="system"
-        enableSystem
+        defaultTheme="dark" // Set to "system" to allow system theme to be used
+        forcedTheme="dark" // Delete this line if you want to allow system theme to be used
+        enableSystem={false} // Set to true to allow system theme to be used
         disableTransitionOnChange
       >
         <CleraAssistProvider
-          onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
-          sideChatVisible={isSideChatOpen}
+          onToggleSideChat={canShowSideChat ? handleCleraAssistChat : undefined}
+          sideChatVisible={isMobile ? isMobileChatOpen : isSideChatOpen}
         >
         <div className="flex h-screen relative">
-          {/* Mobile hamburger button - OUTSIDE sidebar container so it's always visible */}
-          {shouldShowSidebar && !isMobileSidebarOpen && (
+          {/* Tablet hamburger button - only for tablet, not mobile */}
+          {shouldShowSidebar && !isMobileSidebarOpen && !isMobile && (
             <div className="lg:hidden fixed left-4 top-4 z-40 pointer-events-auto">
               <Button 
                 variant="ghost" 
@@ -297,8 +420,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             </div>
           )}
           
-          {/* Mobile sidebar overlay/backdrop */}
-          {shouldShowSidebar && isMobileSidebarOpen && (
+          {/* Tablet sidebar overlay/backdrop */}
+          {shouldShowSidebar && isMobileSidebarOpen && !isMobile && (
             <div 
               className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 lg:hidden"
               onClick={() => setIsMobileSidebarOpen(false)}
@@ -311,9 +434,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             <div className={`h-full transition-all duration-300 ease-in-out invisible hidden lg:block ${isSidebarCollapsed ? 'w-20' : 'w-64'}`} />
         )}
         
-        {/* Main content area - adjusted to account for sidebar width */}
+        {/* Main content area - adjusted to account for sidebar width and mobile nav */}
         <main className={`flex-1 overflow-hidden relative ${shouldShowSidebar ? 'ml-0' : ''}`}>
-          <div className="h-full overflow-auto">
+          <div className={`h-full overflow-auto ${isMobile && shouldShowMobileNav ? 'pb-20' : ''}`}>
             {canShowSideChat ? (
               <SideBySideLayout 
                 isChatOpen={isSideChatOpen} 
@@ -361,6 +484,24 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           </div>
         )}
         </div>
+
+        {/* Mobile Navigation System - iOS-style bottom tab bar + full-screen chat */}
+        {isMobile && shouldShowMobileNav && (
+          <>
+            <MobileBottomNav
+              onChatToggle={handleMobileChatToggle}
+              onNavigate={handleMobileNavigation}
+              currentPage={currentMobilePage}
+              isChatOpen={isMobileChatOpen}
+            />
+            
+            <MobileChatModal
+              isOpen={isMobileChatOpen}
+              onClose={handleMobileChatClose}
+            />
+          </>
+        )}
+
       </CleraAssistProvider>
     </ThemeProvider>
     </SidebarContext.Provider>

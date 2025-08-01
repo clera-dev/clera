@@ -155,7 +155,7 @@ export default function PortfolioPage() {
   const [error, setError] = useState<string | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [portfolioHistory, setPortfolioHistory] = useState<PortfolioHistoryData | null>(null);
-  const [selectedTimeRange, setSelectedTimeRange] = useState<string>('1Y');
+  const [selectedTimeRange, setSelectedTimeRange] = useState<string>('1W');
   const [assetDetailsMap, setAssetDetailsMap] = useState<Record<string, AssetDetails>>({});
   const activitiesEndpointAvailable = React.useRef<boolean | null>(null);
   const [hasTradeHistory, setHasTradeHistory] = useState(false);
@@ -351,10 +351,10 @@ export default function PortfolioPage() {
             const ordersData = ordersResult.status === 'fulfilled' ? ordersResult.value : [];
             
             // If we have positions or completed orders, then user has trade history
-            setHasTradeHistory(
-              (Array.isArray(positionsData) && positionsData.length > 0) || 
-              (Array.isArray(ordersData) && ordersData.some(order => order.status === 'filled'))
-            );
+            const hasHistory = (Array.isArray(positionsData) && positionsData.length > 0) || 
+              (Array.isArray(ordersData) && ordersData.some(order => order.status === 'filled'));
+            
+            setHasTradeHistory(hasHistory);
 
             if (positionsResult.status === 'fulfilled') {
               const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);
@@ -539,335 +539,363 @@ export default function PortfolioPage() {
   } as React.CSSProperties : undefined;
 
   return (
-    <div className="p-4 space-y-4 bg-background text-foreground w-full h-full">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Your Portfolio</h1>
-        <div className="flex items-center gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            disabled={isLoading}
-            onClick={() => {
-              if (accountId) {
-                setIsLoading(true);
-                
-                // Clear any existing state to force fresh data
-                setAnalytics(null);
-                setPositions([]);
-                setOrders([]);
-                setPortfolioHistory(null);
-                setError(null);
-                
-                // Clear asset details cache to force fresh asset fetches
-                setAssetDetailsMap({});
-                
-                const loadInitialStaticData = async () => {
-                  try {
-                    
-                    // Add cache-busting timestamp to all requests
-                    const cacheBuster = `_cb=${Date.now()}`;
-                    const positionsUrl = `/api/portfolio/positions?accountId=${accountId}&${cacheBuster}`;
-                    const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true&${cacheBuster}`;
-                    const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}&${cacheBuster}`;
-                    
-                    // Use fetch with cache-busting headers to ensure fresh data
-                    const fetchWithCacheBusting = async (url: string) => {
-                      return fetchData(url, {
-                        headers: {
-                          'Cache-Control': 'no-cache, no-store, must-revalidate',
-                          'Pragma': 'no-cache',
-                          'Expires': '0'
-                        }
-                      });
-                    };
-                    
-                    const [positionsData, ordersData, analyticsData] = await Promise.all([
-                      fetchWithCacheBusting(positionsUrl),
-                      fetchWithCacheBusting(ordersUrl),
-                      fetchWithCacheBusting(analyticsUrl),
-                    ]);
-                    
-                    // Set analytics data first and log the fresh values
-                    setAnalytics(analyticsData);
-                    
-                    // Initialize combinedTransactions with ordersData
-                    let combinedTransactions = Array.isArray(ordersData) ? [...ordersData] : [];
-
-                    // Only try to load activities if previously determined to be available
-                    if (activitiesEndpointAvailable.current === true) {
-                      try {
-                        const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100&${cacheBuster}`;
-                        const activitiesData = await fetchWithCacheBusting(activitiesUrl);
-                        
-                        if (activitiesData && Array.isArray(activitiesData) && activitiesData.length > 0) {
-                          combinedTransactions = [...combinedTransactions, ...activitiesData];
-                          combinedTransactions.sort((a, b) => {
-                            const dateA = new Date(a.created_at || a.date || 0);
-                            const dateB = new Date(b.created_at || b.date || 0);
-                            return dateB.getTime() - dateA.getTime();
-                          });
-                        }
-                      } catch (error) {
-                        console.warn("[Refresh Button] - Could not fetch activities, using orders only:", error);
-                        activitiesEndpointAvailable.current = false;
-                      }
-                    }
-                    setOrders(combinedTransactions);
-                    
-                    const totalMarketValue = Array.isArray(positionsData) ? positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0) : 0;
-                    
-                    // Force fresh asset details fetch for each position
-                    const enrichedPositions = Array.isArray(positionsData) ? await Promise.all(positionsData.map(async (pos: any) => {
-                      // Force fresh asset details fetch by bypassing cache
-                      const details = await fetchAssetDetails(pos.symbol, true); // true = bypass cache
-                      const marketValue = safeParseFloat(pos.market_value);
-                      const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
-                      return {
-                        ...pos,
-                        name: details?.name || pos.symbol,
-                        weight: weight,
+    <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="py-4 space-y-6 bg-background text-foreground w-full h-full">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold">Your Portfolio</h1>
+            <p className="text-lg text-muted-foreground mt-1">Track your investments and performance</p>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="h-8 px-3 text-sm sm:h-9 sm:px-4"
+              disabled={isLoading}
+              onClick={() => {
+                if (accountId) {
+                  setIsLoading(true);
+                  
+                  // Clear any existing state to force fresh data
+                  setAnalytics(null);
+                  setPositions([]);
+                  setOrders([]);
+                  setPortfolioHistory(null);
+                  setError(null);
+                  
+                  // Clear asset details cache to force fresh asset fetches
+                  setAssetDetailsMap({});
+                  
+                  const loadInitialStaticData = async () => {
+                    try {
+                      
+                      // Add cache-busting timestamp to all requests
+                      const cacheBuster = `_cb=${Date.now()}`;
+                      const positionsUrl = `/api/portfolio/positions?accountId=${accountId}&${cacheBuster}`;
+                      const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true&${cacheBuster}`;
+                      const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}&${cacheBuster}`;
+                      
+                      // Use fetch with cache-busting headers to ensure fresh data
+                      const fetchWithCacheBusting = async (url: string) => {
+                        return fetchData(url, {
+                          headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'
+                          }
+                        });
                       };
-                    })) : [];
-                    
-                    setPositions(enrichedPositions);
-                    
-                    // Also refresh the history with the current selected time range
-                    const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}&${cacheBuster}`;
-                    const historyData = await fetchWithCacheBusting(historyUrl);
-                    setPortfolioHistory(historyData);
-                    
-                    // Update all time history if we're on MAX timeframe
-                    if (selectedTimeRange === 'MAX') {
-                      setAllTimeHistory(historyData);
+                      
+                      const [positionsData, ordersData, analyticsData] = await Promise.all([
+                        fetchWithCacheBusting(positionsUrl),
+                        fetchWithCacheBusting(ordersUrl),
+                        fetchWithCacheBusting(analyticsUrl),
+                      ]);
+                      
+                      // Set analytics data first and log the fresh values
+                      setAnalytics(analyticsData);
+                      
+                      // Initialize combinedTransactions with ordersData
+                      let combinedTransactions = Array.isArray(ordersData) ? [...ordersData] : [];
+
+                      // Only try to load activities if previously determined to be available
+                      if (activitiesEndpointAvailable.current === true) {
+                        try {
+                          const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100&${cacheBuster}`;
+                          const activitiesData = await fetchWithCacheBusting(activitiesUrl);
+                          
+                          if (activitiesData && Array.isArray(activitiesData) && activitiesData.length > 0) {
+                            combinedTransactions = [...combinedTransactions, ...activitiesData];
+                            combinedTransactions.sort((a, b) => {
+                              const dateA = new Date(a.created_at || a.date || 0);
+                              const dateB = new Date(b.created_at || b.date || 0);
+                              return dateB.getTime() - dateA.getTime();
+                            });
+                          }
+                        } catch (error) {
+                          console.warn("[Refresh Button] - Could not fetch activities, using orders only:", error);
+                          activitiesEndpointAvailable.current = false;
+                        }
+                      }
+                      setOrders(combinedTransactions);
+                      
+                      const totalMarketValue = Array.isArray(positionsData) ? positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0) : 0;
+                      
+                      // Force fresh asset details fetch for each position
+                      const enrichedPositions = Array.isArray(positionsData) ? await Promise.all(positionsData.map(async (pos: any) => {
+                        // Force fresh asset details fetch by bypassing cache
+                        const details = await fetchAssetDetails(pos.symbol, true); // true = bypass cache
+                        const marketValue = safeParseFloat(pos.market_value);
+                        const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
+                        return {
+                          ...pos,
+                          name: details?.name || pos.symbol,
+                          weight: weight,
+                        };
+                      })) : [];
+                      
+                      setPositions(enrichedPositions);
+                      
+                      // Also refresh the history with the current selected time range
+                      const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}&${cacheBuster}`;
+                      const historyData = await fetchWithCacheBusting(historyUrl);
+                      setPortfolioHistory(historyData);
+                      
+                      // Update all time history if we're on MAX timeframe
+                      if (selectedTimeRange === 'MAX') {
+                        setAllTimeHistory(historyData);
+                      }
+                      
+                    } catch (err: any) {
+                      console.error("[Refresh Button] - Error refreshing portfolio data:", err);
+                      setError(`Failed to refresh portfolio data: ${err.message}`);
+                    } finally {
+                      setIsLoading(false);
+                      // Force refresh of all chart components
+                      setAllocationChartRefreshKey(Date.now()); 
                     }
-                    
-                  } catch (err: any) {
-                    console.error("[Refresh Button] - Error refreshing portfolio data:", err);
-                    setError(`Failed to refresh portfolio data: ${err.message}`);
-                  } finally {
-                    setIsLoading(false);
-                    // Force refresh of all chart components
-                    setAllocationChartRefreshKey(Date.now()); 
-                  }
-                };
-                
-                loadInitialStaticData();
-              }
-            }}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
-            {isLoading ? 'Refreshing...' : 'Refresh'}
-          </Button>
-          <AddFundsButton accountId={accountId} />
+                  };
+                  
+                  loadInitialStaticData();
+                }
+              }}
+            >
+              <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+            <AddFundsButton accountId={accountId} />
+          </div>
         </div>
-      </div>
-      
-      {/* Real-time Portfolio Value with integrated chart */}
-      {accountId && (
-        <PortfolioSummaryWithAssist
-          accountId={accountId}
-          portfolioHistory={portfolioHistory}
-          selectedTimeRange={selectedTimeRange}
-          setSelectedTimeRange={setSelectedTimeRange}
-          isLoading={isLoading}
-          disabled={!hasTradeHistory}
-          allTimeReturnAmount={null}
-          allTimeReturnPercent={null}
-        />
-      )}
+        
 
-      {/* Notification for new users */}
-      {!hasTradeHistory && accountId && (
-        <Alert variant="default" className="bg-primary/10 border-primary text-foreground">
-          <AlertTitle className="flex items-center gap-2 text-base md:text-lg">
-            <LockIcon size={18} className="text-primary" /> 
-            Your portfolio analysis is waiting for your first trade
-          </AlertTitle>
-          <AlertDescription className="mt-2">
-            <p className="mb-3">Your portfolio page will populate after your first trade. If you've executed a trade already, please wait for the trade to settle.</p>
-            <Link href="/invest">
-              <Button className="mt-2">Make your first trade</Button>
-            </Link>
-          </AlertDescription>
-        </Alert>
-      )}
-      
-      <div style={lockedSectionStyle}>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-          {!analytics && isLoading ? (
-            <RiskDiversificationScoresWithAssist
-              accountId={accountId}
-              initialData={analytics}
-              isLoading={true}
-              disabled={!hasTradeHistory}
-              skeletonContent={
-                <div className="space-y-6">
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                </div>
-              }
-            />
-          ) : analytics ? (
-            <RiskDiversificationScoresWithAssist
-              accountId={accountId}
-              initialData={analytics}
-              disabled={!hasTradeHistory}
-            />
-          ) : (
-            <RiskDiversificationScoresWithAssist
-              accountId={accountId}
-              initialData={analytics}
-              disabled={!hasTradeHistory}
-              error={`Could not load analytics scores. ${error}`}
-            />
-          )}
 
-          {!isLoading && positions.length === 0 && !error ? (
-            <AssetAllocationPieWithAssist
-              positions={positions}
-              accountId={accountId}
-              refreshTimestamp={allocationChartRefreshKey}
+        {/* Notification for new users */}
+        {!hasTradeHistory && accountId && (
+          <Alert variant="default" className="bg-primary/10 border-primary text-foreground">
+            <AlertTitle className="flex items-center gap-2 text-base md:text-lg">
+              <LockIcon size={18} className="text-primary" /> 
+              Your portfolio analysis is waiting for your first trade
+            </AlertTitle>
+            <AlertDescription className="mt-2">
+              <p className="mb-3">Your portfolio page will populate after your first trade. If you've executed a trade already, please wait for the trade to settle.</p>
+              <Link href="/invest">
+                <Button className="mt-2">Make your first trade</Button>
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {/* Main Content Grid - New Optimized Layout */}
+        <div style={lockedSectionStyle} className="space-y-4 sm:space-y-6">
+          
+          {/* Row 1: Portfolio Chart (2/3) + Analytics & Allocation (1/3) */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 xl:grid-cols-3 gap-4 lg:gap-6">
+            {/* Portfolio Chart - 2/3 width on xl screens, 3/5 on lg screens, full width on mobile */}
+            <div className="lg:col-span-3 xl:col-span-2">
+              {accountId && (
+                <PortfolioSummaryWithAssist
+                  accountId={accountId}
+                  portfolioHistory={portfolioHistory}
+                  selectedTimeRange={selectedTimeRange}
+                  setSelectedTimeRange={setSelectedTimeRange}
+                  isLoading={isLoading}
+                  disabled={!hasTradeHistory}
+                  allTimeReturnAmount={null}
+                  allTimeReturnPercent={null}
+                />
+              )}
+            </div>
+
+            {/* Analytics & Allocation - 1/3 width on xl screens, 2/5 on lg, full width on mobile - stacked vertically */}
+            <div className="lg:col-span-2 xl:col-span-1 space-y-3 lg:space-y-4">
+              {/* Portfolio Analytics (Risk & Diversification) - Compact */}
+              <div className="h-fit">
+                {!analytics && isLoading ? (
+                  <RiskDiversificationScoresWithAssist
+                    accountId={accountId}
+                    initialData={analytics}
+                    isLoading={true}
+                    disabled={!hasTradeHistory}
+                    skeletonContent={
+                      <div className="space-y-2 lg:space-y-3">
+                        <Skeleton className="h-14 lg:h-16 w-full" />
+                        <Skeleton className="h-14 lg:h-16 w-full" />
+                      </div>
+                    }
+                  />
+                ) : analytics ? (
+                  <RiskDiversificationScoresWithAssist
+                    accountId={accountId}
+                    initialData={analytics}
+                    disabled={!hasTradeHistory}
+                  />
+                ) : (
+                  <RiskDiversificationScoresWithAssist
+                    accountId={accountId}
+                    initialData={analytics}
+                    disabled={!hasTradeHistory}
+                    error={`Could not load analytics scores. ${error}`}
+                  />
+                )}
+              </div>
+
+              {/* Asset Allocation */}
+              <div className="h-fit">
+                {!isLoading && positions.length === 0 && !error ? (
+                  <AssetAllocationPieWithAssist
+                    positions={positions}
+                    accountId={accountId}
+                    refreshTimestamp={allocationChartRefreshKey}
+                    disabled={!hasTradeHistory}
+                    error="No positions available to display allocation."
+                  />
+                ) : isLoading && positions.length === 0 ? (
+                  <AssetAllocationPieWithAssist
+                    positions={positions}
+                    accountId={accountId}
+                    refreshTimestamp={allocationChartRefreshKey}
+                    isLoading={true}
+                    disabled={!hasTradeHistory}
+                    skeletonContent={<Skeleton className="h-[220px] w-full" />}
+                  />
+                ) : positions.length > 0 ? (
+                  <AssetAllocationPieWithAssist
+                    positions={positions}
+                    accountId={accountId}
+                    refreshTimestamp={allocationChartRefreshKey}
+                    disabled={!hasTradeHistory}
+                  />
+                ) : (
+                  <AssetAllocationPieWithAssist
+                    positions={positions}
+                    accountId={accountId}
+                    refreshTimestamp={allocationChartRefreshKey}
+                    disabled={!hasTradeHistory}
+                    error={`Could not load position data. ${error}`}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Investment Growth Projection - Full Width */}
+          <div className="w-full">
+            <InvestmentGrowthWithAssist
+              currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)}
+              isLoading={isLoading && positions.length === 0}
               disabled={!hasTradeHistory}
-              error="No positions available to display allocation."
             />
-          ) : isLoading && positions.length === 0 ? (
-            <AssetAllocationPieWithAssist
-              positions={positions}
-              accountId={accountId}
-              refreshTimestamp={allocationChartRefreshKey}
-              isLoading={true}
-              disabled={!hasTradeHistory}
-              skeletonContent={<Skeleton className="h-72 w-full" />}
-            />
-          ) : positions.length > 0 ? (
-            <AssetAllocationPieWithAssist
-              positions={positions}
-              accountId={accountId}
-              refreshTimestamp={allocationChartRefreshKey}
-              disabled={!hasTradeHistory}
-            />
-          ) : (
-            <AssetAllocationPieWithAssist
-              positions={positions}
-              accountId={accountId}
-              refreshTimestamp={allocationChartRefreshKey}
-              disabled={!hasTradeHistory}
-              error={`Could not load position data. ${error}`}
-            />
-          )}
+          </div>
+
+          {/* Row 3: Holdings and Transactions Tabs - Full Width */}
+          <div className="w-full">
+            <Tabs defaultValue="holdings" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
+                <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
+                <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="holdings">
+                {isLoading && positions.length === 0 && !error ? (
+                  <Card className="bg-card shadow-lg mt-4">
+                    <CardContent className="p-0">
+                      <Skeleton className="h-64 w-full rounded-t-none" />
+                    </CardContent>
+                  </Card>
+                ) : positions.length > 0 ? (
+                  <HoldingsTableWithAssist 
+                    positions={positions} 
+                    isLoading={isLoading}
+                    disabled={!hasTradeHistory}
+                    onInvestClick={handleInvestClick}
+                    onSellClick={handleSellClick}
+                    accountId={accountId}
+                  />
+                ) : (
+                  <Card className="bg-card shadow-lg mt-4">
+                    <CardContent className="p-0">
+                      <p className="text-muted-foreground p-6 text-center">
+                        Waiting for your first trade to display holdings.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="transactions">
+                <Card className="bg-card shadow-lg mt-4">
+                  <CardContent className="p-0">
+                    {(isLoading && orders.length === 0 && !error) ? (
+                      <Skeleton className="h-64 w-full rounded-t-none" />
+                    ) : orders.length > 0 ? (
+                      <TransactionsTable
+                        initialOrders={orders}
+                        accountId={accountId}
+                        fetchData={fetchData}
+                      />
+                    ) : (
+                      <p className="text-muted-foreground p-6 text-center">
+                        No pending orders.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
-      </div>
 
-      <div style={lockedSectionStyle}>
-        <InvestmentGrowthWithAssist
-          currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)}
-          isLoading={isLoading && positions.length === 0}
-          disabled={!hasTradeHistory}
+        {/* Order Modal for Trade Actions */}
+        {selectedSymbolForTrade && accountId && (
+          <OrderModal
+            isOpen={isOrderModalOpen}
+            onClose={handleOrderModalClose}
+            symbol={selectedSymbolForTrade}
+            accountId={accountId}
+            orderType={selectedOrderType}
+            currentQuantity={selectedPosition?.qty}
+            currentMarketValue={selectedPosition?.market_value}
+          />
+        )}
+
+        {/* Toast notifications */}
+        <Toaster 
+          position="bottom-center"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#1f2937',
+              color: '#fff',
+              border: '1px solid #374151',
+              borderRadius: '0.5rem',
+              fontSize: '14px',
+              padding: '12px 16px',
+              zIndex: 99999,
+              marginBottom: '100px', // Space above mobile bottom nav (80px + 20px margin)
+            },
+            className: 'mobile-toast',
+            success: {
+              iconTheme: {
+                primary: '#10b981',
+                secondary: '#fff',
+              },
+            },
+            error: {
+              iconTheme: {
+                primary: '#ef4444',
+                secondary: '#fff',
+              },
+            },
+            loading: {
+              iconTheme: {
+                primary: '#6b7280',
+                secondary: '#fff',
+              },
+            },
+          }}
         />
       </div>
-
-      <div style={lockedSectionStyle}>
-        <Tabs defaultValue="holdings" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
-            <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
-            <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="holdings">
-            {isLoading && positions.length === 0 && !error ? (
-              <Card className="bg-card shadow-lg mt-4">
-                <CardContent className="p-0">
-                  <Skeleton className="h-64 w-full rounded-t-none" />
-                </CardContent>
-              </Card>
-            ) : positions.length > 0 ? (
-              <HoldingsTableWithAssist 
-                positions={positions} 
-                isLoading={isLoading}
-                disabled={!hasTradeHistory}
-                onInvestClick={handleInvestClick}
-                onSellClick={handleSellClick}
-                accountId={accountId}
-              />
-            ) : (
-              <Card className="bg-card shadow-lg mt-4">
-                <CardContent className="p-0">
-                  <p className="text-muted-foreground p-6 text-center">
-                    Waiting for your first trade to display holdings.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          <TabsContent value="transactions">
-             <Card className="bg-card shadow-lg mt-4">
-               <CardContent className="p-0">
-                 {(isLoading && orders.length === 0 && !error) ? (
-                   <Skeleton className="h-64 w-full rounded-t-none" />
-                 ) : orders.length > 0 ? (
-                   <TransactionsTable
-                      initialOrders={orders}
-                      accountId={accountId}
-                      fetchData={fetchData}
-                   />
-                  ) : (
-                   <p className="text-muted-foreground p-6 text-center">
-                      No pending orders.
-                   </p>
-                  )}
-               </CardContent>
-             </Card>
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      {/* Order Modal for Trade Actions */}
-      {selectedSymbolForTrade && accountId && (
-        <OrderModal
-          isOpen={isOrderModalOpen}
-          onClose={handleOrderModalClose}
-          symbol={selectedSymbolForTrade}
-          accountId={accountId}
-          orderType={selectedOrderType}
-          currentQuantity={selectedPosition?.qty}
-          currentMarketValue={selectedPosition?.market_value}
-        />
-      )}
-
-      {/* Toast notifications */}
-      <Toaster 
-        position="bottom-center"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: '#1f2937',
-            color: '#fff',
-            border: '1px solid #374151',
-            borderRadius: '0.5rem',
-            fontSize: '14px',
-            padding: '12px 16px',
-          },
-          success: {
-            iconTheme: {
-              primary: '#10b981',
-              secondary: '#fff',
-            },
-          },
-          error: {
-            iconTheme: {
-              primary: '#ef4444',
-              secondary: '#fff',
-            },
-          },
-          loading: {
-            iconTheme: {
-              primary: '#6b7280',
-              secondary: '#fff',
-            },
-          },
-        }}
-      />
     </div>
   );
 } 

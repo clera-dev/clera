@@ -373,7 +373,7 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false, 
               <h2 className="text-xl font-semibold">Research Sources</h2>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              All sources used to generate your personalized investment themes
+              Sources used to generate your personalized investment themes and stock picks
             </p>
             <div className="relative">
               <div className="max-h-80 overflow-y-auto border rounded-lg bg-gray-50 dark:bg-gray-900/50 p-4 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
