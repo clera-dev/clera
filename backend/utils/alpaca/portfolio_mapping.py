@@ -10,6 +10,20 @@ from clera_agents.types.portfolio_types import AssetClass, SecurityType, OrderRe
 
 logger = logging.getLogger(__name__)
 
+# Import ETF categorization service using proper relative imports
+try:
+    from ..etf_categorization_service import is_known_etf, etf_categorization_service
+    ETF_SERVICE_AVAILABLE = True
+    logger.info("ETF categorization service loaded successfully")
+except ImportError as e:
+    logger.warning(f"ETF categorization service not available: {e}")
+    ETF_SERVICE_AVAILABLE = False
+    # Fallback functions
+    def is_known_etf(symbol):
+        return False
+    def etf_categorization_service():
+        return None
+
 ASSET_CACHE_FILE = os.getenv("ASSET_CACHE_FILE", "data/tradable_assets.json")
 
 # If AlpacaTradingAssetClass is not available globally, import or define as needed
@@ -33,52 +47,102 @@ def map_alpaca_position_to_portfolio_position(alpaca_pos, asset_details_map: Dic
     alpaca_asset_class = getattr(alpaca_pos, 'asset_class', None)
     if AlpacaTradingAssetClass and alpaca_asset_class == AlpacaTradingAssetClass.US_EQUITY:
         our_asset_class = AssetClass.EQUITY
-        if asset_details:
-            asset_name_lower = asset_details.name.lower() if getattr(asset_details, 'name', None) else ""
-            asset_symbol_upper = asset_details.symbol.upper() if getattr(asset_details, 'symbol', None) else ""
-            if "etf" in asset_name_lower or "fund" in asset_name_lower or "trust" in asset_name_lower or "shares" in asset_name_lower:
+        
+        # PRODUCTION-GRADE APPROACH: Our intelligent ETF service is PRIMARY, Alpaca data is FALLBACK
+        if ETF_SERVICE_AVAILABLE and is_known_etf(alpaca_pos.symbol):
+            # PRIMARY: Use our comprehensive ETF categorization service
+            asset_name = getattr(asset_details, 'name', None) if asset_details else None
+            classification = etf_categorization_service.classify_etf(alpaca_pos.symbol, asset_name)
+            security_type = SecurityType.ETF
+            
+            logger.info(f"PRIMARY: Intelligent ETF classification for {alpaca_pos.symbol}: {classification.category.value} (confidence: {classification.confidence})")
+            
+            # Map ETF category to proper asset class
+            if classification.category.value in ['Fixed Income']:
+                our_asset_class = AssetClass.FIXED_INCOME
+            elif classification.category.value in ['Real Estate']:
+                our_asset_class = AssetClass.REAL_ESTATE
+            elif classification.category.value in ['Commodities']:
+                our_asset_class = AssetClass.COMMODITIES
+            # All other ETFs (broad market, sector, international) remain as EQUITY
+            
+        elif asset_details:
+            # FALLBACK 1: Use Alpaca asset details for unknown securities
+            asset_name_lower = getattr(asset_details, 'name', '').lower()
+            
+            if any(keyword in asset_name_lower for keyword in ['etf', 'fund', 'trust', 'shares']):
                 security_type = SecurityType.ETF
-            elif "reit" in asset_name_lower:
+                logger.info(f"FALLBACK 1: Alpaca ETF detection for {alpaca_pos.symbol}: {getattr(asset_details, 'name', 'N/A')}")
+                
+                # Smart asset class inference from asset name
+                if any(keyword in asset_name_lower for keyword in ['bond', 'treasury', 'fixed income', 'debt', 'floating rate']):
+                    our_asset_class = AssetClass.FIXED_INCOME
+                    logger.info(f"FALLBACK 1: Inferred Fixed Income for {alpaca_pos.symbol} from name")
+                elif any(keyword in asset_name_lower for keyword in ['reit', 'real estate']):
+                    our_asset_class = AssetClass.REAL_ESTATE
+                    logger.info(f"FALLBACK 1: Inferred Real Estate for {alpaca_pos.symbol} from name")
+                elif any(keyword in asset_name_lower for keyword in ['gold', 'silver', 'commodity', 'oil', 'copper']):
+                    our_asset_class = AssetClass.COMMODITIES
+                    logger.info(f"FALLBACK 1: Inferred Commodities for {alpaca_pos.symbol} from name")
+                # Otherwise remains EQUITY (broad market, sector, international ETFs)
+                
+            elif 'reit' in asset_name_lower:
                 security_type = SecurityType.REIT
+                our_asset_class = AssetClass.REAL_ESTATE
+                logger.info(f"FALLBACK 1: REIT detected for {alpaca_pos.symbol}")
             else:
                 security_type = SecurityType.INDIVIDUAL_STOCK
+                logger.info(f"FALLBACK 1: Individual stock classification for {alpaca_pos.symbol}")
+                
         else:
-            COMMON_ETFS = {
+            # FALLBACK 2: Legacy hardcoded ETF list for when no asset details are available
+            LEGACY_ETFS = {
+                # Broad Market
                 'SPY', 'VOO', 'IVV', 'VTI', 'QQQ',
+                # International  
                 'VXUS', 'EFA', 'VEA', 'EEM', 'VWO',
+                # Fixed Income
                 'AGG', 'BND', 'VCIT', 'MUB', 'TIP', 'VTIP',
+                # Real Estate
                 'VNQ', 'SCHH', 'IYR',
+                # Commodities
                 'GLD', 'IAU', 'SLV', 'USO',
+                # Sectors
                 'XLF', 'XLK', 'XLV', 'XLE',
             }
-            is_etf_by_name = False
+            
+            # Check cached asset data as additional fallback
+            is_etf_by_cache = False
             try:
                 if os.path.exists(ASSET_CACHE_FILE):
                     with open(ASSET_CACHE_FILE, 'r') as f:
                         cached_assets = json.load(f)
                         cached_asset = next((asset for asset in cached_assets if asset.get('symbol') == alpaca_pos.symbol), None)
                         if cached_asset and cached_asset.get('name'):
-                            asset_name_lower = cached_asset['name'].lower()
-                            if 'etf' in asset_name_lower:
-                                is_etf_by_name = True
-                                logger.info(f"Identified {alpaca_pos.symbol} as ETF from cached asset name: {cached_asset['name']}")
+                            cache_name_lower = cached_asset['name'].lower()
+                            if 'etf' in cache_name_lower:
+                                is_etf_by_cache = True
+                                logger.info(f"FALLBACK 2: Cache ETF detection for {alpaca_pos.symbol}: {cached_asset['name']}")
             except Exception as e:
-                logger.debug(f"Could not check cached asset name for {alpaca_pos.symbol}: {e}")
-            if alpaca_pos.symbol in COMMON_ETFS or is_etf_by_name:
+                logger.debug(f"Cache lookup failed for {alpaca_pos.symbol}: {e}")
+                
+            if alpaca_pos.symbol in LEGACY_ETFS or is_etf_by_cache:
                 security_type = SecurityType.ETF
-                if alpaca_pos.symbol in COMMON_ETFS:
-                    logger.info(f"Using fallback ETF classification for known symbol {alpaca_pos.symbol}")
-                else:
-                    logger.info(f"Using fallback ETF classification for {alpaca_pos.symbol} based on asset name containing 'ETF'")
+                logger.info(f"FALLBACK 2: Legacy ETF classification for {alpaca_pos.symbol}")
+                
+                # Legacy asset class mapping
                 if alpaca_pos.symbol in ('AGG', 'BND', 'VCIT', 'MUB', 'TIP', 'VTIP'):
                     our_asset_class = AssetClass.FIXED_INCOME
                 elif alpaca_pos.symbol in ('VNQ', 'SCHH', 'IYR'):
                     our_asset_class = AssetClass.REAL_ESTATE
                 elif alpaca_pos.symbol in ('GLD', 'IAU', 'SLV', 'USO'):
                     our_asset_class = AssetClass.COMMODITIES
+                # Otherwise remains EQUITY
             else:
-                logger.warning(f"Missing asset details for equity {alpaca_pos.symbol}, defaulting SecurityType to INDIVIDUAL_STOCK.")
                 security_type = SecurityType.INDIVIDUAL_STOCK
+                logger.info(f"FALLBACK 2: Individual stock default for {alpaca_pos.symbol}")
+                if not asset_details:
+                    logger.warning(f"No classification data available for {alpaca_pos.symbol}, defaulting to individual stock")
     elif AlpacaTradingAssetClass and alpaca_asset_class == AlpacaTradingAssetClass.CRYPTO:
         our_asset_class = AssetClass.EQUITY
         security_type = SecurityType.CRYPTOCURRENCY

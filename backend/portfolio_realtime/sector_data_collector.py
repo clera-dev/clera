@@ -25,6 +25,18 @@ logger = logging.getLogger("sector_data_collector")
 # Load environment variables
 load_dotenv()
 
+# Import ETF categorization service using proper relative imports
+try:
+    from utils.etf_categorization_service import get_etf_sector_for_allocation, is_known_etf
+    logger.info("Successfully imported ETF categorization service")
+except ImportError as e:
+    logger.error(f"Failed to import ETF categorization service: {e}")
+    # Fallback functions if import fails
+    def get_etf_sector_for_allocation(symbol, asset_name=None):
+        return "Unknown"
+    def is_known_etf(symbol):
+        return False
+
 class SectorDataCollector:
     def __init__(self, redis_host=None, redis_port=None, redis_db=None, 
                  FINANCIAL_MODELING_PREP_API_KEY=None):
@@ -134,21 +146,55 @@ class SectorDataCollector:
                 for company_profile in data:
                     symbol = company_profile.get('symbol')
                     if symbol:
-                        all_sector_data[symbol] = {
-                            'sector': company_profile.get('sector', 'Unknown'),
-                            'industry': company_profile.get('industry', 'Unknown'), # Good to have
-                            'companyName': company_profile.get('companyName', symbol)
-                        }
+                        # Check if this is an ETF first
+                        if is_known_etf(symbol):
+                            # Use our intelligent ETF categorization
+                            etf_sector = get_etf_sector_for_allocation(
+                                symbol, 
+                                company_profile.get('companyName')
+                            )
+                            all_sector_data[symbol] = {
+                                'sector': etf_sector,
+                                'industry': 'ETF', 
+                                'companyName': company_profile.get('companyName', symbol),
+                                'is_etf': True
+                            }
+                            logger.info(f"Categorized ETF {symbol} as sector: {etf_sector}")
+                        else:
+                            # Use FMP API data for non-ETFs
+                            all_sector_data[symbol] = {
+                                'sector': company_profile.get('sector', 'Unknown'),
+                                'industry': company_profile.get('industry', 'Unknown'),
+                                'companyName': company_profile.get('companyName', symbol),
+                                'is_etf': False
+                            }
             else:
                 # This might happen if the API returns a single object for a single symbol, or an error object.
                 logger.warning(f"FMP API response for batch was not a list: {data}")
                 # Try to handle if it's a single valid object (though unlikely for multiple symbols)
                 if isinstance(data, dict) and data.get('symbol'):
-                     all_sector_data[data.get('symbol')] = {
-                        'sector': data.get('sector', 'Unknown'),
-                        'industry': data.get('industry', 'Unknown'),
-                        'companyName': data.get('companyName', data.get('symbol'))
-                    }
+                    symbol = data.get('symbol')
+                    if is_known_etf(symbol):
+                        # Use our intelligent ETF categorization
+                        etf_sector = get_etf_sector_for_allocation(
+                            symbol, 
+                            data.get('companyName')
+                        )
+                        all_sector_data[symbol] = {
+                            'sector': etf_sector,
+                            'industry': 'ETF',
+                            'companyName': data.get('companyName', symbol),
+                            'is_etf': True
+                        }
+                        logger.info(f"Categorized ETF {symbol} as sector: {etf_sector}")
+                    else:
+                        # Use FMP API data for non-ETFs
+                        all_sector_data[symbol] = {
+                            'sector': data.get('sector', 'Unknown'),
+                            'industry': data.get('industry', 'Unknown'),
+                            'companyName': data.get('companyName', symbol),
+                            'is_etf': False
+                        }
 
         except requests.exceptions.HTTPError as http_err:
             logger.error(f"HTTP error occurred while fetching from FMP API for symbols {symbols_str}: {http_err} - Response: {response.text}")
