@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Import ETF categorization service using proper relative imports
 try:
-    from ..etf_categorization_service import is_known_etf, etf_categorization_service
+    from ..etf_categorization_service import is_known_etf, classify_etf
     ETF_SERVICE_AVAILABLE = True
     logger.info("ETF categorization service loaded successfully")
 except ImportError as e:
@@ -21,7 +21,7 @@ except ImportError as e:
     # Fallback functions
     def is_known_etf(symbol):
         return False
-    def etf_categorization_service():
+    def classify_etf(symbol, asset_name=None):
         return None
 
 ASSET_CACHE_FILE = os.getenv("ASSET_CACHE_FILE", "data/tradable_assets.json")
@@ -52,7 +52,7 @@ def map_alpaca_position_to_portfolio_position(alpaca_pos, asset_details_map: Dic
         if ETF_SERVICE_AVAILABLE and is_known_etf(alpaca_pos.symbol):
             # PRIMARY: Use our comprehensive ETF categorization service
             asset_name = getattr(asset_details, 'name', None) if asset_details else None
-            classification = etf_categorization_service.classify_etf(alpaca_pos.symbol, asset_name)
+            classification = classify_etf(alpaca_pos.symbol, asset_name)
             security_type = SecurityType.ETF
             
             logger.info(f"PRIMARY: Intelligent ETF classification for {alpaca_pos.symbol}: {classification.category.value} (confidence: {classification.confidence})")

@@ -217,9 +217,9 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                 </div>
             );
         } else if (viewType === 'sector') {
-             // Wrap Skeleton and SectorAllocationPie in a div with fixed height
+             // Wrap Skeleton and SectorAllocationPie in a div with fixed height - matches asset class height
             return (
-                <div className="h-[280px] w-full">
+                <div className="h-[240px] w-full">
                     {isSectorLoading ? (
                         <Skeleton className="h-full w-full rounded-md" />
                     ) : (

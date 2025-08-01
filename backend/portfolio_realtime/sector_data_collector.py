@@ -25,10 +25,10 @@ logger = logging.getLogger("sector_data_collector")
 # Load environment variables
 load_dotenv()
 
-# Import ETF categorization service using proper relative imports
+# Import ETF categorization service using improved architecture
 try:
     from utils.etf_categorization_service import get_etf_sector_for_allocation, is_known_etf
-    logger.info("Successfully imported ETF categorization service")
+    logger.info("Successfully imported ETF categorization service with improved architecture")
 except ImportError as e:
     logger.error(f"Failed to import ETF categorization service: {e}")
     # Fallback functions if import fails

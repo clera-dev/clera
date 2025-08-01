@@ -386,13 +386,62 @@ class ETFCategorizationService:
         return all_etfs
 
 
-# Singleton instance for easy access
-etf_categorization_service = ETFCategorizationService()
+# Factory function for creating instances (follows Dependency Injection pattern)
+def create_etf_categorization_service() -> ETFCategorizationService:
+    """
+    Factory function to create ETF categorization service instances.
+    
+    This follows Dependency Injection principles:
+    - Allows easy testing with different configurations
+    - Enables A/B testing of different categorization strategies
+    - Supports multi-tenant scenarios
+    - Facilitates hot-swapping of configurations
+    
+    Returns:
+        New instance of ETFCategorizationService
+    """
+    return ETFCategorizationService()
+
+# Cached instance for performance (lazy-loaded, not global singleton)
+_cached_service: Optional[ETFCategorizationService] = None
+
+def get_etf_categorization_service() -> ETFCategorizationService:
+    """
+    Get a cached instance of the ETF categorization service.
+    
+    This provides performance benefits while maintaining testability:
+    - Creates instance only when first needed (lazy loading)
+    - Caches for performance in production
+    - Can be easily mocked in tests
+    - Allows explicit service creation when needed
+    
+    Returns:
+        Cached instance of ETFCategorizationService
+    """
+    global _cached_service
+    if _cached_service is None:
+        _cached_service = create_etf_categorization_service()
+    return _cached_service
+
+def clear_etf_categorization_cache() -> None:
+    """
+    Clear the cached service instance.
+    
+    Useful for:
+    - Testing (ensures clean state between tests)
+    - Configuration updates (forces new instance creation)
+    - Memory management in long-running processes
+    """
+    global _cached_service
+    _cached_service = None
 
 
+# Convenience functions for backward compatibility and easy usage
 def get_etf_sector_for_allocation(symbol: str, asset_name: Optional[str] = None) -> str:
     """
     Convenience function to get ETF sector for allocation charts.
+    
+    This maintains backward compatibility while using the improved architecture.
     
     This is the main function that should be used throughout the codebase
     for determining ETF sectors in allocation charts.
@@ -404,9 +453,56 @@ def get_etf_sector_for_allocation(symbol: str, asset_name: Optional[str] = None)
     Returns:
         String category for sector allocation
     """
-    return etf_categorization_service.get_sector_for_allocation(symbol, asset_name)
+    service = get_etf_categorization_service()
+    return service.get_sector_for_allocation(symbol, asset_name)
 
 
 def is_known_etf(symbol: str) -> bool:
-    """Check if a symbol is a known ETF."""
-    return etf_categorization_service.is_etf(symbol)
+    """
+    Check if a symbol is a known ETF.
+    
+    This maintains backward compatibility while using the improved architecture.
+    
+    Args:
+        symbol: The ETF symbol to check
+        
+    Returns:
+        True if the symbol is a known ETF, False otherwise
+    """
+    service = get_etf_categorization_service()
+    return service.is_etf(symbol)
+
+
+def classify_etf(symbol: str, asset_name: Optional[str] = None) -> ETFClassification:
+    """
+    Classify an ETF symbol into the appropriate category.
+    
+    This maintains backward compatibility while using the improved architecture.
+    
+    Args:
+        symbol: The ETF symbol (e.g., 'SPY', 'XLK')
+        asset_name: Optional asset name for additional context
+        
+    Returns:
+        ETFClassification with category and confidence level
+    """
+    service = get_etf_categorization_service()
+    return service.classify_etf(symbol, asset_name)
+
+
+# Test utilities for dependency injection
+def inject_etf_categorization_service(service: ETFCategorizationService) -> None:
+    """
+    Inject a custom ETF categorization service for testing.
+    
+    This enables easy testing with mock services or custom configurations.
+    Useful for:
+    - Unit testing with mock services
+    - Integration testing with test data
+    - A/B testing different categorization strategies
+    
+    Args:
+        service: Custom ETFCategorizationService instance
+    """
+    global _cached_service
+    _cached_service = service
