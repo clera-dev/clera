@@ -47,17 +47,27 @@ export const formatTransferDate = (dateString: string) => {
 
 /**
  * Client-side only date formatting that respects user's local timezone
- * Use this in client components when you want to show dates in user's local time
+ * 
+ * IMPORTANT: This function should NOT be called during SSR to prevent hydration mismatches.
+ * Use this only in client components after hydration, or use formatTransferDate() for SSR-safe formatting.
+ * 
+ * For SSR-safe usage patterns:
+ * 1. Use with useEffect + useState to set formatted date after hydration
+ * 2. Use in 'use client' components only
+ * 3. Consider using formatTransferDate() instead if SSR compatibility is needed
+ * 
  * @param dateString - ISO date string
- * @returns Object with formatted date and time strings
+ * @returns Object with formatted date and time strings in user's local timezone
  */
 export const formatTransferDateLocal = (dateString: string) => {
-  // Only run on client side to prevent hydration mismatches
+  // ARCHITECTURAL FIX: Throw an error during SSR to prevent hydration mismatches
+  // This forces developers to use proper SSR-safe patterns
   if (typeof window === 'undefined') {
-    return {
-      date: 'Loading...',
-      time: 'Loading...'
-    };
+    throw new Error(
+      'formatTransferDateLocal() cannot be called during SSR as it causes hydration mismatches. ' +
+      'Use formatTransferDate() for SSR-safe formatting, or call this function only after hydration ' +
+      'using useEffect + useState pattern in client components.'
+    );
   }
   
   const date = new Date(dateString);
@@ -73,4 +83,64 @@ export const formatTransferDateLocal = (dateString: string) => {
       hour12: true
     })
   };
+};
+
+/**
+ * React hook for safely formatting dates in local timezone without hydration mismatches
+ * 
+ * This hook ensures that the formatted date is only calculated on the client side
+ * after hydration, preventing SSR/client markup mismatches.
+ * 
+ * @param dateString - ISO date string
+ * @returns Object with formatted date/time strings or null during SSR/before hydration
+ * 
+ * @example
+ * ```tsx
+ * function MyComponent({ transferDate }) {
+ *   const localDate = useLocalDateFormat(transferDate);
+ *   
+ *   return (
+ *     <div>
+ *       {localDate ? (
+ *         <span>{localDate.date} at {localDate.time}</span>
+ *       ) : (
+ *         <span>{formatTransferDate(transferDate).date}</span> // SSR fallback
+ *       )}
+ *     </div>
+ *   );
+ * }
+ * ```
+ */
+export const useLocalDateFormat = (dateString: string): { date: string; time: string } | null => {
+  // This is not a React hook yet, but provides the pattern for implementing one
+  // when React hooks are available in the calling component
+  
+  // For now, this is a placeholder that documents the proper pattern
+  // When used in a React component, implement as:
+  /*
+  const [localDate, setLocalDate] = useState<{ date: string; time: string } | null>(null);
+  
+  useEffect(() => {
+    const date = new Date(dateString);
+    setLocalDate({
+      date: date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric'
+      }),
+      time: date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true
+      })
+    });
+  }, [dateString]);
+  
+  return localDate;
+  */
+  
+  throw new Error(
+    'useLocalDateFormat is a documentation pattern, not an actual hook. ' +
+    'Implement the useState + useEffect pattern shown in the example above in your React component.'
+  );
 }; 

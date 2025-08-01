@@ -175,7 +175,7 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-[100vw] h-[100vh] sm:w-[95vw] sm:max-w-md sm:h-auto sm:max-h-[85vh] mx-auto overflow-hidden z-[110] fixed top-[0] left-[0] sm:top-[50%] sm:left-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%] translate-x-0 translate-y-0 rounded-none sm:rounded-lg flex flex-col">
-        <DialogHeader className="flex-shrink-0 px-4 pt-4 pb-2 sm:px-6 sm:pt-6">
+        <DialogHeader className="flex-shrink-0 px-4 pt-2 pb-1 sm:px-6 sm:pt-6">
           <DialogTitle className="text-xl font-semibold">Buy {symbol} Confirmation</DialogTitle>
           <DialogDescription>
             Enter the dollar amount you wish to invest.
@@ -231,7 +231,7 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
           </div>
         </div>
 
-        <div className="flex-shrink-0 bg-background p-4 border-t sm:px-6">
+        <div className="flex-shrink-0 bg-background p-4 border-t sm:px-6 mb-20 sm:mb-0 relative z-[130]">
           <Button 
             type="button"
             size="lg"

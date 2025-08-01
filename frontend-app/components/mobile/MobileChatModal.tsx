@@ -25,6 +25,7 @@ export default function MobileChatModal({
   const [accountId, setAccountId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -35,6 +36,16 @@ export default function MobileChatModal({
 
     const initializeUserData = async () => {
       setIsLoading(true);
+      setError(null); // Clear any previous errors
+      
+      // Set a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        if (isLoading) {
+          setError("Loading timeout. Please try again.");
+          setIsLoading(false);
+        }
+      }, 10000); // 10 second timeout
+      
       try {
         // Get user ID from Supabase Auth
         const supabase = createClient();
@@ -42,6 +53,9 @@ export default function MobileChatModal({
         
         if (authError || !user) {
           console.error("User not authenticated", authError);
+          setError("Please sign in to use chat");
+          setIsLoading(false);
+          clearTimeout(timeoutId);
           return;
         }
 
@@ -51,12 +65,18 @@ export default function MobileChatModal({
         const fetchedAccountId = await getAlpacaAccountId();
         if (!fetchedAccountId) {
           console.error("Alpaca Account ID not found");
+          setError("Account not found. Please complete onboarding first.");
+          setIsLoading(false);
+          clearTimeout(timeoutId);
           return;
         }
         
         setAccountId(fetchedAccountId);
+        clearTimeout(timeoutId);
       } catch (error) {
         console.error("Error initializing user data:", error);
+        setError("Failed to load chat. Please try again.");
+        clearTimeout(timeoutId);
       } finally {
         setIsLoading(false);
       }
@@ -179,6 +199,22 @@ export default function MobileChatModal({
               onMessageSent={handleMessageSent}
               isSidebarMode={false}
             />
+          ) : error ? (
+            <div className="flex items-center justify-center h-full px-4">
+              <div className="text-center max-w-sm">
+                <div className="text-destructive mb-4">
+                  <X size={48} className="mx-auto mb-2" />
+                  <p className="text-sm font-medium">{error}</p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  onClick={onClose}
+                  className="mt-4"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">

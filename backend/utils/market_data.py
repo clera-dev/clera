@@ -5,6 +5,7 @@ import os
 from urllib.request import urlopen
 import certifi
 import json
+from typing import Union, Any
 from dotenv import load_dotenv
 import httpx
 
@@ -18,30 +19,52 @@ def get_jsonparsed_data(url):
     data = response.read().decode("utf-8")
     return json.loads(data)
 
-async def get_jsonparsed_data_async(url: str) -> dict:
-    """Asynchronously get the JSON data from a URL."""
+async def get_jsonparsed_data_async(url: str) -> Union[dict, list]:
+    """
+    Asynchronously get the JSON data from a URL.
+    
+    Note: Financial Modeling Prep API endpoints can return either dict or list
+    depending on the endpoint. This function preserves the actual return type
+    to prevent type checking errors and downstream bugs.
+    """
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         response.raise_for_status()  # Raise an exception for bad status codes
         return response.json()
 
-def get_stock_quote(symbol: str) -> dict:
-    """Get the stock quote for a given symbol using the Financial Modeling Prep API."""
+def get_stock_quote(symbol: str) -> Union[dict, list]:
+    """
+    Get the stock quote for a given symbol using the Financial Modeling Prep API.
+    
+    Note: FMP API returns a list containing quote data, not a dict.
+    """
     url = (f"https://financialmodelingprep.com/api/v3/quote-short/{symbol}?apikey={fin_modeling_prep_api_key}")
     return get_jsonparsed_data(url)
 
-async def get_stock_quote_async(symbol: str) -> dict:
-    """Asynchronously get the stock quote for a given symbol."""
+async def get_stock_quote_async(symbol: str) -> Union[dict, list]:
+    """
+    Asynchronously get the stock quote for a given symbol.
+    
+    Note: FMP API returns a list containing quote data, not a dict.
+    """
     url = (f"https://financialmodelingprep.com/api/v3/quote-short/{symbol}?apikey={fin_modeling_prep_api_key}")
     return await get_jsonparsed_data_async(url)
 
-def get_stock_quote_full(symbol: str) -> dict:
-    """Get the full stock quote with changes and percentages using the Financial Modeling Prep API."""
+def get_stock_quote_full(symbol: str) -> Union[dict, list]:
+    """
+    Get the full stock quote with changes and percentages using the Financial Modeling Prep API.
+    
+    Note: FMP API returns a list containing quote data, not a dict.
+    """
     url = (f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={fin_modeling_prep_api_key}")
     return get_jsonparsed_data(url)
 
-async def get_stock_quote_full_async(symbol: str) -> dict:
-    """Asynchronously get the full stock quote with changes and percentages."""
+async def get_stock_quote_full_async(symbol: str) -> Union[dict, list]:
+    """
+    Asynchronously get the full stock quote with changes and percentages.
+    
+    Note: FMP API returns a list containing quote data, not a dict.
+    """
     url = (f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={fin_modeling_prep_api_key}")
     return await get_jsonparsed_data_async(url)
 

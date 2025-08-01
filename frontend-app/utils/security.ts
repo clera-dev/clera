@@ -283,4 +283,146 @@ export function validateAndSanitizeSymbols(symbols: string[]): string[] {
  */
 export function isValidSymbol(symbol: string): boolean {
   return validateAndSanitizeSymbol(symbol) !== null;
+}
+
+/**
+ * Validates and sanitizes external URLs to prevent XSS attacks
+ * 
+ * SECURITY: This function implements comprehensive URL validation that:
+ * - Prevents JavaScript injection attacks (javascript:, data:, vbscript:)
+ * - Prevents protocol attacks (file:, ftp:, telnet:)
+ * - Only allows safe protocols (http:, https:)
+ * - Validates URL structure and format
+ * - Provides security logging for attack attempts
+ * - Returns safe fallback for invalid URLs
+ * - Maintains compatibility with legitimate company websites
+ * 
+ * @param url The URL to validate
+ * @returns The validated URL or null if invalid
+ */
+export function validateAndSanitizeExternalUrl(url: string): string | null {
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+
+  // Remove whitespace
+  const sanitizedUrl = url.trim();
+
+  // SECURITY: Prevent empty URLs after sanitization
+  if (sanitizedUrl.length === 0) {
+    return null;
+  }
+
+  // SECURITY: Prevent overly long URLs (potential buffer overflow)
+  if (sanitizedUrl.length > 2048) {
+    console.warn(`[Security] URL too long: ${sanitizedUrl.substring(0, 100)}...`);
+    return null;
+  }
+
+  try {
+    // Parse the URL to validate structure
+    const parsedUrl = new URL(sanitizedUrl);
+
+    // SECURITY: Only allow safe protocols
+    const safeProtocols = ['http:', 'https:'];
+    if (!safeProtocols.includes(parsedUrl.protocol)) {
+      console.warn(`[Security] Blocked unsafe protocol: ${parsedUrl.protocol} in URL: ${sanitizedUrl}`);
+      return null;
+    }
+
+    // SECURITY: Prevent JavaScript injection attacks
+    // Check for dangerous schemes in the URL string (case-insensitive)
+    const dangerousSchemes = [
+      'javascript:',
+      'data:',
+      'vbscript:',
+      'file:',
+      'ftp:',
+      'telnet:',
+      'mailto:',
+      'about:',
+      'chrome:',
+      'moz-extension:',
+      'chrome-extension:'
+    ];
+
+    const lowerUrl = sanitizedUrl.toLowerCase();
+    for (const scheme of dangerousSchemes) {
+      if (lowerUrl.startsWith(scheme)) {
+        console.warn(`[Security] Blocked dangerous scheme: ${scheme} in URL: ${sanitizedUrl}`);
+        return null;
+      }
+    }
+
+    // SECURITY: Prevent URL encoding attacks
+    // Check for suspicious encoded patterns
+    const suspiciousEncodedPatterns = [
+      '%6a%61%76%61%73%63%72%69%70%74', // javascript encoded
+      '%64%61%74%61', // data encoded
+      '%76%62%73%63%72%69%70%74' // vbscript encoded
+    ];
+
+    for (const pattern of suspiciousEncodedPatterns) {
+      if (lowerUrl.includes(pattern)) {
+        console.warn(`[Security] Blocked encoded dangerous scheme in URL: ${sanitizedUrl}`);
+        return null;
+      }
+    }
+
+    // SECURITY: Validate hostname is not empty
+    if (!parsedUrl.hostname || parsedUrl.hostname.length === 0) {
+      console.warn(`[Security] Empty hostname in URL: ${sanitizedUrl}`);
+      return null;
+    }
+
+    // SECURITY: Prevent localhost and private IP access
+    const privateHostnames = [
+      'localhost',
+      '127.0.0.1',
+      '::1',
+      '0.0.0.0'
+    ];
+
+    if (privateHostnames.includes(parsedUrl.hostname.toLowerCase())) {
+      console.warn(`[Security] Blocked private hostname: ${parsedUrl.hostname} in URL: ${sanitizedUrl}`);
+      return null;
+    }
+
+    // SECURITY: Prevent private IP ranges
+    const privateIPPatterns = [
+      /^10\./,
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+      /^192\.168\./,
+      /^169\.254\./,
+      /^0\./,
+      /^fe80:/,
+      /^fc00:/,
+      /^fd00:/
+    ];
+
+    for (const pattern of privateIPPatterns) {
+      if (pattern.test(parsedUrl.hostname)) {
+        console.warn(`[Security] Blocked private IP: ${parsedUrl.hostname} in URL: ${sanitizedUrl}`);
+        return null;
+      }
+    }
+
+    // Return the validated URL
+    return sanitizedUrl;
+
+  } catch (error) {
+    // URL parsing failed - likely malformed
+    console.warn(`[Security] Malformed URL detected: ${sanitizedUrl}`);
+    return null;
+  }
+}
+
+/**
+ * Checks if a URL is valid for external use without sanitizing it
+ * 
+ * @param url The URL to check
+ * @returns true if the URL is valid, false otherwise
+ */
+export function isValidExternalUrl(url: string): boolean {
+  return validateAndSanitizeExternalUrl(url) !== null;
 } 

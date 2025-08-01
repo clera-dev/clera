@@ -77,8 +77,10 @@ async function acquireLock(lockKey: string, ttlSeconds: number): Promise<boolean
     return result === 'OK';
   } catch (redisError) {
     console.warn(`Redis lock acquisition failed for ${lockKey}:`, redisError);
-    // Return false to indicate lock acquisition failed, but don't fail the request
-    return false;
+    // ARCHITECTURAL FIX: Treat Redis connectivity failures as unlocked state
+    // This prevents silent failures that leave data stale when Redis is down
+    // Instead of blocking refresh, we allow it to proceed when Redis is unavailable
+    return true; // Treat as unlocked to allow refresh to proceed
   }
 }
 

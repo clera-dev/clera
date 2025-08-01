@@ -43,7 +43,12 @@ export class AuthError extends Error {
  */
 export class AuthService {
   /**
-   * Authenticate and authorize a user for a specific account
+   * Authenticate and authorize a user for a specific account with dual auth support
+   * 
+   * INDUSTRY BEST PRACTICE: Supports both authentication patterns:
+   * 1. Session-based (cookies) - for client-side fetch requests from React components
+   * 2. JWT-based (Authorization header) - for service-to-service calls with explicit tokens
+   * 
    * @param request - The incoming request
    * @param accountId - The account ID from route parameters
    * @returns AuthContext with user and account information
@@ -56,24 +61,71 @@ export class AuthService {
     // Create supabase server client
     const supabase = await createClient();
     
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    
-    if (!user) {
-      throw new AuthError('Unauthorized', 401);
-    }
+    let user: any = null;
+    let accessToken: string | null = null;
 
-    // Extract the authentication token from the request
+    // PATTERN 1: Try JWT-based authentication first (Authorization header)
+    // This supports service-to-service calls and explicit token passing
     const authHeader = request.headers.get('authorization');
-    const authToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-    
-    if (!authToken) {
-      throw new AuthError('Authentication token required', 401);
+    if (authHeader?.startsWith('Bearer ')) {
+      const explicitToken = authHeader.substring(7);
+      
+      try {
+        // Validate the explicit JWT token
+        const { data: { user: jwtUser }, error: jwtError } = await supabase.auth.getUser(explicitToken);
+        
+        if (!jwtError && jwtUser) {
+          user = jwtUser;
+          accessToken = explicitToken;
+          console.log('[Auth] Using JWT-based authentication from Authorization header');
+        }
+      } catch (error) {
+        // JWT validation failed, fall through to session-based auth
+        console.log('[Auth] JWT validation failed, falling back to session-based auth');
+      }
     }
 
-    // Verify user owns this account
+    // PATTERN 2: Fall back to session-based authentication (cookies)
+    // This supports client-side fetch requests from React components
+    if (!user || !accessToken) {
+      try {
+        // Get user from session (cookie-based)
+        const {
+          data: { user: sessionUser },
+          error: userError
+        } = await supabase.auth.getUser();
+        
+        if (userError || !sessionUser) {
+          throw new AuthError('Unauthorized - no valid session or JWT token', 401);
+        }
+
+        // Get the access token from the session for backend communication
+        const {
+          data: { session },
+          error: sessionError
+        } = await supabase.auth.getSession();
+        
+        if (sessionError || !session?.access_token) {
+          throw new AuthError('Authentication session required', 401);
+        }
+
+        user = sessionUser;
+        accessToken = session.access_token;
+        console.log('[Auth] Using session-based authentication from cookies');
+      } catch (error) {
+        if (error instanceof AuthError) {
+          throw error;
+        }
+        throw new AuthError('Authentication failed', 401);
+      }
+    }
+
+    // At this point we have a valid user and access token from either pattern
+    if (!user || !accessToken) {
+      throw new AuthError('Authentication failed - no user or token available', 401);
+    }
+
+    // Verify user owns this account (same logic for both auth patterns)
     const { data: onboardingData, error: onboardingError } = await supabase
       .from('user_onboarding')
       .select('alpaca_account_id')
@@ -100,7 +152,7 @@ export class AuthService {
     return {
       user,
       accountId,
-      authToken
+      authToken: accessToken
     };
   }
 

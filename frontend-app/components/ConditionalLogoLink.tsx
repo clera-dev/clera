@@ -12,7 +12,8 @@ export default function ConditionalLogoLink() {
   const authPages = AUTH_ROUTES;
 
   // For auth pages, we can show the logo immediately without waiting for status
-  const isAuthPage = authPages.includes(pathname);
+  // Use startsWith to match nested auth routes consistently with helper functions
+  const isAuthPage = authPages.some(page => pathname?.startsWith(page));
   
   // Use the hook with skipAuthCheck for auth pages
   const { status: userStatus, isLoading, error } = useUserOnboardingStatus({

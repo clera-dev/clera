@@ -112,7 +112,22 @@ Clera uses a **proxy pattern** for all frontend-to-backend communication:
 > **Note:** Not all backend endpoints are exposed to the frontend; only those listed above are actively used.
 
 ### Authentication & Authorization Flow
-- **Frontend API routes** use Supabase Auth to verify the user and check account ownership before proxying.
+
+**Dual Authentication Pattern (Industry Best Practice):**
+The system supports both authentication patterns for maximum compatibility:
+
+1. **Session-based (Cookies)** - For client-side fetch requests from React components
+   - Uses Supabase session cookies automatically
+   - No manual token management required
+   - Example: `fetch('/api/account/123/balance')`
+
+2. **JWT-based (Authorization Header)** - For service-to-service calls with explicit tokens
+   - Uses `Authorization: Bearer <token>` headers
+   - Required for BackendService, ApiProxyService, and internal API proxying
+   - Example: `BackendService.placeTrade(accountId, userId, data, authToken)`
+
+**Implementation:**
+- **Frontend API routes** use `AuthService.authenticateAndAuthorize()` which automatically detects and validates both patterns
 - **Backend endpoints** require BOTH:
   - **API key** for service authentication (never exposed to browser)
   - **JWT token** for user authentication (cryptographically signed by Supabase)

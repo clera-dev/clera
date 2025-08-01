@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal, Sparkles, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatNumber, cn } from "@/lib/utils";
+import { validateAndSanitizeExternalUrl } from "@/utils/security";
 import StockChart from "./StockChart";
 
 interface StockInfoCardProps {
@@ -437,9 +438,16 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
             </div>
              <div className="text-center">
               <p className="text-xs text-muted-foreground">Website</p>
-              <a href={profile.website} target="_blank" rel="noopener noreferrer" className="text-xs sm:text-sm font-medium text-blue-600 hover:underline truncate block">
-                {profile.website?.replace(/^https?:\/\//, '') || 'N/A'}
-              </a>
+              {(() => {
+                const validatedUrl = validateAndSanitizeExternalUrl(profile.website);
+                return validatedUrl ? (
+                  <a href={validatedUrl} target="_blank" rel="noopener noreferrer" className="text-xs sm:text-sm font-medium text-blue-600 hover:underline truncate block">
+                    {validatedUrl.replace(/^https?:\/\//, '')}
+                  </a>
+                ) : (
+                  <span className="text-xs sm:text-sm font-medium text-muted-foreground">N/A</span>
+                );
+              })()}
             </div>
           </div>
         </div>

@@ -121,9 +121,11 @@ export class AccountClosureService {
   /**
    * Fetch closure data from the API
    */
-  async fetchClosureData(): Promise<ClosureData | null> {
+  async fetchClosureData(signal?: AbortSignal): Promise<ClosureData | null> {
     try {
-      const response = await fetch('/api/account-closure/data');
+      const response = await fetch('/api/account-closure/data', {
+        signal
+      });
       
       if (!response.ok) {
         // Log all errors for observability, but use appropriate levels

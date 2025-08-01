@@ -117,6 +117,12 @@ export async function GET(request: NextRequest) {
     // 3. Fetch the image with redirect validation and timeout protection
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    // Helper function to clean up resources
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
 
     try {
       const response = await fetch(imageUrl, {
@@ -139,6 +145,7 @@ export async function GET(request: NextRequest) {
         const location = currentResponse.headers.get('Location');
         if (!location) {
           console.warn(`[Image Proxy] Redirect response without Location header from ${finalUrl}`);
+          cleanup();
           return new NextResponse('Invalid redirect response', { status: 400 });
         }
 
@@ -149,6 +156,7 @@ export async function GET(request: NextRequest) {
           // SECURITY: Validate each redirect target with the same strict rules
           const redirectValidation = validateUrl(redirectUrl, finalUrl);
           if (!redirectValidation.isValid) {
+            cleanup();
             return new NextResponse(redirectValidation.error!, { status: 403 });
           }
 
@@ -164,6 +172,7 @@ export async function GET(request: NextRequest) {
 
           if (!redirectResponse.ok) {
             console.error(`[Image Proxy] Failed to fetch redirected image from ${redirectUrl}. Status: ${redirectResponse.status}`);
+            cleanup();
             return new NextResponse('Failed to fetch redirected image', { status: redirectResponse.status });
           }
 
@@ -182,6 +191,7 @@ export async function GET(request: NextRequest) {
           
         } catch (redirectError) {
           console.error(`[Image Proxy] Error processing redirect from ${finalUrl}:`, redirectError);
+          cleanup();
           return new NextResponse('Invalid redirect URL', { status: 400 });
         }
       }
@@ -189,6 +199,7 @@ export async function GET(request: NextRequest) {
       // SECURITY: Check if we exceeded maximum redirects
       if (redirectCount >= MAX_REDIRECTS) {
         console.warn(`[Image Proxy] Too many redirects (${redirectCount}) for ${imageUrl}`);
+        cleanup();
         return new NextResponse('Too many redirects', { status: 400 });
       }
 

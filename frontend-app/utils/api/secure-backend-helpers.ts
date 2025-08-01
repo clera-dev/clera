@@ -47,31 +47,15 @@ export async function authenticateWithJWT(request: NextRequest): Promise<SecureA
     throw new Error('Invalid or expired JWT token');
   }
 
-  // Additional validation: Ensure the token is properly signed and not tampered with
-  try {
-    // Parse the JWT to extract claims without verification (just for basic structure validation)
-    const payload = JSON.parse(atob(accessToken.split('.')[1]));
-    
-    // Verify the token matches the user ID from the validated JWT
-    if (payload.sub !== user.id) {
-      throw new Error('Token user ID mismatch - potential token spoofing attempt');
-    }
-    
-    // Check token expiration
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      throw new Error('JWT token has expired');
-    }
-    
-  } catch (error) {
-    if (error instanceof Error && (
-      error.message.includes('Token user ID mismatch') ||
-      error.message.includes('JWT token has expired')
-    )) {
-      throw error; // Re-throw security-related errors
-    }
-    throw new Error('Invalid JWT token format');
-  }
+  // SECURITY: The supabase.auth.getUser(accessToken) call above already performs
+  // comprehensive JWT validation including:
+  // - Signature verification against Supabase's public keys
+  // - Token expiration checking
+  // - Token structure validation
+  // - User ID validation
+  // 
+  // No additional manual validation is needed - Supabase handles all security checks.
+  // The returned user object contains verified claims from the validated JWT.
 
   return {
     user,

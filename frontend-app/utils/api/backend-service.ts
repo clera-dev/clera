@@ -174,7 +174,7 @@ export class BackendService {
    */
   async getPortfolioActivities(accountId: string, userId: string, limit?: string | null, authToken?: string) {
     const queryParams = new URLSearchParams();
-    queryParams.append('account_id', accountId);
+    queryParams.append('account_id', accountId); // Backend expects 'account_id', not 'accountId'
     if (limit) queryParams.append('limit', limit);
     
     return this.request({

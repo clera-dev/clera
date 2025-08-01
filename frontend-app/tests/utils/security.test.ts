@@ -1,4 +1,4 @@
-import { isValidRedirectUrl, validateAndSanitizeRedirectUrl, getSafeDefaultRedirect, validateAndSanitizeSymbol, validateAndSanitizeSymbols, isValidSymbol } from '../../utils/security';
+import { isValidRedirectUrl, validateAndSanitizeRedirectUrl, getSafeDefaultRedirect, validateAndSanitizeSymbol, validateAndSanitizeSymbols, isValidSymbol, validateAndSanitizeExternalUrl, isValidExternalUrl } from '../../utils/security';
 
 describe('Security Utilities', () => {
   describe('isValidRedirectUrl', () => {
@@ -333,5 +333,249 @@ describe('Security Utilities', () => {
       expect(isValidSymbol('aapl')).toBe(true);
       expect(isValidSymbol('  googl  ')).toBe(true);
     });
+  });
+}); 
+
+describe('validateAndSanitizeExternalUrl', () => {
+  describe('valid URLs', () => {
+    it('should accept valid HTTPS URLs', () => {
+      const validUrls = [
+        'https://www.apple.com',
+        'https://www.microsoft.com/en-us',
+        'https://www.google.com/search?q=test',
+        'https://example.com/path/to/page#section'
+      ];
+
+      validUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBe(url);
+      });
+    });
+
+    it('should accept valid HTTP URLs', () => {
+      const validUrls = [
+        'http://www.example.com',
+        'http://example.com/path',
+        'http://subdomain.example.com'
+      ];
+
+      validUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBe(url);
+      });
+    });
+
+    it('should handle URLs with special characters', () => {
+      const validUrls = [
+        'https://example.com/path with spaces',
+        'https://example.com/path-with-dashes',
+        'https://example.com/path_with_underscores',
+        'https://example.com/path?param=value&other=123'
+      ];
+
+      validUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBe(url);
+      });
+    });
+
+    it('should trim whitespace', () => {
+      expect(validateAndSanitizeExternalUrl('  https://example.com  ')).toBe('https://example.com');
+    });
+  });
+
+  describe('XSS prevention', () => {
+    it('should block JavaScript protocol attacks', () => {
+      const maliciousUrls = [
+        'javascript:alert("xss")',
+        'javascript:void(0)',
+        'javascript:console.log("attack")',
+        'JAVASCRIPT:alert("xss")', // Case insensitive
+        'JavaScript:alert("xss")'
+      ];
+
+      maliciousUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBeNull();
+      });
+    });
+
+    it('should block data protocol attacks', () => {
+      const maliciousUrls = [
+        'data:text/html,<script>alert("xss")</script>',
+        'data:application/javascript,alert("xss")',
+        'DATA:text/html,<script>alert("xss")</script>'
+      ];
+
+      maliciousUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBeNull();
+      });
+    });
+
+    it('should block VBScript protocol attacks', () => {
+      const maliciousUrls = [
+        'vbscript:msgbox("xss")',
+        'VBSCRIPT:msgbox("xss")'
+      ];
+
+      maliciousUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBeNull();
+      });
+    });
+
+    it('should block other dangerous protocols', () => {
+      const maliciousUrls = [
+        'file:///etc/passwd',
+        'ftp://malicious.com',
+        'telnet://malicious.com',
+        'mailto:attacker@evil.com',
+        'about:blank',
+        'chrome://settings',
+        'moz-extension://malicious',
+        'chrome-extension://malicious'
+      ];
+
+      maliciousUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBeNull();
+      });
+    });
+
+    it('should block URL-encoded attacks', () => {
+      const maliciousUrls = [
+        '%6a%61%76%61%73%63%72%69%70%74:alert("xss")', // javascript encoded
+        '%64%61%74%61:text/html,<script>alert("xss")</script>', // data encoded
+        '%76%62%73%63%72%69%70%74:msgbox("xss")' // vbscript encoded
+      ];
+
+      maliciousUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBeNull();
+      });
+    });
+  });
+
+  describe('SSRF prevention', () => {
+    it('should block localhost access', () => {
+      const maliciousUrls = [
+        'http://localhost',
+        'https://localhost:8080',
+        'http://127.0.0.1',
+        'https://127.0.0.1:3000',
+        'http://::1',
+        'http://0.0.0.0'
+      ];
+
+      maliciousUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBeNull();
+      });
+    });
+
+    it('should block private IP ranges', () => {
+      const maliciousUrls = [
+        'http://10.0.0.1',
+        'https://172.16.0.1',
+        'http://172.20.0.1',
+        'http://192.168.1.1',
+        'http://169.254.0.1',
+        'http://0.0.0.1',
+        'http://fe80::1',
+        'http://fc00::1',
+        'http://fd00::1'
+      ];
+
+      maliciousUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBeNull();
+      });
+    });
+
+    it('should allow public IPs', () => {
+      const validUrls = [
+        'http://8.8.8.8',
+        'https://1.1.1.1',
+        'http://208.67.222.222'
+      ];
+
+      validUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBe(url);
+      });
+    });
+  });
+
+  describe('input validation', () => {
+    it('should handle null and undefined', () => {
+      expect(validateAndSanitizeExternalUrl(null as any)).toBeNull();
+      expect(validateAndSanitizeExternalUrl(undefined as any)).toBeNull();
+    });
+
+    it('should handle empty strings', () => {
+      expect(validateAndSanitizeExternalUrl('')).toBeNull();
+      expect(validateAndSanitizeExternalUrl('   ')).toBeNull();
+    });
+
+    it('should handle non-string inputs', () => {
+      expect(validateAndSanitizeExternalUrl(123 as any)).toBeNull();
+      expect(validateAndSanitizeExternalUrl({} as any)).toBeNull();
+      expect(validateAndSanitizeExternalUrl([] as any)).toBeNull();
+    });
+
+    it('should block overly long URLs', () => {
+      const longUrl = 'https://example.com/' + 'a'.repeat(2048);
+      expect(validateAndSanitizeExternalUrl(longUrl)).toBeNull();
+    });
+
+    it('should handle malformed URLs', () => {
+      const malformedUrls = [
+        'not-a-url',
+        'http://',
+        'https://',
+        '://example.com',
+        'example.com',
+        'ftp://example.com:invalid-port'
+      ];
+
+      malformedUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBeNull();
+      });
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle URLs with empty hostnames', () => {
+      expect(validateAndSanitizeExternalUrl('http://')).toBeNull();
+      expect(validateAndSanitizeExternalUrl('https://')).toBeNull();
+    });
+
+    it('should handle URLs with complex paths', () => {
+      const complexUrls = [
+        'https://example.com/path/to/page?param=value#section',
+        'https://example.com/path/with/special/chars/!@#$%^&*()',
+        'https://example.com/path/with/numbers/123/456'
+      ];
+
+      complexUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBe(url);
+      });
+    });
+
+    it('should handle internationalized domain names', () => {
+      const validUrls = [
+        'https://münchen.de',
+        'https://bücher.de',
+        'https://café.fr'
+      ];
+
+      validUrls.forEach(url => {
+        expect(validateAndSanitizeExternalUrl(url)).toBe(url);
+      });
+    });
+  });
+});
+
+describe('isValidExternalUrl', () => {
+  it('should return true for valid URLs', () => {
+    expect(isValidExternalUrl('https://www.apple.com')).toBe(true);
+    expect(isValidExternalUrl('http://example.com')).toBe(true);
+  });
+
+  it('should return false for invalid URLs', () => {
+    expect(isValidExternalUrl('javascript:alert("xss")')).toBe(false);
+    expect(isValidExternalUrl('http://localhost')).toBe(false);
+    expect(isValidExternalUrl('')).toBe(false);
+    expect(isValidExternalUrl(null as any)).toBe(false);
   });
 }); 

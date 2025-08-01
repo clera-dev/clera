@@ -1,31 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { AuthService } from '@/utils/api/auth-service';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    // Authenticate user
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get account ID from params
-    const { accountId } = await params;
-    
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Account ID is required' },
-        { status: 400 }
-      );
-    }
+    // SECURITY: Authenticate and authorize user for this specific account
+    // This prevents any authenticated user from accessing watchlists from other accounts
+    const authContext = await AuthService.authenticateAndAuthorize(request, (await params).accountId);
 
     // Get backend configuration
     const backendUrl = process.env.BACKEND_API_URL;
@@ -40,12 +24,13 @@ export async function GET(
     }
 
     // Call backend API to get watchlist
-    console.log(`Getting watchlist for account ${accountId}`);
-    const response = await fetch(`${backendUrl}/api/watchlist/${accountId}`, {
+    console.log(`Getting watchlist for account ${authContext.accountId}`);
+    const response = await fetch(`${backendUrl}/api/watchlist/${authContext.accountId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': backendApiKey,
+        'X-API-Key': backendApiKey,
+        'Authorization': `Bearer ${authContext.authToken}`, // Use validated JWT token
       },
       cache: 'no-store'
     });
@@ -81,11 +66,9 @@ export async function GET(
 
     return NextResponse.json(data);
 
-  } catch (error) {
-    console.error('Error getting watchlist:', error);
-    return NextResponse.json(
-      { error: 'Failed to retrieve watchlist' },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    // Handle authentication and authorization errors
+    const authError = AuthService.handleAuthError(error);
+    return NextResponse.json({ error: authError.message }, { status: authError.status });
   }
 } 

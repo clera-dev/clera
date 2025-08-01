@@ -1,38 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { AuthService } from '@/utils/api/auth-service';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ accountId: string; symbol: string }> }
 ) {
   try {
-    // Authenticate user
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get parameters
     const { accountId, symbol } = await params;
     
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Account ID is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!symbol) {
-      return NextResponse.json(
-        { error: 'Symbol is required' },
-        { status: 400 }
-      );
-    }
+    // SECURITY: Authenticate and authorize user for this specific account
+    // This prevents any authenticated user from checking watchlists from other accounts
+    const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
 
     // Get backend configuration
     const backendUrl = process.env.BACKEND_API_URL;
@@ -47,12 +26,13 @@ export async function GET(
     }
 
     // Call backend API to check if symbol is in watchlist
-    console.log(`Checking if symbol ${symbol} is in watchlist for account ${accountId}`);
-    const response = await fetch(`${backendUrl}/api/watchlist/${accountId}/check/${symbol}`, {
+    console.log(`Checking if symbol ${symbol} is in watchlist for account ${authContext.accountId}`);
+    const response = await fetch(`${backendUrl}/api/watchlist/${authContext.accountId}/check/${symbol}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': backendApiKey,
+        'X-API-Key': backendApiKey,
+        'Authorization': `Bearer ${authContext.authToken}`, // Use validated JWT token
       },
       cache: 'no-store'
     });
@@ -68,7 +48,7 @@ export async function GET(
         // If we can't parse JSON, use the raw text
         errorDetail = responseBody || errorDetail;
       }
-      console.error(`Check Watchlist API Error - ${errorDetail}`);
+      console.error(`Watchlist Check API Error - ${errorDetail}`);
       return NextResponse.json(
         { error: errorDetail },
         { status: response.status >= 500 ? 502 : response.status }
@@ -88,11 +68,9 @@ export async function GET(
 
     return NextResponse.json(data);
 
-  } catch (error) {
-    console.error('Error checking watchlist:', error);
-    return NextResponse.json(
-      { error: 'Failed to check symbol in watchlist' },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    // Handle authentication and authorization errors
+    const authError = AuthService.handleAuthError(error);
+    return NextResponse.json({ error: authError.message }, { status: authError.status });
   }
 } 

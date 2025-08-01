@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, createContext, useContext } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ThemeProvider } from "next-themes";
 import MainSidebar from "@/components/MainSidebar";
 import { createClient } from "@/utils/supabase/client";
@@ -41,6 +41,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [currentMobilePage, setCurrentMobilePage] = useState<string>('');
   const pathname = usePathname();
+  const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
@@ -373,12 +374,12 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       
       // Small delay to allow chat to slide down before navigation
       setTimeout(() => {
-        window.location.href = targetPath;
+        router.push(targetPath);
       }, 250); // Slightly less than the 300ms animation for smooth transition
     } else {
       // If chat is closed, navigate directly
       setCurrentMobilePage(targetPath);
-      window.location.href = targetPath;
+      router.push(targetPath);
     }
   };
   

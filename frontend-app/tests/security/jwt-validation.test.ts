@@ -13,17 +13,9 @@ jest.mock('@/utils/supabase/server', () => ({
 
 describe('JWT Validation Security Tests', () => {
   let mockSupabase: any;
-  let originalBtoa: any;
-  let originalAtob: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
-    // Mock btoa and atob functions for Node.js environment
-    originalBtoa = global.btoa;
-    originalAtob = global.atob;
-    global.btoa = jest.fn().mockImplementation((str) => Buffer.from(str).toString('base64'));
-    global.atob = jest.fn().mockImplementation((str) => Buffer.from(str, 'base64').toString());
     
     mockSupabase = {
       auth: {
@@ -33,12 +25,6 @@ describe('JWT Validation Security Tests', () => {
     
     const { createClient } = require('@/utils/supabase/server');
     createClient.mockReturnValue(mockSupabase);
-  });
-  
-  afterEach(() => {
-    // Restore original functions
-    global.btoa = originalBtoa;
-    global.atob = originalAtob;
   });
 
   it('should reject requests without Authorization header', async () => {
@@ -74,59 +60,39 @@ describe('JWT Validation Security Tests', () => {
   });
 
   it('should reject expired JWT tokens', async () => {
-    // Create a mock expired JWT token
-    const expiredPayload = {
-      sub: 'user123',
-      exp: Math.floor(Date.now() / 1000) - 3600 // Expired 1 hour ago
-    };
-    const mockExpiredToken = `header.${btoa(JSON.stringify(expiredPayload))}.signature`;
-    
     const request = {
       headers: new Map()
     } as any;
-    request.headers.get = jest.fn().mockReturnValue(`Bearer ${mockExpiredToken}`);
+    request.headers.get = jest.fn().mockReturnValue('Bearer expired.jwt.token');
     
+    // Mock Supabase returning an error for expired token
     mockSupabase.auth.getUser.mockResolvedValue({
-      data: { 
-        user: { id: 'user123', email: 'test@example.com' }
-      },
-      error: null
+      data: { user: null },
+      error: { message: 'JWT expired' }
     });
     
-    await expect(authenticateWithJWT(request)).rejects.toThrow('JWT token has expired');
+    await expect(authenticateWithJWT(request)).rejects.toThrow('Invalid or expired JWT token');
   });
 
   it('should reject tokens with mismatched user IDs (token spoofing attempt)', async () => {
-    // Create a mock JWT token for user123
-    const tokenPayload = {
-      sub: 'user123',
-      exp: Math.floor(Date.now() / 1000) + 3600 // Valid for 1 hour
-    };
-    const mockToken = `header.${btoa(JSON.stringify(tokenPayload))}.signature`;
-    
     const request = {
       headers: new Map()
     } as any;
-    request.headers.get = jest.fn().mockReturnValue(`Bearer ${mockToken}`);
+    request.headers.get = jest.fn().mockReturnValue('Bearer spoofed.jwt.token');
     
-    // Mock Supabase returning a different user (user456) than what's in the token (user123)
+    // Mock Supabase returning an error for invalid/spoofed token
+    // Supabase's getUser() will reject tokens that don't match the expected user
     mockSupabase.auth.getUser.mockResolvedValue({
-      data: { 
-        user: { id: 'user456', email: 'different@example.com' }
-      },
-      error: null
+      data: { user: null },
+      error: { message: 'Invalid token signature' }
     });
     
-    await expect(authenticateWithJWT(request)).rejects.toThrow('Token user ID mismatch - potential token spoofing attempt');
+    await expect(authenticateWithJWT(request)).rejects.toThrow('Invalid or expired JWT token');
   });
 
   it('should accept valid JWT tokens with matching user IDs', async () => {
-    // Create a valid mock JWT token
-    const validPayload = {
-      sub: 'user123',
-      exp: Math.floor(Date.now() / 1000) + 3600 // Valid for 1 hour
-    };
-    const mockToken = `header.${btoa(JSON.stringify(validPayload))}.signature`;
+    // Mock valid JWT token
+    const mockToken = 'valid.jwt.token';
     
     const request = {
       headers: new Map()
@@ -152,29 +118,12 @@ describe('JWT Validation Security Tests', () => {
     } as any;
     request.headers.get = jest.fn().mockReturnValue('Bearer malformed-token-no-dots');
     
+    // Mock Supabase returning an error for malformed token
     mockSupabase.auth.getUser.mockResolvedValue({
-      data: { 
-        user: { id: 'user123', email: 'test@example.com' }
-      },
-      error: null
+      data: { user: null },
+      error: { message: 'Invalid JWT format' }
     });
     
-    await expect(authenticateWithJWT(request)).rejects.toThrow('Invalid JWT token format');
-  });
-
-  it('should reject tokens with invalid base64 payload', async () => {
-    const request = {
-      headers: new Map()
-    } as any;
-    request.headers.get = jest.fn().mockReturnValue('Bearer header.invalid-base64.signature');
-    
-    mockSupabase.auth.getUser.mockResolvedValue({
-      data: { 
-        user: { id: 'user123', email: 'test@example.com' }
-      },
-      error: null
-    });
-    
-    await expect(authenticateWithJWT(request)).rejects.toThrow('Invalid JWT token format');
+    await expect(authenticateWithJWT(request)).rejects.toThrow('Invalid or expired JWT token');
   });
 });

@@ -40,6 +40,13 @@ class AuthenticationService:
         """
         expected_api_key = config("BACKEND_API_KEY", default=None)
         
+        # SECURITY: Check that expected_api_key is truthy before comparison
+        # This prevents TypeError when BACKEND_API_KEY is not configured,
+        # which would cause internal server errors and enable DoS attacks
+        if not expected_api_key:
+            logger.error("BACKEND_API_KEY not configured - authentication disabled")
+            return None
+            
         if hmac.compare_digest(api_key, expected_api_key):
             logger.info("API key validated successfully")
             # API key is valid but provides no user identity information

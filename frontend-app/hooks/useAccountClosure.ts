@@ -27,6 +27,12 @@ export function useAccountClosure(): UseAccountClosureReturn {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
+  const loadingRef = useRef(loading); // Track loading state for timeout callbacks
+
+  // Update loading ref whenever loading state changes
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
 
   useEffect(() => {
     // Create abort controller for this effect
@@ -34,7 +40,7 @@ export function useAccountClosure(): UseAccountClosureReturn {
     
     // PRODUCTION UX: Set maximum loading time to prevent blocking navigation
     const maxLoadingTimeout = setTimeout(() => {
-      if (isMountedRef.current && loading) {
+      if (isMountedRef.current && loadingRef.current) {
         console.warn('[useAccountClosure] Timeout reached, stopping loading to allow navigation');
         setLoading(false);
         setError(null); // Don't show error for timeout
@@ -59,7 +65,7 @@ export function useAccountClosure(): UseAccountClosureReturn {
           setError(null);
         }
         
-        const data = await accountClosureService.fetchClosureData();
+        const data = await accountClosureService.fetchClosureData(abortControllerRef.current?.signal);
         
         if (isMountedRef.current) {
           setClosureData(data);
@@ -88,7 +94,7 @@ export function useAccountClosure(): UseAccountClosureReturn {
           if (!isMountedRef.current) return;
           
           try {
-            const retryData = await accountClosureService.fetchClosureData();
+            const retryData = await accountClosureService.fetchClosureData(abortControllerRef.current?.signal);
             
             if (isMountedRef.current) {
               setClosureData(retryData);
@@ -143,13 +149,16 @@ export function useAccountClosure(): UseAccountClosureReturn {
       return;
     }
 
+    // Create a new AbortController for this refetch operation
+    const refetchAbortController = new AbortController();
+
     try {
       if (isMountedRef.current) {
         setLoading(true);
         setError(null);
       }
       
-      const data = await accountClosureService.fetchClosureData();
+      const data = await accountClosureService.fetchClosureData(refetchAbortController.signal);
       
       if (isMountedRef.current) {
         setClosureData(data);
@@ -165,6 +174,9 @@ export function useAccountClosure(): UseAccountClosureReturn {
       setError(`Failed to load closure data. Please try again later. (${errorMessage})`);
       setClosureData(null);
     } finally {
+      // Clean up the refetch AbortController
+      refetchAbortController.abort();
+      
       if (isMountedRef.current) {
         setLoading(false);
       }

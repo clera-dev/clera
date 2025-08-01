@@ -871,8 +871,10 @@ export default function PortfolioPage() {
               borderRadius: '0.5rem',
               fontSize: '14px',
               padding: '12px 16px',
-              zIndex: 9999,
+              zIndex: 99999,
+              marginBottom: '100px', // Space above mobile bottom nav (80px + 20px margin)
             },
+            className: 'mobile-toast',
             success: {
               iconTheme: {
                 primary: '#10b981',

@@ -28,8 +28,10 @@ async function acquireUserLock(userId: string): Promise<boolean> {
     return result === 'OK';
   } catch (redisError) {
     console.warn(`Redis lock acquisition failed for user ${userId}:`, redisError);
-    // Return false to indicate lock acquisition failed, but don't fail the request
-    return false;
+    // ARCHITECTURAL FIX: Treat Redis connectivity failures as unlocked state
+    // This prevents silent failures that leave data stale when Redis is down
+    // Instead of blocking refresh, we allow it to proceed when Redis is unavailable
+    return true; // Treat as unlocked to allow refresh to proceed
   }
 }
 
@@ -52,8 +54,10 @@ async function isUserLockActive(userId: string): Promise<boolean> {
     return lockExists === 1;
   } catch (redisError) {
     console.warn(`Redis lock check failed for user ${userId}:`, redisError);
-    // Return false to indicate no active lock, but don't fail the request
-    return false;
+    // ARCHITECTURAL FIX: Treat Redis connectivity failures as no active lock
+    // This prevents silent failures that leave data stale when Redis is down
+    // Instead of blocking operations, we allow them to proceed when Redis is unavailable
+    return false; // Treat as no active lock to allow operations to proceed
   }
 }
 

@@ -2,14 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { ApiProxyService } from '@/utils/services/ApiProxyService';
 import { createSecureBackendHeaders } from '@/utils/api/secure-backend-helpers';
+import { AuthService } from '@/utils/api/auth-service';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * API route to download trade documents.
- * This route demonstrates how to use ApiProxyService for file downloads.
  * 
- * The fixed ApiProxyService now properly handles:
+ * SECURITY: This route properly validates both authentication and authorization:
+ * - Authenticates the user via JWT token
+ * - Verifies account ownership to prevent unauthorized access
+ * - Uses secure backend headers for API communication
+ * 
+ * The ApiProxyService handles:
  * - File downloads (PDF, images, etc.)
  * - 204 No Content responses
  * - Binary data responses
@@ -22,24 +27,14 @@ export async function GET(
     const params = await context.params;
     const { accountId, documentId } = params;
 
-    // 1. Authenticate user and get JWT token
-    const supabase = await createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
-    }
-
-    // Get the session to extract JWT token
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.access_token) {
-      return NextResponse.json({ error: 'Session token required' }, { status: 401 });
-    }
+    // SECURITY: Authenticate and authorize user for this specific account
+    // This prevents any authenticated user from accessing documents from other accounts
+    const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
 
     // 2. Construct backend path
     const backendPath = `/api/account/${accountId}/documents/${documentId}/download`;
 
-    // 3. Use ApiProxyService to proxy the request
+    // 3. Use ApiProxyService to proxy the request with secure headers
     const proxyService = ApiProxyService.getInstance();
     const backendConfig = {
       url: process.env.BACKEND_API_URL!,
@@ -59,7 +54,7 @@ export async function GET(
     try {
       const proxyResponse = await proxyService.proxy(
         backendConfig,
-        session.access_token,
+        authContext.authToken, // Use the validated JWT token
         proxyRequest
       );
 
@@ -101,7 +96,8 @@ export async function GET(
     }
 
   } catch (error: any) {
-    console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });
-    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
+    // Handle authentication and authorization errors
+    const authError = AuthService.handleAuthError(error);
+    return NextResponse.json({ error: authError.message }, { status: authError.status });
   }
 } 

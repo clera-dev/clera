@@ -352,8 +352,10 @@ export default function InvestPage() {
               borderRadius: '0.5rem',
               fontSize: '14px',
               padding: '12px 16px',
-              zIndex: 9999,
+              zIndex: 99999,
+              marginBottom: '100px', // Space above mobile bottom nav (80px + 20px margin)
             },
+            className: 'mobile-toast',
             success: {
               iconTheme: {
                 primary: '#10b981',
@@ -496,20 +498,20 @@ export default function InvestPage() {
             
             {/* Action Footer */}
             {selectedSymbol && (
-              <div className="sticky bottom-0 left-0 right-0 mt-auto bg-background border-t border-border p-4 flex items-center justify-between shadow-md z-10">
+              <div className="sticky bottom-0 left-0 right-0 mt-auto bg-background border-t border-border p-3 flex items-center justify-between shadow-md z-[130] mb-20 sm:mb-0">
                 <div className="text-left">
                   <p className="text-xs text-muted-foreground">Available to Invest</p>
                   {isLoadingBalance || isLoadingAccountId ? (
-                    <Skeleton className="h-6 w-32 mt-1" />
+                    <Skeleton className="h-5 w-24 mt-1" />
                   ) : balanceError ? (
                     <p className="text-sm text-amber-600">Account info unavailable</p>
                   ) : (
-                    <p className="text-lg font-semibold">{formatCurrency(availableBalance?.cash)}</p>
+                    <p className="text-sm sm:text-lg font-semibold">{formatCurrency(availableBalance?.cash)}</p>
                   )}
                 </div>
                 <Button 
-                  size="lg" 
-                  className="font-semibold text-lg px-6"
+                  size="default" 
+                  className="font-semibold text-sm sm:text-lg px-4 sm:px-6"
                   onClick={handleOpenModal}
                   disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
                 >
@@ -528,6 +530,10 @@ export default function InvestPage() {
               symbol={selectedSymbol} 
               accountId={accountId}
               orderType="BUY"
+              onTradeSuccess={() => {
+                handleCloseModal();
+                setSelectedSymbol(null); // Close security card
+              }}
           />
         )}
       </div>
