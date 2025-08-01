@@ -117,10 +117,14 @@ export default function Chat({
           }
           
           chatClient.setMessages(threadMessages);
+          // PRODUCTION FIX: Clear any persistent errors when loading existing chat
+          chatClient.clearErrorOnChatLoad();
         } catch (error) {
           console.error(`Failed to load messages for thread ${currentThreadId}:`, error);
           // Fall back to initial messages if thread loading fails
           chatClient.setMessages(initialMessages);
+          // Also clear errors on fallback
+          chatClient.clearErrorOnChatLoad();
         }
       } else {
         // If there's no thread, initialize the client with any initial messages.

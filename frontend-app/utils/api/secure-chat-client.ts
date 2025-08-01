@@ -18,6 +18,7 @@ export interface SecureChatClient {
   handleInterrupt: (threadId: string, runId: string, response: any) => Promise<void>;
   startStream: (threadId: string, input: any, userId: string, accountId: string) => Promise<void>;
   clearError: () => void;
+  clearErrorOnChatLoad: () => void; // PRODUCTION FIX: Clear errors when loading existing chat
   clearModelProviderError: () => void;
   setMessages: (messages: Message[]) => void;
   addMessagesWithStatus: (userMessage: Message) => void;
@@ -40,6 +41,7 @@ export class SecureChatClientImpl implements SecureChatClient {
   private hasReceivedRealContent: boolean = false;
   private hasReceivedInterrupt: boolean = false;
   private streamCompletedSuccessfully: boolean = false; // NEW: Track if chunk processing handled completion
+  private longProcessingTimer: NodeJS.Timeout | null = null; // PRODUCTION FIX: Track long processing for user feedback
 
   /**
    * Returns an immutable copy of the current state
@@ -67,6 +69,15 @@ export class SecureChatClientImpl implements SecureChatClient {
 
   clearError() {
     this.setState({ error: null });
+  }
+
+  // PRODUCTION FIX: Method to clear errors when user navigates back to existing chat
+  clearErrorOnChatLoad() {
+    // Clear any persistent errors when loading an existing chat conversation
+    if (this._state.error) {
+      console.log('[SecureChatClient] Clearing error on chat load for better UX');
+      this.setState({ error: null });
+    }
   }
 
   setMessages(messages: Message[]) {
@@ -225,6 +236,10 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   async startStream(threadId: string, input: any, userId: string, accountId: string): Promise<void> {
+    // PRODUCTION FIX: Declare timeout variables outside try block for proper scoping
+    let timeoutId: NodeJS.Timeout | undefined;
+    let abortController: AbortController | undefined;
+    
     try {
       // console.log('[SecureChatClient] Starting stream for thread:', threadId, 'with input:', typeof input);
       
@@ -248,7 +263,14 @@ export class SecureChatClientImpl implements SecureChatClient {
 
       // console.log('[SecureChatClient] Making stream request to /api/conversations/stream-chat');
 
-      // Start new stream
+      // PRODUCTION FIX: Add AbortController for proper timeout handling (120 seconds as requested)
+      abortController = new AbortController();
+      timeoutId = setTimeout(() => {
+        console.log('[SecureChatClient] Stream timeout reached (120 seconds), aborting request');
+        abortController?.abort();
+      }, 120000); // 120 seconds timeout
+
+      // Start new stream with timeout control
       const response = await fetch('/api/conversations/stream-chat', {
         method: 'POST',
         headers: {
@@ -260,6 +282,7 @@ export class SecureChatClientImpl implements SecureChatClient {
           user_id: userId,
           account_id: accountId,
         }),
+        signal: abortController?.signal,
       });
 
       // console.log('[SecureChatClient] Stream response status:', response.status, response.statusText);
@@ -284,6 +307,21 @@ export class SecureChatClientImpl implements SecureChatClient {
       }
 
       // console.log('[SecureChatClient] Stream response received, starting to read chunks...');
+
+      // PRODUCTION FIX: Set up long processing feedback for user experience
+      this.longProcessingTimer = setTimeout(() => {
+        // If still processing after 30 seconds, update status message to reassure user
+        if (this.isStreaming && !this.hasReceivedRealContent && !this.hasReceivedInterrupt) {
+          console.log('[SecureChatClient] Long processing detected, updating status message');
+          const currentMessages = this._state.messages.filter(msg => !msg.isStatus);
+          const longProcessingMessage: Message = {
+            role: 'assistant',
+            content: 'Processing complex request... This may take up to 2 minutes.',
+            isStatus: true
+          };
+          this.setState({ messages: [...currentMessages, longProcessingMessage] });
+        }
+      }, 30000); // Show extended processing message after 30 seconds
 
       // Create EventSource from the streaming response
       const reader = response.body?.getReader();
@@ -343,6 +381,13 @@ export class SecureChatClientImpl implements SecureChatClient {
       //   totalChunksProcessed: chunkCount
       // });
       
+      // PRODUCTION FIX: Clear timeouts since stream completed
+      if (timeoutId) clearTimeout(timeoutId);
+      if (this.longProcessingTimer) {
+        clearTimeout(this.longProcessingTimer);
+        this.longProcessingTimer = null;
+      }
+      
       // CRITICAL FIX: Only run completion logic if chunk processing didn't handle it
       // This prevents race conditions and state corruption from redundant setState calls
       if (!this.streamCompletedSuccessfully) {
@@ -359,19 +404,31 @@ export class SecureChatClientImpl implements SecureChatClient {
           this.setState({ isLoading: false });
           // console.log('[SecureChatClient] FALLBACK completion - valid response detected');
         } else {
-          console.error('[SecureChatClient] CRITICAL ERROR: Stream completed with no response - neither chunk processing nor fallback detected valid content');
+          // PRODUCTION FIX: More graceful handling when stream completes without content
+          // This commonly happens when agent is still processing - response may arrive later via DB sync
+          console.warn('[SecureChatClient] Stream completed without immediate response - agent may still be processing');
           
-          // CRITICAL FIX: Clean up message state to prevent corrupting subsequent requests.
-          // Remove any temporary status messages, preserving the rest of the chat history.
+          // Clean up status messages but don't show harsh error immediately
           const cleanMessages = this._state.messages.filter(msg => !msg.isStatus);
           
-          console.error('[SecureChatClient] Cleaning message state - Before:', this._state.messages.length, 'After:', cleanMessages.length);
-          
+          // PRODUCTION FIX: Keep loading state during grace period to allow proper error checking
           this.setState({ 
-            messages: cleanMessages, // Clean state
-            error: 'No response received from agent. Please try again.',
-            isLoading: false 
+            messages: cleanMessages,
+            isLoading: true // Keep loading during grace period
           });
+          
+          // PRODUCTION FIX: Wait a bit longer before showing error, response might come via refresh
+          setTimeout(() => {
+            // Only show error if we still haven't received content after additional wait
+            if (!this.hasReceivedRealContent && !this.hasReceivedInterrupt) {
+              console.error('[SecureChatClient] No response after extended wait - showing retry message');
+              this.setState({ 
+                messages: cleanMessages,
+                error: 'No response received from agent. Please try again.',
+                isLoading: false 
+              });
+            }
+          }, 3000); // Wait additional 3 seconds before showing error
         }
       } else {
         console.log('[SecureChatClient] Chunk processing handled completion successfully - skipping redundant completion logic');
@@ -381,15 +438,21 @@ export class SecureChatClientImpl implements SecureChatClient {
       this.isStreaming = false;
 
     } catch (error: any) {
+      // PRODUCTION FIX: Clear timeouts on error
+      if (timeoutId) clearTimeout(timeoutId);
+      if (this.longProcessingTimer) {
+        clearTimeout(this.longProcessingTimer);
+        this.longProcessingTimer = null;
+      }
+      
       console.error('[SecureChatClient] Error starting stream:', error);
-      // SECURITY FIX: Sanitize error details to prevent information disclosure
-      //console.error('[SecureChatClient] Error details:', {
-      //  message: error.message,
-      //  stack: error.stack,
-      //  threadId: threadId ? `${threadId.substring(0, 8)}...` : 'undefined',
-      //  hasUserId: !!userId,
-      //  hasAccountId: !!accountId
-      //});
+      
+      // PRODUCTION FIX: Handle timeout errors more gracefully
+      let errorMessage = error.message || 'Failed to start stream';
+      if (error.name === 'AbortError') {
+        console.warn('[SecureChatClient] Stream was aborted due to timeout (120 seconds)');
+        errorMessage = 'Request timed out. The agent may still be processing your request. Please try again or refresh the page.';
+      }
       
       // CRITICAL FIX: Reset streaming flags on error to prevent stuck states
       this.hasReceivedRealContent = false;
@@ -398,7 +461,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       this.isStreaming = false;
       
       this.setState({ 
-        error: error.message || 'Failed to start stream',
+        error: errorMessage,
         isLoading: false 
       });
     }
@@ -455,6 +518,13 @@ export class SecureChatClientImpl implements SecureChatClient {
       // CRITICAL FIX: Mark interrupt as a valid response (not an error)
       this.hasReceivedInterrupt = true;
       this.streamCompletedSuccessfully = true; // Mark that chunk processing handled completion
+      
+      // PRODUCTION FIX: Clear long processing timer since we got a valid interrupt
+      if (this.longProcessingTimer) {
+        clearTimeout(this.longProcessingTimer);
+        this.longProcessingTimer = null;
+      }
+      
       // console.log('[SecureChatClient] Marked interrupt as valid response - completed by chunk processing');
       
       this.setState({
@@ -568,6 +638,12 @@ export class SecureChatClientImpl implements SecureChatClient {
       // CRITICAL FIX: Apply complete messages and mark content as received
       if (hasValidContent && newMessages.length > 0) {
         // console.log('[SecureChatClient] Applying', newMessages.length, 'complete messages, removing all status messages');
+        
+        // PRODUCTION FIX: Clear long processing timer since we got real content
+        if (this.longProcessingTimer) {
+          clearTimeout(this.longProcessingTimer);
+          this.longProcessingTimer = null;
+        }
         
         // Get current messages and remove ALL status messages
         const currentMessages = [...this._state.messages];
@@ -750,6 +826,13 @@ export class SecureChatClientImpl implements SecureChatClient {
       this.eventSource.close();
       this.eventSource = null;
     }
+    
+    // PRODUCTION FIX: Clear long processing timer on cleanup
+    if (this.longProcessingTimer) {
+      clearTimeout(this.longProcessingTimer);
+      this.longProcessingTimer = null;
+    }
+    
     this.stateListeners.clear();
   }
 }

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingService';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
+// CRITICAL FIX: Set maximum duration for LangGraph interrupt handling
+export const maxDuration = 800; // 13+ minutes for complex agent workflows
+
 /**
  * Handles interrupt resumption for LangGraph conversations
  * 

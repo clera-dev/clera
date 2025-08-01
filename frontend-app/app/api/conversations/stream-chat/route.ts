@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingService';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
+// CRITICAL FIX: Set maximum duration for LangGraph agent processing (up to 800 seconds on Pro/Enterprise)
+export const maxDuration = 800; // 13+ minutes for complex agent workflows
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
