@@ -100,6 +100,48 @@ describe('Security Utilities', () => {
         expect(isValidRedirectUrl('/auth/login')).toBe(false);
       });
 
+      // SECURITY: Test path injection vulnerability fixes
+      it('should reject blocked patterns anywhere in the path (not just at start)', () => {
+        // These would have passed the old vulnerable implementation
+        expect(isValidRedirectUrl('/dashboard/api/internal')).toBe(false);
+        expect(isValidRedirectUrl('/portfolio/_next/admin')).toBe(false);
+        expect(isValidRedirectUrl('/invest/admin/dashboard')).toBe(false);
+        expect(isValidRedirectUrl('/news/internal/api')).toBe(false);
+        expect(isValidRedirectUrl('/chat/debug/logs')).toBe(false);
+        expect(isValidRedirectUrl('/settings/test/unit')).toBe(false);
+        expect(isValidRedirectUrl('/account/protected/data')).toBe(false);
+        expect(isValidRedirectUrl('/info/auth/login')).toBe(false);
+      });
+
+      it('should reject blocked patterns in subdirectories', () => {
+        expect(isValidRedirectUrl('/dashboard/settings/api/users')).toBe(false);
+        expect(isValidRedirectUrl('/portfolio/analytics/_next/static')).toBe(false);
+        expect(isValidRedirectUrl('/invest/research/admin/panel')).toBe(false);
+        expect(isValidRedirectUrl('/news/trending/internal/system')).toBe(false);
+      });
+
+      it('should allow query parameters on valid paths', () => {
+        expect(isValidRedirectUrl('/dashboard?redirect=/api/users')).toBe(true);
+        expect(isValidRedirectUrl('/portfolio?tab=admin')).toBe(true);
+        expect(isValidRedirectUrl('/invest?debug=true')).toBe(true);
+      });
+
+      it('should allow hash fragments on valid paths', () => {
+        expect(isValidRedirectUrl('/dashboard#section')).toBe(true);
+        expect(isValidRedirectUrl('/portfolio#summary')).toBe(true);
+        expect(isValidRedirectUrl('/invest#details')).toBe(true);
+      });
+
+      it('should still allow legitimate nested paths', () => {
+        expect(isValidRedirectUrl('/dashboard/settings')).toBe(true);
+        expect(isValidRedirectUrl('/portfolio/analytics')).toBe(true);
+        expect(isValidRedirectUrl('/invest/research')).toBe(true);
+        expect(isValidRedirectUrl('/news/trending')).toBe(true);
+        expect(isValidRedirectUrl('/chat/history')).toBe(true);
+        expect(isValidRedirectUrl('/account/profile')).toBe(true);
+        expect(isValidRedirectUrl('/info/about')).toBe(true);
+      });
+
       it('should reject null and undefined', () => {
         expect(isValidRedirectUrl(null as any)).toBe(false);
         expect(isValidRedirectUrl(undefined as any)).toBe(false);

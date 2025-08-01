@@ -11,6 +11,7 @@ This prevents account takeover attacks and ensures proper authentication.
 import logging
 import os
 import jwt
+import hmac
 from typing import Optional
 from fastapi import HTTPException, Depends, Header, Request
 from decouple import config
@@ -33,10 +34,13 @@ class AuthenticationService:
         
         In a production system, API keys could map to specific service accounts,
         but user identity must come from signed JWT tokens to prevent account takeover.
+        
+        SECURITY: Uses constant-time comparison (hmac.compare_digest) to prevent
+        timing attacks that could allow API key guessing.
         """
         expected_api_key = config("BACKEND_API_KEY", default=None)
         
-        if api_key == expected_api_key:
+        if hmac.compare_digest(api_key, expected_api_key):
             logger.info("API key validated successfully")
             # API key is valid but provides no user identity information
             # User identity MUST come from JWT tokens for security
@@ -155,9 +159,9 @@ def get_authenticated_user_id(
             detail="Authentication required - API key missing"
         )
     
-    # Validate the API key
+    # Validate the API key using constant-time comparison to prevent timing attacks
     expected_api_key = config("BACKEND_API_KEY", default=None)
-    if not expected_api_key or api_key != expected_api_key:
+    if not expected_api_key or not hmac.compare_digest(api_key, expected_api_key):
         logger.warning("Authentication failed - invalid API key")
         raise HTTPException(
             status_code=401,

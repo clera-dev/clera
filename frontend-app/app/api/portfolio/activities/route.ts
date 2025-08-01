@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { AuthService } from '@/utils/api/auth-service';
+import { BackendService } from '@/utils/api/backend-service';
 
 /**
  * Ensures this route is always treated as dynamic, preventing Next.js
@@ -10,25 +12,13 @@ export const dynamic = 'force-dynamic';
 
 /**
  * API route to get portfolio activities.
- * This route is a proxy to the backend service.
+ * 
+ * SECURITY: This route implements proper authentication and authorization
+ * to prevent privilege escalation attacks. Users can only access activities for accounts they own.
  */
 export async function GET(request: NextRequest) {
   try {
-    // 1. Authenticate user and get JWT token
-    const supabase = await createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
-    }
-
-    // Get the session to extract JWT token
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.access_token) {
-      return NextResponse.json({ error: 'Session token required' }, { status: 401 });
-    }
-
-    // 2. Get query parameters
+    // 1. Get query parameters to extract accountId
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get('accountId');
     const limit = searchParams.get('limit');
@@ -37,59 +27,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
     }
 
-    // 3. Construct final backend path with query parameters
-    const queryParams = new URLSearchParams();
-    queryParams.append('account_id', accountId); // Backend expects account_id
-    if (limit) queryParams.append('limit', limit);
-    
-    const backendPath = `/api/portfolio/activities?${queryParams.toString()}`;
+    // 2. SECURITY: Authenticate user and verify account ownership
+    // This prevents any logged-in user from accessing other users' portfolio activities
+    const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
 
-    // 4. Proxy the request
-    const backendUrl = process.env.BACKEND_API_URL;
-    const backendApiKey = process.env.BACKEND_API_KEY;
+    // 3. Use BackendService for secure communication with proper JWT forwarding
+    const backendService = new BackendService();
+    const result = await backendService.getPortfolioActivities(
+      authContext.accountId,
+      authContext.user.id,
+      limit,
+      authContext.authToken
+    );
 
-    if (!backendUrl || !backendApiKey) {
-      console.error('[API Proxy] Backend API URL or Key is not configured.');
-      return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
-    }
-
-    const targetUrl = `${backendUrl}${backendPath}`;
-
-    const response = await fetch(targetUrl, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': backendApiKey,
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-    });
-
-    const responseText = await response.text();
-    let responseData;
-    try {
-      responseData = responseText ? JSON.parse(responseText) : {};
-    } catch (parseError) {
-      console.error('[API Proxy] Failed to parse backend JSON response.', parseError);
-      return NextResponse.json({ error: 'Invalid response from backend service.' }, { status: 502 });
-    }
-
-    if (!response.ok) {
-      // Map backend error to client-friendly message
-      let errorMessage = 'Failed to fetch portfolio activities. Please try again later.';
-      if (response.status >= 500) {
-        // Hide backend details for server errors
-        return NextResponse.json({ error: errorMessage }, { status: 502 });
-      } else {
-        // For 4xx, try to pass backend error detail if available
-        const backendError = responseData?.error || responseData?.detail || errorMessage;
-        return NextResponse.json({ error: backendError }, { status: response.status });
-      }
-    }
-
-    return NextResponse.json(responseData, { status: 200 });
+    return NextResponse.json(result);
 
   } catch (error: any) {
-    console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });
-    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
+    console.error('Portfolio Activities API: Error fetching activities:', error instanceof Error ? error.message : 'Unknown error');
+    
+    // Handle authentication/authorization errors
+    if (error && typeof error === 'object' && 'status' in error) {
+      const authError = AuthService.handleAuthError(error);
+      return NextResponse.json({ error: authError.message }, { status: authError.status });
+    }
+    
+    // Handle backend service errors
+    const backendError = BackendService.handleBackendError(error);
+    return NextResponse.json({ error: backendError.message }, { status: backendError.status });
   }
 } 

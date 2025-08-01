@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import redisClient from '@/utils/redis';
+import { MarketDataValidationService } from '@/utils/services/MarketDataValidationService';
 
 // Helper function to build FMP API URL
 function buildFmpUrl(symbol: string, interval: string, from?: string | null, to?: string | null, apiKey?: string): string {
@@ -41,6 +42,8 @@ function getCacheTTL(interval: string): number {
       return 300;
   }
 }
+
+
 
 // Helper function to validate date ranges
 function validateDateRange(from?: string | null, to?: string | null): { isValid: boolean; error?: string } {
@@ -134,10 +137,48 @@ export async function GET(
   
   try {
     // Try to get cached data first
-    const cachedData = await redisClient.get(cacheKey);
+    let cachedData: any = null;
+    try {
+      cachedData = await redisClient.get(cacheKey);
+    } catch (redisError) {
+      console.warn(`Redis read error for ${cacheKey}:`, redisError);
+      // Continue without cache - don't fail the request
+    }
+    
     if (cachedData) {
       console.log(`Cache hit for chart data: ${cacheKey}`);
-      return NextResponse.json(typeof cachedData === 'string' ? JSON.parse(cachedData) : cachedData);
+      
+      try {
+        const parsedData = typeof cachedData === 'string' ? JSON.parse(cachedData) : cachedData;
+        
+        // PRODUCTION-GRADE: Validate cached data before serving
+        const validationService = MarketDataValidationService.getInstance();
+        const validation = validationService.validateFMPChartData(parsedData, symbol, interval);
+        if (!validation.isValid) {
+          console.error(`Cached data validation failed for ${cacheKey}:`, validation.error);
+          // Remove invalid cached data
+          try {
+            await redisClient.del(cacheKey);
+            console.log(`Removed invalid cached data for ${cacheKey}`);
+          } catch (redisError) {
+            console.warn(`Failed to remove invalid cached data for ${cacheKey}:`, redisError);
+          }
+          // Continue to fetch fresh data
+        } else {
+          console.log(`Serving validated cached data for ${symbol}: ${parsedData.length} data points`);
+          return NextResponse.json(parsedData);
+        }
+      } catch (parseError) {
+        console.error(`Failed to parse cached data for ${cacheKey}:`, parseError);
+        // Remove corrupted cached data
+        try {
+          await redisClient.del(cacheKey);
+          console.log(`Removed corrupted cached data for ${cacheKey}`);
+        } catch (redisError) {
+          console.warn(`Failed to remove corrupted cached data for ${cacheKey}:`, redisError);
+        }
+        // Continue to fetch fresh data
+      }
     }
 
     console.log(`Cache miss for chart data: ${cacheKey}`);
@@ -190,11 +231,34 @@ export async function GET(
 
     const data = await response.json();
     
-    // Cache the response
+    // PRODUCTION-GRADE: Validate data structure before caching
+    const validationService = MarketDataValidationService.getInstance();
+    const validation = validationService.validateFMPChartData(data, symbol, interval);
+    if (!validation.isValid) {
+      console.error(`Data validation failed for ${symbol} (${interval}):`, validation.error);
+      return NextResponse.json(
+        { 
+          error: validation.error,
+          details: validation.details,
+          symbol,
+          interval
+        },
+        { status: 500 }
+      );
+    }
+
+    // Log successful data structure
+    console.log(`FMP response for ${symbol}: ${data.length} valid data points`);
+
+    // Cache the validated response
     const ttl = getCacheTTL(interval);
-    await redisClient.setex(cacheKey, ttl, JSON.stringify(data));
-    
-    console.log(`Cached chart data for ${cacheKey} with TTL: ${ttl}s`);
+    try {
+      await redisClient.setex(cacheKey, ttl, JSON.stringify(data));
+      console.log(`Cached chart data for ${cacheKey} with TTL: ${ttl}s`);
+    } catch (cacheError) {
+      console.error(`Failed to cache data for ${cacheKey}:`, cacheError);
+      // Continue without caching - don't fail the request
+    }
     
     return NextResponse.json(data);
   } catch (error) {

@@ -4,5 +4,5 @@ export interface ProcessedDataItem {
   price: number;
   openPrice: number;
   closePrice: number;
-  utcDate: Date;
+  utcDate: string;
 }

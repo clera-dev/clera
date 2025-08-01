@@ -67,7 +67,26 @@ export class MarketDataService {
     this.cacheService.invalidate(symbol);
   }
 
-  public getCacheStats(): { size: number; entries: string[] } {
+  public getCacheStats(): { size: number; entries: string[]; expiredCount: number } {
     return this.cacheService.getStats();
+  }
+
+  /**
+   * Manually trigger cleanup of expired cache entries
+   * @returns Number of expired entries that were removed
+   */
+  public cleanupExpiredCacheEntries(): number {
+    return this.cacheService.cleanupExpiredEntries();
+  }
+
+  /**
+   * Destroy the service instance and clean up resources
+   * Should be called when the service is no longer needed
+   */
+  public static destroy(): void {
+    if (MarketDataService.instance) {
+      MarketDataService.instance.cacheService.destroy();
+      MarketDataService.instance = null as any;
+    }
   }
 }

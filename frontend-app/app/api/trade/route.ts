@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { SecureErrorMapper } from '@/utils/services/errors';
+import { AuthService } from '@/utils/api/auth-service';
+import { BackendService } from '@/utils/api/backend-service';
 
 /**
  * Ensures this route is always treated as dynamic, preventing Next.js
@@ -11,100 +13,46 @@ export const dynamic = 'force-dynamic';
 
 /**
  * API route to place a trade order.
- * This route is a proxy to the backend service.
+ * 
+ * SECURITY: This route implements proper authentication and authorization
+ * to prevent privilege escalation attacks. Users can only trade on accounts they own.
  */
 export async function POST(request: NextRequest) {
   try {
-    // 1. Authenticate user
-    const supabase = await createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
-    }
-
-    // 2. Get the request body
+    // 1. Get the request body to extract account_id
     const requestBody = await request.json();
+    const { account_id } = requestBody;
 
-    // 3. Construct final backend path
-    const backendPath = '/api/trade';
-
-    // 4. Proxy the request
-    const backendUrl = process.env.BACKEND_API_URL;
-    const backendApiKey = process.env.BACKEND_API_KEY;
-
-    if (!backendUrl || !backendApiKey) {
-      console.error('[API Proxy] Backend API URL or Key is not configured.');
-      return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
+    if (!account_id) {
+      return NextResponse.json({ error: 'Account ID is required in request body' }, { status: 400 });
     }
 
-    const targetUrl = `${backendUrl}${backendPath}`;
+    // 2. SECURITY: Authenticate user and verify account ownership
+    // This prevents any logged-in user from trading on behalf of ANY account
+    const authContext = await AuthService.authenticateAndAuthorize(request, account_id);
 
-    // Create AbortController with timeout to prevent hanging requests
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    // 3. Use BackendService for secure communication with proper JWT forwarding
+    const backendService = new BackendService();
+    const result = await backendService.placeTrade(
+      authContext.accountId,
+      authContext.user.id,
+      requestBody,
+      authContext.authToken
+    );
 
-    try {
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': backendApiKey,
-          // Note: Backend trade endpoint doesn't currently use JWT auth
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
-
-      // Clear the timeout since the request completed
-      clearTimeout(timeoutId);
-
-      // Handle 204 No Content responses properly (no body allowed)
-      if (response.status === 204) {
-        return new NextResponse(null, { status: 204 });
-      }
-
-      // For all other responses, read and parse the body
-      const responseText = await response.text();
-      let responseData;
-      try {
-        responseData = responseText ? JSON.parse(responseText) : {};
-      } catch (parseError) {
-        console.error('[API Proxy] Failed to parse backend JSON response.', parseError);
-        return NextResponse.json({ error: 'Invalid response from backend service.' }, { status: 502 });
-      }
-
-      if (!response.ok) {
-        // Extract backend error message
-        const backendError = responseData?.error || responseData?.detail || '';
-        
-        // Log the original error for debugging (server-side only)
-        SecureErrorMapper.logError(backendError, response.status, request.nextUrl.pathname);
-        
-        // Map to safe error message using the centralized utility
-        const safeErrorMessage = SecureErrorMapper.mapError(backendError, response.status);
-        
-        // Return safe error message to client
-        return NextResponse.json({ error: safeErrorMessage }, { status: response.status });
-      }
-
-      return NextResponse.json(responseData, { status: response.status });
-
-    } catch (fetchError: any) {
-      // Clear the timeout to prevent it from firing after we've already handled the error
-      clearTimeout(timeoutId);
-      
-      // Handle fetch errors, including AbortError if the request was cancelled
-      if (fetchError.name === 'AbortError') {
-        console.warn('[API Proxy] Request timed out for backend service.');
-        return NextResponse.json({ error: 'Backend service timed out. Please try again later.' }, { status: 504 });
-      }
-      console.error('[API Proxy] Failed to fetch from backend service.', fetchError);
-      return NextResponse.json({ error: 'An unexpected error occurred while communicating with the backend service.' }, { status: 502 });
-    }
+    return NextResponse.json(result);
 
   } catch (error: any) {
-    console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });
-    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
+    console.error('Trade API: Error placing trade:', error instanceof Error ? error.message : 'Unknown error');
+    
+    // Handle authentication/authorization errors
+    if (error && typeof error === 'object' && 'status' in error) {
+      const authError = AuthService.handleAuthError(error);
+      return NextResponse.json({ error: authError.message }, { status: authError.status });
+    }
+    
+    // Handle backend service errors
+    const backendError = BackendService.handleBackendError(error);
+    return NextResponse.json({ error: backendError.message }, { status: backendError.status });
   }
 } 

@@ -17,15 +17,17 @@ export default function HeaderController({ children }: HeaderControllerProps) {
   const pathname = usePathname();
   
   // Pages that should show the auth header
+  // CRITICAL: Use exact matches to prevent header showing on all pages
   const authPages = [
-    '/',               // Landing page
-    '/sign-in',        // Sign in page
-    '/sign-up',        // Sign up page  
-    '/forgot-password', // Password reset page
-    '/dashboard'       // User dashboard
+    '/',               // Landing page (exact match)
+    '/sign-in',        // Sign in page (exact match)
+    '/sign-up',        // Sign up page (exact match)
+    '/forgot-password', // Password reset page (exact match)
+    '/dashboard'       // User dashboard (exact match)
   ];
   
-  const shouldShowHeader = authPages.some((p) => pathname.startsWith(p));
+  // Use exact path matching to prevent header from showing on protected pages
+  const shouldShowHeader = authPages.includes(pathname);
   
   if (!shouldShowHeader) {
     return null;

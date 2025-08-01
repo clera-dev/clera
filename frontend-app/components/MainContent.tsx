@@ -13,15 +13,16 @@ interface MainContentProps {
 export default function MainContent({ children }: MainContentProps) {
   const pathname = usePathname();
   
-  // Pages that have the auth header (should match HeaderController logic)
+  // Pages that have the auth header (should match HeaderController logic exactly)
   const authPages = [
-    '/',               // Landing page
-    '/sign-in',        // Sign in page
-    '/sign-up',        // Sign up page  
-    '/forgot-password', // Password reset page
-    '/dashboard'       // User dashboard
+    '/',               // Landing page (exact match)
+    '/sign-in',        // Sign in page (exact match)
+    '/sign-up',        // Sign up page (exact match)
+    '/forgot-password', // Password reset page (exact match)
+    '/dashboard'       // User dashboard (exact match)
   ];
   
+  // Use exact path matching to match HeaderController behavior
   const shouldHaveHeaderPadding = authPages.includes(pathname);
   
   return (

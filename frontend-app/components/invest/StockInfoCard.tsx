@@ -364,7 +364,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
       {cleraRecommendation && (
         <div className="px-2 sm:px-4 pb-3">
           <Card className="clera-glow bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800 rounded-xl">
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-1 pt-3 px-3 lg:px-4">
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
                 <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-bold text-sm sm:text-base">
@@ -372,7 +372,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
                 </span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
+            <CardContent className="pt-0 pb-3 px-3 lg:px-4">
               <p className="text-xs sm:text-sm text-foreground leading-relaxed">
                 {isRationaleLong && !isRationaleExpanded 
                   ? `${rationale!.substring(0, RATIONALE_LIMIT)}...` 

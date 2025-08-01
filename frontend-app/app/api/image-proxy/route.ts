@@ -26,6 +26,44 @@ const isPrivateIP = (hostname: string): boolean => {
   return privateIPPatterns.some(pattern => pattern.test(hostname));
 };
 
+/**
+ * Validates a URL against security requirements
+ * Prevents SSRF attacks by enforcing strict validation
+ * 
+ * @param url - The URL to validate
+ * @param originalUrl - The original URL for logging context
+ * @returns true if the URL is safe, false otherwise
+ */
+const validateUrl = (url: URL, originalUrl: string): { isValid: boolean; error?: string } => {
+  // Validate protocol
+  if (url.protocol !== 'https:') {
+    console.warn(`[Image Proxy] Blocked request with non-HTTPS protocol: ${url.protocol} from ${originalUrl}`);
+    return { isValid: false, error: 'Invalid image protocol. Only HTTPS is allowed.' };
+  }
+
+  // Validate domain against allowlist
+  const domain = url.hostname.toLowerCase();
+  const isAllowed = ALLOWED_DOMAINS.some(allowedDomain => {
+    if (allowedDomain.startsWith('*.')) {
+      return isSecureWildcardMatch(domain, allowedDomain);
+    }
+    return domain === allowedDomain;
+  });
+
+  if (!isAllowed) {
+    console.warn(`[Image Proxy] Blocked request to non-whitelisted domain: ${domain} from ${originalUrl}`);
+    return { isValid: false, error: `Domain not allowed: ${domain}` };
+  }
+
+  // Block private IP ranges
+  if (isPrivateIP(url.hostname)) {
+    console.warn(`[Image Proxy] Blocked request to private IP: ${url.hostname} from ${originalUrl}`);
+    return { isValid: false, error: 'Access to private IP ranges not allowed' };
+  }
+
+  return { isValid: true };
+};
+
 // Load allowed domains from environment variables for better security and configuration management.
 // The env var should be a comma-separated list of domains.
 const ALLOWED_DOMAINS_STRING = process.env.IMAGE_PROXY_ALLOWED_DOMAINS || '';
@@ -70,26 +108,10 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(imageUrl);
 
-    // 1. Protocol Validation
-    if (url.protocol !== 'https:') {
-      console.warn(`[Image Proxy] Blocked request with non-HTTPS protocol: ${url.protocol}`);
-      return new NextResponse('Invalid image protocol. Only HTTPS is allowed.', { status: 400 });
-    }
-
-    // 2. Domain Allowlist Validation
-    const domain = url.hostname.toLowerCase(); // Normalize domain to lowercase for case-insensitive comparison
-    const isAllowed = ALLOWED_DOMAINS.some(allowedDomain => {
-      if (allowedDomain.startsWith('*.')) {
-        // Use secure wildcard matching to prevent SSRF attacks
-        return isSecureWildcardMatch(domain, allowedDomain);
-      }
-      // Exact domain match (case-insensitive)
-      return domain === allowedDomain;
-    });
-
-    if (!isAllowed) {
-      console.warn(`[Image Proxy] Blocked request to non-whitelisted domain: ${domain}`);
-      return new NextResponse(`Domain not allowed: ${domain}`, { status: 403 });
+    // Initial URL validation
+    const initialValidation = validateUrl(url, imageUrl);
+    if (!initialValidation.isValid) {
+      return new NextResponse(initialValidation.error!, { status: 400 });
     }
 
     // 3. Fetch the image with redirect validation and timeout protection
@@ -99,7 +121,6 @@ export async function GET(request: NextRequest) {
     try {
       const response = await fetch(imageUrl, {
         headers: {
-          // It's good practice to set a custom User-Agent
           'User-Agent': 'Clera-Image-Proxy/1.0',
         },
         signal: controller.signal,
@@ -107,53 +128,38 @@ export async function GET(request: NextRequest) {
         redirect: 'manual',
       });
 
-      // SECURITY: Handle redirects manually to validate each redirect target
+      // SECURITY: Handle redirects manually with multi-hop protection
       let finalResponse = response;
       let finalUrl = imageUrl;
+      let redirectCount = 0;
+      const MAX_REDIRECTS = 3; // Prevent infinite redirect loops
+      let currentResponse = response;
 
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('Location');
+      while (currentResponse.status >= 300 && currentResponse.status < 400 && redirectCount < MAX_REDIRECTS) {
+        const location = currentResponse.headers.get('Location');
         if (!location) {
-          console.warn(`[Image Proxy] Redirect response without Location header from ${imageUrl}`);
+          console.warn(`[Image Proxy] Redirect response without Location header from ${finalUrl}`);
           return new NextResponse('Invalid redirect response', { status: 400 });
         }
 
         try {
-          const redirectUrl = new URL(location, imageUrl); // Resolve relative URLs
+          const redirectUrl = new URL(location, finalUrl); // Resolve relative URLs
+          redirectCount++;
           
-          // Validate redirect target protocol
-          if (redirectUrl.protocol !== 'https:') {
-            console.warn(`[Image Proxy] Blocked redirect to non-HTTPS protocol: ${redirectUrl.protocol} from ${imageUrl}`);
-            return new NextResponse('Redirect to non-HTTPS URL not allowed', { status: 400 });
+          // SECURITY: Validate each redirect target with the same strict rules
+          const redirectValidation = validateUrl(redirectUrl, finalUrl);
+          if (!redirectValidation.isValid) {
+            return new NextResponse(redirectValidation.error!, { status: 403 });
           }
 
-          // Validate redirect target domain against allowlist
-          const redirectDomain = redirectUrl.hostname.toLowerCase();
-          const isRedirectAllowed = ALLOWED_DOMAINS.some(allowedDomain => {
-            if (allowedDomain.startsWith('*.')) {
-              return isSecureWildcardMatch(redirectDomain, allowedDomain);
-            }
-            return redirectDomain === allowedDomain;
-          });
-
-          if (!isRedirectAllowed) {
-            console.warn(`[Image Proxy] Blocked redirect to non-whitelisted domain: ${redirectDomain} from ${imageUrl}`);
-            return new NextResponse(`Redirect to disallowed domain: ${redirectDomain}`, { status: 403 });
-          }
-
-          // SECURITY: Block redirects to internal/private IP ranges
-          const redirectHostname = redirectUrl.hostname;
-          if (isPrivateIP(redirectHostname)) {
-            console.warn(`[Image Proxy] Blocked redirect to private IP: ${redirectHostname} from ${imageUrl}`);
-            return new NextResponse('Redirect to private IP not allowed', { status: 403 });
-          }
-
-          // Follow the validated redirect manually
+          // SECURITY: Follow the validated redirect manually with redirect: 'manual'
           const redirectResponse = await fetch(redirectUrl.toString(), {
             headers: {
               'User-Agent': 'Clera-Image-Proxy/1.0',
             },
             signal: controller.signal,
+            // CRITICAL FIX: Prevent automatic redirect following to stop SSRF attacks
+            redirect: 'manual',
           });
 
           if (!redirectResponse.ok) {
@@ -161,13 +167,29 @@ export async function GET(request: NextRequest) {
             return new NextResponse('Failed to fetch redirected image', { status: redirectResponse.status });
           }
 
-          // Use the redirected response for further processing
+          // Update for next iteration
           finalResponse = redirectResponse;
           finalUrl = redirectUrl.toString();
+          
+                     // Continue loop if this response is also a redirect
+           if (redirectResponse.status >= 300 && redirectResponse.status < 400) {
+             currentResponse = redirectResponse;
+             continue;
+           }
+          
+          // Break if we got a successful response
+          break;
+          
         } catch (redirectError) {
-          console.error(`[Image Proxy] Error processing redirect from ${imageUrl}:`, redirectError);
+          console.error(`[Image Proxy] Error processing redirect from ${finalUrl}:`, redirectError);
           return new NextResponse('Invalid redirect URL', { status: 400 });
         }
+      }
+
+      // SECURITY: Check if we exceeded maximum redirects
+      if (redirectCount >= MAX_REDIRECTS) {
+        console.warn(`[Image Proxy] Too many redirects (${redirectCount}) for ${imageUrl}`);
+        return new NextResponse('Too many redirects', { status: 400 });
       }
 
       // Clear the timeout since the request completed

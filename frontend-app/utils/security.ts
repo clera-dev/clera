@@ -14,7 +14,7 @@
  * - Graceful fallback to safe default routes
  * 
  * Allowed redirect paths: /dashboard, /portfolio, /invest, /news, /chat, /settings, /account, /info
- * Blocked patterns: /api/, /_next/, /admin/, /internal/, /debug/, /test/, /protected/, /auth/
+ * Blocked patterns: /api/, /_next/, /admin/, /internal/, /debug/, /test/, /protected/, /auth/ (checked anywhere in path)
  * 
  * This utility is designed to be used in both client and server contexts.
  */
@@ -66,8 +66,22 @@ export function isValidRedirectUrl(url: string): boolean {
     '/info'
   ];
   
-  // Check if the path starts with any allowed path
-  const isAllowedPath = allowedPaths.some(path => pathPart.startsWith(path));
+  // SECURITY FIX: Use exact path matching with proper sub-path validation
+  // This prevents open-redirect bypasses like "/dashboardevil"
+  const isAllowedPath = allowedPaths.some(path => {
+    // Exact match for the base path
+    if (pathPart === path) {
+      return true;
+    }
+    
+    // Allow sub-paths only if they start with the path followed by '/'
+    // This prevents bypasses like "/dashboardevil" while allowing "/dashboard/settings"
+    if (pathPart.startsWith(path + '/')) {
+      return true;
+    }
+    
+    return false;
+  });
   
   // Additional safety: ensure it's not trying to access sensitive routes
   const blockedPatterns = [
@@ -81,7 +95,7 @@ export function isValidRedirectUrl(url: string): boolean {
     '/auth/'
   ];
   
-  const isBlockedPath = blockedPatterns.some(pattern => pathPart.startsWith(pattern));
+  const isBlockedPath = blockedPatterns.some(pattern => pathPart.includes(pattern));
   
   return isAllowedPath && !isBlockedPath;
 }

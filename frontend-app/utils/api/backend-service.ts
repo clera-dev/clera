@@ -148,6 +148,58 @@ export class BackendService {
   }
 
   /**
+   * Place a trade order for an account
+   * @param accountId - The account ID (for validation, already verified by auth service)
+   * @param userId - The user ID for authorization (not sent to backend, used for logging only)
+   * @param tradeData - The trade order data
+   * @param authToken - The user's authentication token
+   * @returns Trade execution result
+   */
+  async placeTrade(accountId: string, userId: string, tradeData: any, authToken?: string) {
+    return this.request({
+      endpoint: '/api/trade',
+      method: 'POST',
+      body: tradeData,
+      authToken
+    });
+  }
+
+  /**
+   * Get portfolio activities for an account
+   * @param accountId - The account ID (for validation, already verified by auth service)
+   * @param userId - The user ID for authorization (not sent to backend, used for logging only)
+   * @param limit - Optional limit for number of activities
+   * @param authToken - The user's authentication token
+   * @returns Portfolio activities data
+   */
+  async getPortfolioActivities(accountId: string, userId: string, limit?: string | null, authToken?: string) {
+    const queryParams = new URLSearchParams();
+    queryParams.append('account_id', accountId);
+    if (limit) queryParams.append('limit', limit);
+    
+    return this.request({
+      endpoint: `/api/portfolio/activities?${queryParams.toString()}`,
+      method: 'GET',
+      authToken
+    });
+  }
+
+  /**
+   * Get portfolio analytics for an account
+   * @param accountId - The account ID (for validation, already verified by auth service)
+   * @param userId - The user ID for authorization (not sent to backend, used for logging only)
+   * @param authToken - The user's authentication token
+   * @returns Portfolio analytics data
+   */
+  async getPortfolioAnalytics(accountId: string, userId: string, authToken?: string) {
+    return this.request({
+      endpoint: `/api/portfolio/${encodeURIComponent(accountId)}/analytics`,
+      method: 'GET',
+      authToken
+    });
+  }
+
+  /**
    * Handle backend service errors and convert to appropriate HTTP responses
    * @param error - The caught error
    * @returns Formatted error response

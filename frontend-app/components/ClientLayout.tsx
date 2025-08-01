@@ -199,7 +199,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           setHasCompletedOnboarding(completed);
           setHasCompletedFunding(funded);
         } else {
-          // Clear localStorage if not logged in
+          // Clear localStorage if not logged in - CRITICAL for multi-user devices
           localStorage.removeItem("userId");
           localStorage.removeItem("onboardingStatus");
           localStorage.removeItem("fundingStatus");
@@ -207,6 +207,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           localStorage.removeItem("isClosed");
           setHasCompletedOnboarding(false);
           setHasCompletedFunding(false);
+          // Also clear closure status state
+          setUserClosureStatus(null);
         }
       } catch (error) {
         console.error("Error checking auth/onboarding status:", error);
@@ -244,27 +246,67 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const isOnboardingPage = pathname === '/protected' && !hasCompletedOnboarding;
   const isFundingPage = pathname === '/protected' && hasCompletedOnboarding && !hasCompletedFunding;
   
-  // Determine account closure state from backend data (authoritative source)
-  // If closureData exists, it means account closure has been initiated
-  // Hide sidebar for any account closure activity (in progress or completed)
-  const hasAccountClosureActivity = Boolean(closureData && !closureLoading);
+  // PRODUCTION UX FIX: Check for account closure status from database
+  // Navigation shows immediately, then hides ONLY if confirmed account closure
+  // SECURITY: Use database state, not localStorage (prevents cross-user contamination)
+  const [userClosureStatus, setUserClosureStatus] = useState<string | null>(null);
+  const [closureStatusLoading, setClosureStatusLoading] = useState(false);
   
-  // CRITICAL FIX: Wait for auth/onboarding to load, but don't let closure check block forever
-  // If closure check takes too long, we'll show the sidebar anyway (better UX)
-  const isDataLoading = isLoading;
+  // Fetch closure status independently in background
+  useEffect(() => {
+    const checkClosureStatus = async () => {
+      if (!isAuthenticated || isLoading) return;
+      
+      setClosureStatusLoading(true);
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data: onboardingData } = await supabase
+            .from('user_onboarding')
+            .select('status')
+            .eq('user_id', user.id)
+            .single();
+          
+          setUserClosureStatus(onboardingData?.status || null);
+        }
+      } catch (error) {
+        console.warn('[ClientLayout] Could not check closure status:', error);
+        setUserClosureStatus(null);
+      } finally {
+        setClosureStatusLoading(false);
+      }
+    };
+    
+    checkClosureStatus();
+  }, [isAuthenticated, isLoading]);
   
+  // SECURITY: Reset closure status when user signs out
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setUserClosureStatus(null);
+    }
+  }, [isAuthenticated]);
+  
+  const hasConfirmedAccountClosure = Boolean(
+    userClosureStatus === 'pending_closure' || userClosureStatus === 'closed'
+  );
+  
+  // CRITICAL UX IMPROVEMENT: Show sidebar immediately, don't wait for loading
+  // Only hide after confirming specific exclusion conditions
   const shouldShowSidebar = 
     isClient && 
-    !isDataLoading && // Wait for ALL data to load
     isAuthenticated && 
     pathname !== null && 
     !nonSidebarPaths.includes(pathname) && 
     !isOnboardingPage &&
     !isFundingPage &&
-    !hasAccountClosureActivity && // CRITICAL: No sidebar for any account closure activity
-    hasCompletedFunding; // Must be funded to see sidebar
+    !hasConfirmedAccountClosure && // Only hide AFTER confirming closure
+    (!isLoading || hasCompletedFunding); // Show during loading if previously funded
 
-  // Mobile navigation should be more persistent - show during loading for better UX
+  // CRITICAL UX IMPROVEMENT: Show mobile nav immediately, don't wait for loading  
+  // Mobile users need consistent navigation even more than desktop
   const shouldShowMobileNav = 
     isClient && 
     isAuthenticated && 
@@ -272,7 +314,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     !nonSidebarPaths.includes(pathname) && 
     !isOnboardingPage &&
     !isFundingPage &&
-    !hasAccountClosureActivity; // Account closure is the only state that hides mobile nav
+    !hasConfirmedAccountClosure; // Only hide AFTER confirming closure
 
 
 

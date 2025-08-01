@@ -32,6 +32,15 @@ export function useAccountClosure(): UseAccountClosureReturn {
     // Create abort controller for this effect
     abortControllerRef.current = new AbortController();
     
+    // PRODUCTION UX: Set maximum loading time to prevent blocking navigation
+    const maxLoadingTimeout = setTimeout(() => {
+      if (isMountedRef.current && loading) {
+        console.warn('[useAccountClosure] Timeout reached, stopping loading to allow navigation');
+        setLoading(false);
+        setError(null); // Don't show error for timeout
+      }
+    }, 3000); // 3 second maximum
+    
     const fetchClosureDataWrapper = async () => {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -40,6 +49,7 @@ export function useAccountClosure(): UseAccountClosureReturn {
         if (isMountedRef.current) {
           setLoading(false);
         }
+        clearTimeout(maxLoadingTimeout);
         return;
       }
       
@@ -54,6 +64,7 @@ export function useAccountClosure(): UseAccountClosureReturn {
         if (isMountedRef.current) {
           setClosureData(data);
         }
+        clearTimeout(maxLoadingTimeout); // Clear timeout on success
         
       } catch (err) {
         // Check if component is still mounted before updating state
@@ -93,6 +104,7 @@ export function useAccountClosure(): UseAccountClosureReturn {
           }
         }, 2000);
       } finally {
+        clearTimeout(maxLoadingTimeout); // Clear timeout regardless of outcome
         if (isMountedRef.current) {
           setLoading(false);
         }
@@ -104,6 +116,9 @@ export function useAccountClosure(): UseAccountClosureReturn {
     // Cleanup function to clear timeout and abort controller if component unmounts
     return () => {
       isMountedRef.current = false;
+      
+      // Clear the max loading timeout
+      clearTimeout(maxLoadingTimeout);
       
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);

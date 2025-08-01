@@ -68,23 +68,41 @@ async function shouldRefreshCache(metadata: WatchlistNewsMetadata): Promise<bool
 
 // Function to acquire a Redis lock
 async function acquireLock(lockKey: string, ttlSeconds: number): Promise<boolean> {
-  // Use Upstash Redis set with NX option (only set if key doesn't exist)
-  const result = await redisClient.set(lockKey, '1', {
-    nx: true,
-    ex: ttlSeconds
-  });
-  return result === 'OK';
+  try {
+    // Use Upstash Redis set with NX option (only set if key doesn't exist)
+    const result = await redisClient.set(lockKey, '1', {
+      nx: true,
+      ex: ttlSeconds
+    });
+    return result === 'OK';
+  } catch (redisError) {
+    console.warn(`Redis lock acquisition failed for ${lockKey}:`, redisError);
+    // Return false to indicate lock acquisition failed, but don't fail the request
+    return false;
+  }
 }
 
 // Function to release a Redis lock
 async function releaseLock(lockKey: string): Promise<void> {
-  await redisClient.del(lockKey);
+  try {
+    await redisClient.del(lockKey);
+  } catch (redisError) {
+    console.warn(`Redis lock release failed for ${lockKey}:`, redisError);
+    // Don't throw - lock will expire automatically
+  }
 }
 
 // Function to trigger the cron job manually
 async function triggerCacheRefresh(): Promise<void> {
   // Check if last refresh was within the last 10 minutes
-  const lastRefreshTimeStr = await redisClient.get(WATCHLIST_LAST_REFRESH) as string | null;
+  let lastRefreshTimeStr: string | null = null;
+  try {
+    lastRefreshTimeStr = await redisClient.get(WATCHLIST_LAST_REFRESH) as string | null;
+  } catch (redisError) {
+    console.warn('Redis read error for last refresh time:', redisError);
+    // Continue without cache check
+  }
+  
   const now = Date.now();
   
   if (lastRefreshTimeStr) {
@@ -104,7 +122,12 @@ async function triggerCacheRefresh(): Promise<void> {
   
   try {
     // Update the last refresh time
-    await redisClient.set(WATCHLIST_LAST_REFRESH, now.toString());
+    try {
+      await redisClient.set(WATCHLIST_LAST_REFRESH, now.toString());
+    } catch (redisError) {
+      console.warn('Failed to update last refresh time in Redis:', redisError);
+      // Continue with cache refresh even if Redis write fails
+    }
     
     // Make sure we have a proper base URL with http/https
     let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
