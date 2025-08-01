@@ -63,9 +63,9 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
 
       
       <div className={cn(
-        "w-full", // Use full width for consistent padding
+        isUser ? "w-fit" : "w-full", // PRODUCTION FIX: User messages size to content, assistant takes full width
         isUser 
-          ? "rounded-lg bg-primary text-primary-foreground ml-auto max-w-[85%]"
+          ? "rounded-lg bg-primary text-primary-foreground ml-auto max-w-[65%]" // Compact for short messages, limited for long ones
           : "max-w-full", // Assistant takes full width for balanced padding
         isMobileMode 
           ? (isUser ? "px-3 py-2" : "px-3 py-2") // Mobile: equal padding

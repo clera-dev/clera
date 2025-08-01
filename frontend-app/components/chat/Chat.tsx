@@ -117,10 +117,14 @@ export default function Chat({
           }
           
           chatClient.setMessages(threadMessages);
+          // PRODUCTION FIX: Clear any persistent errors when loading existing chat
+          chatClient.clearErrorOnChatLoad();
         } catch (error) {
           console.error(`Failed to load messages for thread ${currentThreadId}:`, error);
           // Fall back to initial messages if thread loading fails
           chatClient.setMessages(initialMessages);
+          // Also clear errors on fallback
+          chatClient.clearErrorOnChatLoad();
         }
       } else {
         // If there's no thread, initialize the client with any initial messages.
@@ -146,6 +150,26 @@ export default function Chat({
     
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // ARCHITECTURE FIX: Set up long processing callback - proper separation of concerns
+  useEffect(() => {
+    chatClient.setLongProcessingCallback(() => {
+      // UI layer handles the presentation - create appropriate status message
+      const currentMessages = [...chatClient.state.messages];
+      const nonStatusMessages = currentMessages.filter(msg => !msg.isStatus);
+      const longProcessingMessage = {
+        role: 'assistant' as const,
+        content: 'Processing complex request... This may take up to 2 minutes.',
+        isStatus: true
+      };
+      chatClient.setMessages([...nonStatusMessages, longProcessingMessage]);
+    });
+
+    // MEMORY LEAK FIX: Clear callback on component unmount to prevent setState on unmounted component
+    return () => {
+      chatClient.clearLongProcessingCallback();
+    };
+  }, [chatClient]);
 
   // --- Effect to handle submitting the *first* message ---
   useEffect(() => {

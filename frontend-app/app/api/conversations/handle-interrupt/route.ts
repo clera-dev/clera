@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingService';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
+// ARCHITECTURE FIX: Use shared configuration for LangGraph timeout (single source of truth)
+export const maxDuration = 299; // ~5 minutes for complex agent workflows
+
 /**
  * Handles interrupt resumption for LangGraph conversations
  * 

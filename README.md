@@ -19,6 +19,19 @@ In T3 run:
 ```bash
 cd frontend-app && npm install && npm run dev
 ```
+
+And to redeploy AWS servers (anytime you change backend):
+``` bash
+   copilot svc deploy --name api-service --env production
+   copilot svc deploy --name websocket-lb-service --env production
+```
+If it crashes because there isn't enough room in docker, run:
+``` bash
+# WARNING: This command is extremely destructive and will delete ALL unused Docker containers, images, and volumes on your machine!
+# Only run this in local development environments, NEVER on production or shared machines.
+# This can cause data loss or outages if run on systems with other Docker workloads.
+docker system prune -a --volumes -f
+```
 And you can track their progress in AWS > Elastic Container Service.
 
 ## Project Structure
