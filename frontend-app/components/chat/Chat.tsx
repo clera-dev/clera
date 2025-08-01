@@ -164,6 +164,11 @@ export default function Chat({
       };
       chatClient.setMessages([...nonStatusMessages, longProcessingMessage]);
     });
+
+    // MEMORY LEAK FIX: Clear callback on component unmount to prevent setState on unmounted component
+    return () => {
+      chatClient.clearLongProcessingCallback();
+    };
   }, [chatClient]);
 
   // --- Effect to handle submitting the *first* message ---

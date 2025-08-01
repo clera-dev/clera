@@ -24,6 +24,7 @@ export interface SecureChatClient {
   addMessagesWithStatus: (userMessage: Message) => void;
   subscribe: (listener: () => void) => () => void;
   setLongProcessingCallback: (callback: () => void) => void; // ARCHITECTURE FIX: Proper separation of concerns
+  clearLongProcessingCallback: () => void; // MEMORY LEAK FIX: Clear callback on unmount
   cleanup: () => void;
 }
 
@@ -78,7 +79,7 @@ export class SecureChatClientImpl implements SecureChatClient {
   clearErrorOnChatLoad() {
     // Clear any persistent errors when loading an existing chat conversation
     if (this._state.error) {
-      console.log('[SecureChatClient] Clearing error on chat load for better UX');
+      // console.log('[SecureChatClient] Clearing error on chat load for better UX');
       this.setState({ error: null });
     }
   }
@@ -93,7 +94,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       return isValid;
     });
 
-    console.log('[SecureChatClient] setMessages called - Original:', messages.length, 'Valid:', validMessages.length);
+    // console.log('[SecureChatClient] setMessages called - Original:', messages.length, 'Valid:', validMessages.length);
     
     this.setState({ messages: [...validMessages] }); // Create defensive copy
   }
@@ -115,7 +116,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     // Ensure we preserve all existing messages and add the new ones atomically
     const newMessages = [...this._state.messages, userMessage, statusMessage];
     
-    console.log('[SecureChatClient] Adding user message and status, total messages:', newMessages.length);
+    // console.log('[SecureChatClient] Adding user message and status, total messages:', newMessages.length);
     
     this.setState({ 
       messages: newMessages
@@ -222,7 +223,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       this.setState({ isLoading: false });
       this.isStreaming = false; // Unset streaming flag when done
     } catch (error: any) {
-      console.error('[SecureChatClient] Error handling interrupt:', error);
+      // console.error('[SecureChatClient] Error handling interrupt:', error);
       
       // MEMORY LEAK FIX: Clear timers and reset flags on error
       if (this.longProcessingTimer) {
@@ -284,7 +285,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       // PRODUCTION FIX: Add AbortController for proper timeout handling (120 seconds as requested)
       abortController = new AbortController();
       timeoutId = setTimeout(() => {
-        console.log('[SecureChatClient] Stream timeout reached (120 seconds), aborting request');
+        // console.log('[SecureChatClient] Stream timeout reached (120 seconds), aborting request');
         abortController?.abort();
       }, 120000); // 120 seconds timeout
 
@@ -330,7 +331,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       this.longProcessingTimer = setTimeout(() => {
         // If still processing after 30 seconds, notify UI layer (don't create messages directly)
         if (this.isStreaming && !this.hasReceivedRealContent && !this.hasReceivedInterrupt) {
-          console.log('[SecureChatClient] Long processing detected, notifying UI layer');
+          // console.log('[SecureChatClient] Long processing detected, notifying UI layer');
           this.longProcessingCallback?.(); // Let UI layer handle the presentation
         }
       }, 30000); // Notify after 30 seconds of processing
@@ -420,9 +421,9 @@ export class SecureChatClientImpl implements SecureChatClient {
           this.setState({ isLoading: false });
           // console.log('[SecureChatClient] FALLBACK completion - valid response detected');
         } else {
-          // PRODUCTION FIX: More graceful handling when stream completes without content
+          // PRODUCTION FIX: More graceful handling when stream completed without content
           // This commonly happens when agent is still processing - response may arrive later via DB sync
-          console.warn('[SecureChatClient] Stream completed without immediate response - agent may still be processing');
+          // console.warn('[SecureChatClient] Stream completed without immediate response - agent may still be processing');
           
           // Clean up status messages but don't show harsh error immediately
           const cleanMessages = this._state.messages.filter(msg => !msg.isStatus);
@@ -437,7 +438,7 @@ export class SecureChatClientImpl implements SecureChatClient {
           this.gracePeriodTimer = setTimeout(() => {
             // Only show error if we still haven't received content after additional wait
             if (!this.hasReceivedRealContent && !this.hasReceivedInterrupt) {
-              console.error('[SecureChatClient] No response after extended wait - showing retry message');
+              // console.error('[SecureChatClient] No response after extended wait - showing retry message');
               this.setState({ 
                 messages: cleanMessages,
                 error: 'No response received from agent. Please try again.',
@@ -448,7 +449,7 @@ export class SecureChatClientImpl implements SecureChatClient {
           }, 3000); // Wait additional 3 seconds before showing error
         }
       } else {
-        console.log('[SecureChatClient] Chunk processing handled completion successfully - skipping redundant completion logic');
+        // console.log('[SecureChatClient] Chunk processing handled completion successfully - skipping redundant completion logic');
       }
       // If streamCompletedSuccessfully is true, chunk processing already handled completion correctly
       
@@ -466,12 +467,12 @@ export class SecureChatClientImpl implements SecureChatClient {
         this.gracePeriodTimer = null;
       }
       
-      console.error('[SecureChatClient] Error starting stream:', error);
+      // console.error('[SecureChatClient] Error starting stream:', error);
       
       // PRODUCTION FIX: Handle timeout errors more gracefully
       let errorMessage = error.message || 'Failed to start stream';
       if (error.name === 'AbortError') {
-        console.warn('[SecureChatClient] Stream was aborted due to timeout (120 seconds)');
+        // console.warn('[SecureChatClient] Stream was aborted due to timeout (120 seconds)');
         errorMessage = 'Request timed out. The agent may still be processing your request. Please try again or refresh the page.';
       }
       
@@ -642,7 +643,7 @@ export class SecureChatClientImpl implements SecureChatClient {
                       (Array.isArray(messageData.content) && messageData.content.length === 0))) {
             // CRITICAL FIX: Detect truly empty Clera responses (Anthropic model provider issue)
             // Only trigger for messages that have no content at all, not for valid non-textual content
-            console.log('[SecureChatClient] Detected empty Clera response - setting graceful model provider error');
+            //console.log('[SecureChatClient] Detected empty Clera response - setting graceful model provider error');
             
             // CRITICAL FIX: Remove status messages when setting model provider error
             // This ensures the "Analyzing your request..." message disappears
@@ -855,13 +856,18 @@ export class SecureChatClientImpl implements SecureChatClient {
     this.longProcessingCallback = callback;
   }
 
+  // MEMORY LEAK FIX: Clear callback to prevent setState on unmounted component
+  clearLongProcessingCallback() {
+    this.longProcessingCallback = null;
+  }
+
   cleanup() {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
     }
     
-    // MEMORY LEAK FIX: Clear all timers on cleanup to prevent setState after unmount
+    // MEMORY LEAK FIX: Clear all timers and callbacks on cleanup to prevent setState after unmount
     if (this.longProcessingTimer) {
       clearTimeout(this.longProcessingTimer);
       this.longProcessingTimer = null;
@@ -870,6 +876,9 @@ export class SecureChatClientImpl implements SecureChatClient {
       clearTimeout(this.gracePeriodTimer);
       this.gracePeriodTimer = null;
     }
+    
+    // MEMORY LEAK FIX: Clear callback to prevent setState on unmounted component
+    this.longProcessingCallback = null;
     
     this.stateListeners.clear();
   }
