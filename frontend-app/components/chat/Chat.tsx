@@ -151,6 +151,21 @@ export default function Chat({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // ARCHITECTURE FIX: Set up long processing callback - proper separation of concerns
+  useEffect(() => {
+    chatClient.setLongProcessingCallback(() => {
+      // UI layer handles the presentation - create appropriate status message
+      const currentMessages = [...chatClient.state.messages];
+      const nonStatusMessages = currentMessages.filter(msg => !msg.isStatus);
+      const longProcessingMessage = {
+        role: 'assistant' as const,
+        content: 'Processing complex request... This may take up to 2 minutes.',
+        isStatus: true
+      };
+      chatClient.setMessages([...nonStatusMessages, longProcessingMessage]);
+    });
+  }, [chatClient]);
+
   // --- Effect to handle submitting the *first* message ---
   useEffect(() => {
     // Check if we just set a new thread ID, have a pending message, and haven't sent it yet

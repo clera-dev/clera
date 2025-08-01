@@ -3,7 +3,7 @@ import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingSe
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 
 // CRITICAL FIX: Set maximum duration for LangGraph agent processing (up to 800 seconds on Pro/Enterprise)
-export const maxDuration = 800; // 13+ minutes for complex agent workflows
+export const maxDuration = 299; // ~5 minutes for complex agent workflows
 
 export async function POST(request: NextRequest) {
   try {
