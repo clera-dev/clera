@@ -13,7 +13,7 @@ import { createClient } from "@/utils/supabase/client";
 interface ManualBankFormProps {
   alpacaAccountId: string;
   userName: string;
-  onTransferComplete?: (amount: string, bankLast4?: string) => void;
+  onTransferComplete?: (amount?: string, bankLast4?: string) => void;
   onBack?: () => void;
 }
 

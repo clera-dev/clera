@@ -11,6 +11,7 @@ import PersonalInfoStep from "./PersonalInfoStep";
 import FinancialProfileStep from "./FinancialProfileStep";
 import DisclosuresStep from "./DisclosuresStep";
 import AgreementsStep from "./AgreementsStep";
+import OnboardingSuccessLoading from "./OnboardingSuccessLoading";
 import { createAlpacaAccount } from "@/utils/api/alpaca";
 import { saveOnboardingData } from "@/utils/api/onboarding-client";
 import { OnboardingStatus } from "@/app/actions";
@@ -18,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { usePostOnboardingNavigation } from "@/utils/navigation";
 
 // Define the Step type
-type Step = "welcome" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "success";
+type Step = "welcome" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";
 // Define an enum for numeric step indices
 enum StepIndex {
   Welcome = 0,
@@ -27,7 +28,8 @@ enum StepIndex {
   Financial = 3,
   Disclosures = 4,
   Agreements = 5,
-  Success = 6
+  Loading = 6,
+  Success = 7
 }
 
 interface OnboardingFlowProps {
@@ -56,6 +58,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     "financial": StepIndex.Financial,
     "disclosures": StepIndex.Disclosures,
     "agreements": StepIndex.Agreements,
+    "loading": StepIndex.Loading,
     "success": StepIndex.Success
   };
 
@@ -75,8 +78,12 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     if (currentStep !== "welcome") {
       // Use setTimeout to ensure the new content is rendered
       const timeoutId = setTimeout(() => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }, 100);
+        // Use instant scroll to ensure it works reliably
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        // Also try to scroll the document element for better compatibility
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }, 50);
       
       // Clean up timeout on unmount or when currentStep changes
       return () => clearTimeout(timeoutId);
@@ -103,7 +110,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const nextStep = () => {
-    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "success"];
+    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "loading", "success"];
     const currentIndex = steps.indexOf(currentStep);
     
     if (currentIndex < steps.length - 1) {
@@ -112,7 +119,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const prevStep = () => {
-    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "success"];
+    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "loading", "success"];
     const currentIndex = steps.indexOf(currentStep);
     
     if (currentIndex > 0) {
@@ -174,7 +181,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           
           setAccountCreated(true);
           setSubmitting(false);
-          navigateAfterOnboarding(true); // New user who just completed onboarding
+          setCurrentStep("loading"); // Show loading page instead of navigating away
           return;
         }
         
@@ -199,13 +206,18 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       
       setAccountCreated(true);
       setSubmitting(false);
-      navigateAfterOnboarding(true); // New user who just completed onboarding
+      setCurrentStep("loading"); // Show loading page instead of navigating away
     } catch (error) {
       console.error("Error in onboarding submission:", error);
       setSubmissionError(error instanceof Error ? error.message : "An unknown error occurred");
       setSubmitting(false);
       // Do not navigate away on error
     }
+  };
+
+  const handleLoadingComplete = () => {
+    // Instead of navigating away immediately, just refresh the page to show the protected page content
+    window.location.reload();
   };
 
   const renderCurrentStep = () => {
@@ -259,6 +271,8 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
             submissionError={submissionError}
           />
         );
+      case "loading":
+        return <OnboardingSuccessLoading onComplete={handleLoadingComplete} />;
       case "success":
         // This step is no longer used, navigation happens directly
         return null;
@@ -283,8 +297,8 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   return (
     <div className="flex flex-col w-full">
       <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
-        {/* Progress bar - don't show for welcome or success pages */}
-        {currentStep !== "welcome" && currentStep !== "success" && (
+        {/* Progress bar - don't show for welcome, loading, or success pages */}
+        {currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success" && (
           <div className="mb-6">
             <ProgressBar 
               currentStep={stepToIndex[currentStep]} 

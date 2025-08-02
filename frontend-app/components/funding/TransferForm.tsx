@@ -32,7 +32,18 @@ export default function TransferForm({
   
   const isValidAmount = () => {
     const numAmount = parseFloat(amount);
-    return !isNaN(numAmount) && numAmount >= 1;
+    return !isNaN(numAmount) && numAmount >= 1 && numAmount <= 50000;
+  };
+
+  const getAmountValidationError = () => {
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount < 1) {
+      return "Please enter a valid amount (minimum $1)";
+    }
+    if (numAmount > 50000) {
+      return "Maximum daily transfer limit is $50,000";
+    }
+    return null;
   };
 
   const saveDataToLocalStorage = useCallback((transferId?: string) => {
@@ -73,8 +84,9 @@ export default function TransferForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!isValidAmount()) {
-      setError("Please enter a valid amount (minimum $1)");
+    const validationError = getAmountValidationError();
+    if (validationError) {
+      setError(validationError);
       return;
     }
     
@@ -106,17 +118,18 @@ export default function TransferForm({
         throw new Error(data.error || 'Failed to initiate transfer');
       }
       
-      setTransferCompleted(true);
-      
       // Save data with the new transfer ID
       saveDataToLocalStorage(data.id);
       
-      // Always show the success page - don't auto-redirect anymore
       console.log("Transfer successful.");
       
-      // Still call the callback if provided (for any parent component logic)
+      // If parent component wants to handle completion (e.g., step-based flow), 
+      // call callback immediately instead of showing local success page
       if (onTransferComplete) {
         onTransferComplete(amount);
+      } else {
+        // Default behavior: show local success page
+        setTransferCompleted(true);
       }
       
     } catch (error) {
@@ -239,10 +252,12 @@ export default function TransferForm({
       )}
       
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold mb-2 text-foreground">Fund Your Account</h2>
-        <p className="text-foreground/80 text-base leading-relaxed mb-4">
-          You have successfully connected your bank.
-        </p>
+        <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-green-100 rounded-full">
+          <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="text-2xl font-bold mb-2 text-foreground">Bank Connected!</h2>
         <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           <p className="text-blue-800 dark:text-blue-200 font-medium">
             Fund your account with as little as $1 to start your investing journey with Clera
@@ -277,6 +292,7 @@ export default function TransferForm({
               id="amount"
               type="number"
               min="1"
+              max="50000"
               step="1"
               placeholder="0"
               className="pl-7 bg-card dark:bg-card border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-blue-500 focus-visible:border-blue-500 h-12 text-lg font-medium"
@@ -285,7 +301,7 @@ export default function TransferForm({
               required
             />
           </div>
-          <p className="text-xs text-muted-foreground">Minimum transfer amount: $1.00</p>
+          <p className="text-xs text-muted-foreground">Transfer range: $1 - $50,000 (daily limit)</p>
         </div>
         
         <Button 

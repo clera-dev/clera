@@ -133,10 +133,10 @@ export default function FinancialProfileStep({
   const showEmployerFields = data.employmentStatus === EmploymentStatus.EMPLOYED && !employerFieldsSkipped;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-8">
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Financial Profile</h2>
-        <p className="text-muted-foreground">Please provide information about your financial situation and employment status.</p>
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4 sm:p-8">
+      <div className="mb-4 sm:mb-8">
+        <h2 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Financial Profile</h2>
+        <p className="text-muted-foreground text-sm sm:text-base">Please provide information about your financial situation and employment status.</p>
       </div>
       
       <div className="space-y-6 bg-card/50 p-6 rounded-lg border border-border/30 shadow-sm">
@@ -155,7 +155,7 @@ export default function FinancialProfileStep({
             value={data.liquidNetWorthRange} 
             onValueChange={(value: string) => onUpdate({ liquidNetWorthRange: value as LiquidNetWorthRange })}
           >
-            <SelectTrigger className={`${errors.liquidNetWorthRange ? "border-red-500" : "border-border/40"} rounded-md h-11`}>
+                          <SelectTrigger className={`${errors.liquidNetWorthRange ? "border-red-500" : "border-gray-300"} rounded-md h-11`}>
               <SelectValue placeholder="Select your investible / liquid assets" />
             </SelectTrigger>
             <SelectContent>
@@ -210,7 +210,7 @@ export default function FinancialProfileStep({
             value={data.employmentStatus} 
             onValueChange={(value: string) => handleEmploymentStatusChange(value as EmploymentStatus)}
           >
-            <SelectTrigger className={`${errors.employmentStatus ? "border-red-500" : "border-border/40"} rounded-md h-11`}>
+                          <SelectTrigger className={`${errors.employmentStatus ? "border-red-500" : "border-gray-300"} rounded-md h-11`}>
               <SelectValue placeholder="Select your employment status" />
             </SelectTrigger>
             <SelectContent>
@@ -265,7 +265,7 @@ export default function FinancialProfileStep({
                     id="employerName"
                     value={data.employerName || ''}
                     onChange={(e) => onUpdate({ employerName: e.target.value })}
-                    className={`mt-1 ${errors.employerName ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                    className={`mt-1 ${errors.employerName ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
                     placeholder="Company Name Inc."
                   />
                   {errors.employerName && <p className="text-red-500 text-sm mt-1">{errors.employerName}</p>}
@@ -277,7 +277,7 @@ export default function FinancialProfileStep({
                     id="employerAddress"
                     value={data.employerAddress || ''}
                     onChange={(e) => onUpdate({ employerAddress: e.target.value })}
-                    className={`mt-1 ${errors.employerAddress ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                    className={`mt-1 ${errors.employerAddress ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
                     placeholder="123 Business St, City, State, ZIP"
                   />
                   {errors.employerAddress && <p className="text-red-500 text-sm mt-1">{errors.employerAddress}</p>}
@@ -289,7 +289,7 @@ export default function FinancialProfileStep({
                     id="employmentPosition"
                     value={data.employmentPosition || ''}
                     onChange={(e) => onUpdate({ employmentPosition: e.target.value })}
-                    className={`mt-1 ${errors.employmentPosition ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                    className={`mt-1 ${errors.employmentPosition ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
                     placeholder="Software Engineer, Manager, etc."
                   />
                   {errors.employmentPosition && <p className="text-red-500 text-sm mt-1">{errors.employmentPosition}</p>}

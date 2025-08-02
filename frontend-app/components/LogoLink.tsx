@@ -71,7 +71,7 @@ export default function LogoLink() {
       <img 
         src="/clera-logo.png" 
         alt="Clera" 
-        className="h-6 sm:h-8 w-auto"
+        className="h-8 sm:h-10 w-auto"
       />
     </Link>
   );
