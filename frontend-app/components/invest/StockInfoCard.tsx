@@ -327,9 +327,9 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
   return (
     <div className="w-full bg-background">
       <div className="flex flex-row items-start justify-between space-y-0 pb-2 px-2 sm:px-4 pt-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <h2 className="text-lg sm:text-2xl font-bold truncate">{profile.companyName} ({profile.symbol})</h2>
+        <div className="flex-1 min-w-0 pr-2">
+          <div className="flex items-center gap-1 sm:gap-2 max-w-full">
+            <h2 className="text-lg sm:text-2xl font-bold truncate flex-1 min-w-0">{profile.companyName} ({profile.symbol})</h2>
             {accountId && (
               <Button
                 variant="ghost"
@@ -354,7 +354,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
               </Button>
             )}
           </div>
-          <p className="text-muted-foreground text-xs sm:text-sm">{profile.exchangeShortName} | {profile.sector} | {profile.industry}</p>
+          <p className="text-muted-foreground text-xs sm:text-sm truncate">{profile.exchangeShortName} | {profile.sector} | {profile.industry}</p>
         </div>
         {profile.image && 
             <img src={profile.image} alt={`${profile.companyName} logo`} className="h-10 w-10 sm:h-12 sm:w-12 rounded-md object-contain bg-muted p-1 flex-shrink-0" />

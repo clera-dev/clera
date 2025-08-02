@@ -13,7 +13,7 @@ export default function WelcomePage({ onContinue }: WelcomePageProps) {
             <div className="absolute -top-16 -left-16 w-32 h-32 bg-primary/5 rounded-full blur-xl" />
             <div className="absolute -bottom-8 -right-8 w-24 h-24 bg-blue-500/5 rounded-full blur-lg" />
             <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent relative">
-              Hey there! I'm Clera - it's nice to meet you.
+              Hey there! I'm Clera. It's nice to meet you.
             </h1>
           </div>
           

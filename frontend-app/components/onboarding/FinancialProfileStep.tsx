@@ -245,7 +245,7 @@ export default function FinancialProfileStep({
             {employerFieldsSkipped ? (
               <div className="bg-muted/30 p-4 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-2">
-                  Employer information has been skipped. We'll ask for this information monthly until provided.
+                  Employer information has been skipped.
                 </p>
                 <Button
                   type="button"
