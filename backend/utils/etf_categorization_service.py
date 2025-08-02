@@ -240,17 +240,26 @@ class ETFCategorizationService:
             'INDA': 'iShares MSCI India ETF',
         }
         
-    def classify_etf(self, symbol: str, asset_name: Optional[str] = None) -> ETFClassification:
+    def classify_etf(self, symbol: Optional[str], asset_name: Optional[str] = None) -> ETFClassification:
         """
         Classify an ETF symbol into the appropriate category.
         
         Args:
-            symbol: The ETF symbol (e.g., 'SPY', 'XLK')
+            symbol: The ETF symbol (e.g., 'SPY', 'XLK'). Can be None for unknown symbols.
             asset_name: Optional asset name for additional context
             
         Returns:
             ETFClassification with category and confidence level
         """
+        # Handle None or empty symbol gracefully
+        if not symbol:
+            return ETFClassification(
+                symbol="",
+                category=ETFCategory.UNKNOWN,
+                description="Unknown or missing symbol",
+                confidence=0.0
+            )
+        
         symbol = symbol.upper().strip()
         
         # Check broad market ETFs first (highest priority)
@@ -351,15 +360,17 @@ class ETFCategorizationService:
             confidence=0.0
         )
         
-    def is_etf(self, symbol: str) -> bool:
+    def is_etf(self, symbol: Optional[str]) -> bool:
         """Check if a symbol is a known ETF."""
+        if not symbol:
+            return False
         symbol = symbol.upper().strip()
         return (symbol in self._broad_market_etfs or 
                 symbol in self._sector_etfs or 
                 symbol in self._asset_class_etfs or 
                 symbol in self._international_etfs)
                 
-    def get_sector_for_allocation(self, symbol: str, asset_name: Optional[str] = None) -> str:
+    def get_sector_for_allocation(self, symbol: Optional[str], asset_name: Optional[str] = None) -> str:
         """
         Get the sector category for sector allocation chart purposes.
         
@@ -367,7 +378,7 @@ class ETFCategorizationService:
         It returns the string category that should be used for grouping.
         
         Args:
-            symbol: The ETF symbol
+            symbol: The ETF symbol. Can be None for unknown symbols.
             asset_name: Optional asset name for additional context
             
         Returns:
@@ -437,7 +448,7 @@ def clear_etf_categorization_cache() -> None:
 
 
 # Convenience functions for backward compatibility and easy usage
-def get_etf_sector_for_allocation(symbol: str, asset_name: Optional[str] = None) -> str:
+def get_etf_sector_for_allocation(symbol: Optional[str], asset_name: Optional[str] = None) -> str:
     """
     Convenience function to get ETF sector for allocation charts.
     
@@ -447,7 +458,7 @@ def get_etf_sector_for_allocation(symbol: str, asset_name: Optional[str] = None)
     for determining ETF sectors in allocation charts.
     
     Args:
-        symbol: The ETF symbol
+        symbol: The ETF symbol. Can be None for unknown symbols.
         asset_name: Optional asset name for additional context
         
     Returns:
@@ -457,14 +468,14 @@ def get_etf_sector_for_allocation(symbol: str, asset_name: Optional[str] = None)
     return service.get_sector_for_allocation(symbol, asset_name)
 
 
-def is_known_etf(symbol: str) -> bool:
+def is_known_etf(symbol: Optional[str]) -> bool:
     """
     Check if a symbol is a known ETF.
     
     This maintains backward compatibility while using the improved architecture.
     
     Args:
-        symbol: The ETF symbol to check
+        symbol: The ETF symbol to check. Can be None for unknown symbols.
         
     Returns:
         True if the symbol is a known ETF, False otherwise
@@ -473,14 +484,14 @@ def is_known_etf(symbol: str) -> bool:
     return service.is_etf(symbol)
 
 
-def classify_etf(symbol: str, asset_name: Optional[str] = None) -> ETFClassification:
+def classify_etf(symbol: Optional[str], asset_name: Optional[str] = None) -> ETFClassification:
     """
     Classify an ETF symbol into the appropriate category.
     
     This maintains backward compatibility while using the improved architecture.
     
     Args:
-        symbol: The ETF symbol (e.g., 'SPY', 'XLK')
+        symbol: The ETF symbol (e.g., 'SPY', 'XLK'). Can be None for unknown symbols.
         asset_name: Optional asset name for additional context
         
     Returns:

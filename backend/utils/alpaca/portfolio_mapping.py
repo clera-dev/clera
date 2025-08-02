@@ -18,11 +18,17 @@ try:
 except ImportError as e:
     logger.warning(f"ETF categorization service not available: {e}")
     ETF_SERVICE_AVAILABLE = False
-    # Fallback functions
+    # Fallback functions - return safe defaults instead of None
     def is_known_etf(symbol):
         return False
     def classify_etf(symbol, asset_name=None):
-        return None
+        # Return a safe default object that won't cause AttributeError
+        # This follows the "fail-gracefully" principle
+        class SafeDefaultClassification:
+            def __init__(self):
+                self.category = type('Category', (), {'value': 'Unknown'})()
+                self.confidence = 0.0
+        return SafeDefaultClassification()
 
 ASSET_CACHE_FILE = os.getenv("ASSET_CACHE_FILE", "data/tradable_assets.json")
 
@@ -53,18 +59,25 @@ def map_alpaca_position_to_portfolio_position(alpaca_pos, asset_details_map: Dic
             # PRIMARY: Use our comprehensive ETF categorization service
             asset_name = getattr(asset_details, 'name', None) if asset_details else None
             classification = classify_etf(alpaca_pos.symbol, asset_name)
-            security_type = SecurityType.ETF
             
-            logger.info(f"PRIMARY: Intelligent ETF classification for {alpaca_pos.symbol}: {classification.category.value} (confidence: {classification.confidence})")
-            
-            # Map ETF category to proper asset class
-            if classification.category.value in ['Fixed Income']:
-                our_asset_class = AssetClass.FIXED_INCOME
-            elif classification.category.value in ['Real Estate']:
-                our_asset_class = AssetClass.REAL_ESTATE
-            elif classification.category.value in ['Commodities']:
-                our_asset_class = AssetClass.COMMODITIES
-            # All other ETFs (broad market, sector, international) remain as EQUITY
+            # CRITICAL: Null-guard for service boundary protection
+            if classification is not None and hasattr(classification, 'category') and hasattr(classification, 'confidence'):
+                security_type = SecurityType.ETF
+                
+                logger.info(f"PRIMARY: Intelligent ETF classification for {alpaca_pos.symbol}: {classification.category.value} (confidence: {classification.confidence})")
+                
+                # Map ETF category to proper asset class
+                if classification.category.value in ['Fixed Income']:
+                    our_asset_class = AssetClass.FIXED_INCOME
+                elif classification.category.value in ['Real Estate']:
+                    our_asset_class = AssetClass.REAL_ESTATE
+                elif classification.category.value in ['Commodities']:
+                    our_asset_class = AssetClass.COMMODITIES
+                # All other ETFs (broad market, sector, international) remain as EQUITY
+            else:
+                # SERVICE BOUNDARY FAILURE: Fallback to Alpaca data when ETF service returns invalid response
+                logger.warning(f"ETF service returned invalid classification for {alpaca_pos.symbol}, falling back to Alpaca data")
+                security_type = None  # Will be set in fallback logic below
             
         elif asset_details:
             # FALLBACK 1: Use Alpaca asset details for unknown securities

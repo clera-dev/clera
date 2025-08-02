@@ -103,8 +103,11 @@ const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, in
       color: getSectorColor(entry.sector, index)
     }));
     
-    // Filter small slices for cleaner pie chart
-    return formattedData.filter(entry => entry.percentage > 0.5);
+    // Filter out asset classes (not sectors) and small slices for cleaner pie chart
+    return formattedData.filter(entry => 
+      entry.percentage > 0.5 && 
+      entry.sector !== 'Fixed Income'  // Fixed Income is an asset class, not a sector
+    );
   }, [allocationData]);
 
   if (error) {
