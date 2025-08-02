@@ -11,6 +11,7 @@ import PersonalInfoStep from "./PersonalInfoStep";
 import FinancialProfileStep from "./FinancialProfileStep";
 import DisclosuresStep from "./DisclosuresStep";
 import AgreementsStep from "./AgreementsStep";
+import OnboardingSuccessLoading from "./OnboardingSuccessLoading";
 import { createAlpacaAccount } from "@/utils/api/alpaca";
 import { saveOnboardingData } from "@/utils/api/onboarding-client";
 import { OnboardingStatus } from "@/app/actions";
@@ -18,8 +19,33 @@ import { Button } from "@/components/ui/button";
 import { usePostOnboardingNavigation } from "@/utils/navigation";
 
 // Define the Step type
-type Step = "welcome" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "success";
-// Define an enum for numeric step indices
+type Step = "welcome" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";
+
+// Single source of truth for step sequence
+const ONBOARDING_STEPS: Step[] = [
+  "welcome",
+  "contact", 
+  "personal",
+  "financial",
+  "disclosures",
+  "agreements",
+  "loading",
+  "success"
+];
+
+// Step display names for UI components
+const STEP_DISPLAY_NAMES: Record<Step, string> = {
+  "welcome": "Welcome",
+  "contact": "Contact Info",
+  "personal": "Personal Info", 
+  "financial": "Financial Profile",
+  "disclosures": "Disclosures",
+  "agreements": "Agreements",
+  "loading": "Loading",
+  "success": "Success"
+};
+
+// Define an enum for numeric step indices (derived from the steps array)
 enum StepIndex {
   Welcome = 0,
   Contact = 1,
@@ -27,7 +53,8 @@ enum StepIndex {
   Financial = 3,
   Disclosures = 4,
   Agreements = 5,
-  Success = 6
+  Loading = 6,
+  Success = 7
 }
 
 interface OnboardingFlowProps {
@@ -48,18 +75,16 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   const [accountCreated, setAccountCreated] = useState<boolean>(false);
   const [accountExists, setAccountExists] = useState<boolean>(false);
 
-  // Map for converting step string to numeric index
-  const stepToIndex: Record<Step, number> = {
-    "welcome": StepIndex.Welcome,
-    "contact": StepIndex.Contact,
-    "personal": StepIndex.Personal,
-    "financial": StepIndex.Financial,
-    "disclosures": StepIndex.Disclosures,
-    "agreements": StepIndex.Agreements,
-    "success": StepIndex.Success
-  };
+  // Map for converting step string to numeric index (derived from ONBOARDING_STEPS)
+  const stepToIndex: Record<Step, number> = ONBOARDING_STEPS.reduce((acc, step, index) => {
+    acc[step] = index;
+    return acc;
+  }, {} as Record<Step, number>);
 
-  const totalSteps = 5; // Contact + Personal + Financial + Disclosures + Agreements
+  // Calculate total steps dynamically from ONBOARDING_STEPS (excluding welcome, loading, success)
+  const totalSteps = ONBOARDING_STEPS.filter(step => 
+    step !== "welcome" && step !== "loading" && step !== "success"
+  ).length;
 
   // Save progress to Supabase when steps change
   useEffect(() => {
@@ -75,8 +100,12 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     if (currentStep !== "welcome") {
       // Use setTimeout to ensure the new content is rendered
       const timeoutId = setTimeout(() => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }, 100);
+        // Use instant scroll to ensure it works reliably
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        // Also try to scroll the document element for better compatibility
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }, 50);
       
       // Clean up timeout on unmount or when currentStep changes
       return () => clearTimeout(timeoutId);
@@ -103,20 +132,18 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const nextStep = () => {
-    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "success"];
-    const currentIndex = steps.indexOf(currentStep);
+    const currentIndex = ONBOARDING_STEPS.indexOf(currentStep);
     
-    if (currentIndex < steps.length - 1) {
-      setCurrentStep(steps[currentIndex + 1]);
+    if (currentIndex < ONBOARDING_STEPS.length - 1) {
+      setCurrentStep(ONBOARDING_STEPS[currentIndex + 1]);
     }
   };
 
   const prevStep = () => {
-    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "success"];
-    const currentIndex = steps.indexOf(currentStep);
+    const currentIndex = ONBOARDING_STEPS.indexOf(currentStep);
     
     if (currentIndex > 0) {
-      setCurrentStep(steps[currentIndex - 1]);
+      setCurrentStep(ONBOARDING_STEPS[currentIndex - 1]);
     }
   };
 
@@ -174,7 +201,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           
           setAccountCreated(true);
           setSubmitting(false);
-          navigateAfterOnboarding(true); // New user who just completed onboarding
+          setCurrentStep("loading"); // Show loading page instead of navigating away
           return;
         }
         
@@ -199,13 +226,19 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       
       setAccountCreated(true);
       setSubmitting(false);
-      navigateAfterOnboarding(true); // New user who just completed onboarding
+      setCurrentStep("loading"); // Show loading page instead of navigating away
     } catch (error) {
       console.error("Error in onboarding submission:", error);
       setSubmissionError(error instanceof Error ? error.message : "An unknown error occurred");
       setSubmitting(false);
       // Do not navigate away on error
     }
+  };
+
+  const handleLoadingComplete = () => {
+    // After onboarding completion, route to /protected where funding flow is handled
+    // The /protected page will redirect to /invest after funding is complete
+    router.push('/protected');
   };
 
   const renderCurrentStep = () => {
@@ -259,6 +292,8 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
             submissionError={submissionError}
           />
         );
+      case "loading":
+        return <OnboardingSuccessLoading onComplete={handleLoadingComplete} />;
       case "success":
         // This step is no longer used, navigation happens directly
         return null;
@@ -269,33 +304,34 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
 
   // Calculate progress percentage
   const calculateProgress = () => {
-    const currentStepIndex = stepToIndex[currentStep];
-    
     // Custom calculation for the success step to show 100%
     if (currentStep === "success") {
       return 100;
     }
     
+    // For welcome and loading steps, show 0%
+    if (currentStep === "welcome" || currentStep === "loading") {
+      return 0;
+    }
+    
     // For other steps, calculate percentage based on step index
+    const currentStepIndex = stepToIndex[currentStep];
     return Math.round((currentStepIndex / totalSteps) * 100);
   };
 
   return (
     <div className="flex flex-col w-full">
       <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
-        {/* Progress bar - don't show for welcome or success pages */}
-        {currentStep !== "welcome" && currentStep !== "success" && (
+        {/* Progress bar - don't show for welcome, loading, or success pages */}
+        {currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success" && (
           <div className="mb-6">
             <ProgressBar 
               currentStep={stepToIndex[currentStep]} 
               totalSteps={totalSteps}
-              stepNames={[
-                "Contact Info",
-                "Personal Info",
-                "Financial Profile",
-                "Disclosures",
-                "Agreements"
-              ]}
+              stepNames={ONBOARDING_STEPS
+                .filter(step => step !== "welcome" && step !== "loading" && step !== "success")
+                .map(step => STEP_DISPLAY_NAMES[step])
+              }
               percentComplete={calculateProgress()}
             />
           </div>

@@ -152,8 +152,8 @@ export default function PersonalInfoStep({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4 sm:p-8">
-      <div className="mb-6 sm:mb-8">
-        <h2 className="text-2xl sm:text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Personal Information</h2>
+      <div className="mb-4 sm:mb-8">
+        <h2 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Personal Information</h2>
         <p className="text-muted-foreground text-sm sm:text-base">Next, we'll need some personal details, which will be securely stored for regulatory purposes.</p>
       </div>
       
@@ -166,7 +166,7 @@ export default function PersonalInfoStep({
               id="firstName"
               value={data.firstName}
               onChange={(e) => onUpdate({ firstName: e.target.value })}
-              className={`${errors.firstName ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
+              className={`${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />
             {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
           </div>
@@ -177,7 +177,7 @@ export default function PersonalInfoStep({
               id="middleName"
               value={data.middleName}
               onChange={(e) => onUpdate({ middleName: e.target.value })}
-              className="border-border/40 rounded-md h-12 sm:h-11"
+              className="border-gray-300 rounded-md h-12 sm:h-11"
             />
           </div>
           
@@ -187,7 +187,7 @@ export default function PersonalInfoStep({
               id="lastName"
               value={data.lastName}
               onChange={(e) => onUpdate({ lastName: e.target.value })}
-              className={`${errors.lastName ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
+              className={`${errors.lastName ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />
             {errors.lastName && <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>}
           </div>
@@ -202,7 +202,7 @@ export default function PersonalInfoStep({
               type="date"
               value={data.dateOfBirth}
               onChange={(e) => onUpdate({ dateOfBirth: e.target.value })}
-              className={`${errors.dateOfBirth ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
+              className={`${errors.dateOfBirth ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />
             {errors.dateOfBirth && <p className="text-red-500 text-sm mt-1">{errors.dateOfBirth}</p>}
           </div>
@@ -215,7 +215,7 @@ export default function PersonalInfoStep({
               inputMode="numeric"
               value={data.taxId}
               onChange={(e) => onUpdate({ taxId: formatSSN(e.target.value) })}
-              className={`${errors.taxId ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
+              className={`${errors.taxId ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
               maxLength={11}
               placeholder="123-45-6789"
             />
@@ -236,7 +236,7 @@ export default function PersonalInfoStep({
           <Input
             value={data.countryOfTaxResidence}
             disabled
-            className="border-border/40 bg-muted/50 rounded-md h-12 sm:h-11"
+                          className="border-gray-300 bg-muted/50 rounded-md h-12 sm:h-11"
           />
         </div>
 
@@ -296,7 +296,7 @@ export default function PersonalInfoStep({
                   onChange={(e) => onUpdate({ countryOfBirth: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') })}
                   onBlur={handleCountryCodeBlur}
                   maxLength={3}
-                  className={`${errors.countryOfBirth ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
+                  className={`${errors.countryOfBirth ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
                   placeholder="3-letter ISO country code (e.g., CAN)"
                 />
                 {errors.countryOfBirth && <p className="text-red-500 text-sm mt-1">{errors.countryOfBirth}</p>}
@@ -310,7 +310,7 @@ export default function PersonalInfoStep({
                   onChange={(e) => onUpdate({ countryOfCitizenship: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') })}
                   onBlur={handleCountryCodeBlur}
                   maxLength={3}
-                  className={`${errors.countryOfCitizenship ? "border-red-500" : "border-border/40"} rounded-md h-12 sm:h-11`}
+                  className={`${errors.countryOfCitizenship ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
                   placeholder="3-letter ISO country code (e.g., CAN)"
                 />
                 {errors.countryOfCitizenship && <p className="text-red-500 text-sm mt-1">{errors.countryOfCitizenship}</p>}
@@ -326,7 +326,7 @@ export default function PersonalInfoStep({
               <div>
                 <Label htmlFor="visaType" className="text-sm font-medium">Visa Type</Label>
                 <Select value={data.visaType} onValueChange={(value: string) => onUpdate({ visaType: value as VisaType })}>
-                  <SelectTrigger className={`mt-1 ${errors.visaType ? "border-red-500" : "border-border/40"} rounded-md h-11`}>
+                  <SelectTrigger className={`mt-1 ${errors.visaType ? "border-red-500" : "border-gray-300"} rounded-md h-11`}>
                     <SelectValue placeholder="Select visa type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -347,7 +347,7 @@ export default function PersonalInfoStep({
                   type="date"
                   value={data.visaExpirationDate}
                   onChange={(e) => onUpdate({ visaExpirationDate: e.target.value })}
-                  className={`mt-1 ${errors.visaExpirationDate ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                  className={`mt-1 ${errors.visaExpirationDate ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
                 />
                 {errors.visaExpirationDate && <p className="text-red-500 text-sm mt-1">{errors.visaExpirationDate}</p>}
               </div>
@@ -362,7 +362,7 @@ export default function PersonalInfoStep({
                   type="date"
                   value={data.dateOfDepartureFromUsa}
                   onChange={(e) => onUpdate({ dateOfDepartureFromUsa: e.target.value })}
-                  className={`mt-1 ${errors.dateOfDepartureFromUsa ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+                  className={`mt-1 ${errors.dateOfDepartureFromUsa ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
                 />
                 {errors.dateOfDepartureFromUsa && <p className="text-red-500 text-sm mt-1">{errors.dateOfDepartureFromUsa}</p>}
                 <p className="text-xs text-muted-foreground mt-1">Required for B1/B2 visa holders</p>

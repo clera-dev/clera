@@ -40,8 +40,8 @@ export default function RootLayout({
             <ClientLayout>
               {/* --- Top nav bar ------------------------------------------------ */}
               <HeaderController>
-                <nav className="w-full flex justify-center border-b border-b-foreground/10 h-10 sm:h-16 fixed top-0 right-0 bg-background z-50">
-                  <div className="w-full max-w-screen-2xl flex justify-between items-center p-2 sm:p-3 px-3 sm:px-6 lg:px-8 text-sm">
+                <nav className="w-full flex justify-center border-b border-b-foreground/10 h-14 sm:h-16 fixed top-0 right-0 bg-background z-50">
+                  <div className="w-full max-w-screen-2xl flex justify-between items-center p-3 sm:p-4 px-4 sm:px-6 lg:px-8 text-sm">
                     <div className="flex gap-5 items-center font-semibold">
                       <ConditionalLogoLink />
                     </div>

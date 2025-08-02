@@ -59,10 +59,10 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-8">
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Contact Information</h2>
-        <p className="text-muted-foreground">Please provide your contact details to start your account setup.</p>
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4 sm:p-8">
+      <div className="mb-4 sm:mb-8">
+        <h2 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Contact Information</h2>
+        <p className="text-muted-foreground text-sm sm:text-base">Please provide your contact details to start your account setup.</p>
       </div>
       
       <div className="space-y-6 bg-card/50 p-6 rounded-lg border border-border/30 shadow-sm">
@@ -82,7 +82,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               value={data.email}
               disabled={!!userEmail}
               onChange={(e) => onUpdate({ email: e.target.value })}
-              className={`mt-1 ${errors.email ? "border-red-500" : "border-border/40"} rounded-md h-11 ${userEmail ? 'bg-muted/50' : ''}`}
+              className={`mt-1 ${errors.email ? "border-red-500" : "border-gray-300"} rounded-md h-11 ${userEmail ? 'bg-muted/50' : ''}`}
               placeholder="you@example.com"
             />
             {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
@@ -99,7 +99,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
                 const phoneValue = value as string;
                 onUpdate({ phoneNumber: phoneValue });
               }}
-              className={`mt-1 ${errors.phoneNumber ? "border-red-500" : "border-border/40"} rounded-md`}
+              className={`mt-1 ${errors.phoneNumber ? "border-red-500" : "border-gray-300"} rounded-md`}
             />
             {errors.phoneNumber && <p className="text-red-500 text-sm mt-1">{errors.phoneNumber}</p>}
           </div>
@@ -114,7 +114,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               inputMode="text"
               value={data.streetAddress[0]}
               onChange={(e) => onUpdate({ streetAddress: [e.target.value] })}
-              className={`mt-1 ${errors.streetAddress ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`mt-1 ${errors.streetAddress ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
               placeholder="123 Main St"
             />
             {errors.streetAddress && <p className="text-red-500 text-sm mt-1">{errors.streetAddress}</p>}
@@ -128,7 +128,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               inputMode="text"
               value={data.unit || ''}
               onChange={(e) => onUpdate({ unit: e.target.value })}
-              className="mt-1 border-border/40 rounded-md h-11"
+              className="mt-1 border-gray-300 rounded-md h-11"
               placeholder="Apt 4B"
             />
           </div>
@@ -141,7 +141,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               id="city"
               value={data.city}
               onChange={(e) => onUpdate({ city: e.target.value })}
-              className={`mt-1 ${errors.city ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`mt-1 ${errors.city ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
               placeholder="New York"
             />
             {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
@@ -153,7 +153,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               id="state"
               value={data.state}
               onChange={(e) => onUpdate({ state: e.target.value })}
-              className={`mt-1 ${errors.state ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`mt-1 ${errors.state ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
               placeholder="NY"
             />
             {errors.state && <p className="text-red-500 text-sm mt-1">{errors.state}</p>}
@@ -162,7 +162,9 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="postalCode" className="text-sm font-medium">Postal Code</Label>
+            <div className="flex items-center h-6">
+              <Label htmlFor="postalCode" className="text-sm font-medium">Postal Code</Label>
+            </div>
             <Input
               id="postalCode"
               type="text"
@@ -170,15 +172,15 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               pattern="[0-9]*"
               value={data.postalCode}
               onChange={(e) => onUpdate({ postalCode: e.target.value })}
-              className={`mt-1 ${errors.postalCode ? "border-red-500" : "border-border/40"} rounded-md h-11`}
+              className={`mt-1 ${errors.postalCode ? "border-red-500" : "border-gray-300"} rounded-md h-11`}
               placeholder="10001"
             />
             {errors.postalCode && <p className="text-red-500 text-sm mt-1">{errors.postalCode}</p>}
           </div>
           
           <div>
-            <div className="flex items-center">
-              <Label htmlFor="country">Country</Label>
+            <div className="flex items-center h-6">
+              <Label htmlFor="country" className="text-sm font-medium">Country</Label>
               <InfoTooltip content="The country where you currently reside.">
                 <button type="button" aria-label="Learn more about country selection" className="ml-2">
                   <InfoIcon className="h-4 w-4 text-gray-400" />
@@ -190,7 +192,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
               value={data.country}
               onChange={(e) => onUpdate({ country: e.target.value })}
               disabled
-              className="mt-1 border-border/40 bg-muted/50 rounded-md h-11"
+              className="mt-1 border-gray-300 bg-muted/50 rounded-md h-11"
             />
           </div>
         </div>
