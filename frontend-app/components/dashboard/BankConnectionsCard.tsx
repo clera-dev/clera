@@ -45,12 +45,12 @@ export default function BankConnectionsCard({
     setIsDialogOpen(false);
   };
 
-  const handleFundingComplete = (amount: string, last4?: string) => {
+  const handleFundingComplete = (amount?: string, last4?: string) => {
     // Close the main dialog
     handleCloseDialog();
     
     // Store transfer details and show success dialog
-    setTransferAmount(amount);
+    setTransferAmount(amount || '');
     setBankLast4(last4 || '');
     setIsSuccessDialogOpen(true);
   };
