@@ -98,7 +98,15 @@ def test_frontend_backend_analytics_endpoint():
             'risk_score': float(frontend_risk_score),
             'diversification_score': float(frontend_diversification_score),
             'positions': portfolio_positions
-        }def test_ai_agent_portfolio_analysis():
+        }
+    
+    except Exception as e:
+        print(f"❌ Frontend test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def test_ai_agent_portfolio_analysis():
     """Test the exact same logic that the AI agent uses for portfolio analysis."""
     
     print("\n🤖 TESTING AI AGENT PORTFOLIO ANALYSIS LOGIC")
@@ -163,7 +171,15 @@ def test_frontend_backend_analytics_endpoint():
             'risk_score': float(agent_risk_score),
             'diversification_score': float(agent_diversification_score),
             'positions': positions
-        }def test_edge_cases():
+        }
+    
+    except Exception as e:
+        print(f"❌ AI Agent test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def test_edge_cases():
     """Test edge cases that could cause discrepancies."""
     
     print("\n⚠️  TESTING EDGE CASES")
@@ -309,7 +325,15 @@ def test_frontend_backend_analytics_endpoint():
                 builtins.open = original_open
                 os.path.exists = original_exists
         
-        return all_passeddef test_risk_score_calculation_consistency():
+        return all_passed
+    
+    except Exception as e:
+        print(f"❌ Edge cases test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def test_risk_score_calculation_consistency():
     """Test that risk score calculations are identical between frontend and agent."""
     
     print("\n🎯 TESTING RISK SCORE CALCULATION CONSISTENCY")
@@ -390,7 +414,15 @@ def test_frontend_backend_analytics_endpoint():
             return True
         else:
             print("❌ Fix not working: ETF should have lower risk score than individual stock")
-            return Falseif __name__ == "__main__":
+            return False
+    
+    except Exception as e:
+        print(f"❌ Risk score consistency test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+if __name__ == "__main__":
     print("🔬 COMPREHENSIVE RISK SCORE VERIFICATION")
     print("Testing BOTH frontend analytics endpoint AND AI agent logic")
     print("=" * 80)
