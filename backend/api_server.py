@@ -47,7 +47,7 @@ from utils.alpaca.account_closure import (
 )
 
 # Authentication imports
-from utils.authentication import verify_account_ownership
+from utils.authentication import verify_account_ownership, get_authenticated_user_id
 from utils.supabase.db_client import get_supabase_client
 
 # Watchlist imports
@@ -2019,6 +2019,83 @@ async def get_account_orders(
     except Exception as e:
         logger.error(f"Error fetching orders for {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error fetching orders.")
+
+@app.delete("/api/portfolio/{account_id}/orders/{order_id}")
+async def cancel_order_for_account(
+    account_id: str,
+    order_id: str,
+    broker_client = Depends(get_broker_client),
+    authenticated_user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Cancel a specific order for an account.
+    
+    This endpoint provides secure order cancellation with proper authentication
+    and account ownership verification to prevent unauthorized order manipulation.
+    """
+    try:
+        # Validate account_id format
+        try:
+            account_uuid = uuid.UUID(account_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid account_id format. Must be a UUID.")
+        
+        # Validate order_id format 
+        try:
+            order_uuid = uuid.UUID(order_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid order_id format. Must be a UUID.")
+        
+        # Verify user owns this account (security check)
+        verify_account_ownership(account_id, authenticated_user_id)
+        
+        logger.info(f"Cancelling order {order_id} for account {account_id} by user {authenticated_user_id}")
+        
+        # Use Alpaca's cancel_order_for_account_by_id method
+        broker_client.cancel_order_for_account_by_id(
+            account_id=account_id,
+            order_id=order_id
+        )
+        
+        logger.info(f"Successfully cancelled order {order_id} for account {account_id}")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"Order {order_id} has been successfully cancelled",
+            "order_id": order_id,
+            "account_id": account_id
+        })
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (auth failures, validation errors)
+        raise
+    except requests.exceptions.HTTPError as e:
+        # Handle Alpaca API errors
+        logger.error(f"Alpaca API HTTP error cancelling order {order_id} for account {account_id}: {e.response.status_code} - {e.response.text}")
+        
+        # Check for common order cancellation errors
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=404, 
+                detail="Order not found or already processed"
+            )
+        elif e.response.status_code == 422:
+            raise HTTPException(
+                status_code=422, 
+                detail="Order cannot be cancelled (may be filled or already cancelled)"
+            )
+        else:
+            raise HTTPException(
+                status_code=e.response.status_code, 
+                detail=f"Alpaca error: {e.response.text}"
+            )
+    except Exception as e:
+        # Handle unexpected errors
+        logger.error(f"Error cancelling order {order_id} for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail="Internal server error cancelling order"
+        )
 
 @app.get("/api/portfolio/value")
 async def get_portfolio_value(accountId: str = Query(..., description="Alpaca account ID")):
