@@ -596,7 +596,7 @@ export default function StockChart({ symbol }: StockChartProps) {
         </div>
 
         {/* Chart */}
-        <div className="h-80 w-full">
+        <div className="h-48 sm:h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 5, right: 15, left: 5, bottom: 5 }}>
               <defs>
@@ -662,7 +662,7 @@ export default function StockChart({ symbol }: StockChartProps) {
         </div>
 
         {/* Time interval buttons - mobile only (below chart) */}
-        <div className="lg:hidden mt-6 pt-4 border-t border-border">
+        <div className="lg:hidden mt-2">
           <div className="flex flex-wrap gap-2 justify-center">
             {TIME_INTERVALS.map(interval => (
               <Button

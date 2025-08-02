@@ -476,14 +476,14 @@ export default function InvestPage() {
 
         {/* Stock Information Dialog */}
         <Dialog open={!!selectedSymbol} onOpenChange={(open) => !open && setSelectedSymbol(null)}>
-          <DialogContent className="w-[100vw] h-[100vh] sm:w-[95vw] sm:h-[95vh] lg:max-w-[70vw] xl:max-w-[60vw] p-0 sm:max-h-[90vh] overflow-hidden border-0 shadow-xl sm:rounded-lg left-0 top-0 sm:left-1/2 sm:top-1/2 translate-x-0 translate-y-0 sm:-translate-x-1/2 sm:-translate-y-1/2 z-[50] flex flex-col">
+          <DialogContent className="w-[100vw] h-[calc(100vh-80px)] sm:w-[95vw] sm:h-[95vh] lg:max-w-[70vw] xl:max-w-[60vw] p-0 sm:max-h-[90vh] overflow-hidden border-0 shadow-xl sm:rounded-lg left-0 top-0 sm:left-1/2 sm:top-1/2 translate-x-0 translate-y-0 sm:-translate-x-1/2 sm:-translate-y-1/2 z-[50] flex flex-col">
             <DialogHeader className="bg-slate-950 p-4 flex flex-row items-center justify-between sticky top-0 z-10 border-b border-slate-800">
               <DialogTitle className="text-white text-xl font-semibold">{selectedSymbol}</DialogTitle>
               <DialogClose className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded-full p-1">
                 <X className="h-5 w-5" />
               </DialogClose>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="flex-1 overflow-y-auto min-h-0 pb-1 lg:pb-0">
               {selectedSymbol && (
                 <StockInfoCard 
                   symbol={selectedSymbol} 
@@ -496,22 +496,27 @@ export default function InvestPage() {
               )}
             </div>
             
-            {/* Action Footer */}
+            {/* Desktop Action Footer - Fixed at bottom */}
             {selectedSymbol && (
-              <div className="sticky bottom-0 left-0 right-0 mt-auto bg-background border-t border-border p-3 flex items-center justify-between shadow-md z-[130] mb-20 sm:mb-0">
+              <div className="hidden lg:flex flex-shrink-0 bg-background border-t border-border p-4 items-center justify-between shadow-md">
                 <div className="text-left">
-                  <p className="text-xs text-muted-foreground">Available to Invest</p>
                   {isLoadingBalance || isLoadingAccountId ? (
-                    <Skeleton className="h-5 w-24 mt-1" />
+                    <Skeleton className="h-6 w-32 mb-1" />
                   ) : balanceError ? (
-                    <p className="text-sm text-amber-600">Account info unavailable</p>
+                    <>
+                      <p className="text-lg font-bold text-amber-600">Account info unavailable</p>
+                      <p className="text-sm text-muted-foreground">Cash available</p>
+                    </>
                   ) : (
-                    <p className="text-sm sm:text-lg font-semibold">{formatCurrency(availableBalance?.cash)}</p>
+                    <>
+                      <p className="text-lg font-bold">{formatCurrency(availableBalance?.cash)}</p>
+                      <p className="text-sm text-muted-foreground">Cash available</p>
+                    </>
                   )}
                 </div>
                 <Button 
-                  size="default" 
-                  className="font-semibold text-sm sm:text-lg px-4 sm:px-6"
+                  size="lg" 
+                  className="font-semibold text-lg px-8 py-3"
                   onClick={handleOpenModal}
                   disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
                 >
@@ -519,6 +524,40 @@ export default function InvestPage() {
                 </Button>
               </div>
             )}
+
+            {/* Mobile Action Footer - Minimal gap, maximum content visibility */}
+            {selectedSymbol && (
+              <div className="lg:hidden flex-shrink-0 bg-background/95 backdrop-blur-md border-t border-border/50 shadow-lg pt-1">
+                <div className="px-1.5 pb-1.5">
+                  <div className="bg-background border border-border rounded-lg p-3 flex items-center justify-between shadow-sm">
+                    <div className="text-left min-w-0 flex-1">
+                      {isLoadingBalance || isLoadingAccountId ? (
+                        <Skeleton className="h-5 w-24 mb-1" />
+                      ) : balanceError ? (
+                        <>
+                          <p className="text-base font-bold text-amber-600">Account info unavailable</p>
+                          <p className="text-xs text-muted-foreground">Cash available</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-base font-bold">{formatCurrency(availableBalance?.cash)}</p>
+                          <p className="text-xs text-muted-foreground">Cash available</p>
+                        </>
+                      )}
+                    </div>
+                    <Button 
+                      size="default" 
+                      className="font-semibold text-base px-6 py-2 ml-3 flex-shrink-0"
+                      onClick={handleOpenModal}
+                      disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
+                    >
+                      $ Invest
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </DialogContent>
         </Dialog>
 
@@ -537,6 +576,8 @@ export default function InvestPage() {
           />
         )}
       </div>
+
+
     </div>
   );
 } 
