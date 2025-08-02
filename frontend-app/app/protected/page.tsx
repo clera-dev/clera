@@ -63,13 +63,6 @@ export default function ProtectedPageClient() {
           ));
         
         setHasFunding(funded);
-
-        // If user has completed both onboarding AND funding, redirect to invest
-        if (funded) {
-          console.log('User has completed onboarding and funding, redirecting to /invest');
-          router.replace('/invest');
-          return;
-        }
       }
       
       setLoading(false);
@@ -77,6 +70,14 @@ export default function ProtectedPageClient() {
 
     fetchData();
   }, [router]);
+
+  // Handle navigation when funding status changes
+  useEffect(() => {
+    if (!loading && hasFunding && (userStatus === 'submitted' || userStatus === 'approved')) {
+      console.log('User has completed onboarding and funding, redirecting to /invest');
+      router.replace('/invest');
+    }
+  }, [hasFunding, userStatus, loading, router]);
 
   if (loading) {
     return (
@@ -137,14 +138,7 @@ export default function ProtectedPageClient() {
   }
 
   // If onboarding is complete but funding is not, show funding flow
-  // If both are complete, user was already redirected to /invest above
-
-  // Safety check: if somehow a funded user reaches here, redirect to /invest
-  if (hasFunding) {
-    console.log('Funded user reached funding flow, redirecting to /invest');
-    router.replace('/invest');
-    return null;
-  }
+  // If both are complete, user was already redirected to /invest above via useEffect
 
   // Welcome step - "Almost there!" page
   if (fundingStep === 'welcome') {

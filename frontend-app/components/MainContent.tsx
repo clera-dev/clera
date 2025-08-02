@@ -26,7 +26,7 @@ export default function MainContent({ children }: MainContentProps) {
   const shouldHaveHeaderPadding = authPages.includes(pathname);
   
   return (
-    <main className={`flex-1 w-full flex flex-col ${shouldHaveHeaderPadding ? 'pt-14 sm:pt-18' : ''}`}>
+    <main className={`flex-1 w-full flex flex-col ${shouldHaveHeaderPadding ? 'pt-14 sm:pt-16' : ''}`}>
       {children}
     </main>
   );

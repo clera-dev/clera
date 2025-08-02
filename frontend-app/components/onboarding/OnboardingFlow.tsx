@@ -20,7 +20,32 @@ import { usePostOnboardingNavigation } from "@/utils/navigation";
 
 // Define the Step type
 type Step = "welcome" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";
-// Define an enum for numeric step indices
+
+// Single source of truth for step sequence
+const ONBOARDING_STEPS: Step[] = [
+  "welcome",
+  "contact", 
+  "personal",
+  "financial",
+  "disclosures",
+  "agreements",
+  "loading",
+  "success"
+];
+
+// Step display names for UI components
+const STEP_DISPLAY_NAMES: Record<Step, string> = {
+  "welcome": "Welcome",
+  "contact": "Contact Info",
+  "personal": "Personal Info", 
+  "financial": "Financial Profile",
+  "disclosures": "Disclosures",
+  "agreements": "Agreements",
+  "loading": "Loading",
+  "success": "Success"
+};
+
+// Define an enum for numeric step indices (derived from the steps array)
 enum StepIndex {
   Welcome = 0,
   Contact = 1,
@@ -50,19 +75,16 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   const [accountCreated, setAccountCreated] = useState<boolean>(false);
   const [accountExists, setAccountExists] = useState<boolean>(false);
 
-  // Map for converting step string to numeric index
-  const stepToIndex: Record<Step, number> = {
-    "welcome": StepIndex.Welcome,
-    "contact": StepIndex.Contact,
-    "personal": StepIndex.Personal,
-    "financial": StepIndex.Financial,
-    "disclosures": StepIndex.Disclosures,
-    "agreements": StepIndex.Agreements,
-    "loading": StepIndex.Loading,
-    "success": StepIndex.Success
-  };
+  // Map for converting step string to numeric index (derived from ONBOARDING_STEPS)
+  const stepToIndex: Record<Step, number> = ONBOARDING_STEPS.reduce((acc, step, index) => {
+    acc[step] = index;
+    return acc;
+  }, {} as Record<Step, number>);
 
-  const totalSteps = 5; // Contact + Personal + Financial + Disclosures + Agreements
+  // Calculate total steps dynamically from ONBOARDING_STEPS (excluding welcome, loading, success)
+  const totalSteps = ONBOARDING_STEPS.filter(step => 
+    step !== "welcome" && step !== "loading" && step !== "success"
+  ).length;
 
   // Save progress to Supabase when steps change
   useEffect(() => {
@@ -110,20 +132,18 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const nextStep = () => {
-    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "loading", "success"];
-    const currentIndex = steps.indexOf(currentStep);
+    const currentIndex = ONBOARDING_STEPS.indexOf(currentStep);
     
-    if (currentIndex < steps.length - 1) {
-      setCurrentStep(steps[currentIndex + 1]);
+    if (currentIndex < ONBOARDING_STEPS.length - 1) {
+      setCurrentStep(ONBOARDING_STEPS[currentIndex + 1]);
     }
   };
 
   const prevStep = () => {
-    const steps: Step[] = ["welcome", "contact", "personal", "financial", "disclosures", "agreements", "loading", "success"];
-    const currentIndex = steps.indexOf(currentStep);
+    const currentIndex = ONBOARDING_STEPS.indexOf(currentStep);
     
     if (currentIndex > 0) {
-      setCurrentStep(steps[currentIndex - 1]);
+      setCurrentStep(ONBOARDING_STEPS[currentIndex - 1]);
     }
   };
 
@@ -283,14 +303,18 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
 
   // Calculate progress percentage
   const calculateProgress = () => {
-    const currentStepIndex = stepToIndex[currentStep];
-    
     // Custom calculation for the success step to show 100%
     if (currentStep === "success") {
       return 100;
     }
     
+    // For welcome and loading steps, show 0%
+    if (currentStep === "welcome" || currentStep === "loading") {
+      return 0;
+    }
+    
     // For other steps, calculate percentage based on step index
+    const currentStepIndex = stepToIndex[currentStep];
     return Math.round((currentStepIndex / totalSteps) * 100);
   };
 
@@ -303,13 +327,10 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
             <ProgressBar 
               currentStep={stepToIndex[currentStep]} 
               totalSteps={totalSteps}
-              stepNames={[
-                "Contact Info",
-                "Personal Info",
-                "Financial Profile",
-                "Disclosures",
-                "Agreements"
-              ]}
+              stepNames={ONBOARDING_STEPS
+                .filter(step => step !== "welcome" && step !== "loading" && step !== "success")
+                .map(step => STEP_DISPLAY_NAMES[step])
+              }
               percentComplete={calculateProgress()}
             />
           </div>

@@ -23,6 +23,11 @@ export default function ManualBankEntry({
 }: ManualBankEntryProps) {
   const [showForm, setShowForm] = useState(showFullForm);
   
+  // Synchronize internal state with prop to maintain single source of truth
+  useEffect(() => {
+    setShowForm(showFullForm);
+  }, [showFullForm]);
+  
   // Scroll to top when entering full form mode
   useEffect(() => {
     if (showFullForm) {
