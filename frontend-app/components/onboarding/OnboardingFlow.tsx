@@ -236,9 +236,9 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const handleLoadingComplete = () => {
-    // Use proper navigation abstraction instead of reloading the page
-    // This ensures the user is routed to the appropriate page after onboarding completion
-    navigateAfterOnboarding(true); // true indicates this is a new user who just completed onboarding
+    // After onboarding completion, route to /protected where funding flow is handled
+    // The /protected page will redirect to /invest after funding is complete
+    router.push('/protected');
   };
 
   const renderCurrentStep = () => {
