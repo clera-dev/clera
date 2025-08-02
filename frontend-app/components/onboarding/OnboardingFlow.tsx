@@ -236,8 +236,9 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const handleLoadingComplete = () => {
-    // Instead of navigating away immediately, just refresh the page to show the protected page content
-    window.location.reload();
+    // Use proper navigation abstraction instead of reloading the page
+    // This ensures the user is routed to the appropriate page after onboarding completion
+    navigateAfterOnboarding(true); // true indicates this is a new user who just completed onboarding
   };
 
   const renderCurrentStep = () => {

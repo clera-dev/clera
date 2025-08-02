@@ -79,6 +79,15 @@ export default function ProtectedPageClient() {
     }
   }, [hasFunding, userStatus, loading, router]);
 
+  // Fallback redirect for unexpected states - should rarely be needed
+  useEffect(() => {
+    const hasCompleted = userStatus === 'submitted' || userStatus === 'approved';
+    if (!loading && hasCompleted && fundingStep !== 'welcome' && fundingStep !== 'connect-bank') {
+      console.log('Unexpected state: invalid funding step, redirecting to /invest');
+      router.replace('/invest');
+    }
+  }, [loading, userStatus, fundingStep, router]);
+
   if (loading) {
     return (
       <div className="flex-1 w-full flex flex-col gap-4 p-2 sm:p-4">
@@ -208,8 +217,7 @@ export default function ProtectedPageClient() {
   }
 
   // This should never be reached since funded users are redirected above
-  // But just in case, redirect to invest
-  console.log('Unexpected state: reached end of protected page logic, redirecting to /invest');
-  router.replace('/invest');
+  // If we reach here, something unexpected happened
+  console.log('Unexpected state: reached end of protected page logic - check component logic');
   return null;
 }
