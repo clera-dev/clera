@@ -13,8 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, parseISO } from 'date-fns';
-import { Copy } from 'lucide-react';
+import { Copy, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { OrderCancelModal } from "@/components/ui/order-cancel-modal";
+import toast from 'react-hot-toast';
 
 // Re-use or import the OrderData interface from page.tsx or a shared types file
 interface OrderData {
@@ -50,6 +52,7 @@ interface TransactionsTableProps {
   accountId: string | null;
   fetchData: (endpoint: string, options?: RequestInit) => Promise<any>;
   isLoading?: boolean; // Optional loading state from parent
+  onOrderCancelled?: (cancelledOrderId: string) => void; // Callback when order is cancelled
 }
 
 // Helper to format date/time
@@ -216,7 +219,7 @@ const getSymbol = (item: OrderData): string => {
     return '--';
 };
 
-const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, accountId, fetchData, isLoading: parentLoading }) => {
+const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, accountId, fetchData, isLoading: parentLoading, onOrderCancelled }) => {
     const [orders, setOrders] = useState<OrderData[]>(initialOrders);
     const [isLoading, setIsLoading] = useState<boolean>(parentLoading || false);
     const [error, setError] = useState<string | null>(null);
@@ -228,6 +231,77 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
     const [unavailableOrderIds, setUnavailableOrderIds] = useState<Set<string>>(new Set());
     // Track the number of consecutive polling failures
     const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+    
+    // Order cancellation state
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [orderToCancel, setOrderToCancel] = useState<OrderData | null>(null);
+    const [isCancelling, setIsCancelling] = useState(false);
+    
+    // Using react-hot-toast for notifications (consistent with existing app pattern)
+
+    // Helper function to determine if an order can be cancelled
+    const isOrderCancellable = (order: OrderData): boolean => {
+        // Only orders (not activities) can be cancelled
+        if (order.activity_type) return false;
+        
+        // Only pending/open orders can be cancelled
+        const cancellableStatuses = ['new', 'pending_new', 'accepted', 'pending_cancel', 'pending_replace', 'open'];
+        return order.status ? cancellableStatuses.includes(order.status.toLowerCase()) : false;
+    };
+
+    // Function to handle cancel order button click
+    const handleCancelOrderClick = (order: OrderData) => {
+        setOrderToCancel(order);
+        setShowCancelModal(true);
+    };
+
+    // Function to handle modal close
+    const handleCancelModalClose = () => {
+        if (!isCancelling) {
+            setShowCancelModal(false);
+            setOrderToCancel(null);
+        }
+    };
+
+    // Function to handle order cancellation confirmation
+    const handleConfirmCancellation = async () => {
+        if (!orderToCancel || !accountId) return;
+
+        setIsCancelling(true);
+
+        try {
+            const response = await fetch(`/api/portfolio/orders/cancel/${accountId}/${orderToCancel.id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to cancel order');
+            }
+
+            // Success - immediately remove from parent's orders list
+            toast.success(`Order ${orderToCancel.symbol || orderToCancel.id.substring(0, 8)} has been successfully cancelled.`);
+
+            // Notify parent component to remove the order immediately
+            if (onOrderCancelled) {
+                onOrderCancelled(orderToCancel.id);
+            }
+
+            // Close modal
+            setShowCancelModal(false);
+            setOrderToCancel(null);
+
+        } catch (error: any) {
+            console.error('Error cancelling order:', error);
+            toast.error(error.message || 'Failed to cancel order. Please try again.');
+        } finally {
+            setIsCancelling(false);
+        }
+    };
 
     // Function to copy order ID to clipboard
     const copyToClipboard = (id: string) => {
@@ -336,6 +410,7 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
                   <TableHead>Amount</TableHead>
                   <TableHead>Order ID</TableHead>
                   <TableHead className="text-right">Status</TableHead>
+                  <TableHead className="text-right w-12">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -397,6 +472,32 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
                           {status}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-right">
+                        {isOrderCancellable(item) && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCancelOrderClick(item);
+                                  }}
+                                  className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  disabled={isCancelling}
+                                  aria-label="Cancel order"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">
+                                Cancel order
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -414,6 +515,16 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
                     {error}
                 </p>
             )}
+            
+            {/* Order cancellation modal */}
+            <OrderCancelModal
+                isOpen={showCancelModal}
+                onClose={handleCancelModalClose}
+                onConfirm={handleConfirmCancellation}
+                isLoading={isCancelling}
+                orderSymbol={orderToCancel?.symbol}
+                orderId={orderToCancel?.id}
+            />
         </>
     );
 };

@@ -166,6 +166,7 @@ export default function PortfolioPage() {
   const [selectedOrderType, setSelectedOrderType] = useState<'BUY' | 'SELL'>('BUY');
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<PositionData | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("holdings");
 
   // Trade action handlers
   const handleInvestClick = (symbol: string) => {
@@ -193,6 +194,34 @@ export default function PortfolioPage() {
       // Trigger a refresh of positions and portfolio data using Next.js router
       router.refresh();
     }
+  };
+
+  // Function to refresh orders data
+  const refreshOrders = async () => {
+    if (!accountId) return;
+    
+    try {
+      const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
+      const refreshedOrders = await fetchData(ordersUrl);
+      setOrders(refreshedOrders);
+    } catch (error) {
+      console.error('Error refreshing orders:', error);
+    }
+  };
+
+  // Handle tab changes - refresh orders when switching to pending orders tab
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (value === "transactions") {
+      refreshOrders();
+    }
+  };
+
+  // Handle successful order cancellation - immediately remove from list
+  const handleOrderCancelled = (cancelledOrderId: string) => {
+    setOrders(currentOrders => 
+      currentOrders.filter(order => order.id !== cancelledOrderId)
+    );
   };
 
   const fetchData = async (url: string, options: RequestInit = {}): Promise<any> => {
@@ -790,7 +819,7 @@ export default function PortfolioPage() {
 
           {/* Row 3: Holdings and Transactions Tabs - Full Width */}
           <div className="w-full">
-            <Tabs defaultValue="holdings" className="w-full">
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
                 <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
                 <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
@@ -833,6 +862,7 @@ export default function PortfolioPage() {
                         initialOrders={orders}
                         accountId={accountId}
                         fetchData={fetchData}
+                        onOrderCancelled={handleOrderCancelled}
                       />
                     ) : (
                       <p className="text-muted-foreground p-6 text-center">
