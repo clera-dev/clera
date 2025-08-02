@@ -31,7 +31,7 @@ export default function ManualBankEntry({
   // Scroll to top when entering full form mode
   useEffect(() => {
     if (showFullForm) {
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      window.scrollTo({ top: 0, behavior: 'auto' });
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
     }
