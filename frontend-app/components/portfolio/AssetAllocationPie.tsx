@@ -126,7 +126,7 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
 
     // Fetch cash/stock/bond allocation data
     useEffect(() => {
-        if (viewType === 'assetClass' && accountId && !isCashStockBondLoading) {
+        if (viewType === 'assetClass' && accountId) {
             const fetchCashStockBondData = async () => {
                 setIsCashStockBondLoading(true);
                 setCashStockBondError(null);

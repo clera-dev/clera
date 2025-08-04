@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       }
       
       return NextResponse.json(
-        { detail: `Backend error: ${errorText}` },
+        { detail: 'Unable to retrieve allocation data' },
         { status: response.status }
       );
     }

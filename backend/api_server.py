@@ -3306,7 +3306,10 @@ from utils.asset_classification import calculate_allocation, get_allocation_pie_
 @app.get("/api/portfolio/cash-stock-bond-allocation")
 async def get_cash_stock_bond_allocation(
     request: Request,
-    account_id: str = Query(..., description="The account ID")
+    account_id: str = Query(..., description="The account ID"),
+    broker_client = Depends(get_broker_client),
+    api_key: str = Depends(verify_api_key),
+    user_id: str = Depends(verify_account_ownership)
 ):
     """
     Get portfolio allocation split into cash, stocks, and bonds.
@@ -3329,11 +3332,11 @@ async def get_cash_stock_bond_allocation(
         if hasattr(request.app.state, 'redis') and request.app.state.redis:
             redis_client = request.app.state.redis
         else:
-            redis_client = get_sync_redis_client()
+            redis_client = await get_redis_client()
         
         # 1. Get positions from Redis (or fetch from Alpaca if not cached)
         positions_key = f'account_positions:{account_id}'
-        positions_data_json = redis_client.get(positions_key)
+        positions_data_json = await redis_client.get(positions_key)
         
         if not positions_data_json:
             # Fallback: Fetch positions directly from Alpaca
@@ -3373,6 +3376,13 @@ async def get_cash_stock_bond_allocation(
             # Cash balance will remain 0
         
         # 3. Get asset details for enhanced classification
+        # Load asset cache once outside the loop for performance
+        cached_assets = {}
+        if os.path.exists(ASSET_CACHE_FILE):
+            with open(ASSET_CACHE_FILE, 'r') as f:
+                cached_assets_list = json.load(f)
+                cached_assets = {asset.get('symbol'): asset for asset in cached_assets_list}
+        
         # Try to enrich positions with asset names for better bond detection
         enriched_positions = []
         for position in positions:
@@ -3382,12 +3392,6 @@ async def get_cash_stock_bond_allocation(
             try:
                 symbol = position.get('symbol')
                 if symbol:
-                    # Check if we have cached asset details
-                    cached_assets = {}
-                    if os.path.exists(ASSET_CACHE_FILE):
-                        with open(ASSET_CACHE_FILE, 'r') as f:
-                            cached_assets_list = json.load(f)
-                            cached_assets = {asset.get('symbol'): asset for asset in cached_assets_list}
                     
                     if symbol in cached_assets:
                         enriched_position['name'] = cached_assets[symbol].get('name')
