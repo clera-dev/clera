@@ -155,7 +155,17 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
     const allocationDataByClass = useMemo(() => {
         // Use new cash/stock/bond data if available
         if (cashStockBondData.length > 0) {
-            return cashStockBondData;
+            // Apply frontend colors to backend data
+            const colors = {
+                'cash': '#87CEEB',    // Sky Blue
+                'stock': '#4A90E2',   // Medium Blue  
+                'bond': '#2E5BBA'     // Deep Blue
+            };
+            
+            return cashStockBondData.map(item => ({
+                ...item,
+                color: colors[item.category as keyof typeof colors] || '#8884d8'
+            }));
         }
         
         // Fallback to original asset_class grouping

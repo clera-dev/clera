@@ -240,15 +240,8 @@ def get_allocation_pie_data(allocation: Dict[str, Dict]) -> List[Dict]:
         allocation: Output from calculate_allocation()
         
     Returns:
-        List of pie chart data points with name, value, percentage, color
+        List of pie chart data points with name, value, percentage, category
     """
-    # Define colors for each category - inspired by Clera logo gradient
-    colors = {
-        AssetClassification.CASH: '#87CEEB',    # Light blue (top of gradient)
-        AssetClassification.STOCK: '#4A90E2',   # Medium blue (middle of gradient)  
-        AssetClassification.BOND: '#2E5BBA'     # Deep blue (bottom of gradient)
-    }
-    
     pie_data = []
     
     for category in [AssetClassification.CASH, AssetClassification.STOCK, AssetClassification.BOND]:
@@ -261,11 +254,10 @@ def get_allocation_pie_data(allocation: Dict[str, Dict]) -> List[Dict]:
                 'name': f"{display_name} ({percentage}%)",
                 'value': percentage,
                 'rawValue': float(raw_value),
-                'color': colors[category],
                 'category': category
             })
     
     # Sort by value (descending)
     pie_data.sort(key=lambda x: x['rawValue'], reverse=True)
     
-    return pie_data 
+    return pie_data

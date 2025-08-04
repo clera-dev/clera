@@ -3329,21 +3329,24 @@ async def get_cash_stock_bond_allocation(
     """
     try:
         # Get Redis client for position data
+        positions_key = f'account_positions:{account_id}'
         if hasattr(request.app.state, 'redis') and request.app.state.redis:
             redis_client = request.app.state.redis
+            # Use sync Redis client (no await)
+            positions_data_json = redis_client.get(positions_key)
         else:
             redis_client = await get_redis_client()
-        
-        # 1. Get positions from Redis (or fetch from Alpaca if not cached)
-        positions_key = f'account_positions:{account_id}'
-        positions_data_json = await redis_client.get(positions_key)
+            # Use async Redis client (with await)
+            positions_data_json = await redis_client.get(positions_key)
         
         if not positions_data_json:
             # Fallback: Fetch positions directly from Alpaca
             logger.info(f"Positions not in Redis for account {account_id}, fetching from Alpaca")
             try:
                 broker_client = get_broker_client()
-                alpaca_positions = broker_client.get_all_positions_for_account(account_id)
+                alpaca_positions = await asyncio.to_thread(
+                    broker_client.get_all_positions_for_account, account_id
+                )
                 
                 # Convert Alpaca positions to dict format
                 positions = []
@@ -3369,8 +3372,10 @@ async def get_cash_stock_bond_allocation(
         cash_balance = Decimal('0')
         try:
             broker_client = get_broker_client()
-            account = broker_client.get_trade_account_by_id(account_id)
-            cash_balance = Decimal(str(account.cash))
+            account = await asyncio.to_thread(
+                broker_client.get_trade_account_by_id, account_id
+            )
+            cash_balance = Decimal(str(account.cash)) if account.cash is not None else Decimal('0')
         except Exception as e:
             logger.error(f"Error fetching cash balance for account {account_id}: {e}")
             # Cash balance will remain 0
@@ -3398,7 +3403,9 @@ async def get_cash_stock_bond_allocation(
                     else:
                         # Try to fetch from Alpaca API (but don't fail if it doesn't work)
                         try:
-                            asset_details = broker_client.get_asset(symbol)
+                            asset_details = await asyncio.to_thread(
+                                broker_client.get_asset, symbol
+                            )
                             if asset_details and hasattr(asset_details, 'name'):
                                 enriched_position['name'] = asset_details.name
                         except:
