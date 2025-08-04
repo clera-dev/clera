@@ -3306,10 +3306,7 @@ from utils.asset_classification import calculate_allocation, get_allocation_pie_
 @app.get("/api/portfolio/cash-stock-bond-allocation")
 async def get_cash_stock_bond_allocation(
     request: Request,
-    account_id: str = Query(..., description="The account ID"),
-    broker_client = Depends(get_broker_client),
-    api_key: str = Depends(verify_api_key),
-    user_id: str = Depends(verify_account_ownership)
+    account_id: str = Query(..., description="The account ID")
 ):
     """
     Get portfolio allocation split into cash, stocks, and bonds.
