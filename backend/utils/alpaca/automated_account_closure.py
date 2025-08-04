@@ -195,7 +195,10 @@ class AutomatedAccountClosureProcessor:
             # PHASE 5: ACCOUNT CLOSURE
             await self._handle_account_closure_phase(account_id, user_id, confirmation_number, detailed_logger)
             
-            # PHASE 6: FINAL SUPABASE UPDATE
+            # PHASE 6: SEND COMPLETION EMAIL
+            await self._send_completion_email(account_id, user_id, confirmation_number, detailed_logger)
+            
+            # PHASE 7: FINAL SUPABASE UPDATE
             if self.supabase:
                 await self._update_supabase_status(user_id, "closed", {
                     "completed_at": datetime.now().isoformat(),
@@ -272,30 +275,80 @@ class AutomatedAccountClosureProcessor:
     
     async def _handle_withdrawal_phase(self, account_id: str, ach_relationship_id: str, 
                                      detailed_logger: AccountClosureLogger) -> str:
-        """Automatically withdraw all funds."""
-        detailed_logger.log_step_start("WITHDRAWAL_PHASE")
+        """Handle multi-day withdrawal process with $50,000 daily limits."""
+        detailed_logger.log_step_start("MULTI_DAY_WITHDRAWAL_PHASE")
         
-        # Automatically withdraw all available funds (run in thread pool to avoid blocking)
-        withdrawal_result = await asyncio.to_thread(
-            self.manager.withdraw_all_funds, account_id, ach_relationship_id
-        )
+        DAILY_LIMIT = 50000.0
+        last_transfer_id = None
         
-        if not withdrawal_result.get("success", False):
-            raise Exception(f"Withdrawal failed: {withdrawal_result.get('error', 'Unknown error')}")
+        while True:
+            # Check current withdrawable balance
+            account_status = await asyncio.to_thread(
+                self.manager.get_closure_status, account_id
+            )
+            
+            withdrawable_amount = account_status.get("cash_withdrawable", 0)
+            
+            detailed_logger.log_step_start("WITHDRAWAL_CHECK", {
+                "withdrawable_amount": withdrawable_amount,
+                "daily_limit": DAILY_LIMIT
+            })
+            
+            # If balance is $1 or less, we're done
+            if withdrawable_amount <= 1.0:
+                detailed_logger.log_step_success("ALL_WITHDRAWALS_COMPLETE", {
+                    "final_balance": withdrawable_amount
+                })
+                break
+            
+            # Determine withdrawal amount for this iteration
+            withdrawal_amount = min(withdrawable_amount, DAILY_LIMIT)
+            
+            # Execute withdrawal
+            withdrawal_result = await asyncio.to_thread(
+                self.manager.withdraw_funds, account_id, ach_relationship_id, withdrawal_amount
+            )
+            
+            if not withdrawal_result.get("success", False):
+                raise Exception(f"Withdrawal failed: {withdrawal_result.get('error', 'Unknown error')}")
+            
+            transfer_id = withdrawal_result.get("transfer_id")
+            last_transfer_id = transfer_id
+            
+            detailed_logger.log_step_success("WITHDRAWAL_INITIATED", {
+                "transfer_id": transfer_id,
+                "amount_withdrawn": withdrawal_amount,
+                "remaining_balance": withdrawable_amount - withdrawal_amount,
+                "is_partial": withdrawal_result.get("is_partial_withdrawal", False)
+            })
+            
+            # If this was a full withdrawal (balance <= $50k), we're done
+            if withdrawable_amount <= DAILY_LIMIT:
+                break
+            
+            # Wait for this transfer to complete before starting the next one
+            detailed_logger.log_step_start("WAITING_TRANSFER_COMPLETION", {
+                "transfer_id": transfer_id,
+                "wait_reason": "Must complete before next withdrawal"
+            })
+            
+            await self._wait_for_transfer_completion(account_id, transfer_id, detailed_logger)
+            
+            # Wait 24 hours before next withdrawal (as per user requirements)
+            detailed_logger.log_step_start("DAILY_WITHDRAWAL_COOLDOWN", {
+                "wait_duration_hours": 24,
+                "reason": "24-hour delay between $50k withdrawals"
+            })
+            
+            await asyncio.sleep(24 * 3600)  # 24 hours
         
-        transfer_id = withdrawal_result.get("transfer_id")
-        detailed_logger.log_step_success("WITHDRAWAL_INITIATED", {
-            "transfer_id": transfer_id,
-            "amount": withdrawal_result.get("amount"),
-            "estimated_completion": "2-3 business days"
-        })
-        
-        return transfer_id
+        detailed_logger.log_step_success("MULTI_DAY_WITHDRAWAL_PHASE")
+        return last_transfer_id or "completed"
     
-    async def _handle_transfer_completion_phase(self, account_id: str, transfer_id: str, 
-                                              detailed_logger: AccountClosureLogger):
-        """Monitor ACH transfer until completion."""
-        detailed_logger.log_step_start("TRANSFER_MONITORING_PHASE", {"transfer_id": transfer_id})
+    async def _wait_for_transfer_completion(self, account_id: str, transfer_id: str, 
+                                          detailed_logger: AccountClosureLogger):
+        """Wait for a specific transfer to complete (used within multi-day withdrawal)."""
+        detailed_logger.log_step_start("SINGLE_TRANSFER_MONITORING", {"transfer_id": transfer_id})
         
         while True:
             transfer_status = await asyncio.to_thread(
@@ -303,19 +356,27 @@ class AutomatedAccountClosureProcessor:
             )
             
             if transfer_status.get("status") == "SETTLED":
-                detailed_logger.log_step_success("TRANSFER_COMPLETE", transfer_status)
+                detailed_logger.log_step_success("SINGLE_TRANSFER_COMPLETE", transfer_status)
                 break
             elif transfer_status.get("status") == "FAILED":
                 raise Exception(f"ACH transfer failed: {transfer_status.get('reason', 'Unknown error')}")
             
             # Log current status
-            detailed_logger.log_step_start("TRANSFER_STATUS_CHECK", {
+            detailed_logger.log_step_start("SINGLE_TRANSFER_STATUS_CHECK", {
                 "status": transfer_status.get("status"),
                 "next_check_in": "2 hours"
             })
             
-            # Wait 2 hours before checking again (ACH transfers take time)
+            # Wait 2 hours before checking again
             await asyncio.sleep(7200)
+    
+    async def _handle_transfer_completion_phase(self, account_id: str, transfer_id: str, 
+                                              detailed_logger: AccountClosureLogger):
+        """Monitor final ACH transfer until completion (legacy - now handled in withdrawal phase)."""
+        # This method is now mostly redundant since we handle transfer completion
+        # within the withdrawal phase, but keeping for backward compatibility
+        if transfer_id and transfer_id != "completed":
+            await self._wait_for_transfer_completion(account_id, transfer_id, detailed_logger)
     
     async def _handle_account_closure_phase(self, account_id: str, user_id: str, 
                                           confirmation_number: str, detailed_logger: AccountClosureLogger):
@@ -343,6 +404,59 @@ class AutomatedAccountClosureProcessor:
             raise Exception(f"Account closure failed: {closure_result.get('error', 'Unknown error')}")
         
         detailed_logger.log_step_success("ACCOUNT_CLOSURE_PHASE", closure_result)
+    
+    async def _send_completion_email(self, account_id: str, user_id: str, confirmation_number: str, 
+                                   detailed_logger: AccountClosureLogger):
+        """Send completion email notification."""
+        detailed_logger.log_step_start("COMPLETION_EMAIL")
+        
+        try:
+            # Import email service
+            from ..email.email_service import EmailService
+            
+            # Get account details for email
+            account = await asyncio.to_thread(
+                self.manager.broker_client.get_account_by_id, account_id
+            )
+            
+            user_name = "Valued Customer"  # Default fallback
+            user_email = None
+            
+            if hasattr(account, 'contact') and account.contact:
+                if hasattr(account.contact, 'email_address'):
+                    user_email = account.contact.email_address
+                
+                # Try to get name from contact info
+                if hasattr(account.contact, 'given_name') and hasattr(account.contact, 'family_name'):
+                    user_name = f"{account.contact.given_name} {account.contact.family_name}"
+            
+            if user_email:
+                email_service = EmailService()
+                email_sent = email_service.send_account_closure_complete_notification(
+                    user_email=user_email,
+                    user_name=user_name,
+                    account_id=account_id,
+                    confirmation_number=confirmation_number,
+                    final_transfer_amount=0.0  # We could track this but it's not critical
+                )
+                
+                detailed_logger.log_step_success("COMPLETION_EMAIL", {
+                    "email_sent": email_sent,
+                    "user_email": "(redacted)"
+                })
+                
+                if email_sent:
+                    logger.info(f"Account closure completion email sent successfully for account {account_id}")
+                else:
+                    logger.warning(f"Failed to send completion email for account {account_id}")
+            else:
+                detailed_logger.log_step_warning("COMPLETION_EMAIL", "No email address found")
+                logger.warning(f"No email address found for account {account_id} - completion email not sent")
+                
+        except Exception as e:
+            detailed_logger.log_step_failure("COMPLETION_EMAIL", str(e))
+            logger.error(f"Error sending completion email for account {account_id}: {e}")
+            # Don't fail the entire process if email fails
     
     async def _wait_for_positions_cleared(self, account_id: str, detailed_logger: AccountClosureLogger):
         """Wait for all positions to be cleared after liquidation."""

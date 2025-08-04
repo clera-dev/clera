@@ -108,14 +108,34 @@ export class AccountClosureService {
    * Get account ID for a user from Supabase
    */
   private async getAccountId(userId: string): Promise<string | null> {
-    const supabase = createClient();
-    const { data: onboardingData } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', userId)
-      .single();
-    
-    return onboardingData?.alpaca_account_id || null;
+    try {
+      const supabase = createClient();
+      const { data: onboardingData, error } = await supabase
+        .from('user_onboarding')
+        .select('alpaca_account_id, status')
+        .eq('user_id', userId)
+        .single();
+      
+      if (error) {
+        console.warn(`[AccountClosureService] Database error getting account ID for user ${userId}:`, error.message);
+        return null;
+      }
+      
+      if (!onboardingData) {
+        console.warn(`[AccountClosureService] No onboarding data found for user ${userId}`);
+        return null;
+      }
+      
+      if (!onboardingData.alpaca_account_id) {
+        console.warn(`[AccountClosureService] No alpaca_account_id found for user ${userId} (status: ${onboardingData.status})`);
+        return null;
+      }
+      
+      return onboardingData.alpaca_account_id;
+    } catch (error) {
+      console.error(`[AccountClosureService] Exception getting account ID for user ${userId}:`, error);
+      return null;
+    }
   }
 
   /**
@@ -168,7 +188,8 @@ export class AccountClosureService {
       const accountId = await this.getAccountId(userId);
       
       if (!accountId) {
-        this.logError('No account ID found for progress polling', { userId }, false);
+        // Don't treat this as an error - just means no progress polling available
+        console.log(`[AccountClosureService] No account ID found for user ${userId} - skipping progress polling`);
         return null;
       }
       

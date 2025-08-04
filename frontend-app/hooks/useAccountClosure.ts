@@ -41,11 +41,11 @@ export function useAccountClosure(): UseAccountClosureReturn {
     // PRODUCTION UX: Set maximum loading time to prevent blocking navigation
     const maxLoadingTimeout = setTimeout(() => {
       if (isMountedRef.current && loadingRef.current) {
-        console.warn('[useAccountClosure] Timeout reached, stopping loading to allow navigation');
+        console.log('[useAccountClosure] Loading timeout reached, allowing navigation');
         setLoading(false);
         setError(null); // Don't show error for timeout
       }
-    }, 3000); // 3 second maximum
+    }, 6000); // 6 second maximum to accommodate slower API calls
     
     const fetchClosureDataWrapper = async () => {
       const supabase = createClient();

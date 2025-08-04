@@ -211,35 +211,176 @@ class EmailService:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Account Closure Confirmation</title>
     <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: 300; }
-        .content { background: #ffffff; padding: 30px; border: 1px solid #e0e0e0; }
-        .confirmation-box { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745; }
-        .details-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        .details-table td { padding: 12px; border-bottom: 1px solid #e0e0e0; }
-        .details-table td:first-child { font-weight: bold; color: #666; width: 40%; }
-        .timeline { background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0; }
-        .timeline h3 { margin-top: 0; color: #1565c0; }
-        .timeline ul { margin: 10px 0; padding-left: 20px; }
-        .timeline li { margin: 8px 0; }
-        .warning { background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin: 20px 0; }
-        .contact-info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
-        .footer { background: #f1f1f1; padding: 20px; text-align: center; color: #666; font-size: 12px; border-radius: 0 0 8px 8px; }
-        .button { display: inline-block; background: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
-        .confirmation-number { font-family: monospace; background: #e9ecef; padding: 8px 12px; border-radius: 4px; font-size: 16px; font-weight: bold; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            line-height: 1.6; 
+            color: #ffffff; 
+            background-color: #000000; 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        .email-container { 
+            background-color: #000000; 
+            border-radius: 12px; 
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(6, 182, 212, 0.2);
+        }
+        .header { 
+            background: linear-gradient(135deg, #000000 0%, #0f172a 100%); 
+            color: #ffffff; 
+            padding: 40px 20px; 
+            text-align: center; 
+            position: relative;
+        }
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, transparent 30%, rgba(6, 182, 212, 0.1) 50%, transparent 70%);
+            pointer-events: none;
+        }
+        .header h1 { 
+            margin: 0; 
+            font-size: 32px; 
+            font-weight: 600;
+            background: linear-gradient(135deg, #06b6d4, #0ea5e9, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 20px rgba(6, 182, 212, 0.5);
+        }
+        .logo { 
+            width: 48px; 
+            height: 48px; 
+            background: linear-gradient(135deg, #06b6d4, #3b82f6); 
+            border-radius: 12px; 
+            margin: 0 auto 20px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+        }
+        .logo::after {
+            content: 'C';
+            color: #000000;
+            font-weight: bold;
+            font-size: 24px;
+        }
+        .content { 
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%); 
+            padding: 40px 30px; 
+            border-left: 2px solid #06b6d4;
+        }
+        .confirmation-box { 
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(59, 130, 246, 0.1)); 
+            padding: 25px; 
+            border-radius: 12px; 
+            margin: 25px 0; 
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.1);
+        }
+        .details-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 20px 0; 
+        }
+        .details-table td { 
+            padding: 15px 12px; 
+            border-bottom: 1px solid rgba(6, 182, 212, 0.2); 
+        }
+        .details-table td:first-child { 
+            font-weight: 600; 
+            color: #06b6d4; 
+            width: 40%; 
+        }
+        .timeline { 
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(59, 130, 246, 0.05)); 
+            padding: 25px; 
+            border-radius: 12px; 
+            margin: 25px 0; 
+            border: 1px solid rgba(6, 182, 212, 0.2);
+        }
+        .timeline h3 { 
+            margin-top: 0; 
+            color: #06b6d4; 
+            font-size: 20px;
+            text-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+        }
+        .timeline ul { 
+            margin: 15px 0; 
+            padding-left: 20px; 
+        }
+        .timeline li { 
+            margin: 12px 0; 
+            color: #e2e8f0;
+        }
+        .warning { 
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 146, 60, 0.1)); 
+            padding: 20px; 
+            border-radius: 12px; 
+            border: 1px solid rgba(245, 158, 11, 0.3); 
+            margin: 25px 0; 
+        }
+        .warning h4 {
+            color: #f59e0b;
+            margin-top: 0;
+        }
+        .contact-info { 
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(30, 41, 59, 0.8)); 
+            padding: 25px; 
+            border-radius: 12px; 
+            margin: 25px 0; 
+            border: 1px solid rgba(6, 182, 212, 0.2);
+        }
+        .contact-info h3 {
+            color: #06b6d4;
+            margin-top: 0;
+        }
+        .footer { 
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%); 
+            padding: 30px 20px; 
+            text-align: center; 
+            color: #64748b; 
+            font-size: 14px; 
+            border-top: 1px solid rgba(6, 182, 212, 0.2);
+        }
+        .confirmation-number { 
+            font-family: 'Courier New', monospace; 
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.2)); 
+            padding: 12px 16px; 
+            border-radius: 8px; 
+            font-size: 18px; 
+            font-weight: bold; 
+            color: #06b6d4;
+            text-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }
+        .glow-text {
+            color: #06b6d4;
+            text-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+        }
+        a {
+            color: #06b6d4;
+            text-decoration: none;
+        }
+        a:hover {
+            text-shadow: 0 0 8px rgba(6, 182, 212, 0.8);
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div style="margin-bottom: 20px;">
-            <img src="https://askclera.com/clera-logo.png" alt="Clera" style="height: 40px; width: auto;" />
+    <div class="email-container">
+        <div class="header">
+            <div class="logo"></div>
+            <h1>Account Closure Confirmation</h1>
+            <p style="color: #64748b; font-size: 16px; margin: 10px 0 0 0;">Your request has been successfully submitted</p>
         </div>
-        <h1>Account Closure Confirmation</h1>
-        <p>Your request has been successfully submitted</p>
-    </div>
-    
-    <div class="content">
+        
+        <div class="content">
         <h2>Dear {{ user_name }},</h2>
         
         <p>We have received and processed your account closure request. Your account closure process has been initiated and is now in progress.</p>
@@ -395,30 +536,156 @@ This is an automated message. Please do not reply to this email.
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Account Closure Complete</title>
     <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: 300; }
-        .content { background: #ffffff; padding: 30px; border: 1px solid #e0e0e0; }
-        .completion-box { background: #d4edda; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745; }
-        .details-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        .details-table td { padding: 12px; border-bottom: 1px solid #e0e0e0; }
-        .details-table td:first-child { font-weight: bold; color: #666; width: 40%; }
-        .contact-info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
-        .footer { background: #f1f1f1; padding: 20px; text-align: center; color: #666; font-size: 12px; border-radius: 0 0 8px 8px; }
-        .confirmation-number { font-family: monospace; background: #e9ecef; padding: 8px 12px; border-radius: 4px; font-size: 16px; font-weight: bold; }
-        .amount { color: #28a745; font-weight: bold; font-size: 18px; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            line-height: 1.6; 
+            color: #ffffff; 
+            background-color: #000000; 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        .email-container { 
+            background-color: #000000; 
+            border-radius: 12px; 
+            overflow: hidden;
+            box-shadow: 0 0 40px rgba(6, 182, 212, 0.3);
+        }
+        .header { 
+            background: linear-gradient(135deg, #000000 0%, #0f172a 100%); 
+            color: #ffffff; 
+            padding: 40px 20px; 
+            text-align: center; 
+            position: relative;
+        }
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, transparent 30%, rgba(34, 197, 94, 0.1) 50%, transparent 70%);
+            pointer-events: none;
+        }
+        .header h1 { 
+            margin: 0; 
+            font-size: 36px; 
+            font-weight: 700;
+            background: linear-gradient(135deg, #22c55e, #06b6d4, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 25px rgba(34, 197, 94, 0.6);
+        }
+        .logo { 
+            width: 48px; 
+            height: 48px; 
+            background: linear-gradient(135deg, #22c55e, #06b6d4); 
+            border-radius: 12px; 
+            margin: 0 auto 20px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            box-shadow: 0 0 25px rgba(34, 197, 94, 0.5);
+        }
+        .logo::after {
+            content: 'C';
+            color: #000000;
+            font-weight: bold;
+            font-size: 24px;
+        }
+        .content { 
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%); 
+            padding: 40px 30px; 
+            border-left: 2px solid #22c55e;
+        }
+        .completion-box { 
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(6, 182, 212, 0.1)); 
+            padding: 25px; 
+            border-radius: 12px; 
+            margin: 25px 0; 
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.15);
+        }
+        .details-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 20px 0; 
+        }
+        .details-table td { 
+            padding: 15px 12px; 
+            border-bottom: 1px solid rgba(34, 197, 94, 0.2); 
+        }
+        .details-table td:first-child { 
+            font-weight: 600; 
+            color: #22c55e; 
+            width: 40%; 
+        }
+        .contact-info { 
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(30, 41, 59, 0.8)); 
+            padding: 25px; 
+            border-radius: 12px; 
+            margin: 25px 0; 
+            border: 1px solid rgba(6, 182, 212, 0.2);
+        }
+        .contact-info h3 {
+            color: #06b6d4;
+            margin-top: 0;
+            text-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+        }
+        .footer { 
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%); 
+            padding: 30px 20px; 
+            text-align: center; 
+            color: #64748b; 
+            font-size: 14px; 
+            border-top: 1px solid rgba(34, 197, 94, 0.2);
+        }
+        .confirmation-number { 
+            font-family: 'Courier New', monospace; 
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(6, 182, 212, 0.2)); 
+            padding: 12px 16px; 
+            border-radius: 8px; 
+            font-size: 18px; 
+            font-weight: bold; 
+            color: #22c55e;
+            text-shadow: 0 0 15px rgba(34, 197, 94, 0.6);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        .amount { 
+            color: #22c55e; 
+            font-weight: bold; 
+            font-size: 20px;
+            text-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+        }
+        .success-checkmark {
+            color: #22c55e;
+            font-size: 24px;
+            text-shadow: 0 0 15px rgba(34, 197, 94, 0.6);
+        }
+        ul li {
+            color: #e2e8f0;
+            margin: 12px 0;
+        }
+        a {
+            color: #06b6d4;
+            text-decoration: none;
+        }
+        a:hover {
+            text-shadow: 0 0 8px rgba(6, 182, 212, 0.8);
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div style="margin-bottom: 20px;">
-            <img src="https://askclera.com/clera-logo.png" alt="Clera" style="height: 40px; width: auto;" />
+    <div class="email-container">
+        <div class="header">
+            <div class="logo"></div>
+            <h1><span class="success-checkmark">✅</span> Account Closure Complete</h1>
+            <p style="color: #64748b; font-size: 16px; margin: 10px 0 0 0;">Your account has been successfully closed</p>
         </div>
-        <h1>✅ Account Closure Complete</h1>
-        <p>Your account has been successfully closed</p>
-    </div>
-    
-    <div class="content">
+        
+        <div class="content">
         <h2>Dear {{ user_name }},</h2>
         
         <p>Your account closure process has been completed successfully. This email serves as your final confirmation that your investment account has been permanently closed.</p>

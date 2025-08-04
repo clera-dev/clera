@@ -145,15 +145,15 @@ export async function middleware(request: NextRequest) {
             return response;
           }
           
-          // Redirect everything else to /protected (which shows the closure pending page)
-          if (path !== '/protected') {
-            console.log(`[Middleware] Redirecting pending closure user from ${path} to /protected`);
-            const redirectUrl = new URL('/protected', request.url);
+          // Redirect everything else to /account-closure (dedicated closure page)
+          if (path !== '/account-closure') {
+            console.log(`[Middleware] Redirecting pending closure user from ${path} to /account-closure`);
+            const redirectUrl = new URL('/account-closure', request.url);
             return NextResponse.redirect(redirectUrl);
           }
           
-          // Stay on /protected to show closure pending page
-          console.log(`[Middleware] Allowing access to /protected for pending closure user`);
+          // Stay on /account-closure to show dedicated closure page
+          console.log(`[Middleware] Allowing access to /account-closure for pending closure user`);
           return response;
         }
         

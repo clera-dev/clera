@@ -184,8 +184,13 @@ export const signInAction = async (formData: FormData) => {
     const userStatus = onboardingData?.status;
     
     // Handle account closure statuses
-    if (userStatus === 'pending_closure' || userStatus === 'closed') {
-      // Redirect to protected page to handle closure status
+    if (userStatus === 'pending_closure') {
+      // Redirect to dedicated account closure page
+      return redirect("/account-closure");
+    }
+    
+    if (userStatus === 'closed') {
+      // Redirect to protected page to handle closed account restart
       return redirect("/protected");
     }
     

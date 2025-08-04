@@ -2481,12 +2481,14 @@ async def initiate_account_closure_endpoint(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Initiate the account closure process.
+    Initiate the COMPLETE automated account closure process.
     
-    This starts the multi-step closure process:
-    1. Cancel all open orders
-    2. Liquidate all positions
-    3. (Settlement and withdrawal handled in separate calls)
+    This starts the full automated closure pipeline:
+    1. Cancel all open orders & liquidate positions (immediate)
+    2. Start automated background process for:
+       - Settlement waiting
+       - Multi-day fund withdrawal ($50k chunks with 24hr delays)
+       - Final account closure
     
     Body should contain:
     {
@@ -2496,7 +2498,7 @@ async def initiate_account_closure_endpoint(
     }
     """
     try:
-        logger.info(f"Initiating closure for account {account_id}")
+        logger.info(f"Initiating AUTOMATED closure for account {account_id}")
         
         # Validate request data
         ach_relationship_id = request_data.get("ach_relationship_id")
@@ -2512,17 +2514,49 @@ async def initiate_account_closure_endpoint(
                 detail="Both liquidation and irreversible action confirmations are required"
             )
         
+        # CRITICAL FIX: Get user_id from Supabase for automated process
+        try:
+            from utils.supabase.db_client import get_supabase_client
+            supabase = get_supabase_client()
+            user_result = supabase.table("user_onboarding").select(
+                "user_id"
+            ).eq("alpaca_account_id", account_id).execute()
+            
+            if not user_result.data or len(user_result.data) == 0:
+                raise HTTPException(status_code=404, detail="User not found for account ID")
+                
+            user_id = user_result.data[0]["user_id"]
+            logger.info(f"Found user_id {user_id} for account {account_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to get user_id for account {account_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to identify user for automated process")
+        
         # Use sandbox mode based on environment
         sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
-        result = initiate_account_closure(account_id, ach_relationship_id, sandbox=sandbox)
+        
+        # CRITICAL FIX: Use AutomatedAccountClosureProcessor instead of basic initiation
+        from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+        
+        processor = AutomatedAccountClosureProcessor(sandbox=sandbox)
+        result = await processor.initiate_automated_closure(
+            user_id=user_id,
+            account_id=account_id, 
+            ach_relationship_id=ach_relationship_id
+        )
+        
+        if result.get("success"):
+            logger.info(f"Automated account closure initiated successfully for account {account_id}")
+        else:
+            logger.error(f"Automated account closure failed for account {account_id}: {result.get('error')}")
         
         return result
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error initiating closure for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error initiating account closure: {str(e)}")
+        logger.error(f"Error initiating automated closure for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error initiating automated account closure: {str(e)}")
 
 @app.get("/account-closure/status/{account_id}")
 async def get_account_closure_status_endpoint(

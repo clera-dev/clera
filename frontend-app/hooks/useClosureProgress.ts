@@ -17,7 +17,7 @@ export interface UseClosureProgressReturn {
  * Custom hook for managing closure progress polling and retry logic
  * Handles step state management, auto-refresh, and retry mechanisms
  */
-export function useClosureProgress(userId: string): UseClosureProgressReturn {
+export function useClosureProgress(userId: string | undefined): UseClosureProgressReturn {
   const [closureSteps, setClosureSteps] = useState<ClosureStep[]>(() => 
     accountClosureService.getInitialClosureSteps()
   );
@@ -34,6 +34,13 @@ export function useClosureProgress(userId: string): UseClosureProgressReturn {
    * Fetch closure progress and update steps
    */
   const fetchClosureProgress = useCallback(async (): Promise<void> => {
+    // Skip if no user ID provided
+    if (!userId) {
+      // Don't log this as it's normal during initial load
+      setLastUpdateStatus('success');
+      return;
+    }
+    
     try {
       setLastUpdateStatus('loading');
       
@@ -48,7 +55,10 @@ export function useClosureProgress(userId: string): UseClosureProgressReturn {
         
         setLastUpdateStatus('success');
       } else {
-        setLastUpdateStatus('error');
+        // Progress data not available - this is normal for some accounts
+        // Don't treat as error, just use default steps
+        console.log('[useClosureProgress] No progress data available for user:', userId);
+        setLastUpdateStatus('success');
       }
     } catch (error) {
       console.error('[useClosureProgress] Error fetching closure progress:', error);
@@ -60,6 +70,11 @@ export function useClosureProgress(userId: string): UseClosureProgressReturn {
    * Handle retry/resume process
    */
   const handleRetryResume = useCallback(async (): Promise<void> => {
+    if (!userId) {
+      console.warn('[useClosureProgress] Cannot retry without user ID');
+      return;
+    }
+    
     try {
       setIsRetrying(true);
       
@@ -113,13 +128,18 @@ export function useClosureProgress(userId: string): UseClosureProgressReturn {
 
   // Initial load and polling effect
   useEffect(() => {
+    // Only start polling when we have a valid user ID
+    if (!userId) {
+      return;
+    }
+    
     fetchClosureProgress();
     
     // Poll for progress updates every 60 seconds
     const progressInterval = setInterval(fetchClosureProgress, 60000);
     
     return () => clearInterval(progressInterval);
-  }, [fetchClosureProgress]);
+  }, [fetchClosureProgress, userId]);
 
   return {
     closureSteps,

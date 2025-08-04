@@ -36,9 +36,20 @@ export async function GET(request: Request) {
       .eq('user_id', user.id)
       .single();
     
+    const userStatus = onboardingData?.status;
+    
+    // Handle account closure statuses first
+    if (userStatus === 'pending_closure') {
+      return NextResponse.redirect(`${origin}/account-closure`);
+    }
+    
+    if (userStatus === 'closed') {
+      return NextResponse.redirect(`${origin}/protected`);
+    }
+    
     const hasCompletedOnboarding = 
-      onboardingData?.status === 'submitted' || 
-      onboardingData?.status === 'approved';
+      userStatus === 'submitted' || 
+      userStatus === 'approved';
     
     if (hasCompletedOnboarding) {
       // Check if user has funded their account (has transfers)
