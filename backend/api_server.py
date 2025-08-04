@@ -2514,20 +2514,20 @@ async def initiate_account_closure_endpoint(
                 detail="Both liquidation and irreversible action confirmations are required"
             )
         
-        # CRITICAL FIX: Get user_id from Supabase for automated process
+        # CRITICAL FIX: Get user_id from Supabase for automated process using async pattern
         try:
-            from utils.supabase.db_client import get_supabase_client
-            supabase = get_supabase_client()
-            user_result = supabase.table("user_onboarding").select(
-                "user_id"
-            ).eq("alpaca_account_id", account_id).execute()
+            from utils.supabase.db_client import get_user_id_by_alpaca_account_id
             
-            if not user_result.data or len(user_result.data) == 0:
+            # Use async wrapper to prevent event loop blocking
+            user_id = await asyncio.to_thread(get_user_id_by_alpaca_account_id, account_id)
+            
+            if not user_id:
                 raise HTTPException(status_code=404, detail="User not found for account ID")
                 
-            user_id = user_result.data[0]["user_id"]
             logger.info(f"Found user_id {user_id} for account {account_id}")
             
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions without modification
         except Exception as e:
             logger.error(f"Failed to get user_id for account {account_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to identify user for automated process")
@@ -2613,23 +2613,30 @@ async def get_account_closure_progress_endpoint(
         # Calculate total steps (excluding failed)
         total_steps = 5
         
-        # Get Supabase data for confirmation number and initiation date
+        # Get Supabase data for confirmation number and initiation date using async pattern
         supabase_data = {}
         try:
-            supabase = get_supabase_client()
+            from utils.supabase.db_client import get_supabase_client
             
-            # Find user by account_id
-            result = supabase.table("user_onboarding").select(
-                "account_closure_confirmation_number, account_closure_initiated_at, onboarding_data"
-            ).eq("alpaca_account_id", account_id).execute()
+            # Helper function for async wrapper
+            def get_account_closure_metadata(account_id: str) -> dict:
+                supabase = get_supabase_client()
+                result = supabase.table("user_onboarding").select(
+                    "account_closure_confirmation_number, account_closure_initiated_at, onboarding_data"
+                ).eq("alpaca_account_id", account_id).execute()
+                
+                if result.data:
+                    user_data = result.data[0]
+                    return {
+                        "confirmation_number": user_data.get("account_closure_confirmation_number"),
+                        "initiated_at": user_data.get("account_closure_initiated_at"),
+                        "closure_details": user_data.get("onboarding_data", {}).get("account_closure", {})
+                    }
+                return {}
             
-            if result.data:
-                user_data = result.data[0]
-                supabase_data = {
-                    "confirmation_number": user_data.get("account_closure_confirmation_number"),
-                    "initiated_at": user_data.get("account_closure_initiated_at"),
-                    "closure_details": user_data.get("onboarding_data", {}).get("account_closure", {})
-                }
+            # Use async wrapper to prevent event loop blocking
+            supabase_data = await asyncio.to_thread(get_account_closure_metadata, account_id)
+            
         except Exception as e:
             logger.warning(f"Could not fetch Supabase data for account {account_id}: {e}")
         

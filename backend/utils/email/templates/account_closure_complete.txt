@@ -1,0 +1,43 @@
+Account Closure Complete
+
+Dear {{ user_name }},
+
+We're pleased to inform you that your account closure process has been completed successfully. Your account has been permanently closed and all remaining funds have been transferred to your connected bank account.
+
+✅ CLOSURE SUMMARY
+==================
+Confirmation Number: {{ confirmation_number }}
+Account ID: {{ account_id }}
+Completion Date: {{ completion_date }}
+Final Transfer Amount: ${{ "%.2f"|format(final_transfer_amount) }}
+
+📋 WHAT WAS COMPLETED
+====================
+• Holdings Liquidation: All investments were sold at market prices
+• Fund Transfer: Proceeds were transferred to your bank account
+• Account Closure: Your account has been permanently closed
+• Documentation: Final statements and tax documents are available
+
+📄 NEXT STEPS
+=============
+• Bank Transfer: The final transfer should appear in your bank account within 1-2 business days
+• Tax Documents: You'll receive Form 1099-B for tax reporting purposes
+• Final Statements: Download your final account statements from your dashboard
+• Records: Keep this confirmation email for your records
+
+QUESTIONS OR NEED ASSISTANCE?
+=============================
+Our support team is here to help with any questions about your account closure:
+
+Email: {{ support_email }}
+
+Please reference your confirmation number {{ confirmation_number }} when contacting support.
+
+Thank you for choosing Clera. We appreciate the opportunity to have served you as an investor.
+
+Best regards,
+The Clera Team
+
+---
+This is an automated message. Please do not reply to this email.
+© {{ current_year }} Clera. All rights reserved. 

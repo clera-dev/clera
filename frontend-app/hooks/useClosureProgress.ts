@@ -57,7 +57,7 @@ export function useClosureProgress(userId: string | undefined): UseClosureProgre
       } else {
         // Progress data not available - this is normal for some accounts
         // Don't treat as error, just use default steps
-        console.log('[useClosureProgress] No progress data available for user:', userId);
+        //console.log('[useClosureProgress] No progress data available for user:', userId);
         setLastUpdateStatus('success');
       }
     } catch (error) {

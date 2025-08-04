@@ -189,7 +189,7 @@ export class AccountClosureService {
       
       if (!accountId) {
         // Don't treat this as an error - just means no progress polling available
-        console.log(`[AccountClosureService] No account ID found for user ${userId} - skipping progress polling`);
+        console.log(`[AccountClosureService] No account ID found for user - skipping progress polling`);
         return null;
       }
       

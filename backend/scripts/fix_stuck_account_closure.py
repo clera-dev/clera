@@ -13,7 +13,7 @@ import os
 import sys
 import argparse
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 
 # Add the backend directory to the Python path
@@ -26,7 +26,7 @@ def setup_environment():
     if os.path.exists(env_file):
         with open(env_file) as f:
             for line in f:
-                if line.strip() and not line.startswith('#'):
+                if line.strip() and not line.lstrip().startswith('#'):
                     key, value = line.strip().split('=', 1)
                     os.environ[key] = value
 
@@ -38,7 +38,7 @@ def find_stuck_accounts() -> List[Dict[str, Any]]:
         supabase = get_supabase_client()
         
         # Find accounts in pending_closure for more than 24 hours
-        cutoff_time = (datetime.now() - timedelta(hours=24)).isoformat()
+        cutoff_time = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         
         result = supabase.table("user_onboarding").select(
             "user_id, alpaca_account_id, status, account_closure_initiated_at, account_closure_confirmation_number"
