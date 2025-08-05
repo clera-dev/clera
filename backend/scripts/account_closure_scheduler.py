@@ -24,7 +24,7 @@ import os
 import sys
 import asyncio
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 # Add backend directory to Python path

@@ -11,7 +11,7 @@ This module handles the complete automated account closure process:
 import asyncio
 import time
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from enum import Enum
 
@@ -379,7 +379,8 @@ class AutomatedAccountClosureProcessor:
             await self._wait_for_transfer_completion(account_id, transfer_id, detailed_logger)
             
             # Schedule next withdrawal for 24 hours later (external scheduler will resume)
-            next_transfer_date = datetime.now() + timedelta(hours=24)
+            # PRODUCTION FIX: Use UTC timezone for consistent scheduling across environments
+            next_transfer_date = datetime.now(timezone.utc) + timedelta(hours=24)
             
             # Update state with next transfer timing and mark as waiting
             current_state = self.state_manager.get_withdrawal_state(account_id) or {}
@@ -511,16 +512,17 @@ class AutomatedAccountClosureProcessor:
                 break
             
             # Multiple withdrawals needed - wait 24 hours before next one
+            next_withdrawal_time = datetime.now(timezone.utc) + timedelta(hours=24)
             detailed_logger.log_step_start("WAITING_24_HOUR_COOLDOWN", {
                 "reason": "Alpaca daily withdrawal limit reached",
-                "next_withdrawal_time": (datetime.now() + timedelta(hours=24)).isoformat(),
+                "next_withdrawal_time": next_withdrawal_time.isoformat(),
                 "process_status": "Background process will pause and resume automatically"
             })
             
             # Update state to indicate waiting period
             self.state_manager.update_closure_state(account_id, {
                 "phase": "withdrawal_24hr_wait",
-                "next_withdrawal_time": (datetime.now() + timedelta(hours=24)).isoformat(),
+                "next_withdrawal_time": next_withdrawal_time.isoformat(),
                 "waiting_reason": "24_hour_alpaca_withdrawal_cooldown",
                 "process_status": "active_waiting"
             })
@@ -530,20 +532,20 @@ class AutomatedAccountClosureProcessor:
             await asyncio.sleep(24 * 3600)  # 24 hours
             
             detailed_logger.log_step_start("RESUMING_AFTER_24HR_WAIT", {
-                "resumed_at": datetime.now().isoformat(),
+                "resumed_at": datetime.now(timezone.utc).isoformat(),
                 "continuing_withdrawals": True
             })
             
             # Update state to indicate we're resuming
             self.state_manager.update_closure_state(account_id, {
                 "phase": "withdrawal_resuming",
-                "resumed_at": datetime.now().isoformat()
+                "resumed_at": datetime.now(timezone.utc).isoformat()
             })
         
         # Clean up withdrawal state
         self.state_manager.update_closure_state(account_id, {
             "phase": "withdrawal_complete",
-            "completed_at": datetime.now().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "final_transfer_id": last_transfer_id
         })
         
@@ -745,8 +747,21 @@ class AutomatedAccountClosureProcessor:
             
             # Check if it's time to resume
             if next_action_time_str:
-                next_action_time = datetime.fromisoformat(next_action_time_str)
-                if datetime.now() < next_action_time:
+                # PRODUCTION FIX: Handle timezone-aware datetime comparison safely
+                try:
+                    next_action_time = datetime.fromisoformat(next_action_time_str)
+                    current_time = datetime.now(timezone.utc)
+                    
+                    # Ensure consistent timezone for comparison
+                    if next_action_time.tzinfo is None:
+                        next_action_time = next_action_time.replace(tzinfo=timezone.utc)
+                    elif next_action_time.tzinfo != timezone.utc:
+                        next_action_time = next_action_time.astimezone(timezone.utc)
+                        
+                except (ValueError, TypeError) as e:
+                    return {"success": False, "error": f"Invalid datetime format: {next_action_time_str} - {e}"}
+                
+                if current_time < next_action_time:
                     return {
                         "success": False, 
                         "error": f"Not yet time to resume. Next action at: {next_action_time_str}"
@@ -767,7 +782,7 @@ class AutomatedAccountClosureProcessor:
                 # Mark as resuming withdrawal
                 self.state_manager.update_closure_state(account_id, {
                     "phase": "withdrawal_resuming",
-                    "resumed_at": datetime.now().isoformat()
+                    "resumed_at": datetime.now(timezone.utc).isoformat()
                 })
                 
                 # Continue withdrawal process
