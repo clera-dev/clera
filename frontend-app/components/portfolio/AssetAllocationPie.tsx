@@ -120,7 +120,45 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
         // No explicit cleanup needed, fetch is triggered by state change
     }, [viewType, accountId, refreshTimestamp]); // Re-run if viewType, accountId, or refreshTimestamp changes. REMOVED isSectorLoading from deps.
 
+    const [cashStockBondData, setCashStockBondData] = useState<any[]>([]);
+    const [isCashStockBondLoading, setIsCashStockBondLoading] = useState<boolean>(false);
+    const [cashStockBondError, setCashStockBondError] = useState<string | null>(null);
+
+    // Fetch cash/stock/bond allocation data
+    useEffect(() => {
+        if (viewType === 'assetClass' && accountId && !isCashStockBondLoading) {
+            const fetchCashStockBondData = async () => {
+                setIsCashStockBondLoading(true);
+                setCashStockBondError(null);
+                try {
+                    const response = await fetch(`/api/portfolio/cash-stock-bond-allocation?accountId=${accountId}`);
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ detail: "Failed to fetch cash/stock/bond allocation data." }));
+                        throw new Error(errorData.detail || `HTTP error ${response.status}`);
+                    }
+                    const data = await response.json();
+                    setCashStockBondData(data.pie_data || []);
+                } catch (err: any) {
+                    console.error('Error fetching cash/stock/bond allocation data:', err);
+                    setCashStockBondError(err.message || 'Could not load allocation data.');
+                    // Fallback to old logic if new endpoint fails
+                    setCashStockBondData([]);
+                } finally {
+                    setIsCashStockBondLoading(false);
+                }
+            };
+            
+            fetchCashStockBondData();
+        }
+    }, [viewType, accountId, refreshTimestamp]);
+
     const allocationDataByClass = useMemo(() => {
+        // Use new cash/stock/bond data if available
+        if (cashStockBondData.length > 0) {
+            return cashStockBondData;
+        }
+        
+        // Fallback to original asset_class grouping
         const totalValue = positions.reduce((sum, pos) => sum + safeParseFloat(pos.market_value), 0);
         if (totalValue === 0) return [];
 
@@ -142,12 +180,32 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             };
         }).sort((a, b) => b.rawValue - a.rawValue);
 
-    }, [positions]);
+    }, [positions, cashStockBondData]);
 
     // Conditional rendering based on viewType
     const renderContent = () => {
         if (viewType === 'assetClass') {
-             if (positions.length === 0) {
+            // Show loading state while fetching cash/stock/bond data
+            if (isCashStockBondLoading) {
+                return (
+                    <div className="h-[280px] w-full">
+                        <Skeleton className="h-full w-full rounded-md" />
+                    </div>
+                );
+            }
+            
+            // Show error state if cash/stock/bond fetch failed and no fallback data
+            if (cashStockBondError && allocationDataByClass.length === 0) {
+                return (
+                    <div className="h-[280px] flex items-center justify-center">
+                        <CardDescription className="text-center p-4">
+                            Could not load allocation data: {cashStockBondError}
+                        </CardDescription>
+                    </div>
+                );
+            }
+            
+             if (positions.length === 0 && cashStockBondData.length === 0) {
                  return (
                      <div className="h-[240px] flex items-center justify-center">
                          <CardDescription className="text-center p-4">No position data available.</CardDescription>
@@ -156,8 +214,8 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
              }
             if (allocationDataByClass.length === 0) {
                 return (
-                    <div className="h-[240px] flex items-center justify-center">
-                         <CardDescription className="text-center p-4">Could not calculate asset class allocation.</CardDescription>
+                    <div className="h-[280px] flex items-center justify-center">
+                         <CardDescription className="text-center p-4">Could not calculate asset allocation.</CardDescription>
                      </div>
                 );
             }
