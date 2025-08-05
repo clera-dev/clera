@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
     }
 
-    const targetUrl = `${backendUrl}/api/portfolio/cash-stock-bond-allocation?account_id=${accountId}`;
+    const targetUrl = `${backendUrl}/api/portfolio/cash-stock-bond-allocation?account_id=${encodeURIComponent(accountId)}`;
     console.log(`Proxying request to: ${targetUrl}`);
 
     // Prepare headers

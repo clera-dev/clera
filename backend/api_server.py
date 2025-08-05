@@ -3340,8 +3340,11 @@ async def get_cash_stock_bond_allocation(
                 positions_data_json = result
         else:
             redis_client = await get_redis_client()
-            # Use async Redis client (with await)
-            positions_data_json = await redis_client.get(positions_key)
+            # Use async Redis client (with await) if available
+            if redis_client:
+                positions_data_json = await redis_client.get(positions_key)
+            else:
+                positions_data_json = None
         
         if not positions_data_json:
             # Fallback: Fetch positions directly from Alpaca

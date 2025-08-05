@@ -25,7 +25,6 @@ BOND_ETFS = {
     # Core Bond ETFs
     'AGG': 'iShares Core U.S. Aggregate Bond ETF',
     'BND': 'Vanguard Total Bond Market ETF', 
-    'BNDX': 'Vanguard Total International Bond ETF',
     'VTEB': 'Vanguard Tax-Exempt Bond ETF',
     'VGIT': 'Vanguard Intermediate-Term Treasury ETF',
     'VGLT': 'Vanguard Long-Term Treasury ETF',
@@ -180,8 +179,12 @@ def calculate_allocation(positions: List[Dict], cash_balance: Decimal) -> Dict[s
         AssetClassification.BOND: Decimal('0')
     }
     
-    # Add cash balance
-    allocations[AssetClassification.CASH] = max(cash_balance, Decimal('0'))
+    # Add cash balance (safely handle NaN or invalid values)
+    try:
+        allocations[AssetClassification.CASH] = max(cash_balance, Decimal('0'))
+    except decimal.InvalidOperation:
+        logger.warning(f"Invalid cash balance value (NaN or invalid), defaulting to 0: {cash_balance}")
+        allocations[AssetClassification.CASH] = Decimal('0')
     
     # Process positions
     for position in positions:
