@@ -26,6 +26,14 @@ interface SectorAllocationData {
   last_data_update_timestamp?: string;
 }
 
+// Define the structure for cash/stock/bond allocation data from API
+interface CashStockBondAllocationItem {
+  name: string;
+  value: number;
+  rawValue: number;
+  category: 'cash' | 'stock' | 'bond';
+}
+
 // Assuming PositionData interface is defined in parent or a shared types file
 // We only need a subset for this component
 interface PositionDataForPie {
@@ -120,31 +128,52 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
         // No explicit cleanup needed, fetch is triggered by state change
     }, [viewType, accountId, refreshTimestamp]); // Re-run if viewType, accountId, or refreshTimestamp changes. REMOVED isSectorLoading from deps.
 
-    const [cashStockBondData, setCashStockBondData] = useState<any[]>([]);
+    const [cashStockBondData, setCashStockBondData] = useState<CashStockBondAllocationItem[]>([]);
     const [isCashStockBondLoading, setIsCashStockBondLoading] = useState<boolean>(false);
     const [cashStockBondError, setCashStockBondError] = useState<string | null>(null);
+
+    // Clear cash/stock/bond data when not relevant
+    useEffect(() => {
+        if (viewType !== 'assetClass' || !accountId) {
+            setCashStockBondData([]);
+            setCashStockBondError(null);
+            setIsCashStockBondLoading(false);
+        }
+    }, [viewType, accountId]);
 
     // Fetch cash/stock/bond allocation data
     useEffect(() => {
         if (viewType === 'assetClass' && accountId) {
             const fetchCashStockBondData = async () => {
+                const currentAccountId = accountId; // Capture accountId for validation
                 setIsCashStockBondLoading(true);
                 setCashStockBondError(null);
                 try {
-                    const response = await fetch(`/api/portfolio/cash-stock-bond-allocation?accountId=${accountId}`);
+                    const response = await fetch(`/api/portfolio/cash-stock-bond-allocation?accountId=${currentAccountId}`);
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({ detail: "Failed to fetch cash/stock/bond allocation data." }));
                         throw new Error(errorData.detail || `HTTP error ${response.status}`);
                     }
                     const data = await response.json();
-                    setCashStockBondData(data.pie_data || []);
+                    
+                    // Validate response is still for current account before updating state
+                    if (currentAccountId === accountId) {
+                        setCashStockBondData(data.pie_data || []);
+                    }
                 } catch (err: any) {
                     console.error('Error fetching cash/stock/bond allocation data:', err);
-                    setCashStockBondError(err.message || 'Could not load allocation data.');
-                    // Fallback to old logic if new endpoint fails
-                    setCashStockBondData([]);
+                    
+                    // Only update error state if still for current account
+                    if (currentAccountId === accountId) {
+                        setCashStockBondError(err.message || 'Could not load allocation data.');
+                        // Fallback to old logic if new endpoint fails
+                        setCashStockBondData([]);
+                    }
                 } finally {
-                    setIsCashStockBondLoading(false);
+                    // Only update loading state if still for current account
+                    if (currentAccountId === accountId) {
+                        setIsCashStockBondLoading(false);
+                    }
                 }
             };
             

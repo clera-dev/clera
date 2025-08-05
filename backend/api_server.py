@@ -3325,12 +3325,19 @@ async def get_cash_stock_bond_allocation(
         }
     """
     try:
+        # Initialize broker_client to prevent NameError
+        broker_client = None
+        
         # Get Redis client for position data
         positions_key = f'account_positions:{account_id}'
         if hasattr(request.app.state, 'redis') and request.app.state.redis:
             redis_client = request.app.state.redis
-            # Use sync Redis client (no await)
-            positions_data_json = redis_client.get(positions_key)
+            # Check if Redis client is async or sync
+            result = redis_client.get(positions_key)
+            if hasattr(result, '__await__'):
+                positions_data_json = await result
+            else:
+                positions_data_json = result
         else:
             redis_client = await get_redis_client()
             # Use async Redis client (with await)
@@ -3342,7 +3349,7 @@ async def get_cash_stock_bond_allocation(
             try:
                 broker_client = get_broker_client()
                 alpaca_positions = await asyncio.to_thread(
-                    broker_client.get_all_positions_for_account, account_id
+                    broker_client.get_all_positions_for_account, UUID(account_id)
                 )
                 
                 # Convert Alpaca positions to dict format
@@ -3368,9 +3375,10 @@ async def get_cash_stock_bond_allocation(
         # 2. Get cash balance from account
         cash_balance = Decimal('0')
         try:
-            broker_client = get_broker_client()
+            if not broker_client:
+                broker_client = get_broker_client()
             account = await asyncio.to_thread(
-                broker_client.get_trade_account_by_id, account_id
+                broker_client.get_trade_account_by_id, UUID(account_id)
             )
             cash_balance = Decimal(str(account.cash)) if account.cash is not None else Decimal('0')
         except Exception as e:
@@ -3400,9 +3408,12 @@ async def get_cash_stock_bond_allocation(
                     else:
                         # Try to fetch from Alpaca API (but don't fail if it doesn't work)
                         try:
-                            asset_details = await asyncio.to_thread(
-                                broker_client.get_asset, symbol
-                            )
+                            if broker_client:
+                                asset_details = await asyncio.to_thread(
+                                    broker_client.get_asset, symbol
+                                )
+                            else:
+                                asset_details = None
                             if asset_details and hasattr(asset_details, 'name'):
                                 enriched_position['name'] = asset_details.name
                         except:
@@ -3422,15 +3433,15 @@ async def get_cash_stock_bond_allocation(
         response = {
             'cash': {
                 'value': float(allocation['cash']['value']),
-                'percentage': allocation['cash']['percentage']
+                'percentage': float(allocation['cash']['percentage'])
             },
             'stock': {
                 'value': float(allocation['stock']['value']),
-                'percentage': allocation['stock']['percentage']
+                'percentage': float(allocation['stock']['percentage'])
             },
             'bond': {
                 'value': float(allocation['bond']['value']),
-                'percentage': allocation['bond']['percentage']
+                'percentage': float(allocation['bond']['percentage'])
             },
             'total_value': float(allocation['total_value']),
             'pie_data': pie_data
@@ -3445,7 +3456,7 @@ async def get_cash_stock_bond_allocation(
         
     except Exception as e:
         logger.error(f"Error calculating cash/stock/bond allocation for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error calculating allocation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
     import uvicorn
