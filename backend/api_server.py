@@ -3300,7 +3300,167 @@ def cleanup_temp_file(file_path: str):
     except Exception as e:
         logger.error(f"Unexpected error cleaning up temporary file {file_path}: {e}")
 
+# Import the new asset classification utilities
+from utils.asset_classification import calculate_allocation, get_allocation_pie_data, AssetClassification
 
+@app.get("/api/portfolio/cash-stock-bond-allocation")
+async def get_cash_stock_bond_allocation(
+    request: Request,
+    account_id: str = Query(..., description="The account ID"),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get portfolio allocation split into cash, stocks, and bonds.
+    
+    This endpoint provides a more accurate allocation breakdown compared to 
+    the simple asset_class grouping, specifically identifying bond ETFs as bonds
+    rather than equities.
+    
+    Returns:
+        {
+            'cash': {'value': float, 'percentage': float},
+            'stock': {'value': float, 'percentage': float}, 
+            'bond': {'value': float, 'percentage': float},
+            'total_value': float,
+            'pie_data': [{'name': str, 'value': float, 'rawValue': float, 'color': str}]
+        }
+    """
+    try:
+        # Initialize broker_client to prevent NameError
+        broker_client = None
+        
+        # Get Redis client for position data
+        positions_key = f'account_positions:{account_id}'
+        if hasattr(request.app.state, 'redis') and request.app.state.redis:
+            redis_client = request.app.state.redis
+            # Check if Redis client is async or sync
+            result = redis_client.get(positions_key)
+            if hasattr(result, '__await__'):
+                positions_data_json = await result
+            else:
+                positions_data_json = result
+        else:
+            redis_client = await get_redis_client()
+            # Use async Redis client (with await) if available
+            if redis_client:
+                positions_data_json = await redis_client.get(positions_key)
+            else:
+                positions_data_json = None
+        
+        if not positions_data_json:
+            # Fallback: Fetch positions directly from Alpaca
+            logger.info(f"Positions not in Redis for account {account_id}, fetching from Alpaca")
+            try:
+                broker_client = get_broker_client()
+                alpaca_positions = await asyncio.to_thread(
+                    broker_client.get_all_positions_for_account, UUID(account_id)
+                )
+                
+                # Convert Alpaca positions to dict format
+                positions = []
+                for pos in alpaca_positions:
+                    positions.append({
+                        'symbol': pos.symbol,
+                        'market_value': str(pos.market_value),
+                        'asset_class': str(pos.asset_class.value) if pos.asset_class else 'us_equity',
+                        'qty': str(pos.qty),
+                        'current_price': str(pos.current_price)
+                    })
+            except Exception as e:
+                logger.error(f"Error fetching positions from Alpaca for account {account_id}: {e}")
+                positions = []
+        else:
+            try:
+                positions = json.loads(positions_data_json)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to decode positions JSON for account {account_id}")
+                positions = []
+        
+        # 2. Get cash balance from account
+        cash_balance = Decimal('0')
+        try:
+            if not broker_client:
+                broker_client = get_broker_client()
+            account = await asyncio.to_thread(
+                broker_client.get_trade_account_by_id, UUID(account_id)
+            )
+            cash_balance = Decimal(str(account.cash)) if account.cash is not None else Decimal('0')
+        except Exception as e:
+            logger.error(f"Error fetching cash balance for account {account_id}: {e}")
+            # Cash balance will remain 0
+        
+        # 3. Get asset details for enhanced classification
+        # Load asset cache once outside the loop for performance
+        cached_assets = {}
+        if os.path.exists(ASSET_CACHE_FILE):
+            with open(ASSET_CACHE_FILE, 'r') as f:
+                cached_assets_list = json.load(f)
+                cached_assets = {asset.get('symbol'): asset for asset in cached_assets_list}
+        
+        # Try to enrich positions with asset names for better bond detection
+        enriched_positions = []
+        for position in positions:
+            enriched_position = position.copy()
+            
+            # Try to get asset name from cache or API
+            try:
+                symbol = position.get('symbol')
+                if symbol:
+                    
+                    if symbol in cached_assets:
+                        enriched_position['name'] = cached_assets[symbol].get('name')
+                    else:
+                        # Try to fetch from Alpaca API (but don't fail if it doesn't work)
+                        try:
+                            if broker_client:
+                                asset_details = await asyncio.to_thread(
+                                    broker_client.get_asset, symbol
+                                )
+                            else:
+                                asset_details = None
+                            if asset_details and hasattr(asset_details, 'name'):
+                                enriched_position['name'] = asset_details.name
+                        except:
+                            pass  # Continue without name
+            except:
+                pass  # Continue without enrichment
+            
+            enriched_positions.append(enriched_position)
+        
+        # 4. Calculate allocation using our classification logic
+        allocation = calculate_allocation(enriched_positions, cash_balance)
+        
+        # 5. Generate pie chart data
+        pie_data = get_allocation_pie_data(allocation)
+        
+        # 6. Format response with float values for JSON serialization
+        response = {
+            'cash': {
+                'value': float(allocation['cash']['value']),
+                'percentage': float(allocation['cash']['percentage'])
+            },
+            'stock': {
+                'value': float(allocation['stock']['value']),
+                'percentage': float(allocation['stock']['percentage'])
+            },
+            'bond': {
+                'value': float(allocation['bond']['value']),
+                'percentage': float(allocation['bond']['percentage'])
+            },
+            'total_value': float(allocation['total_value']),
+            'pie_data': pie_data
+        }
+        
+        logger.info(f"Cash/Stock/Bond allocation calculated for account {account_id}: "
+                   f"Cash: {response['cash']['percentage']}%, "
+                   f"Stock: {response['stock']['percentage']}%, "
+                   f"Bond: {response['bond']['percentage']}%")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error calculating cash/stock/bond allocation for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
     import uvicorn
