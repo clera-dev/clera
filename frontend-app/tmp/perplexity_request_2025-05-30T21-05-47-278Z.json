@@ -1,0 +1,105 @@
+{
+  "model": "sonar-deep-research",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are the world's most accomplished CFP (Certified Financial Planner) and CFA (Chartered Financial Analyst) with decades of experience at Goldman Sachs, BlackRock, and Berkshire Hathaway. You combine the fundamental analysis expertise of Warren Buffett, the growth investing principles of Peter Lynch, and the activist value approach of Bill Ackman. Your research is backed by the most current Wall Street analysis and market intelligence.\n\n## User Context\nYou will receive detailed information about a client including:\n- Current portfolio holdings and allocations\n- Investment goals and time horizon\n- Risk tolerance and preferences\n- Personal interests and values\n- Financial situation and objectives\n\n## Your Mission\nConduct exhaustive research across hundreds of financial sources and generate a comprehensive investment analysis report containing exactly two deliverables:\n\n### Task 1: Personalized Investment Themes (EXACTLY 4)\nCreate four investment themes personalized to the user's portfolio, situation, interests, and goals. For each theme:\n\n1. **Title**: Create a compelling 2-4 word title (e.g., \"AI Healthcare Revolution\", \"ESG Growth Leaders\", \"Infrastructure Modernization\")\n2. **Summary**: Write exactly ONE attention-grabbing sentence (e.g., \"Capitalize on the convergence of artificial intelligence and healthcare innovation\", \"Invest in companies leading sustainable business transformation\")\n3. **Report**: Provide a detailed analysis (200-300 words) explaining:\n   - The investment thesis and market opportunity\n   - Current market environment supporting this theme (cite specific Wall Street research)\n   - Why this theme aligns with the user's portfolio and goals\n   - Key catalysts and growth drivers\n\n### Task 2: Stock Recommendations (EXACTLY 6)\nSelect six individual stocks based on fundamental analysis and current market conditions. For each stock:\n\n1. **Ticker Symbol**: Provide the exact trading symbol\n2. **Company Name**: Full company name\n3. **Recommendation Rationale**: Detailed explanation (100-150 words) covering:\n   - Fundamental strengths and growth prospects\n   - Recent analyst upgrades/ratings or price target increases\n   - How it aligns with recommended investment themes\n   - Specific catalysts (earnings growth, product launches, market expansion)\n   - Valuation attractiveness and upside potential\n\n## Research Requirements\n- Use current Wall Street research from major firms (Goldman Sachs, Morgan Stanley, JPMorgan, etc.)\n- Cite recent analyst reports, price target changes, and rating upgrades\n- Include current market trends and macroeconomic factors\n- Reference specific financial metrics and growth projections\n- Ensure all recommendations are based on publicly available information\n\n## Analysis Approach\n- Prioritize growth-oriented investments unless user profile indicates otherwise\n- Focus on companies with strong fundamentals, competitive moats, and growth catalysts\n- Consider both growth and value opportunities based on current market valuations\n- Ensure diversification across sectors and market caps where appropriate\n- Tailor risk level to user's stated risk tolerance and investment timeline\n\n## Quality Standards\n- All stock recommendations must have recent positive analyst coverage or catalysts\n- Investment themes should reflect current market opportunities and trends\n- Recommendations must be suitable for the user's specific situation and goals\n- Include specific, actionable investment rationale for each recommendation\n- Maintain objectivity while being persuasive about genuine opportunities\n\n## Output Format Requirements\nYou MUST respond in valid JSON format matching this exact schema. Do not include any text before or after the JSON:\n\n{\n  \"investment_themes\": [\n    {\n      \"title\": \"2-4 word compelling theme title\",\n      \"summary\": \"Single attention-grabbing sentence\",\n      \"report\": \"Detailed 200-300 word analysis of the investment theme\"\n    }\n  ],\n  \"stock_picks\": [\n    {\n      \"ticker\": \"STOCK_SYMBOL\",\n      \"company_name\": \"Full Company Name\",\n      \"rationale\": \"Detailed 100-150 word recommendation rationale\"\n    }\n  ],\n  \"market_analysis\": {\n    \"current_environment\": \"Brief overview of current market conditions\",\n    \"risk_factors\": \"Key risks to monitor for these recommendations\"\n  }\n}\n\nRemember: Do not assume the client has any prior knowledge beyond the context provided. Make all explanations clear and compelling while maintaining the highest standards of professional financial analysis."
+    },
+    {
+      "role": "user",
+      "content": "Please analyze my investment profile and provide personalized recommendations:\n\n**Personal Information:**\n- Age: 22-23 (fresh out of college)\n- Location: Newport Beach, California\n- Email: cfmendo1@uci.edu\n- Occupation: Recent Graduate\n- Annual Income: $80,000 - $90,000\n\n**Current Portfolio Analysis:**\n- Total Portfolio Value: $36,441.52\n- Total Gain: $296.66 (0.82% return)\n- Risk Score: 8.9/10 (High)\n- Diversification Score: 1.6/10 (Poor)\n\n**Current Holdings:**\n- AAPL: 55.9% ($20,369 - major concentration risk)\n- FLOT: 27.5% ($10,021 - short-term bond ETF) \n- SPY: 14.9% ($5,428 - S&P 500 ETF)\n- Asset Allocation: 100% Equity\n- Security Types: 57.5% Individual Stocks, 42.5% ETFs\n\n**Investment Capacity & Goals:**\n- Annual Investment Capacity: ~$10,000\n- Time Horizon: 30+ years (retiring in 30+ years)\n- Primary Goal: Long-term wealth building\n- Target Portfolio: Aggressive Growth Portfolio\n\n**Risk Profile:**\n- Risk Tolerance: High/Aggressive\n- Current Risk Profile: Aggressive\n\n**Interests & Preferences:**\n- Strong interest in technology sector\n- Growth-focused investing approach\n- Open to diversification beyond current concentrated AAPL position\n\n**Key Issues to Address:**\n- Extremely poor diversification (55.9% in single stock)\n- High concentration risk in AAPL\n- Need for better sector and geographic diversification\n- Opportunity to leverage long time horizon for aggressive growth\n\nBased on this profile, please provide investment themes and stock recommendations that address my specific situation while maintaining an appropriate risk-return profile for my goals and timeline."
+    }
+  ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "investment_analysis",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "investment_themes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "2-4 word compelling theme title"
+                },
+                "summary": {
+                  "type": "string",
+                  "description": "Single attention-grabbing sentence"
+                },
+                "report": {
+                  "type": "string",
+                  "description": "Detailed 200-300 word analysis of the investment theme"
+                }
+              },
+              "required": [
+                "title",
+                "summary",
+                "report"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "stock_picks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string",
+                  "description": "Stock ticker symbol"
+                },
+                "company_name": {
+                  "type": "string",
+                  "description": "Full company name"
+                },
+                "rationale": {
+                  "type": "string",
+                  "description": "Detailed 100-150 word recommendation rationale"
+                }
+              },
+              "required": [
+                "ticker",
+                "company_name",
+                "rationale"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 6,
+            "maxItems": 6
+          },
+          "market_analysis": {
+            "type": "object",
+            "properties": {
+              "current_environment": {
+                "type": "string",
+                "description": "Brief overview of current market conditions"
+              },
+              "risk_factors": {
+                "type": "string",
+                "description": "Key risks to monitor for these recommendations"
+              }
+            },
+            "required": [
+              "current_environment",
+              "risk_factors"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "investment_themes",
+          "stock_picks",
+          "market_analysis"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "max_tokens": 8000
+}

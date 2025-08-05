@@ -1,0 +1,100 @@
+# Gitleaks configuration file
+
+title = "Gitleaks Config for Clera Fintech AI"
+
+# Defines an allowlist of allowed regex patterns
+[allowlist]
+description = "Global allowlist"
+
+# Files not to scan
+files = [
+  '''.venv/.*''',
+  '''venv/.*''',
+  '''node_modules/.*''',
+  '''\.git/.*''',
+  '''.*lock'''
+]
+
+# Regexes to ignore
+regexes = [
+  # Test values
+  '''(?i)example''',
+  '''(?i)test''',
+  '''(?i)PLACEHOLDER''',
+]
+
+# Paths to ignore
+paths = [
+  '''(.*?)(jpg|jpeg|png|gif|doc|pdf|bin|xls|pyc|zip)$''',
+  '''(.*?)(swagger|openapi|api-docs)(.*?)\.json$''',
+  '''frontend-app/\.next/.*'''
+]
+
+# Increase the timeout for scanning large files
+timeout = "10m"
+
+# Custom rules for detecting sensitive information
+[[rules]]
+id = "api-key"
+description = "Generic API Key"
+regex = '''(?i)((api|app|private|public|secret)[-_]?key|token)[ =:"\d]*[a-zA-Z0-9\+/=]{24,}'''
+secretGroup = 0
+entropy = 3.5
+tags = ["key", "API", "generic"]
+severity = "HIGH"
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API Key"
+regex = '''(?i)(sk-[a-zA-Z0-9]{48})'''
+secretGroup = 1
+severity = "CRITICAL"
+
+[[rules]]
+id = "jwt-token"
+description = "JWT Tokens"
+regex = '''(?i)eyJ[a-zA-Z0-9.]+\.eyJ[a-zA-Z0-9.]+\.[a-zA-Z0-9_-]+'''
+secretGroup = 0
+tags = ["key", "JWT"]
+severity = "HIGH"
+
+[[rules]]
+id = "financial-data"
+description = "Financial account data"
+regex = '''(?i)(account[ _-]?number|routing[ _-]?number)[ =:"]*[0-9]{8,12}'''
+secretGroup = 0
+tags = ["financial"]
+severity = "CRITICAL"
+
+[[rules]]
+id = "user-financial-data"
+description = "User financial data"
+regex = '''(?i)(credit[ _-]?card|card[ _-]?number|cvv|expir[ey]|ccv|cvc|cvv|pin)[ =:"]*[0-9]{12,19}'''
+secretGroup = 0
+tags = ["financial", "pii"]
+severity = "CRITICAL"
+
+[[rules]]
+id = "azure-conn-string"
+description = "Azure Connection String"
+regex = '''(?i)AccountKey=[a-zA-Z0-9+/=]{88}'''
+secretGroup = 0
+tags = ["key", "Azure", "ConnectionString"]
+severity = "HIGH"
+
+[[rules]]
+id = "supabase-anon-key"
+description = "Supabase anon key"
+regex = '''(?i)(supabase.*?anon.*?key|SUPABASE.*?ANON.*?KEY)[ =:"]*[a-zA-Z0-9.]+'''
+secretGroup = 0
+tags = ["key", "Supabase"]
+severity = "HIGH"
+
+[[rules]]
+id = "env-file"
+description = "Environment file contents"
+regex = '''(?i)(api_key|secret_key|access_key|auth_token|password|credential|secret|token)[ =:"]*[a-zA-Z0-9_-]{16,}'''
+secretGroup = 0
+tags = ["key", "env"]
+path = '''.*\.env.*'''
+severity = "HIGH" 

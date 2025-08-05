@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Plaid Connection Success</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f7;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        p {
+            color: #666;
+            line-height: 1.5;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3b82f6;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .debug {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            text-align: left;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-wrap: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .debug h3 {
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bank Connection Successful</h1>
+        <div class="spinner"></div>
+        <p>Your bank account was successfully connected. Completing the process...</p>
+        <div id="status-message"></div>
+        <div id="debug-info" class="debug" style="display: none;"></div>
+    </div>
+
+    <!-- Include Plaid Link library for handling callbacks -->
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+
+    <script>
+        // Debug mode - set to true to see detailed info
+        const DEBUG_MODE = true;
+        
+        // Debug logging function
+        function debugLog(message, data = null) {
+            if (DEBUG_MODE) {
+                console.log(message, data);
+                const debugEl = document.getElementById('debug-info');
+                debugEl.style.display = 'block';
+                
+                const entry = document.createElement('div');
+                entry.innerHTML = `<strong>${message}</strong>`;
+                if (data) {
+                    const pre = document.createElement('pre');
+                    pre.textContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+                    entry.appendChild(pre);
+                }
+                debugEl.appendChild(entry);
+                debugEl.scrollTop = debugEl.scrollHeight;
+            }
+        }
+        
+        // Function to extract query parameters
+        function getQueryParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+        
+        // Get account ID from query parameters
+        const accountId = getQueryParam('account_id');
+        debugLog('Account ID from URL', accountId);
+        
+        // Function to handle direct Plaid redirect with public token in URL
+        function handleDirectRedirect() {
+            debugLog('Checking for direct redirect with public token in URL');
+            
+            // Look for public_token in different possible locations
+            let publicToken = null;
+            
+            // Check query parameters
+            publicToken = getQueryParam('public_token');
+            if (publicToken) {
+                debugLog('Found public token in query parameters', publicToken);
+                processPublicToken(publicToken);
+                return true;
+            }
+            
+            // Check hash fragment
+            if (window.location.hash) {
+                const hashParams = new URLSearchParams(window.location.hash.substring(1));
+                publicToken = hashParams.get('public_token');
+                if (publicToken) {
+                    debugLog('Found public token in hash fragment', publicToken);
+                    processPublicToken(publicToken);
+                    return true;
+                }
+            }
+            
+            // Check for OAuth state parameter which indicates a successful redirect
+            const oauthStateToken = getQueryParam('oauth_state_id');
+            if (oauthStateToken) {
+                debugLog('Found OAuth state token, using fallback method', oauthStateToken);
+                // Plaid OAuth flow - we need to manually create a public token
+                handleOAuthFlow();
+                return true;
+            }
+            
+            debugLog('No public token found in URL');
+            return false;
+        }
+        
+        // Function to handle OAuth flow
+        function handleOAuthFlow() {
+            const statusEl = document.getElementById('status-message');
+            statusEl.innerHTML = `<p>Detected OAuth flow. Please wait while we complete your connection...</p>`;
+            
+            // Since we don't have the public token directly from the OAuth flow,
+            // we'll tell the parent window to check for the bank connection directly
+            if (window.opener) {
+                debugLog('Sending oauth_success message to parent window');
+                window.opener.postMessage({
+                    action: 'plaid_oauth_success',
+                    account_id: accountId
+                }, '*');
+                
+                // Close this window after a delay
+                setTimeout(() => {
+                    window.close();
+                }, 2000);
+            } else {
+                // No parent window, redirect to protected page
+                debugLog('No parent window found, redirecting to protected page');
+                setTimeout(() => {
+                    window.location.href = '/protected';
+                }, 2000);
+            }
+        }
+        
+        // Function to process the public token
+        function processPublicToken(publicToken) {
+            const statusEl = document.getElementById('status-message');
+            
+            if (!accountId) {
+                statusEl.innerHTML = `<p style="color: red;">Error: Missing account ID. Please try again.</p>`;
+                debugLog('Error: Missing account ID');
+                return;
+            }
+            
+            debugLog('Processing public token', { publicToken, accountId });
+            statusEl.innerHTML = `<p>Processing connection with account ${accountId}...</p>`;
+            
+            // If we have a parent window, send the token back
+            if (window.opener) {
+                debugLog('Sending message to parent window');
+                try {
+                    window.opener.postMessage({
+                        action: 'plaid_link_success',
+                        public_token: publicToken,
+                        account_id: accountId
+                    }, '*');
+                    
+                    statusEl.innerHTML = `<p style="color: green;">Successfully sent data to main window!</p>`;
+                    
+                    // Close this window after a short delay
+                    setTimeout(() => {
+                        window.close();
+                    }, 2000);
+                } catch (error) {
+                    debugLog('Error sending message to parent', error);
+                    statusEl.innerHTML = `<p style="color: red;">Error: ${error.message}. Please try again.</p>`;
+                }
+            } else {
+                // If no parent window, send the request directly
+                debugLog('No parent window found, sending direct API request');
+                statusEl.innerHTML = `<p>No parent window found. Sending request directly...</p>`;
+                
+                sendDirectAPIRequest(publicToken, accountId)
+                    .then(success => {
+                        if (success) {
+                            statusEl.innerHTML = `<p style="color: green;">Connection successful! Redirecting...</p>`;
+                            setTimeout(() => {
+                                window.location.href = '/protected';
+                            }, 2000);
+                        }
+                    })
+                    .catch(error => {
+                        debugLog('API request error', error);
+                        statusEl.innerHTML = `<p style="color: red;">Error: ${error.message}. Please try again.</p>`;
+                    });
+            }
+        }
+        
+        // Function to send API request directly
+        async function sendDirectAPIRequest(publicToken, accountId) {
+            const response = await fetch('/api/broker/process-plaid-token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    publicToken: publicToken,
+                    accountId: accountId
+                }),
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to process connection');
+            }
+            
+            const data = await response.json();
+            debugLog('API response', data);
+            return true;
+        }
+        
+        // Main function to handle the redirect
+        function handleRedirect() {
+            debugLog('Starting redirect handler', {
+                url: window.location.href,
+                search: window.location.search,
+                hash: window.location.hash
+            });
+            
+            // First try to handle as a direct redirect with token in URL
+            if (handleDirectRedirect()) {
+                return;
+            }
+            
+            // If no direct token found, check for OAuth flow or display error
+            if (getQueryParam('oauth_state_id')) {
+                handleOAuthFlow();
+            } else {
+                // No public token or OAuth state found
+                const statusEl = document.getElementById('status-message');
+                statusEl.innerHTML = `
+                    <p style="color: red;">Missing required data:</p>
+                    <ul style="text-align: left; color: red;">
+                        ${!accountId ? '<li>Account ID not found</li>' : ''}
+                        <li>Public token not found</li>
+                    </ul>
+                    <p>Please try connecting your bank account again.</p>
+                `;
+                debugLog('Missing required data');
+            }
+        }
+        
+        // Run the redirect handler when page loads
+        window.onload = handleRedirect;
+    </script>
+</body>
+</html> 

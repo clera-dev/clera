@@ -1,0 +1,36 @@
+# The manifest for the "production" environment.
+# Read the full specification for the "Environment" type at:
+#  https://aws.github.io/copilot-cli/docs/manifest/environment/
+
+# Your environment name will be used in naming your resources like VPC, cluster, etc.
+name: production
+type: Environment
+
+# Import your own VPC and subnets or configure how they should be created.
+# network:
+#   vpc:
+#     id:
+
+# Configure the load balancers in your environment
+http:
+  public:
+    certificates:
+      - arn:aws:acm:us-west-1:039612860226:certificate/75f7c1a3-0173-471c-900e-0142b467790d # Wildcard certificate for *.askclera.com
+    # Configure ALB settings optimized for WebSockets
+    ingress:
+      timeout: 3600  # Set timeout to 1 hour for WebSocket connections
+    # Enable sticky sessions for WebSockets (CRITICAL)
+    stickiness: true
+    # Ensure the ALB is configured to handle WebSocket protocol
+    additional_settings:
+      # Connection draining
+      deregistration_delay.timeout_seconds: 300
+      # Idle timeout should match the ingress timeout
+      idle_timeout.timeout_seconds: 3600
+  private:
+    ingress:
+      timeout: 3600  # Match the public timeout setting
+
+# Configure observability for your environment resources
+observability:
+  container_insights: true  # Enable container insights for better monitoring

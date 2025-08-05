@@ -1,0 +1,101 @@
+name: Security Scans
+
+on:
+  schedule:
+    # Run weekly on Monday at 1 AM
+    - cron: '0 1 * * 1'
+  workflow_dispatch:  # Allow manual triggers
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  secret-scanning:
+    name: Check for Leaked Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        with:
+          config-path: .github/gitleaks.toml
+        continue-on-error: true  # Don't fail the workflow if Gitleaks finds issues
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog-actions-scan@master
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+        continue-on-error: true  # Don't fail the workflow if TruffleHog finds issues
+
+  codeql-analysis:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript', 'python']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+        continue-on-error: true
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Backend Dependency Check
+        uses: OWASP/dependency-check-action@main
+        with:
+          path: './backend'
+          format: 'SARIF'
+          out: 'backend-dependency-check-report.sarif'
+        continue-on-error: true
+          
+      - name: Frontend Dependency Check
+        uses: OWASP/dependency-check-action@main
+        with:
+          path: './frontend-app'
+          format: 'SARIF'
+          out: 'frontend-dependency-check-report.sarif'
+        continue-on-error: true
+          
+      - name: Upload Backend Dependency Check results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: backend-dependency-check-report.sarif
+          category: backend-dependencies
+        continue-on-error: true
+          
+      - name: Upload Frontend Dependency Check results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: frontend-dependency-check-report.sarif
+          category: frontend-dependencies
+        continue-on-error: true 

@@ -1,0 +1,386 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 0%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 0%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  
+  /* Use CSS variables for consistent dark theme */
+  :root {
+    --page-background: hsl(var(--background));
+  }
+  
+  .dark {
+    --page-background: #000000;
+  }
+  
+  /* Apply dark background using CSS variables instead of !important */
+  html {
+    background-color: var(--page-background);
+  }
+  
+  /* Ensure main containers inherit the dark theme */
+  main, div[class*="bg-background"] {
+    background-color: var(--page-background);
+  }
+}
+
+/* Ensure sidebar elements are visible */
+aside a img,
+aside button img,
+aside a svg,
+aside button svg {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* Fix for header and sidebar positioning */
+.fixed {
+  position: fixed !important;
+}
+
+/* Custom z-index values */
+.z-55 {
+  z-index: 55 !important;
+}
+
+.z-60 {
+  z-index: 60 !important;
+}
+
+.z-50 {
+  z-index: 50 !important;
+}
+
+/* Removed overly-aggressive rule that forced position: relative on all body children.
+   This was breaking Radix UI portals (Select, Dropdown, etc.) by overriding their
+   fixed/absolute positioning and causing menus to render at the bottom of the page. */
+
+/* Hide any React DevTools or debug elements */
+[id*="react-devtools"],
+[id*="react-inspector"],
+body > div:last-child:not([id]):not([class]) {
+  display: none !important;
+}
+
+/* Clera Assist Styles */
+.clera-glow {
+  box-shadow: 
+    0 0 20px rgba(0, 122, 255, 0.15),
+    0 0 40px rgba(90, 200, 250, 0.1),
+    0 0 60px rgba(0, 122, 255, 0.05);
+  border: 1px solid rgba(0, 122, 255, 0.2);
+  transition: all 0.3s ease-out;
+}
+
+.clera-glow:hover {
+  box-shadow: 
+    0 0 25px rgba(0, 122, 255, 0.2),
+    0 0 50px rgba(90, 200, 250, 0.15),
+    0 0 80px rgba(0, 122, 255, 0.08);
+  border: 1px solid rgba(0, 122, 255, 0.3);
+}
+
+/* Enhanced chart glow effects */
+.chart-container {
+  position: relative;
+}
+
+.chart-container::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, 
+    rgba(0, 122, 255, 0.1), 
+    rgba(90, 200, 250, 0.1), 
+    rgba(0, 122, 255, 0.1)
+  );
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.chart-container:hover::before {
+  opacity: 1;
+}
+
+/* Chart line glow animation */
+@keyframes chart-glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(0, 122, 255, 0.6));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(0, 122, 255, 0.8));
+  }
+}
+
+.chart-line-glow {
+  animation: chart-glow-pulse 3s ease-in-out infinite;
+}
+
+/* Subtle chart line glow animation - more refined */
+@keyframes chart-subtle-glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(0, 122, 255, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 4px rgba(0, 122, 255, 0.5));
+  }
+}
+
+.chart-line-subtle-glow {
+  animation: chart-subtle-glow-pulse 4s ease-in-out infinite;
+}
+
+/* Price change indicators with glow */
+.price-indicator-positive {
+  background: linear-gradient(135deg, 
+    rgba(34, 197, 94, 0.1) 0%, 
+    rgba(34, 197, 94, 0.05) 100%
+  );
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.1);
+}
+
+.price-indicator-negative {
+  background: linear-gradient(135deg, 
+    rgba(239, 68, 68, 0.1) 0%, 
+    rgba(239, 68, 68, 0.05) 100%
+  );
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
+}
+
+.clera-assist-button {
+  background: linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%);
+  box-shadow: 
+    0 4px 15px rgba(0, 122, 255, 0.3),
+    0 2px 8px rgba(90, 200, 250, 0.2);
+  transition: all 0.2s ease-out;
+  position: relative;
+  overflow: hidden;
+  z-index: 12;
+}
+
+.clera-assist-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.clera-assist-button:hover::before {
+  left: 100%;
+}
+
+.clera-assist-button:hover {
+  transform: scale(1.05) translateY(-1px);
+  box-shadow: 
+    0 6px 20px rgba(0, 122, 255, 0.4),
+    0 3px 12px rgba(90, 200, 250, 0.3);
+}
+
+.clera-pulse {
+  animation: clera-pulse 2s infinite;
+}
+
+@keyframes clera-pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Enhanced card header layout */
+.clera-assist-card-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  z-index: 10;
+  isolation: isolate;
+}
+
+.clera-assist-card-header .card-title {
+  flex: 1;
+  margin-right: 12px;
+}
+
+/* Smooth transitions for button appearance */
+.clera-assist-button-container {
+  transition: all 0.3s ease-out;
+  opacity: 0;
+  transform: translateY(4px);
+  z-index: 11;
+  position: relative;
+}
+
+.clera-assist-button-container.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Tooltip z-index and solid background */
+[data-radix-tooltip-content] {
+  z-index: 1000;
+  background: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Dark mode tooltip */
+.dark [data-radix-tooltip-content] {
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Tooltip portal container */
+[data-radix-tooltip-portal] {
+  z-index: 1000;
+}
+
+/* General positioning fixes for Clera Assist */
+.clera-assist-card-header > div:last-child {
+  z-index: 11 !important;
+  position: relative;
+}
+
+/* Ensure cards don't create stacking contexts that interfere */
+.clera-assist-card-header {
+  isolation: isolate;
+}
+
+/* Fix for any components that might create stacking contexts */
+[data-clera-assist] {
+  z-index: 11;
+  position: relative;
+}
+
+/* Specific fixes for tooltip content */
+.clera-assist-button + [data-radix-tooltip-content] {
+  z-index: 1001;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .clera-assist-button {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  .clera-pulse {
+    animation-duration: 1.5s;
+  }
+}
+
+/* Enhanced dialog backdrop for better contrast */
+[data-radix-dialog-overlay] {
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 90;
+}
+
+/* Ensure dialog content stays prominent */
+[data-radix-dialog-content] {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+}
+
+/* Ensure main content doesn't overlap sidebar on mobile */
+@media (max-width: 1023px) {
+  main {
+    z-index: 1 !important;
+  }
+  
+  /* Ensure sidebar overlay is above main content */
+  .sidebar-overlay {
+    z-index: 50 !important;
+  }
+  
+  /* Ensure sidebar is above overlay */
+  .sidebar-container {
+    z-index: 55 !important;
+  }
+}
+

@@ -1,0 +1,148 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node
+node_modules/
+npm-debug.log
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+coverage/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+*.sublime-workspace
+*.sublime-project
+
+# Environment
+.env*
+.venv
+env/
+venv/
+ENV/
+new_env/
+fresh_env/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Testing
+.coverage
+.pytest_cache/
+coverage/
+.nyc_output/
+
+# Build
+dist/
+build/
+*.tsbuildinfo
+
+# Misc
+.DS_Store
+Thumbs.db
+
+# Additional common ignores
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*~
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Local development settings
+local_settings.py
+settings_local.py
+
+# Media and static files (if managed outside of version control)
+media/
+static/
+uploads/
+
+# Compiled JavaScript
+*.min.js
+*.bundle.js
+
+# Compiled CSS
+*.min.css
+
+# Docker
+docker-compose.override.yml
+
+# Dependency directories
+jspm_packages/
+bower_components/
+
+# Cache directories
+.sass-cache/
+.npm/
+.eslintcache
+.stylelintcache
+
+# OS generated files
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Virtual machine crash logs
+hs_err_pid*
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+
+# macOS specific
+.DS_Store
+
+# Development environments
+.devcontainer/
+fresh_env/
+
+# Docker related
+docker-compose.yml
+.dockerignore
+
+# Python installer
+get-pip.py
+
+.langgraph_api/
