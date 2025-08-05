@@ -24,9 +24,11 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     """Tests for the /api/portfolio/cash-stock-bond-allocation endpoint"""
 
     def setUp(self):
-        """Set up test client"""
+        """Set up test client and authentication"""
         self.client = TestClient(app)
-        self.test_account_id = "test-account-123"
+        self.test_account_id = "12345678-1234-5678-9012-123456789012"  # Valid UUID format
+        self.test_api_key = "test-backend-api-key"
+        self.auth_headers = {"x-api-key": self.test_api_key}
         
     def tearDown(self):
         """Clean up after tests"""
@@ -36,6 +38,7 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
     @patch('api_server.get_broker_client')
     def test_mixed_portfolio_allocation(self, mock_broker_client, mock_redis_client):
         """Test allocation calculation with mixed portfolio"""
+        
         # Mock Redis client
         mock_redis = MagicMock()
         mock_redis_client.return_value = mock_redis
@@ -59,9 +62,11 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         mock_broker.get_trade_account_by_id.return_value = mock_account
         
         # Mock asset cache file (empty for this test)
-        with patch('os.path.exists', return_value=False):
+        with patch('os.path.exists', return_value=False), \
+             patch.dict('os.environ', {'BACKEND_API_KEY': self.test_api_key}):
             response = self.client.get(
-                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+                headers=self.auth_headers
             )
         
         self.assertEqual(response.status_code, 200)
@@ -213,7 +218,11 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
 
     def test_missing_account_id(self):
         """Test error handling for missing account ID"""
-        response = self.client.get("/api/portfolio/cash-stock-bond-allocation")
+        with patch.dict('os.environ', {'BACKEND_API_KEY': self.test_api_key}):
+            response = self.client.get(
+                "/api/portfolio/cash-stock-bond-allocation",
+                headers=self.auth_headers
+            )
         
         self.assertEqual(response.status_code, 422)  # FastAPI validation error
 
@@ -339,6 +348,57 @@ class TestCashStockBondAllocationEndpoint(unittest.TestCase):
         # UNKNOWN should be classified as bond due to name being passed in the position data
         self.assertEqual(data['bond']['value'], 1000.0)
         self.assertEqual(data['stock']['value'], 2000.0)
+
+
+    # ========================================
+    # AUTHENTICATION TESTS
+    # ========================================
+    
+    def test_authentication_required(self):
+        """Test that API key is required"""
+        response = self.client.get(
+            f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+        )
+        
+        self.assertEqual(response.status_code, 401)
+        data = response.json()
+        self.assertEqual(data['detail'], 'API key is required')
+    
+    def test_invalid_api_key(self):
+        """Test that invalid API key is rejected"""
+        with patch.dict('os.environ', {'BACKEND_API_KEY': 'correct-api-key'}):
+            invalid_headers = {"x-api-key": "invalid-api-key"}
+            response = self.client.get(
+                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+                headers=invalid_headers
+            )
+        
+        self.assertEqual(response.status_code, 401)
+        data = response.json()
+        self.assertEqual(data['detail'], 'Invalid API key')
+    
+    def test_missing_api_key_header(self):
+        """Test that missing x-api-key header is rejected"""
+        with patch.dict('os.environ', {'BACKEND_API_KEY': self.test_api_key}):
+            response = self.client.get(
+                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}"
+            )
+        
+        self.assertEqual(response.status_code, 401)
+        data = response.json()
+        self.assertEqual(data['detail'], 'API key is required')
+    
+    def test_backend_api_key_not_configured(self):
+        """Test behavior when BACKEND_API_KEY environment variable is not set"""
+        with patch('os.environ.get', return_value=None):
+            response = self.client.get(
+                f"/api/portfolio/cash-stock-bond-allocation?account_id={self.test_account_id}",
+                headers=self.auth_headers
+            )
+            
+            self.assertEqual(response.status_code, 500)
+            data = response.json()
+            self.assertEqual(data['detail'], 'Server configuration error: API key not set.')
 
 
 if __name__ == '__main__':
