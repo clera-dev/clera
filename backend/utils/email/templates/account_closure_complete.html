@@ -184,7 +184,7 @@
         </div>
         
         <div class="content">
-        <h2>Dear {{ user_name }},</h2>
+        <h2>Dear {{ user_name|e }},</h2>
         
         <p>We're pleased to inform you that your account closure process has been completed successfully. Your account has been permanently closed and all remaining funds have been transferred to your connected bank account.</p>
         
@@ -193,11 +193,11 @@
             <table class="details-table">
                 <tr>
                     <td>Confirmation Number:</td>
-                    <td><span class="confirmation-number">{{ confirmation_number }}</span></td>
+                    <td><span class="confirmation-number">{{ confirmation_number|e }}</span></td>
                 </tr>
                 <tr>
                     <td>Account ID:</td>
-                    <td>{{ account_id }}</td>
+                    <td>{{ account_id|e }}</td>
                 </tr>
                 <tr>
                     <td>Completion Date:</td>
@@ -236,7 +236,7 @@
             <p>
                 <strong>Email:</strong> <a href="mailto:{{ support_email }}">{{ support_email }}</a>
             </p>
-            <p>Please reference your confirmation number <strong>{{ confirmation_number }}</strong> when contacting support.</p>
+            <p>Please reference your confirmation number <strong>{{ confirmation_number|e }}</strong> when contacting support.</p>
         </div>
         
         <p>Thank you for choosing Clera. We appreciate the opportunity to have served you as an investor.</p>

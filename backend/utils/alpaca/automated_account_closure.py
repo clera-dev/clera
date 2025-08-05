@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from enum import Enum
 
-from .account_closure import AccountClosureManager, ClosureStep
+from .account_closure import AccountClosureManager, ClosureStep, ClosureStateManager
 from .account_closure_logger import AccountClosureLogger
 logger = logging.getLogger("automated-account-closure")
 
@@ -49,6 +49,7 @@ class AutomatedAccountClosureProcessor:
     def __init__(self, sandbox: bool = True):
         self.sandbox = sandbox
         self.manager = AccountClosureManager(sandbox)
+        self.state_manager = ClosureStateManager()
         self.supabase = get_supabase_client() if get_supabase_client else None
         
     async def initiate_automated_closure(self, user_id: str, account_id: str, 
@@ -119,7 +120,17 @@ class AutomatedAccountClosureProcessor:
                     "confirmation_number": confirmation_number
                 })
             
-            # STEP 3: Start background process with asyncio.create_task (simple and effective)
+            # STEP 3: Store initial state in Redis for persistence
+            self.state_manager.set_closure_state(account_id, {
+                "user_id": user_id,
+                "account_id": account_id,
+                "ach_relationship_id": ach_relationship_id,
+                "confirmation_number": confirmation_number,
+                "phase": "starting",
+                "initiated_at": datetime.now().isoformat()
+            })
+            
+            # STEP 4: Start background process with asyncio.create_task (simple and effective)
             asyncio.create_task(self._run_automated_closure_process(
                 user_id, account_id, ach_relationship_id, confirmation_number, detailed_logger
             ))
@@ -129,7 +140,7 @@ class AutomatedAccountClosureProcessor:
                 "task": "automated_account_closure"
             })
             
-            # STEP 4: Return immediate response to frontend
+            # STEP 5: Return immediate response to frontend
             return {
                 "success": True,
                 "message": "Account closure process initiated successfully",
@@ -181,29 +192,42 @@ class AutomatedAccountClosureProcessor:
             })
             
             # PHASE 1: LIQUIDATION (immediate)
+            self.state_manager.update_closure_state(account_id, {"phase": "liquidation"})
             await self._handle_liquidation_phase(account_id, detailed_logger)
             
             # PHASE 2: SETTLEMENT MONITORING (T+1 waiting)
+            self.state_manager.update_closure_state(account_id, {"phase": "settlement"})
             await self._handle_settlement_phase(account_id, detailed_logger)
             
             # PHASE 3: AUTOMATIC FUND WITHDRAWAL  
+            self.state_manager.update_closure_state(account_id, {"phase": "withdrawal"})
             transfer_id = await self._handle_withdrawal_phase(account_id, ach_relationship_id, detailed_logger)
             
             # PHASE 4: TRANSFER COMPLETION MONITORING
+            self.state_manager.update_closure_state(account_id, {"phase": "transfer_completion"})
             await self._handle_transfer_completion_phase(account_id, transfer_id, detailed_logger)
             
             # PHASE 5: ACCOUNT CLOSURE
+            self.state_manager.update_closure_state(account_id, {"phase": "final_closure"})
             await self._handle_account_closure_phase(account_id, user_id, confirmation_number, detailed_logger)
             
             # PHASE 6: SEND COMPLETION EMAIL
+            self.state_manager.update_closure_state(account_id, {"phase": "sending_completion_email"})
             await self._send_completion_email(account_id, user_id, confirmation_number, detailed_logger)
             
             # PHASE 7: FINAL SUPABASE UPDATE
+            self.state_manager.update_closure_state(account_id, {"phase": "updating_final_status"})
             if self.supabase:
                 await self._update_supabase_status(user_id, "closed", {
                     "completed_at": datetime.now().isoformat(),
                     "confirmation_number": confirmation_number
                 })
+            
+            # PHASE 8: CLEANUP REDIS STATE (process completed)
+            self.state_manager.update_closure_state(account_id, {
+                "phase": "completed",
+                "completed_at": datetime.now().isoformat()
+            })
             
             detailed_logger.log_step_success("AUTOMATED_BACKGROUND_PROCESS", {
                 "final_status": "completed",
@@ -281,6 +305,15 @@ class AutomatedAccountClosureProcessor:
         DAILY_LIMIT = 50000.0
         last_transfer_id = None
         
+        # CRITICAL: Store state in Redis for persistence across server restarts
+        self.state_manager.set_withdrawal_state(account_id, {
+            "phase": "withdrawal",
+            "ach_relationship_id": ach_relationship_id,
+            "daily_limit": DAILY_LIMIT,
+            "started_at": datetime.now().isoformat(),
+            "transfers_completed": []
+        })
+        
         while True:
             # Check current withdrawable balance
             account_status = await asyncio.to_thread(
@@ -315,6 +348,17 @@ class AutomatedAccountClosureProcessor:
             transfer_id = withdrawal_result.get("transfer_id")
             last_transfer_id = transfer_id
             
+            # Update withdrawal state with transfer info
+            current_state = self.state_manager.get_withdrawal_state(account_id) or {}
+            current_state["transfers_completed"] = current_state.get("transfers_completed", [])
+            current_state["transfers_completed"].append({
+                "transfer_id": transfer_id,
+                "amount": withdrawal_amount,
+                "initiated_at": datetime.now().isoformat()
+            })
+            current_state["last_transfer_id"] = transfer_id
+            self.state_manager.set_withdrawal_state(account_id, current_state)
+            
             detailed_logger.log_step_success("WITHDRAWAL_INITIATED", {
                 "transfer_id": transfer_id,
                 "amount_withdrawn": withdrawal_amount,
@@ -335,8 +379,17 @@ class AutomatedAccountClosureProcessor:
             await self._wait_for_transfer_completion(account_id, transfer_id, detailed_logger)
             
             # Wait 24 hours before next withdrawal (as per user requirements)
+            next_transfer_date = datetime.now() + timedelta(hours=24)
+            
+            # Update state with next transfer timing
+            current_state = self.state_manager.get_withdrawal_state(account_id) or {}
+            current_state["next_transfer_date"] = next_transfer_date.isoformat()
+            current_state["waiting_for_next_transfer"] = True
+            self.state_manager.set_withdrawal_state(account_id, current_state)
+            
             detailed_logger.log_step_start("DAILY_WITHDRAWAL_COOLDOWN", {
                 "wait_duration_hours": 24,
+                "next_transfer_date": next_transfer_date.isoformat(),
                 "reason": "24-hour delay between $50k withdrawals"
             })
             

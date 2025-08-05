@@ -117,23 +117,23 @@ export class AccountClosureService {
         .single();
       
       if (error) {
-        console.warn(`[AccountClosureService] Database error getting account ID for user ${userId}:`, error.message);
+        this.logError(`Database error getting account ID for user ${userId}`, error, false);
         return null;
       }
       
       if (!onboardingData) {
-        console.warn(`[AccountClosureService] No onboarding data found for user ${userId}`);
+        this.logError(`No onboarding data found for user ${userId}`, { userId }, false);
         return null;
       }
       
       if (!onboardingData.alpaca_account_id) {
-        console.warn(`[AccountClosureService] No alpaca_account_id found for user ${userId} (status: ${onboardingData.status})`);
+        this.logError(`No alpaca_account_id found for user ${userId}`, { userId, status: onboardingData.status }, false);
         return null;
       }
       
       return onboardingData.alpaca_account_id;
     } catch (error) {
-      console.error(`[AccountClosureService] Exception getting account ID for user ${userId}:`, error);
+      this.logError(`Exception getting account ID for user ${userId}`, error, false);
       return null;
     }
   }
@@ -189,7 +189,7 @@ export class AccountClosureService {
       
       if (!accountId) {
         // Don't treat this as an error - just means no progress polling available
-        console.log(`[AccountClosureService] No account ID found for user - skipping progress polling`);
+        this.logError(`No account ID found for user - skipping progress polling`, { userId }, false);
         return null;
       }
       

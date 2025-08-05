@@ -54,11 +54,21 @@ export default function AccountClosurePage() {
       setUser(user);
 
       // Get user status
-      const { data: onboardingData } = await supabase
+      const { data: onboardingData, error: onboardingError } = await supabase
         .from('user_onboarding')
         .select('status')
         .eq('user_id', user.id)
         .single();
+
+      // Handle database/network errors gracefully
+      if (onboardingError) {
+        console.error('Error fetching user onboarding status:', onboardingError);
+        // Don't redirect on error - let user stay on closure page
+        // Set a default status that allows them to continue
+        setUserStatus('pending_closure');
+        setLoading(false);
+        return;
+      }
 
       const status = onboardingData?.status;
       setUserStatus(status);

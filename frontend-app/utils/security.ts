@@ -13,8 +13,8 @@
  * - Logging of invalid redirect attempts
  * - Graceful fallback to safe default routes
  * 
- * Allowed redirect paths: /dashboard, /portfolio, /invest, /news, /chat, /settings, /account, /info
- * Blocked patterns: /api/, /_next/, /admin/, /internal/, /debug/, /test/, /protected/, /auth/ (checked anywhere in path)
+ * Allowed redirect paths: /dashboard, /portfolio, /invest, /news, /chat, /settings, /account, /info, /protected, /account-closure
+ * Blocked patterns: /api/, /_next/, /admin/, /internal/, /debug/, /test/, /auth/ (checked anywhere in path)
  * 
  * This utility is designed to be used in both client and server contexts.
  */
@@ -63,7 +63,9 @@ export function isValidRedirectUrl(url: string): boolean {
     '/chat',
     '/settings',
     '/account',
-    '/info'
+    '/info',
+    '/protected',
+    '/account-closure'
   ];
   
   // SECURITY FIX: Use exact path matching with proper sub-path validation
@@ -91,7 +93,6 @@ export function isValidRedirectUrl(url: string): boolean {
     '/internal/',
     '/debug/',
     '/test/',
-    '/protected/',
     '/auth/'
   ];
   

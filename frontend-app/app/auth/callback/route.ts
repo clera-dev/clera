@@ -1,5 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
+import { validateAndSanitizeRedirectUrl } from "@/utils/security";
 
 export async function GET(request: Request) {
   // The `/auth/callback` route is required for the server-side auth flow implemented
@@ -7,12 +8,10 @@ export async function GET(request: Request) {
   // https://supabase.com/docs/guides/auth/server-side/nextjs
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
-  const origin = requestUrl.origin;
   const redirectTo = requestUrl.searchParams.get("redirect_to")?.toString();
 
   console.log("Auth callback received - URL:", request.url);
   console.log("Auth code present:", !!code);
-  console.log("Origin:", origin);
   console.log("Redirect to:", redirectTo);
 
   if (code) {
@@ -21,7 +20,9 @@ export async function GET(request: Request) {
   }
 
   if (redirectTo) {
-    return NextResponse.redirect(`${origin}${redirectTo}`);
+    // SECURITY FIX: Validate redirect URL to prevent open redirect attacks
+    const safeRedirectUrl = validateAndSanitizeRedirectUrl(redirectTo);
+    return NextResponse.redirect(new URL(safeRedirectUrl, requestUrl.origin));
   }
 
   // Check user's onboarding and funding status to determine redirect
@@ -40,11 +41,11 @@ export async function GET(request: Request) {
     
     // Handle account closure statuses first
     if (userStatus === 'pending_closure') {
-      return NextResponse.redirect(`${origin}/account-closure`);
+      return NextResponse.redirect(new URL('/account-closure', requestUrl.origin));
     }
     
     if (userStatus === 'closed') {
-      return NextResponse.redirect(`${origin}/protected`);
+      return NextResponse.redirect(new URL('/protected', requestUrl.origin));
     }
     
     const hasCompletedOnboarding = 
@@ -61,11 +62,11 @@ export async function GET(request: Request) {
       
       // If they have completed onboarding and have funded their account, go to portfolio
       if (transfers && transfers.length > 0) {
-        return NextResponse.redirect(`${origin}/portfolio`);
+        return NextResponse.redirect(new URL('/portfolio', requestUrl.origin));
       }
     }
   }
 
   // Default: URL to redirect to after sign up process completes
-  return NextResponse.redirect(`${origin}/protected`);
+  return NextResponse.redirect(new URL('/protected', requestUrl.origin));
 }

@@ -66,24 +66,29 @@ class BrokerService:
             if not relationships:
                 raise ValueError(f"No ACH relationships found for account {account_id}")
             
-            # Find the first active/approved relationship
-            for rel in relationships:
+            # Sort by created_at to get most recent first (as per user requirement)
+            sorted_relationships = sorted(relationships, key=lambda r: r.created_at, reverse=True)
+            
+            # Find the first active/approved relationship (most recent first)
+            for rel in sorted_relationships:
                 status = str(rel.status).upper()
                 # Handle both enum string representation and plain status
                 if 'APPROVED' in status or 'ACTIVE' in status:
+                    logger.info(f"Found ACTIVE/APPROVED ACH relationship: {rel.id} (created: {rel.created_at})")
                     return str(rel.id)
             
-            # If no active relationship found, check for other valid statuses
-            for rel in relationships:
+            # If no active relationship found, check for other valid statuses (most recent first)
+            for rel in sorted_relationships:
                 status = str(rel.status).upper()
                 if 'QUEUED' in status or 'SUBMITTED' in status:
+                    logger.warning(f"Using QUEUED/SUBMITTED ACH relationship: {rel.id} (created: {rel.created_at})")
                     return str(rel.id)
             
             # If we get here, no usable relationships were found
-            statuses = [str(rel.status) for rel in relationships]
+            statuses = [f"{rel.id}: {rel.status} ({rel.created_at})" for rel in sorted_relationships]
             raise ValueError(
                 f"No active ACH relationships found for account {account_id}. "
-                f"Found relationships with statuses: {statuses}"
+                f"Found relationships: {statuses}"
             )
             
         except Exception as e:
@@ -284,6 +289,86 @@ class ClosureStateManager:
         except Exception as e:
             logger.warning(f"Failed to clear partial withdrawal state: {e}")
     
+    def set_closure_state(self, account_id: str, state: Dict[str, Any], ttl_hours: int = 72):
+        """Store general closure state in Redis with TTL."""
+        if not self.redis_client:
+            return
+        try:
+            key = f"closure_state:{account_id}"
+            # Convert any UUID objects to strings for JSON serialization
+            serializable_state = self._make_json_serializable(state)
+            state_json = json.dumps(serializable_state)
+            self.redis_client.setex(key, timedelta(hours=ttl_hours), state_json)
+            logger.info(f"Stored closure state for {account_id}: {serializable_state}")
+        except Exception as e:
+            logger.error(f"Failed to store closure state: {e}")
+    
+    def _make_json_serializable(self, obj):
+        """Convert objects to JSON-serializable format."""
+        if isinstance(obj, dict):
+            return {k: self._make_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif hasattr(obj, '__str__') and not isinstance(obj, (str, int, float, bool, type(None))):
+            # Convert UUID and other objects to string
+            return str(obj)
+        else:
+            return obj
+    
+    def get_closure_state(self, account_id: str) -> Optional[Dict[str, Any]]:
+        """Get general closure state from Redis."""
+        if not self.redis_client:
+            return None
+        try:
+            key = f"closure_state:{account_id}"
+            state_json = self.redis_client.get(key)
+            if state_json:
+                return json.loads(state_json)
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get closure state: {e}")
+            return None
+    
+    def update_closure_state(self, account_id: str, updates: Dict[str, Any]):
+        """Update specific fields in closure state."""
+        if not self.redis_client:
+            return
+        try:
+            current_state = self.get_closure_state(account_id) or {}
+            current_state.update(updates)
+            current_state["updated_at"] = datetime.now().isoformat()
+            self.set_closure_state(account_id, current_state)
+        except Exception as e:
+            logger.error(f"Failed to update closure state: {e}")
+    
+    def set_withdrawal_state(self, account_id: str, state: Dict[str, Any], ttl_hours: int = 72):
+        """Store withdrawal state in Redis with TTL."""
+        if not self.redis_client:
+            return
+        try:
+            key = f"withdrawal_state:{account_id}"
+            # Convert any UUID objects to strings for JSON serialization
+            serializable_state = self._make_json_serializable(state)
+            state_json = json.dumps(serializable_state)
+            self.redis_client.setex(key, timedelta(hours=ttl_hours), state_json)
+            logger.info(f"Stored withdrawal state for {account_id}: {serializable_state}")
+        except Exception as e:
+            logger.error(f"Failed to store withdrawal state: {e}")
+    
+    def get_withdrawal_state(self, account_id: str) -> Optional[Dict[str, Any]]:
+        """Get withdrawal state from Redis."""
+        if not self.redis_client:
+            return None
+        try:
+            key = f"withdrawal_state:{account_id}"
+            state_json = self.redis_client.get(key)
+            if state_json:
+                return json.loads(state_json)
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get withdrawal state: {e}")
+            return None
+    
     def determine_current_step(self, account_info: Dict[str, Any], account_id: str = None) -> ClosureStep:
         """Determine current step based on account state and Redis persistence."""
         account = account_info["account"]
@@ -439,11 +524,14 @@ class AccountClosureManager:
             if detailed_logger:
                 detailed_logger.log_alpaca_data("PRECONDITIONS_ACCOUNT_INFO", account_info)
             
-            # Basic validations
-            if str(account_info["account"].status) == "CLOSED":
+            # Basic validations  
+            account_status_str = str(account_info["account"].status)
+            
+            # Handle both enum string representations
+            if account_status_str in ["CLOSED", "AccountStatus.CLOSED"]:
                 return {"ready": False, "reason": "Account is already closed"}
             
-            if str(account_info["account"].status) != "ACTIVE":
+            if account_status_str not in ["ACTIVE", "AccountStatus.ACTIVE"]:
                 return {"ready": False, "reason": f"Account status is {account_info['account'].status}, must be ACTIVE"}
             
             # More complex business rules can be added here

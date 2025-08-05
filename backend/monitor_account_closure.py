@@ -35,9 +35,11 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import sys
 
-# Add the backend directory to the Python path
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(backend_dir)
+# Ensure the backend directory is in the Python path for imports when run as a script
+if __name__ == "__main__":
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
 
 # Import database functions
 try:

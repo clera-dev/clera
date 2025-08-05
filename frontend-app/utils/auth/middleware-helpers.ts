@@ -20,6 +20,7 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/settings": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/info": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/account-closure": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
 
   // API routes
   "/api/broker/account-summary": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },

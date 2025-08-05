@@ -11,8 +11,8 @@
  * - Logging of invalid redirect attempts
  * - Graceful fallback to safe default routes
  * 
- * Allowed redirect paths: /dashboard, /portfolio, /invest, /news, /chat, /settings, /account, /info
- * Blocked patterns: /api/, /_next/, /admin/, /internal/, /debug/, /test/
+ * Allowed redirect paths: /dashboard, /portfolio, /invest, /news, /chat, /settings, /account, /info, /protected, /account-closure
+ * Blocked patterns: /api/, /_next/, /admin/, /internal/, /debug/, /test/, /auth/
  */
 
 "use client";

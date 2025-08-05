@@ -16,8 +16,12 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 
-# Add the backend directory to the Python path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Ensure the backend directory is in the Python path for imports when run as a script
+if __name__ == "__main__":
+    # Get the backend directory (parent of scripts directory)
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
 
 def setup_environment():
     """Setup environment variables for the script."""
@@ -72,17 +76,61 @@ async def resume_account_closure(user_id: str, account_id: str, dry_run: bool = 
         # Get ACH relationship ID
         supabase = get_supabase_client()
         
-        # Find ACH relationship for this user
-        result = supabase.table("user_bank_connections").select(
-            "ach_relationship_id"
-        ).eq("user_id", user_id).eq("status", "active").execute()
+        # Find ACH relationship - ALPACA is source of truth, Supabase fallback
+        ach_relationship_id = None
         
-        if not result.data or len(result.data) == 0:
-            print(f"ERROR: No active ACH relationship found for user {user_id}")
-            return False
+        # FIRST: Try to get active ACH relationships directly from Alpaca
+        try:
+            from alpaca.broker import BrokerClient
+            api_key = os.getenv("BROKER_API_KEY")
+            secret_key = os.getenv("BROKER_SECRET_KEY")
+            
+            if api_key and secret_key:
+                broker_client = BrokerClient(api_key, secret_key, sandbox=True)
+                ach_relationships = broker_client.get_ach_relationships_for_account(account_id=account_id)
+                
+                if ach_relationships:
+                    # Sort by created_at to get most recent first
+                    sorted_relationships = sorted(ach_relationships, key=lambda r: r.created_at, reverse=True)
+                    
+                    # Find the first ACTIVE or APPROVED relationship
+                    for relationship in sorted_relationships:
+                        status = str(relationship.status).upper()
+                        if 'ACTIVE' in status or 'APPROVED' in status:
+                            ach_relationship_id = relationship.id
+                            print(f"Found ACTIVE ACH relationship from Alpaca: {ach_relationship_id}")
+                            print(f"  Status: {relationship.status}")
+                            print(f"  Created: {relationship.created_at}")
+                            break
+                    
+                    if not ach_relationship_id:
+                        print("WARNING: No ACTIVE ACH relationships found in Alpaca")
+                        # Use most recent regardless of status
+                        ach_relationship_id = sorted_relationships[0].id
+                        print(f"Using most recent ACH relationship: {ach_relationship_id}")
+                        print(f"  Status: {sorted_relationships[0].status}")
+                else:
+                    print("No ACH relationships found in Alpaca")
+            else:
+                print("Alpaca credentials not found, falling back to Supabase")
+        except Exception as e:
+            print(f"Failed to get ACH relationships from Alpaca: {e}")
+            print("Falling back to Supabase...")
         
-        ach_relationship_id = result.data[0]["ach_relationship_id"]
-        print(f"Found ACH relationship: {ach_relationship_id}")
+        # FALLBACK: Use Supabase data if Alpaca failed, sorted by most recent
+        if not ach_relationship_id:
+            result = supabase.table("user_bank_connections").select(
+                "relationship_id, created_at"
+            ).eq("user_id", user_id).order("created_at", desc=True).execute()
+            
+            if not result.data or len(result.data) == 0:
+                print(f"ERROR: No ACH relationship found for user {user_id}")
+                return False
+            
+            ach_relationship_id = result.data[0]["relationship_id"]
+            print(f"Using most recent ACH relationship from Supabase: {ach_relationship_id}")
+            print(f"  Created: {result.data[0]['created_at']}")
+            print(f"  WARNING: Status unknown - may need validation")
         
         # Use sandbox mode based on environment
         sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"

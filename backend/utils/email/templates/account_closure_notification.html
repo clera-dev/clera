@@ -175,7 +175,7 @@
         </div>
         
         <div class="content">
-        <h2>Dear {{ user_name }},</h2>
+        <h2>Dear {{ user_name|e }},</h2>
         
         <p>We have received and processed your account closure request. Your account closure process has been initiated and is now in progress.</p>
         
@@ -184,11 +184,11 @@
             <table class="details-table">
                 <tr>
                     <td>Confirmation Number:</td>
-                    <td><span class="confirmation-number">{{ confirmation_number }}</span></td>
+                    <td><span class="confirmation-number">{{ confirmation_number|e }}</span></td>
                 </tr>
                 <tr>
                     <td>Account ID:</td>
-                    <td>{{ account_id }}</td>
+                    <td>{{ account_id|e }}</td>
                 </tr>
                 <tr>
                     <td>Request Date:</td>
@@ -196,7 +196,7 @@
                 </tr>
                 <tr>
                     <td>Estimated Completion:</td>
-                    <td>{{ estimated_completion }}</td>
+                    <td>{{ estimated_completion|e }}</td>
                 </tr>
             </table>
         </div>
@@ -209,7 +209,7 @@
                 <li><strong>Account Closure:</strong> Your account will be permanently closed once all transfers complete</li>
                 <li><strong>Final Documentation:</strong> You will receive final account statements and tax documents</li>
             </ul>
-            <p><strong>Timeline:</strong> Please allow {{ estimated_completion }} for this process to complete.</p>
+            <p><strong>Timeline:</strong> Please allow {{ estimated_completion|e }} for this process to complete.</p>
         </div>
         
         <div class="warning">
@@ -223,7 +223,7 @@
             <p>
                 <strong>Email:</strong> <a href="mailto:{{ support_email }}">{{ support_email }}</a>
             </p>
-            <p>Please reference your confirmation number <strong>{{ confirmation_number }}</strong> when contacting support.</p>
+            <p>Please reference your confirmation number <strong>{{ confirmation_number|e }}</strong> when contacting support.</p>
         </div>
         
         <p>Thank you for choosing Clera. We're here to help if you need anything during this transition.</p>
