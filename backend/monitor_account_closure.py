@@ -35,22 +35,30 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import sys
 
-# Ensure the backend directory is in the Python path for imports when run as a script
+# Import database functions
+DATABASE_AVAILABLE = False
+account_closure_service = None
+account_closure_analytics = None
+user_closure_service = None
+get_user_alpaca_account_id = None
+
+# Only import database functions when run as a script
 if __name__ == "__main__":
+    # Ensure the backend directory is in the Python path for imports when run as a script
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     if backend_dir not in sys.path:
         sys.path.insert(0, backend_dir)
-
-# Import database functions
-try:
-    from utils.supabase.account_closure_service import account_closure_service
-    from utils.supabase.account_closure_analytics import account_closure_analytics
-    from utils.supabase.user_closure_service import user_closure_service
-    from utils.supabase.db_client import get_user_alpaca_account_id
-    DATABASE_AVAILABLE = True
-except ImportError as e:
-    DATABASE_AVAILABLE = False
-    print(f"⚠️ Database logging not available: {e}")
+    
+    # Import database functions
+    try:
+        from utils.supabase.account_closure_service import account_closure_service
+        from utils.supabase.account_closure_analytics import account_closure_analytics
+        from utils.supabase.user_closure_service import user_closure_service
+        from utils.supabase.db_client import get_user_alpaca_account_id
+        DATABASE_AVAILABLE = True
+    except ImportError as e:
+        DATABASE_AVAILABLE = False
+        print(f"⚠️ Database logging not available: {e}")
 
 # Color codes for terminal output
 class Colors:

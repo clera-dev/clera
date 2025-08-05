@@ -55,10 +55,11 @@ export function useClosureProgress(userId: string | undefined): UseClosureProgre
         
         setLastUpdateStatus('success');
       } else {
-        // Progress data not available - this is normal for some accounts
-        // Don't treat as error, just use default steps
-        //console.log('[useClosureProgress] No progress data available for user:', userId);
-        setLastUpdateStatus('success');
+        // Progress data is null - this could be legitimate (no account) or an error
+        // We need to distinguish between these cases
+        // For now, treat null as an error to avoid hiding real backend/network issues
+        console.warn('[useClosureProgress] No progress data returned for user:', userId);
+        setLastUpdateStatus('error');
       }
     } catch (error) {
       console.error('[useClosureProgress] Error fetching closure progress:', error);

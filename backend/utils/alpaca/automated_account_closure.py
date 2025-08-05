@@ -378,22 +378,31 @@ class AutomatedAccountClosureProcessor:
             
             await self._wait_for_transfer_completion(account_id, transfer_id, detailed_logger)
             
-            # Wait 24 hours before next withdrawal (as per user requirements)
+            # Schedule next withdrawal for 24 hours later (external scheduler will resume)
             next_transfer_date = datetime.now() + timedelta(hours=24)
             
-            # Update state with next transfer timing
+            # Update state with next transfer timing and mark as waiting
             current_state = self.state_manager.get_withdrawal_state(account_id) or {}
             current_state["next_transfer_date"] = next_transfer_date.isoformat()
             current_state["waiting_for_next_transfer"] = True
+            current_state["phase"] = "waiting_for_next_withdrawal"
             self.state_manager.set_withdrawal_state(account_id, current_state)
             
-            detailed_logger.log_step_start("DAILY_WITHDRAWAL_COOLDOWN", {
-                "wait_duration_hours": 24,
-                "next_transfer_date": next_transfer_date.isoformat(),
-                "reason": "24-hour delay between $50k withdrawals"
+            # Update main closure state to indicate waiting
+            self.state_manager.update_closure_state(account_id, {
+                "phase": "withdrawal_waiting",
+                "next_action_time": next_transfer_date.isoformat(),
+                "waiting_reason": "24_hour_withdrawal_cooldown"
             })
             
-            await asyncio.sleep(24 * 3600)  # 24 hours
+            detailed_logger.log_step_start("SCHEDULED_NEXT_WITHDRAWAL", {
+                "next_transfer_date": next_transfer_date.isoformat(),
+                "scheduler_note": "External scheduler will resume process",
+                "current_phase": "withdrawal_waiting"
+            })
+            
+            # Exit process - external scheduler will resume after 24 hours
+            return last_transfer_id
         
         detailed_logger.log_step_success("MULTI_DAY_WITHDRAWAL_PHASE")
         return last_transfer_id or "completed"
@@ -568,6 +577,81 @@ class AutomatedAccountClosureProcessor:
         except Exception as e:
             logger.error(f"Failed to update Supabase status for user {user_id}: {e}")
 
+    async def resume_waiting_closure(self, account_id: str) -> Dict[str, Any]:
+        """
+        Resume a closure process that is waiting for scheduled continuation.
+        
+        This is called by external scheduler when it's time to continue a waiting process.
+        """
+        detailed_logger = AccountClosureLogger(account_id)
+        
+        try:
+            # Get current closure state
+            closure_state = self.state_manager.get_closure_state(account_id)
+            if not closure_state:
+                return {"success": False, "error": "No closure state found"}
+            
+            current_phase = closure_state.get("phase")
+            next_action_time_str = closure_state.get("next_action_time")
+            
+            # Check if it's time to resume
+            if next_action_time_str:
+                next_action_time = datetime.fromisoformat(next_action_time_str)
+                if datetime.now() < next_action_time:
+                    return {
+                        "success": False, 
+                        "error": f"Not yet time to resume. Next action at: {next_action_time_str}"
+                    }
+            
+            detailed_logger.log_step_start("RESUMING_CLOSURE_PROCESS", {
+                "account_id": account_id,
+                "current_phase": current_phase,
+                "scheduled_time": next_action_time_str
+            })
+            
+            # Resume from the appropriate phase
+            if current_phase == "withdrawal_waiting":
+                # Continue with withdrawal phase
+                user_id = closure_state.get("user_id")
+                ach_relationship_id = closure_state.get("ach_relationship_id")
+                
+                # Mark as resuming withdrawal
+                self.state_manager.update_closure_state(account_id, {
+                    "phase": "withdrawal_resuming",
+                    "resumed_at": datetime.now().isoformat()
+                })
+                
+                # Continue withdrawal process
+                transfer_id = await self._handle_withdrawal_phase(account_id, ach_relationship_id, detailed_logger)
+                
+                # If withdrawal phase completed, continue to next phases
+                if transfer_id and transfer_id not in ["scheduled", None]:
+                    # PHASE 4: TRANSFER COMPLETION MONITORING
+                    self.state_manager.update_closure_state(account_id, {"phase": "transfer_completion"})
+                    await self._handle_transfer_completion_phase(account_id, transfer_id, detailed_logger)
+                    
+                    # PHASE 5: ACCOUNT CLOSURE
+                    self.state_manager.update_closure_state(account_id, {"phase": "final_closure"})
+                    await self._handle_account_closure_phase(account_id, user_id, closure_state.get("confirmation_number"), detailed_logger)
+                    
+                    # PHASE 6: COMPLETION
+                    self.state_manager.update_closure_state(account_id, {"phase": "completed"})
+                    
+                    return {"success": True, "phase": "completed", "message": "Account closure completed"}
+                else:
+                    return {"success": True, "phase": "scheduled", "message": "Next withdrawal scheduled"}
+            
+            else:
+                return {"success": False, "error": f"Unknown phase for resumption: {current_phase}"}
+                
+        except Exception as e:
+            logger.error(f"Failed to resume closure for {account_id}: {str(e)}")
+            detailed_logger.log_step_failure("RESUME_CLOSURE_PROCESS", {
+                "error": str(e)
+            })
+            return {"success": False, "error": str(e)}
+
+
 # Convenience function for API endpoints
 async def initiate_automated_account_closure(user_id: str, account_id: str, 
                                            ach_relationship_id: str, sandbox: bool = True) -> Dict[str, Any]:
@@ -578,4 +662,15 @@ async def initiate_automated_account_closure(user_id: str, account_id: str,
     Returns immediately while background process handles everything.
     """
     processor = AutomatedAccountClosureProcessor(sandbox)
-    return await processor.initiate_automated_closure(user_id, account_id, ach_relationship_id) 
+    return await processor.initiate_automated_closure(user_id, account_id, ach_relationship_id)
+
+
+# Convenience function for scheduler
+async def resume_scheduled_closure(account_id: str, sandbox: bool = True) -> Dict[str, Any]:
+    """
+    Resume a scheduled account closure process.
+    
+    This is called by external scheduler (cron job) to resume waiting processes.
+    """
+    processor = AutomatedAccountClosureProcessor(sandbox)
+    return await processor.resume_waiting_closure(account_id) 

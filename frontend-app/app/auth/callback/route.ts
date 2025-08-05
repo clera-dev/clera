@@ -1,6 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
 import { validateAndSanitizeRedirectUrl } from "@/utils/security";
+import { getRedirectPathForUserStatus } from "@/lib/utils/userRouting";
 
 export async function GET(request: Request) {
   // The `/auth/callback` route is required for the server-side auth flow implemented
@@ -39,32 +40,18 @@ export async function GET(request: Request) {
     
     const userStatus = onboardingData?.status;
     
-    // Handle account closure statuses first
-    if (userStatus === 'pending_closure') {
-      return NextResponse.redirect(new URL('/account-closure', requestUrl.origin));
-    }
+    // Check if user has funded their account (has transfers)
+    const { data: transfers } = await supabase
+      .from('user_transfers')
+      .select('id')
+      .eq('user_id', user.id)
+      .limit(1);
     
-    if (userStatus === 'closed') {
-      return NextResponse.redirect(new URL('/protected', requestUrl.origin));
-    }
+    const hasTransfers = Boolean(transfers && transfers.length > 0);
     
-    const hasCompletedOnboarding = 
-      userStatus === 'submitted' || 
-      userStatus === 'approved';
-    
-    if (hasCompletedOnboarding) {
-      // Check if user has funded their account (has transfers)
-      const { data: transfers } = await supabase
-        .from('user_transfers')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-      
-      // If they have completed onboarding and have funded their account, go to portfolio
-      if (transfers && transfers.length > 0) {
-        return NextResponse.redirect(new URL('/portfolio', requestUrl.origin));
-      }
-    }
+    // Use centralized routing logic
+    const redirectPath = getRedirectPathForUserStatus(userStatus, hasTransfers);
+    return NextResponse.redirect(new URL(redirectPath, requestUrl.origin));
   }
 
   // Default: URL to redirect to after sign up process completes

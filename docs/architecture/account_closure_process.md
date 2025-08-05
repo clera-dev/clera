@@ -260,10 +260,37 @@ The AutomatedAccountClosureProcessor handles the complete workflow:
 1. **API Service**: Existing ECS service handles API requests and background processing
 2. **Redis**: Shared ElastiCache Redis instance for state persistence
 3. **Email Service**: AWS SES configured for notification emails
+4. **Scheduler**: External cron job for resuming multi-day processes
 
 #### Current Production Setup
 
-The automated account closure process runs within the existing API service, using Redis for state persistence. No additional worker services are required.
+The automated account closure process runs within the existing API service, using Redis for state persistence and an external scheduler for resuming waiting processes.
+
+#### Scheduler Deployment
+
+**Cron Job Setup** (on ECS task or separate server):
+```bash
+# Check for ready processes every hour
+0 * * * * /path/to/venv/bin/python /path/to/backend/scripts/account_closure_scheduler.py
+
+# Or more frequent for faster response (every 15 minutes)
+*/15 * * * * /path/to/venv/bin/python /path/to/backend/scripts/account_closure_scheduler.py --dry-run
+0 * * * * /path/to/venv/bin/python /path/to/backend/scripts/account_closure_scheduler.py
+```
+
+**AWS ECS Scheduled Task** (Recommended):
+```yaml
+# CloudFormation template snippet
+ScheduledTask:
+  Type: AWS::Events::Rule
+  Properties:
+    ScheduleExpression: "cron(0 * * * ? *)"  # Every hour
+    Targets:
+      - Arn: !GetAtt ECSCluster.Arn
+        Id: AccountClosureScheduler
+        EcsParameters:
+          TaskDefinitionArn: !Ref SchedulerTaskDefinition
+```
 
 ## Monitoring
 
@@ -278,6 +305,20 @@ python scripts/fix_stuck_account_closure.py --find-stuck --dry-run
 
 # Resume stuck account closure
 python scripts/fix_stuck_account_closure.py --account-id <account_id>
+
+# Check scheduler status
+python scripts/account_closure_scheduler.py --dry-run
+
+# Resume specific account via scheduler
+python scripts/account_closure_scheduler.py --account-id <account_id>
+```
+
+Recommendation from cursor: while we have < 10 account closures, just use:
+```bash
+   cd backend
+   source venv/bin/activate
+   python scripts/account_closure_scheduler.py --dry-run
+   python scripts/account_closure_scheduler.py
 ```
 
 ### API Endpoints
@@ -460,9 +501,10 @@ print(html)
 
 **Phase 3: Withdrawal** (Immediate when funds available)
 - ≤ $50,000: Single transfer (immediate)
-- > $50,000: Multiple transfers with exactly 24-hour delays
+- > $50,000: Multiple transfers with exactly 24-hour delays via external scheduler
 - Transfer monitoring: Every 2 hours
 - State tracking: Complete transfer history in Redis
+- **Architectural Pattern**: Process exits after scheduling next action, external scheduler resumes
 
 **Phase 4: Final Closure** (1-2 hours)
 - Safety checks: Immediate

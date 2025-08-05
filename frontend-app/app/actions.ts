@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { OnboardingData } from "@/lib/types/onboarding";
+import { getRedirectPathForUserStatus } from "@/lib/utils/userRouting";
 
 export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected' | 'pending_closure' | 'closed';
 
@@ -57,6 +58,8 @@ async function waitForAuthStateConsistency(
   
   throw new Error('Auth state consistency check failed');
 }
+
+
 
 export const signUpAction = async (formData: FormData) => {
   const email = formData.get("email")?.toString();
@@ -120,29 +123,18 @@ export const signUpAction = async (formData: FormData) => {
       
       const userStatus = onboardingData?.status;
       
-      // Handle account closure statuses
-      if (userStatus === 'pending_closure' || userStatus === 'closed') {
-        // Redirect to protected page to handle closure status
-        return redirect("/protected");
-      }
+      // Check if user has funded their account (has transfers)
+      const { data: transfers } = await supabase
+        .from('user_transfers')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1);
       
-      const hasCompletedOnboarding = 
-        userStatus === 'submitted' || 
-        userStatus === 'approved';
+      const hasTransfers = Boolean(transfers && transfers.length > 0);
       
-      if (hasCompletedOnboarding) {
-        // Check if user has funded their account (has transfers)
-        const { data: transfers } = await supabase
-          .from('user_transfers')
-          .select('id')
-          .eq('user_id', user.id)
-          .limit(1);
-        
-        // If they have completed onboarding and have funded their account, go to portfolio
-        if (transfers && transfers.length > 0) {
-          return redirect("/portfolio");
-        }
-      }
+      // Use centralized routing logic
+      const redirectPath = getRedirectPathForUserStatus(userStatus, hasTransfers);
+      return redirect(redirectPath);
     }
     
     // Default: redirect to protected route to start onboarding
@@ -183,34 +175,18 @@ export const signInAction = async (formData: FormData) => {
     
     const userStatus = onboardingData?.status;
     
-    // Handle account closure statuses
-    if (userStatus === 'pending_closure') {
-      // Redirect to dedicated account closure page
-      return redirect("/account-closure");
-    }
+    // Check if user has funded their account (has transfers)
+    const { data: transfers } = await supabase
+      .from('user_transfers')
+      .select('id')
+      .eq('user_id', user.id)
+      .limit(1);
     
-    if (userStatus === 'closed') {
-      // Redirect to protected page to handle closed account restart
-      return redirect("/protected");
-    }
+    const hasTransfers = Boolean(transfers && transfers.length > 0);
     
-    const hasCompletedOnboarding = 
-      userStatus === 'submitted' || 
-      userStatus === 'approved';
-    
-    if (hasCompletedOnboarding) {
-      // Check if user has funded their account (has transfers)
-      const { data: transfers } = await supabase
-        .from('user_transfers')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-      
-      // If they have completed onboarding and have funded their account, go to portfolio
-      if (transfers && transfers.length > 0) {
-        return redirect("/portfolio");
-      }
-    }
+    // Use centralized routing logic
+    const redirectPath = getRedirectPathForUserStatus(userStatus, hasTransfers);
+    return redirect(redirectPath);
   }
 
   // Default: go to protected page for onboarding or funding
