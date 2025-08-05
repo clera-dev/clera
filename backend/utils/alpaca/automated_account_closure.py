@@ -199,9 +199,9 @@ class AutomatedAccountClosureProcessor:
             self.state_manager.update_closure_state(account_id, {"phase": "settlement"})
             await self._handle_settlement_phase(account_id, detailed_logger)
             
-            # PHASE 3: AUTOMATIC FUND WITHDRAWAL  
+            # PHASE 3: AUTOMATIC FUND WITHDRAWAL (with built-in multi-day handling)
             self.state_manager.update_closure_state(account_id, {"phase": "withdrawal"})
-            transfer_id = await self._handle_withdrawal_phase(account_id, ach_relationship_id, detailed_logger)
+            transfer_id = await self._handle_complete_withdrawal_process(account_id, ach_relationship_id, detailed_logger)
             
             # PHASE 4: TRANSFER COMPLETION MONITORING
             self.state_manager.update_closure_state(account_id, {"phase": "transfer_completion"})
@@ -407,6 +407,153 @@ class AutomatedAccountClosureProcessor:
         detailed_logger.log_step_success("MULTI_DAY_WITHDRAWAL_PHASE")
         return last_transfer_id or "completed"
     
+    async def _handle_complete_withdrawal_process(self, account_id: str, ach_relationship_id: str, 
+                                                detailed_logger: AccountClosureLogger) -> str:
+        """
+        Handle the complete multi-day withdrawal process without exiting early.
+        
+        This method manages the entire withdrawal flow including 24-hour waits,
+        keeping the main process alive and continuing naturally when complete.
+        
+        ARCHITECTURE IMPROVEMENT: Instead of killing the background process when 
+        hitting daily limits, this method pauses and resumes within the same process,
+        maintaining the natural flow while handling multi-day transfers.
+        """
+        detailed_logger.log_step_start("COMPLETE_WITHDRAWAL_PROCESS_START")
+        
+        DAILY_LIMIT = 50000.0
+        last_transfer_id = None
+        
+        # Store initial withdrawal state
+        self.state_manager.set_withdrawal_state(account_id, {
+            "phase": "multi_day_withdrawal",
+            "ach_relationship_id": ach_relationship_id,
+            "daily_limit": DAILY_LIMIT,
+            "started_at": datetime.now().isoformat(),
+            "transfers_completed": []
+        })
+        
+        while True:
+            # Check current withdrawable balance
+            account_status = await asyncio.to_thread(
+                self.manager.get_closure_status, account_id
+            )
+            
+            withdrawable_amount = account_status.get("cash_withdrawable", 0)
+            
+            detailed_logger.log_step_start("WITHDRAWAL_CHECK", {
+                "withdrawable_amount": withdrawable_amount,
+                "daily_limit": DAILY_LIMIT
+            })
+            
+            # If balance is $1 or less, we're completely done
+            if withdrawable_amount <= 1.0:
+                detailed_logger.log_step_success("ALL_WITHDRAWALS_COMPLETE", {
+                    "final_balance": withdrawable_amount,
+                    "total_transfers": len(self.state_manager.get_withdrawal_state(account_id).get("transfers_completed", []))
+                })
+                break
+            
+            # Determine withdrawal amount for this iteration
+            withdrawal_amount = min(withdrawable_amount, DAILY_LIMIT)
+            is_final_withdrawal = withdrawable_amount <= DAILY_LIMIT
+            
+            # Execute withdrawal
+            detailed_logger.log_step_start("INITIATING_WITHDRAWAL", {
+                "amount": withdrawal_amount,
+                "is_final": is_final_withdrawal,
+                "remaining_after": withdrawable_amount - withdrawal_amount
+            })
+            
+            withdrawal_result = await asyncio.to_thread(
+                self.manager.withdraw_funds, account_id, ach_relationship_id, withdrawal_amount
+            )
+            
+            if not withdrawal_result.get("success", False):
+                raise Exception(f"Withdrawal failed: {withdrawal_result.get('error', 'Unknown error')}")
+            
+            transfer_id = withdrawal_result.get("transfer_id")
+            last_transfer_id = transfer_id
+            
+            # Update withdrawal state with transfer info
+            current_state = self.state_manager.get_withdrawal_state(account_id) or {}
+            current_state["transfers_completed"] = current_state.get("transfers_completed", [])
+            current_state["transfers_completed"].append({
+                "transfer_id": transfer_id,
+                "amount": withdrawal_amount,
+                "initiated_at": datetime.now().isoformat(),
+                "is_final": is_final_withdrawal
+            })
+            current_state["last_transfer_id"] = transfer_id
+            self.state_manager.set_withdrawal_state(account_id, current_state)
+            
+            detailed_logger.log_step_success("WITHDRAWAL_INITIATED", {
+                "transfer_id": transfer_id,
+                "amount_withdrawn": withdrawal_amount,
+                "remaining_balance": withdrawable_amount - withdrawal_amount,
+                "is_final_withdrawal": is_final_withdrawal
+            })
+            
+            # Wait for this transfer to complete
+            detailed_logger.log_step_start("WAITING_TRANSFER_COMPLETION", {
+                "transfer_id": transfer_id,
+                "wait_reason": "Transfer must settle before continuing"
+            })
+            
+            await self._wait_for_transfer_completion(account_id, transfer_id, detailed_logger)
+            
+            # If this was the final withdrawal, we're done
+            if is_final_withdrawal:
+                detailed_logger.log_step_success("FINAL_WITHDRAWAL_COMPLETE", {
+                    "transfer_id": transfer_id,
+                    "total_amount": withdrawal_amount
+                })
+                break
+            
+            # Multiple withdrawals needed - wait 24 hours before next one
+            detailed_logger.log_step_start("WAITING_24_HOUR_COOLDOWN", {
+                "reason": "Alpaca daily withdrawal limit reached",
+                "next_withdrawal_time": (datetime.now() + timedelta(hours=24)).isoformat(),
+                "process_status": "Background process will pause and resume automatically"
+            })
+            
+            # Update state to indicate waiting period
+            self.state_manager.update_closure_state(account_id, {
+                "phase": "withdrawal_24hr_wait",
+                "next_withdrawal_time": (datetime.now() + timedelta(hours=24)).isoformat(),
+                "waiting_reason": "24_hour_alpaca_withdrawal_cooldown",
+                "process_status": "active_waiting"
+            })
+            
+            # ARCHITECTURE IMPROVEMENT: Sleep for 24 hours but keep process alive
+            # This maintains the natural flow without relying on external scheduling
+            await asyncio.sleep(24 * 3600)  # 24 hours
+            
+            detailed_logger.log_step_start("RESUMING_AFTER_24HR_WAIT", {
+                "resumed_at": datetime.now().isoformat(),
+                "continuing_withdrawals": True
+            })
+            
+            # Update state to indicate we're resuming
+            self.state_manager.update_closure_state(account_id, {
+                "phase": "withdrawal_resuming",
+                "resumed_at": datetime.now().isoformat()
+            })
+        
+        # Clean up withdrawal state
+        self.state_manager.update_closure_state(account_id, {
+            "phase": "withdrawal_complete",
+            "completed_at": datetime.now().isoformat(),
+            "final_transfer_id": last_transfer_id
+        })
+        
+        detailed_logger.log_step_success("COMPLETE_WITHDRAWAL_PROCESS_FINISHED", {
+            "final_transfer_id": last_transfer_id,
+            "total_transfers": len(self.state_manager.get_withdrawal_state(account_id).get("transfers_completed", []))
+        })
+        
+        return last_transfer_id or "completed"
+    
     async def _wait_for_transfer_completion(self, account_id: str, transfer_id: str, 
                                           detailed_logger: AccountClosureLogger):
         """Wait for a specific transfer to complete (used within multi-day withdrawal)."""
@@ -493,8 +640,10 @@ class AutomatedAccountClosureProcessor:
                     user_name = f"{account.contact.given_name} {account.contact.family_name}"
             
             if user_email:
+                # ARCHITECTURE FIX: Offload EmailService to thread to prevent blocking event loop
                 email_service = EmailService()
-                email_sent = email_service.send_account_closure_complete_notification(
+                email_sent = await asyncio.to_thread(
+                    email_service.send_account_closure_complete_notification,
                     user_email=user_email,
                     user_name=user_name,
                     account_id=account_id,

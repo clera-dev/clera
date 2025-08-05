@@ -86,7 +86,9 @@ async def resume_account_closure(user_id: str, account_id: str, dry_run: bool = 
             secret_key = os.getenv("BROKER_SECRET_KEY")
             
             if api_key and secret_key:
-                broker_client = BrokerClient(api_key, secret_key, sandbox=True)
+                # Use environment variable to determine sandbox mode
+                sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
+                broker_client = BrokerClient(api_key, secret_key, sandbox=sandbox)
                 ach_relationships = broker_client.get_ach_relationships_for_account(account_id=account_id)
                 
                 if ach_relationships:

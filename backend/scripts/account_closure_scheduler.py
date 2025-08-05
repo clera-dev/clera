@@ -54,8 +54,10 @@ class AccountClosureScheduler:
         current_time = datetime.now()
         
         try:
-            # Find all closure state keys
-            closure_keys = self.state_manager.redis_client.keys("closure_state:*")
+            # Find all closure state keys using SCAN (non-blocking)
+            closure_keys = []
+            for key in self.state_manager.redis_client.scan_iter(match="closure_state:*"):
+                closure_keys.append(key)
             
             for key in closure_keys:
                 try:

@@ -74,7 +74,7 @@ class BrokerService:
                 status = str(rel.status).upper()
                 # Handle both enum string representation and plain status
                 if 'APPROVED' in status or 'ACTIVE' in status:
-                    logger.info(f"Found ACTIVE/APPROVED ACH relationship: {rel.id} (created: {rel.created_at})")
+                    logger.info("Found ACTIVE/APPROVED ACH relationship (created: %s)", rel.created_at)
                     return str(rel.id)
             
             # If no active relationship found, check for other valid statuses (most recent first)

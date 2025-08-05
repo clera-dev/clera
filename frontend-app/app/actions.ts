@@ -124,11 +124,18 @@ export const signUpAction = async (formData: FormData) => {
       const userStatus = onboardingData?.status;
       
       // Check if user has funded their account (has transfers)
-      const { data: transfers } = await supabase
+      const { data: transfers, error: transfersError } = await supabase
         .from('user_transfers')
         .select('id')
         .eq('user_id', user.id)
         .limit(1);
+      
+      // Handle transfer query errors gracefully
+      if (transfersError) {
+        console.error('Error fetching user transfers for routing:', transfersError);
+        // Default to false (no transfers) on error to be conservative
+        // This ensures users go to /protected for onboarding/funding rather than /portfolio
+      }
       
       const hasTransfers = Boolean(transfers && transfers.length > 0);
       
@@ -176,11 +183,18 @@ export const signInAction = async (formData: FormData) => {
     const userStatus = onboardingData?.status;
     
     // Check if user has funded their account (has transfers)
-    const { data: transfers } = await supabase
+    const { data: transfers, error: transfersError } = await supabase
       .from('user_transfers')
       .select('id')
       .eq('user_id', user.id)
       .limit(1);
+    
+    // Handle transfer query errors gracefully
+    if (transfersError) {
+      console.error('Error fetching user transfers for routing:', transfersError);
+      // Default to false (no transfers) on error to be conservative
+      // This ensures users go to /protected for onboarding/funding rather than /portfolio
+    }
     
     const hasTransfers = Boolean(transfers && transfers.length > 0);
     
