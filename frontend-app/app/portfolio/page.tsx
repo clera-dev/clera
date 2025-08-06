@@ -26,6 +26,7 @@ import OrderModal from '@/components/invest/OrderModal';
 import { Toaster } from 'react-hot-toast';
 import { getAlpacaAccountId } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/client";
+import { useCleraAssist } from "@/components/ui/clera-assist-provider";
 
 interface PortfolioHistoryData {
   timestamp: number[];
@@ -127,6 +128,7 @@ interface AssetDetails {
 
 export default function PortfolioPage() {
   const router = useRouter();
+  const { sideChatVisible } = useCleraAssist();
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioData, setPortfolioData] = useState({
     totalValue: 68395.63,
@@ -719,9 +721,17 @@ export default function PortfolioPage() {
         <div style={lockedSectionStyle} className="space-y-4 sm:space-y-6">
           
           {/* Row 1: Portfolio Chart (2/3) + Analytics & Allocation (1/3) */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 xl:grid-cols-3 gap-4 lg:gap-6">
+          <div className={`grid grid-cols-1 gap-4 lg:gap-6 ${
+            sideChatVisible 
+              ? '2xl:grid-cols-3' // When chat is open, only go horizontal on 2xl+ screens (1536px+)
+              : 'lg:grid-cols-5 xl:grid-cols-3' // When chat is closed, use original breakpoints
+          }`}>
             {/* Portfolio Chart - 2/3 width on xl screens, 3/5 on lg screens, full width on mobile */}
-            <div className="lg:col-span-3 xl:col-span-2">
+            <div className={`${
+              sideChatVisible 
+                ? '2xl:col-span-2' // When chat is open, take 2/3 of the 3-column grid
+                : 'lg:col-span-3 xl:col-span-2' // When chat is closed, use original spans
+            }`}>
               {accountId && (
                 <PortfolioSummaryWithAssist
                   accountId={accountId}
@@ -737,7 +747,11 @@ export default function PortfolioPage() {
             </div>
 
             {/* Analytics & Allocation - 1/3 width on xl screens, 2/5 on lg, full width on mobile - stacked vertically */}
-            <div className="lg:col-span-2 xl:col-span-1 space-y-3 lg:space-y-4">
+            <div className={`space-y-3 lg:space-y-4 ${
+              sideChatVisible 
+                ? '2xl:col-span-1' // When chat is open, take 1/3 of the 3-column grid
+                : 'lg:col-span-2 xl:col-span-1' // When chat is closed, use original spans
+            }`}>
               {/* Portfolio Analytics (Risk & Diversification) - Compact */}
               <div className="h-fit">
                 {!analytics && isLoading ? (
