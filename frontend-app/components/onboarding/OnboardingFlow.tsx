@@ -14,7 +14,7 @@ import AgreementsStep from "./AgreementsStep";
 import OnboardingSuccessLoading from "./OnboardingSuccessLoading";
 import { createAlpacaAccount } from "@/utils/api/alpaca";
 import { saveOnboardingData } from "@/utils/api/onboarding-client";
-import { OnboardingStatus } from "@/app/actions";
+import { OnboardingStatus } from "@/lib/types/onboarding";
 import { Button } from "@/components/ui/button";
 import { usePostOnboardingNavigation } from "@/utils/navigation";
 

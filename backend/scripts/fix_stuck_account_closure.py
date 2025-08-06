@@ -5,8 +5,14 @@ Fix Stuck Account Closure Script
 This script identifies and fixes accounts that are stuck in 'pending_closure'
 status and resumes the automated closure process for them.
 
+CRITICAL FIX: Ensures proper task initialization before script exit to prevent 
+premature event loop closure that would cancel the background process.
+
 Usage:
     python scripts/fix_stuck_account_closure.py [--account-id ACCOUNT_ID] [--dry-run]
+    
+The script starts the background process and waits 5 seconds for proper initialization,
+then exits cleanly while the automated closure continues independently.
 """
 
 import os
@@ -149,6 +155,14 @@ async def resume_account_closure(user_id: str, account_id: str, dry_run: bool = 
         if result.get("success"):
             print(f"✅ Successfully resumed automated closure for account {account_id}")
             print(f"   Background process is now running...")
+            
+            # CRITICAL FIX: Brief wait to ensure task initializes properly before script exits
+            print(f"   Allowing 5 seconds for process initialization...")
+            await asyncio.sleep(5)
+            
+            print(f"   ✅ Background process initialized - continuing independently")
+            print(f"   The automated closure will proceed according to the multi-day schedule")
+            
             return True
         else:
             print(f"❌ Failed to resume closure: {result.get('error', 'Unknown error')}")

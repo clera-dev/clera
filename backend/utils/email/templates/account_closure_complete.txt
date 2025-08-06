@@ -9,7 +9,7 @@ We're pleased to inform you that your account closure process has been completed
 Confirmation Number: {{ confirmation_number }}
 Account ID: {{ account_id }}
 Completion Date: {{ completion_date }}
-Final Transfer Amount: ${{ "%.2f"|format(final_transfer_amount or 0.0) }}
+Final Transfer Amount: ${{ "%.2f"|format((final_transfer_amount|float) if final_transfer_amount is not none and final_transfer_amount != "" else 0.0) }}
 
 📋 WHAT WAS COMPLETED
 ====================

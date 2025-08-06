@@ -205,7 +205,7 @@
                 </tr>
                 <tr>
                     <td>Final Transfer Amount:</td>
-                    <td class="transfer-amount">${{ "%.2f"|format(final_transfer_amount or 0.0) }}</td>
+                    <td class="transfer-amount">${{ "%.2f"|format((final_transfer_amount|float) if final_transfer_amount is not none and final_transfer_amount != "" else 0.0) }}</td>
                 </tr>
             </table>
         </div>

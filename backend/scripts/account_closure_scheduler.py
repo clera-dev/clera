@@ -51,7 +51,7 @@ class AccountClosureScheduler:
             return []
         
         ready_accounts = []
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
         
         try:
             # Find all closure state keys using SCAN (non-blocking)
@@ -71,7 +71,7 @@ class AccountClosureScheduler:
                     next_action_time_str = closure_state.get("next_action_time")
                     
                     # Check if this account is waiting and ready to resume
-                    if phase == "withdrawal_waiting" and next_action_time_str:
+                    if phase in ["withdrawal_waiting", "withdrawal_24hr_wait"] and next_action_time_str:
                         next_action_time = datetime.fromisoformat(next_action_time_str)
                         
                         if current_time >= next_action_time:

@@ -283,7 +283,16 @@ class AutomatedAccountClosureProcessor:
             self.state_manager.update_closure_state(account_id, {"phase": "withdrawal"})
             transfer_id = await self._handle_complete_withdrawal_process(account_id, ach_relationship_id, detailed_logger)
             
-            # PHASE 4: TRANSFER COMPLETION MONITORING
+            # PRODUCTION FIX: Check if process needs to exit for external scheduler resumption
+            if transfer_id == "scheduled_for_resume":
+                detailed_logger.log_step_success("PROCESS_SCHEDULED_FOR_RESUME", {
+                    "reason": "Multi-day withdrawal requires external scheduler",
+                    "next_phase": "withdrawal_24hr_wait",
+                    "resume_method": "account_closure_scheduler.py"
+                })
+                return transfer_id  # Exit process, external scheduler will resume
+            
+            # PHASE 4: TRANSFER COMPLETION MONITORING (only if not scheduled for resume)
             self.state_manager.update_closure_state(account_id, {"phase": "transfer_completion"})
             await self._handle_transfer_completion_phase(account_id, transfer_id, detailed_logger)
             
@@ -524,13 +533,18 @@ class AutomatedAccountClosureProcessor:
         DAILY_LIMIT = 50000.0
         last_transfer_id = None
         
-        # Store initial withdrawal state
+        # Get existing withdrawal state or create new one (CRITICAL: preserve existing transfers)
+        existing_state = self.state_manager.get_withdrawal_state(account_id) or {}
+        transfers_completed = existing_state.get("transfers_completed", [])
+        
+        # Update withdrawal state while preserving completed transfers
         self.state_manager.set_withdrawal_state(account_id, {
             "phase": "multi_day_withdrawal",
             "ach_relationship_id": ach_relationship_id,
             "daily_limit": DAILY_LIMIT,
-            "started_at": datetime.now().isoformat(),
-            "transfers_completed": []
+            "started_at": existing_state.get("started_at", datetime.now().isoformat()),
+            "transfers_completed": transfers_completed,  # CRITICAL: Preserve existing transfers
+            "resumed_at": datetime.now().isoformat() if transfers_completed else None
         })
         
         while True:
@@ -610,36 +624,34 @@ class AutomatedAccountClosureProcessor:
                 })
                 break
             
-            # Multiple withdrawals needed - wait 24 hours before next one
+            # Multiple withdrawals needed - schedule next withdrawal for 24 hours later
             next_withdrawal_time = datetime.now(timezone.utc) + timedelta(hours=24)
-            detailed_logger.log_step_start("WAITING_24_HOUR_COOLDOWN", {
-                "reason": "Alpaca daily withdrawal limit reached",
+            detailed_logger.log_step_start("SCHEDULING_NEXT_WITHDRAWAL", {
+                "reason": "Alpaca daily withdrawal limit reached ($50,000/day)",
                 "next_withdrawal_time": next_withdrawal_time.isoformat(),
-                "process_status": "Background process will pause and resume automatically"
+                "process_status": "Exiting process - external scheduler will resume"
             })
             
-            # Update state to indicate waiting period
+            # PRODUCTION FIX: Use external scheduler instead of in-process 24-hour sleep
+            # This prevents resource waste and makes the system resilient to deployments
             self.state_manager.update_closure_state(account_id, {
                 "phase": "withdrawal_24hr_wait",
-                "next_withdrawal_time": next_withdrawal_time.isoformat(),
+                "next_action_time": next_withdrawal_time.isoformat(),
                 "waiting_reason": "24_hour_alpaca_withdrawal_cooldown",
-                "process_status": "active_waiting"
+                "process_status": "scheduled_for_resume",
+                "scheduled_at": datetime.now(timezone.utc).isoformat(),
+                "continuation_method": "external_scheduler"
             })
             
-            # ARCHITECTURE IMPROVEMENT: Sleep for 24 hours but keep process alive
-            # This maintains the natural flow without relying on external scheduling
-            await asyncio.sleep(24 * 3600)  # 24 hours
-            
-            detailed_logger.log_step_start("RESUMING_AFTER_24HR_WAIT", {
-                "resumed_at": datetime.now(timezone.utc).isoformat(),
-                "continuing_withdrawals": True
+            detailed_logger.log_step_success("WITHDRAWAL_SCHEDULED_FOR_RESUME", {
+                "next_action_time": next_withdrawal_time.isoformat(),
+                "scheduler_script": "account_closure_scheduler.py",
+                "current_phase": "withdrawal_24hr_wait"
             })
             
-            # Update state to indicate we're resuming
-            self.state_manager.update_closure_state(account_id, {
-                "phase": "withdrawal_resuming",
-                "resumed_at": datetime.now(timezone.utc).isoformat()
-            })
+            # Exit the process - external scheduler will resume when ready
+            # The process will be restarted by account_closure_scheduler.py
+            return "scheduled_for_resume"
         
         # Clean up withdrawal state
         self.state_manager.update_closure_state(account_id, {
@@ -878,8 +890,8 @@ class AutomatedAccountClosureProcessor:
                 "scheduled_time": next_action_time_str
             })
             
-            # Resume from the appropriate phase
-            if current_phase == "withdrawal_waiting":
+            # Resume from the appropriate phase  
+            if current_phase == "withdrawal_waiting" or current_phase == "withdrawal_24hr_wait":
                 # Continue with withdrawal phase
                 user_id = closure_state.get("user_id")
                 ach_relationship_id = closure_state.get("ach_relationship_id")
@@ -890,11 +902,20 @@ class AutomatedAccountClosureProcessor:
                     "resumed_at": datetime.now(timezone.utc).isoformat()
                 })
                 
-                # Continue withdrawal process
-                transfer_id = await self._handle_withdrawal_phase(account_id, ach_relationship_id, detailed_logger)
+                # PRODUCTION FIX: Continue with complete withdrawal process instead of old phase-based method
+                # This handles the resumption of multi-day withdrawals properly
+                transfer_id = await self._handle_complete_withdrawal_process(account_id, ach_relationship_id, detailed_logger)
+                
+                # Check if process needs to exit again for another 24-hour wait
+                if transfer_id == "scheduled_for_resume":
+                    detailed_logger.log_step_success("RESUMED_PROCESS_RESCHEDULED", {
+                        "reason": "Additional withdrawals needed, rescheduled for next day",
+                        "next_phase": "withdrawal_24hr_wait"
+                    })
+                    return {"success": True, "status": "rescheduled", "phase": "withdrawal_24hr_wait"}
                 
                 # If withdrawal phase completed, continue to next phases
-                if transfer_id and transfer_id not in ["scheduled", None]:
+                if transfer_id and transfer_id not in ["scheduled", None, "scheduled_for_resume"]:
                     # PHASE 4: TRANSFER COMPLETION MONITORING
                     self.state_manager.update_closure_state(account_id, {"phase": "transfer_completion"})
                     await self._handle_transfer_completion_phase(account_id, transfer_id, detailed_logger)

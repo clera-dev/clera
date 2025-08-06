@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
       .from('user_onboarding')
       .select('status, alpaca_account_id, created_at, updated_at')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
     
     if (onboardingError) {
       console.error(`User Status API: Database error for user ${user.id}:`, onboardingError);

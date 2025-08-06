@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client';
+
 
 /**
  * Account Closure Service
@@ -114,33 +114,28 @@ export class AccountClosureService {
   }
 
   /**
-   * Get account ID for a user from Supabase
+   * Get account ID for a user using the secure API route
+   * ARCHITECTURAL FIX: Uses getUserStatus() API instead of direct database query
    */
   private async getAccountId(userId: string): Promise<string | null> {
     try {
-      const supabase = createClient();
-      const { data: onboardingData, error } = await supabase
-        .from('user_onboarding')
-        .select('alpaca_account_id, status')
-        .eq('user_id', userId)
-        .single();
+      const userStatusData = await this.getUserStatus();
       
-      if (error) {
-        this.logError(`Database error getting account ID for user ${userId}`, error, false);
+      if (!userStatusData) {
+        this.logError(`No user status data found for user ${userId}`, { userId }, false);
         return null;
       }
       
-      if (!onboardingData) {
-        this.logError(`No onboarding data found for user ${userId}`, { userId }, false);
+      if (!userStatusData.alpacaAccountId) {
+        this.logError(`No alpaca_account_id found for user ${userId}`, { 
+          userId, 
+          status: userStatusData.status,
+          hasOnboardingData: userStatusData.hasOnboardingData 
+        }, false);
         return null;
       }
       
-      if (!onboardingData.alpaca_account_id) {
-        this.logError(`No alpaca_account_id found for user ${userId}`, { userId, status: onboardingData.status }, false);
-        return null;
-      }
-      
-      return onboardingData.alpaca_account_id;
+      return userStatusData.alpacaAccountId;
     } catch (error) {
       this.logError(`Exception getting account ID for user ${userId}`, error, false);
       return null;

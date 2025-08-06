@@ -925,7 +925,7 @@ async def create_alpaca_account(
             
             # Check for specific error codes from Alpaca
             if ('"code":40910000' in error_str and 'email address already exists' in error_str) or \
-               ('EMAIL_EXISTS' in error_str and 'email address already exists' in error_str):
+               ('EMAIL_EXISTS' in error_str):
                 # This is a conflict error - account already exists but couldn't be looked up
                 logger.info("Account with this email already exists in Alpaca but couldn't be looked up")
                 raise HTTPException(

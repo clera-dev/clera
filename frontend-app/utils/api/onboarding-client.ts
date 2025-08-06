@@ -1,7 +1,7 @@
 "use client";
 
-import { OnboardingData } from "@/lib/types/onboarding";
-import { saveOnboardingDataAction, getOnboardingDataAction, OnboardingStatus } from "@/app/actions";
+import { OnboardingData, OnboardingStatus } from "@/lib/types/onboarding";
+import { saveOnboardingDataAction, getOnboardingDataAction } from "@/app/actions";
 
 // Client-side wrapper for saving onboarding data
 export async function saveOnboardingData(

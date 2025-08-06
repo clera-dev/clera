@@ -1,3 +1,5 @@
+export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected' | 'pending_closure' | 'closed';
+
 export enum FundingSource {
   EMPLOYMENT_INCOME = "employment_income",
   INVESTMENTS = "investments",

@@ -5,10 +5,8 @@ import { createClient } from "@/utils/supabase/server";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { OnboardingData } from "@/lib/types/onboarding";
+import { OnboardingData, OnboardingStatus } from "@/lib/types/onboarding";
 import { getRedirectPathForUserStatus } from "@/lib/utils/userRouting";
-
-export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected' | 'pending_closure' | 'closed';
 
 /**
  * Waits for auth state to be consistent after authentication operations.

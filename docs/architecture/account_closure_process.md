@@ -372,6 +372,66 @@ cancelled = processor.cancel_active_task("account_id")
 # Task completion is automatically handled with detailed logging
 ```
 
+### 24-Hour Sleep Architectural Anti-Pattern Fix
+
+**Issue Identified**: Multi-day withdrawals used `await asyncio.sleep(24 * 3600)` inside the event loop, holding tasks and resources for entire days, preventing deployments and wasting worker capacity.
+
+**Root Cause**: 
+1. **Long Blocking Sleeps**: Coroutines sleeping for 24 hours tied up event loop capacity
+2. **Process Lifecycle Issues**: Tasks killed during deployments or server restarts
+3. **Resource Waste**: Memory and references held for entire days per account
+4. **Monitoring Confusion**: Hard to distinguish "stuck" vs "sleeping" processes
+
+**Previous Architecture (Problematic)**:
+```python
+# BEFORE (Anti-Pattern):
+for withdrawal in multi_day_withdrawals:
+    await withdraw_funds(...)
+    await asyncio.sleep(24 * 3600)  # 🚫 Holds event loop for 24 hours!
+```
+
+**New Architecture (Production-Ready)**:
+```python
+# AFTER (External Scheduler Pattern):
+for withdrawal in multi_day_withdrawals:
+    await withdraw_funds(...)
+    
+    # Schedule next withdrawal for external resumption
+    next_time = datetime.now(timezone.utc) + timedelta(hours=24)
+    self.state_manager.update_closure_state(account_id, {
+        "phase": "withdrawal_24hr_wait",
+        "next_action_time": next_time.isoformat()
+    })
+    
+    return "scheduled_for_resume"  # Exit process cleanly
+```
+
+**External Scheduler Integration**:
+- `account_closure_scheduler.py` runs hourly via cron
+- Checks Redis for accounts with `next_action_time` <= current time
+- Resumes processes by calling `processor.resume_waiting_closure(account_id)`
+- Handles multiple 24-hour cycles seamlessly
+
+**Improvements Made**:
+- ✅ **Resource Efficiency**: No tasks sleeping for 24 hours
+- ✅ **Deployment Resilience**: Processes can restart without losing state  
+- ✅ **Scalability**: Supports many concurrent account closures
+- ✅ **Monitoring**: Clear distinction between active and scheduled processes
+- ✅ **External Scheduling**: Leverages existing cron/scheduler infrastructure
+- ✅ **State Persistence**: All timing stored in Redis for precise resumption
+
+**Scheduler Commands**:
+```bash
+# Manual check for ready accounts
+python scripts/account_closure_scheduler.py --dry-run
+
+# Resume specific account
+python scripts/account_closure_scheduler.py --account-id <account_id>
+
+# Recommended cron schedule
+0 * * * * python scripts/account_closure_scheduler.py
+```
+
 ## Benefits
 
 ### Reliability
@@ -432,14 +492,19 @@ python -m pytest tests/account_closure/test_multi_day_transfers.py -v
 python scripts/fix_stuck_account_closure.py --account-id <account_id> --dry-run
 
 # Find all stuck accounts
-python scripts/fix_stuck_account_closure.py --find-stuck --dry-run
+python scripts/fix_stuck_account_closure.py --dry-run
 ```
 
 **Resume Stuck Account**:
 ```bash
 # Resume actual closure process
 python scripts/fix_stuck_account_closure.py --account-id <account_id>
+
+# Process all stuck accounts
+python scripts/fix_stuck_account_closure.py
 ```
+
+**CRITICAL**: The script ensures proper task initialization (5-second wait) before exit to prevent premature event loop closure. This guarantees the background closure process starts successfully and continues independently according to the multi-day automated schedule.
 
 #### 3. Redis State Debugging
 
@@ -568,7 +633,7 @@ if withdrawable_amount <= DAILY_LIMIT:
 else:
     # Multi-day transfer - wait exactly 24 hours
     transfer_amount = DAILY_LIMIT
-    next_transfer_date = datetime.now() + timedelta(hours=24)
+      next_transfer_date = datetime.now(timezone.utc) + timedelta(hours=24)
 ```
 
 ## Troubleshooting
@@ -828,3 +893,82 @@ Key improvements include:
 - **Professional Email Notifications**: Aesthetic email design for initiation and completion
 
 The system is designed to be production-ready with proper error handling, monitoring, and deployment configurations. It follows best practices for financial systems and provides a solid foundation for future enhancements. 
+
+# Example scenario
+
+## Scenario
+Account with $150,000 withdrawable cash wants to close out
+
+## Initial Process Start
+1. User initiates closure → status: "pending_closure"
+2. Background task starts → Redis: {"phase": "liquidation"}
+3. Liquidation completes → Redis: {"phase": "settlement"} 
+4. Settlement completes → Redis: {"phase": "withdrawal"}
+
+## Day 1: First Withdrawal ($50K of $150K)
+5. _handle_complete_withdrawal_process() starts
+6. Redis withdrawal_state: {
+     "transfers_completed": [],
+     "started_at": "2025-01-01T10:00:00Z"
+   }
+7. Check balance: $150,000 withdrawable
+8. withdrawal_amount = min(150000, 50000) = $50,000
+9. is_final_withdrawal = false (150K > 50K)
+10. Execute withdrawal → transfer_id: "transfer_001"
+11. Update state: {
+      "transfers_completed": [{
+        "transfer_id": "transfer_001", 
+        "amount": 50000,
+        "initiated_at": "2025-01-01T10:00:00Z"
+      }]
+    }
+12. Wait for transfer completion (2-3 hours)
+13. Transfer settles successfully
+14. is_final_withdrawal = false → schedule next withdrawal
+15. Redis: {
+      "phase": "withdrawal_24hr_wait",
+      "next_action_time": "2025-01-02T10:00:00Z",
+      "process_status": "scheduled_for_resume"
+    }
+16. Process exits with "scheduled_for_resume"
+17. Main process exits cleanly
+
+## Day 2: External Scheduler Resumes (24 hours later)
+18. Cron runs account_closure_scheduler.py
+19. Finds account in "withdrawal_24hr_wait" with next_action_time past
+20. Calls processor.resume_waiting_closure(account_id)
+21. resume_waiting_closure() calls _handle_complete_withdrawal_process()
+22. CRITICAL: Preserves existing transfers_completed array!
+23. Redis withdrawal_state: {
+      "transfers_completed": [{"transfer_id": "transfer_001", "amount": 50000}],
+      "resumed_at": "2025-01-02T10:00:00Z"
+    }
+24. Check balance: $100,000 withdrawable (150K - 50K)
+25. withdrawal_amount = min(100000, 50000) = $50,000  
+26. is_final_withdrawal = false (100K > 50K)
+27. Execute withdrawal → transfer_id: "transfer_002"
+28. Update state: {
+      "transfers_completed": [
+        {"transfer_id": "transfer_001", "amount": 50000},
+        {"transfer_id": "transfer_002", "amount": 50000}
+      ]
+    }
+29. Wait for transfer completion
+30. Transfer settles successfully  
+31. is_final_withdrawal = false → schedule next withdrawal
+32. Process exits with "scheduled_for_resume" again
+
+## Day 3: Final Withdrawl ($50k remaining)
+33. Scheduler resumes again
+34. Preserves 2 previous transfers in state
+35. Check balance: $50,000 withdrawable
+36. withdrawal_amount = min(50000, 50000) = $50,000
+37. is_final_withdrawal = true (50K <= 50K)
+38. Execute withdrawal → transfer_id: "transfer_003"
+39. Wait for transfer completion
+40. Transfer settles successfully
+41. is_final_withdrawal = true → break from loop
+42. Return transfer_id: "transfer_003"
+43. Main process continues to PHASE 4: transfer_completion
+44. Main process continues to PHASE 5: final_closure
+45. Account closed successfully → status: "closed"

@@ -1,4 +1,4 @@
-import { OnboardingStatus } from "@/app/actions";
+import { OnboardingStatus } from "@/lib/types/onboarding";
 
 /**
  * Single source of truth for user status-based routing.
