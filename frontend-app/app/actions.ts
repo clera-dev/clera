@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { OnboardingData, OnboardingStatus } from "@/lib/types/onboarding";
-import { getRedirectPathForUserStatus } from "@/lib/utils/userRouting";
+import { getRedirectPathWithTransferLookup } from "@/lib/utils/userRouting";
 
 /**
  * Waits for auth state to be consistent after authentication operations.
@@ -121,24 +121,9 @@ export const signUpAction = async (formData: FormData) => {
       
       const userStatus = onboardingData?.status;
       
-      // Check if user has funded their account (has transfers)
-      const { data: transfers, error: transfersError } = await supabase
-        .from('user_transfers')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-      
-      // Handle transfer query errors gracefully
-      if (transfersError) {
-        console.error('Error fetching user transfers for routing:', transfersError);
-        // Default to false (no transfers) on error to be conservative
-        // This ensures users go to /protected for onboarding/funding rather than /portfolio
-      }
-      
-      const hasTransfers = Boolean(transfers && transfers.length > 0);
-      
-      // Use centralized routing logic
-      const redirectPath = getRedirectPathForUserStatus(userStatus, hasTransfers);
+      // ARCHITECTURAL FIX: Use centralized routing logic with transfer lookup
+      // This eliminates duplicate Supabase queries and maintains separation of concerns
+      const redirectPath = await getRedirectPathWithTransferLookup(userStatus, user.id);
       return redirect(redirectPath);
     }
     
@@ -180,24 +165,9 @@ export const signInAction = async (formData: FormData) => {
     
     const userStatus = onboardingData?.status;
     
-    // Check if user has funded their account (has transfers)
-    const { data: transfers, error: transfersError } = await supabase
-      .from('user_transfers')
-      .select('id')
-      .eq('user_id', user.id)
-      .limit(1);
-    
-    // Handle transfer query errors gracefully
-    if (transfersError) {
-      console.error('Error fetching user transfers for routing:', transfersError);
-      // Default to false (no transfers) on error to be conservative
-      // This ensures users go to /protected for onboarding/funding rather than /portfolio
-    }
-    
-    const hasTransfers = Boolean(transfers && transfers.length > 0);
-    
-    // Use centralized routing logic
-    const redirectPath = getRedirectPathForUserStatus(userStatus, hasTransfers);
+    // ARCHITECTURAL FIX: Use centralized routing logic with transfer lookup
+    // This eliminates duplicate Supabase queries and maintains separation of concerns
+    const redirectPath = await getRedirectPathWithTransferLookup(userStatus, user.id);
     return redirect(redirectPath);
   }
 

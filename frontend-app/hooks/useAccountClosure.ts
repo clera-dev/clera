@@ -59,15 +59,11 @@ export function useAccountClosure(): UseAccountClosureReturn {
         return;
       }
       
-      // PRODUCTION FIX: Only fetch closure data for users with pending_closure status
-      // Check user onboarding status first
-      const { data: onboardingData } = await supabase
-        .from('user_onboarding')
-        .select('status')
-        .eq('user_id', user.id)
-        .single();
+      // ARCHITECTURAL FIX: Use service layer instead of direct database query
+      // This maintains proper layering boundaries and follows established patterns
+      const userStatusData = await accountClosureService.getUserStatus();
       
-      if (!onboardingData || onboardingData.status !== 'pending_closure') {
+      if (!userStatusData || userStatusData.status !== 'pending_closure') {
         // User doesn't have pending closure status - no need to fetch closure data
         if (isMountedRef.current) {
           setClosureData(null);

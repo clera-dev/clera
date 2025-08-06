@@ -146,7 +146,7 @@ export async function middleware(request: NextRequest) {
           }
           
           // Redirect everything else to /account-closure (dedicated closure page)
-          if (!path.startsWith('/account-closure')) {
+          if (path !== '/account-closure') {
             console.log(`[Middleware] Redirecting pending closure user from ${path} to /account-closure`);
             const redirectUrl = new URL('/account-closure', request.url);
             return NextResponse.redirect(redirectUrl);

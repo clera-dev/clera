@@ -54,7 +54,7 @@ export function useClosureProgress(userId: string | undefined): UseClosureProgre
         return;
       }
       
-      const progressData = await accountClosureService.fetchClosureProgress(userId);
+      const progressData = await accountClosureService.fetchClosureProgress();
       
       if (progressData) {
         // Update closure steps based on progress
@@ -89,7 +89,7 @@ export function useClosureProgress(userId: string | undefined): UseClosureProgre
     try {
       setIsRetrying(true);
       
-      const result = await accountClosureService.retryClosureProcess(userId);
+      const result = await accountClosureService.retryClosureProcess();
       
       if (result.success) {
         console.log('[useClosureProgress] Resume successful, action taken:', result.action_taken);

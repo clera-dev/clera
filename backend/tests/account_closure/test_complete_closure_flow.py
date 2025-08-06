@@ -197,8 +197,8 @@ class TestCompleteClosureFlow:
             detailed_logger.log_step_success = Mock()
             detailed_logger.log_step_warning = Mock()
             
-            # Test withdrawal phase
-            transfer_id = await processor._handle_withdrawal_phase(
+            # Test withdrawal phase using the production method
+            transfer_id = await processor._handle_complete_withdrawal_process(
                 "test-account-123", 
                 "ach-123", 
                 detailed_logger

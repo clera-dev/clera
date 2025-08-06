@@ -1,7 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
 import { validateAndSanitizeRedirectUrl } from "@/utils/security";
-import { getRedirectPathForUserStatus } from "@/lib/utils/userRouting";
+import { getRedirectPathWithTransferLookup } from "@/lib/utils/userRouting";
 
 export async function GET(request: Request) {
   // The `/auth/callback` route is required for the server-side auth flow implemented
@@ -40,17 +40,9 @@ export async function GET(request: Request) {
     
     const userStatus = onboardingData?.status;
     
-    // Check if user has funded their account (has transfers)
-    const { data: transfers } = await supabase
-      .from('user_transfers')
-      .select('id')
-      .eq('user_id', user.id)
-      .limit(1);
-    
-    const hasTransfers = Boolean(transfers && transfers.length > 0);
-    
-    // Use centralized routing logic
-    const redirectPath = getRedirectPathForUserStatus(userStatus, hasTransfers);
+    // ARCHITECTURAL FIX: Use centralized routing logic with transfer lookup
+    // This eliminates duplicate Supabase queries and maintains separation of concerns
+    const redirectPath = await getRedirectPathWithTransferLookup(userStatus, user.id);
     return NextResponse.redirect(new URL(redirectPath, requestUrl.origin));
   }
 

@@ -60,8 +60,11 @@ class AccountClosureScheduler:
                 closure_keys.append(key)
             
             for key in closure_keys:
+                account_id = None
                 try:
-                    account_id = key.split(":")[-1]
+                    # Handle both string and bytes keys from Redis
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    account_id = key_str.split(":")[-1]
                     closure_state = self.state_manager.get_closure_state(account_id)
                     
                     if not closure_state:
@@ -73,6 +76,11 @@ class AccountClosureScheduler:
                     # Check if this account is waiting and ready to resume
                     if phase in ["withdrawal_waiting", "withdrawal_24hr_wait"] and next_action_time_str:
                         next_action_time = datetime.fromisoformat(next_action_time_str)
+                        
+                        # Ensure timezone awareness for comparison
+                        if next_action_time.tzinfo is None:
+                            # If naive, assume UTC (since that's what we store)
+                            next_action_time = next_action_time.replace(tzinfo=timezone.utc)
                         
                         if current_time >= next_action_time:
                             ready_accounts.append({
@@ -88,7 +96,8 @@ class AccountClosureScheduler:
                             print(f"Account {account_id}: Ready in {time_until_ready} (at {next_action_time_str})")
                     
                 except Exception as e:
-                    print(f"Error processing account {account_id}: {e}")
+                    account_info = f"account {account_id}" if account_id else "unknown account"
+                    print(f"Error processing {account_info}: {e}")
                     continue
             
             return ready_accounts
@@ -137,7 +146,7 @@ class AccountClosureScheduler:
         """Main scheduler logic."""
         print("🕐 Account Closure Scheduler")
         print("=" * 50)
-        print(f"Timestamp: {datetime.now().isoformat()}")
+        print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
         print(f"Mode: {'DRY RUN' if dry_run else 'LIVE'}")
         print(f"Sandbox: {self.sandbox}")
         print()

@@ -114,21 +114,21 @@ export class AccountClosureService {
   }
 
   /**
-   * Get account ID for a user using the secure API route
+   * Get account ID for the current authenticated user using the secure API route
    * ARCHITECTURAL FIX: Uses getUserStatus() API instead of direct database query
+   * NOTE: This service only works with the current session user for security
    */
-  private async getAccountId(userId: string): Promise<string | null> {
+  private async getAccountId(): Promise<string | null> {
     try {
       const userStatusData = await this.getUserStatus();
       
       if (!userStatusData) {
-        this.logError(`No user status data found for user ${userId}`, { userId }, false);
+        this.logError('No user status data found for current user', {}, false);
         return null;
       }
       
       if (!userStatusData.alpacaAccountId) {
-        this.logError(`No alpaca_account_id found for user ${userId}`, { 
-          userId, 
+        this.logError('No alpaca_account_id found for current user', { 
           status: userStatusData.status,
           hasOnboardingData: userStatusData.hasOnboardingData 
         }, false);
@@ -137,7 +137,7 @@ export class AccountClosureService {
       
       return userStatusData.alpacaAccountId;
     } catch (error) {
-      this.logError(`Exception getting account ID for user ${userId}`, error, false);
+      this.logError('Exception getting account ID for current user', error, false);
       return null;
     }
   }
@@ -210,15 +210,16 @@ export class AccountClosureService {
   }
 
   /**
-   * Fetch closure progress from the API
+   * Fetch closure progress from the API for the current authenticated user
+   * ARCHITECTURAL FIX: This service only works with the current session user
    */
-  async fetchClosureProgress(userId: string): Promise<ProgressResponse | null> {
+  async fetchClosureProgress(): Promise<ProgressResponse | null> {
     try {
-      const accountId = await this.getAccountId(userId);
+      const accountId = await this.getAccountId();
       
       if (!accountId) {
         // Don't treat this as an error - just means no progress polling available
-        this.logError(`No account ID found for user - skipping progress polling`, { userId }, false);
+        this.logError('No account ID found for current user - skipping progress polling', {}, false);
         return null;
       }
       
@@ -249,7 +250,7 @@ export class AccountClosureService {
       if (error instanceof SyntaxError && error.message.includes('JSON')) {
         this.logError('JSON parsing error - server returned non-JSON response', {
           error: error.message,
-          accountId: await this.getAccountId(userId).catch(() => 'unknown')
+          accountId: await this.getAccountId().catch(() => 'unknown')
         }, false);
       } else {
         this.logError('Error fetching closure progress', error, false);
@@ -259,14 +260,15 @@ export class AccountClosureService {
   }
 
   /**
-   * Retry/resume account closure process
+   * Retry/resume account closure process for the current authenticated user
+   * ARCHITECTURAL FIX: This service only works with the current session user
    */
-  async retryClosureProcess(userId: string): Promise<RetryResponse> {
+  async retryClosureProcess(): Promise<RetryResponse> {
     try {
-      const accountId = await this.getAccountId(userId);
+      const accountId = await this.getAccountId();
       
       if (!accountId) {
-        this.logError('No account ID found for retry', { userId }, false);
+        this.logError('No account ID found for retry', {}, false);
         return { success: false };
       }
       
