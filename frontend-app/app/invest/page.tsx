@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
 import { useSidebarCollapse } from "@/components/ClientLayout";
+import { useCleraAssist } from "@/components/ui/clera-assist-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, X } from "lucide-react";
@@ -66,6 +67,7 @@ interface InvestmentResearchData {
 }
 
 export default function InvestPage() {
+  const { sideChatVisible } = useCleraAssist();
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [availableBalance, setAvailableBalance] = useState<BalanceData | null>(null);
@@ -83,8 +85,6 @@ export default function InvestPage() {
   const [lastGenerated, setLastGenerated] = useState<string | null>(null);
   const [citations, setCitations] = useState<string[]>([]);
   
-  // Responsive state
-  const [isNarrowScreen, setIsNarrowScreen] = useState(false);
   
   // Get sidebar collapse function
   const { autoCollapseSidebar } = useSidebarCollapse();
@@ -127,28 +127,9 @@ export default function InvestPage() {
     return () => {};
   }, []);
 
-  // Detect chat mode and screen width
-  useEffect(() => {
-    const checkScreenSize = () => {
-      const width = window.innerWidth;
-      const narrowScreen = width < 1280; // xl breakpoint
-      
-      setIsNarrowScreen(narrowScreen);
-    };
-
-    // Initial check
-    checkScreenSize();
-
-    // Only check on resize
-    window.addEventListener('resize', checkScreenSize);
-
-    return () => {
-      window.removeEventListener('resize', checkScreenSize);
-    };
-  }, []);
-
-  // Determine if we should use stacked layout (simplified)
-  const shouldUseStackedLayout = isNarrowScreen;
+  // Determine if we should use stacked layout based on chat state
+  // When chat is open, we need higher breakpoints to prevent squishing
+  const shouldUseStackedLayout = sideChatVisible;
   
   useEffect(() => {
     const fetchAndSetAccountId = async () => {
@@ -437,7 +418,11 @@ export default function InvestPage() {
           /* Desktop Layout: Optimized Grid Structure */
           <div className="space-y-6">
             {/* Top Row: Stock Picks (left) + Stock Watchlist (right) - 50/50 split */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className={`grid grid-cols-1 gap-6 ${
+              sideChatVisible 
+                ? '2xl:grid-cols-2' // When chat is open, only go horizontal on 2xl+ screens
+                : 'lg:grid-cols-2' // When chat is closed, use standard lg breakpoint
+            }`}>
               <StockPicksCard
                 stockPicks={researchData?.stock_picks || []}
                 onStockSelect={handleStockSelect}
@@ -455,8 +440,16 @@ export default function InvestPage() {
             </div>
             
             {/* Bottom Row: Investment Ideas (2/3) + Research Sources (1/3) */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              <div className="xl:col-span-2">
+            <div className={`grid grid-cols-1 gap-6 ${
+              sideChatVisible 
+                ? '2xl:grid-cols-3' // When chat is open, only go horizontal on 2xl+ screens
+                : 'xl:grid-cols-3' // When chat is closed, use standard xl breakpoint
+            }`}>
+              <div className={`${
+                sideChatVisible 
+                  ? '2xl:col-span-2' // When chat is open, take 2/3 of the 2xl grid
+                  : 'xl:col-span-2' // When chat is closed, take 2/3 of the xl grid
+              }`}>
                 <InvestmentIdeasCard
                   investmentThemes={researchData?.investment_themes || []}
                   onStockSelect={handleStockSelect}
@@ -464,7 +457,11 @@ export default function InvestPage() {
                   isLoading={isLoadingResearch}
                 />
               </div>
-              <div className="xl:col-span-1">
+              <div className={`${
+                sideChatVisible 
+                  ? '2xl:col-span-1' // When chat is open, take 1/3 of the 2xl grid
+                  : 'xl:col-span-1' // When chat is closed, take 1/3 of the xl grid
+              }`}>
                 <ResearchSourcesCard
                   citations={citations}
                   isLoading={isLoadingResearch}

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getAlpacaAccountId } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/client";
+import { useCleraAssist } from "@/components/ui/clera-assist-provider";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import PortfolioNewsSummaryWithAssist from '@/components/news/PortfolioNewsSummaryWithAssist';
 import TrendingNewsWithAssist from '@/components/news/TrendingNewsWithAssist';
@@ -215,6 +216,7 @@ interface WatchlistNewsResponse {
 }
 
 export default function NewsPage() {
+  const { sideChatVisible } = useCleraAssist();
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [selectedTab, setSelectedTab] = useState("all");
   const [isPlaying, setIsPlaying] = useState(false);
@@ -587,9 +589,17 @@ export default function NewsPage() {
         )}
 
         {/* Main Content Grid - Responsive Layout */}
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+        <div className={`grid grid-cols-1 gap-6 ${
+          sideChatVisible 
+            ? '2xl:grid-cols-5' // When chat is open, only go horizontal on 2xl+ screens
+            : 'xl:grid-cols-5' // When chat is closed, use standard xl breakpoint
+        }`}>
           {/* Left Section - Portfolio News (3 columns on xl screens) */}
-          <div className="xl:col-span-3 flex flex-col">
+          <div className={`flex flex-col ${
+            sideChatVisible 
+              ? '2xl:col-span-3' // When chat is open, take 3/5 of the 2xl grid
+              : 'xl:col-span-3' // When chat is closed, take 3/5 of the xl grid
+          }`}>
             <PortfolioNewsSummaryWithAssist
               portfolioSummary={portfolioSummary}
               isLoadingSummary={isLoadingSummary}
@@ -602,7 +612,11 @@ export default function NewsPage() {
           </div>
 
           {/* Right Section - Trending & Watchlist (2 columns on xl screens) */}
-          <div className="xl:col-span-2 flex flex-col space-y-6">
+          <div className={`flex flex-col space-y-6 ${
+            sideChatVisible 
+              ? '2xl:col-span-2' // When chat is open, take 2/5 of the 2xl grid
+              : 'xl:col-span-2' // When chat is closed, take 2/5 of the xl grid
+          }`}>
             <TrendingNewsWithAssist
               trendingNews={trendingNews}
               isLoading={isLoadingTrendingNews}
