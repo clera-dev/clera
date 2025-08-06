@@ -8,6 +8,7 @@ This module handles the complete automated account closure process:
 4. Supabase status tracking throughout process
 """
 
+import os
 import asyncio
 import time
 import logging
@@ -46,15 +47,193 @@ class AutomatedAccountClosureProcessor:
     without requiring any user intervention after initial confirmation.
     """
     
+    # PRODUCTION FIX: Shared task registry across all instances
+    # Enables monitoring and cancellation from any processor instance
+    _active_tasks = {}  # Class variable: Dict[account_id, asyncio.Task]
+    _task_lock = asyncio.Lock()  # Protect concurrent access
+    
     def __init__(self, sandbox: bool = True):
         self.sandbox = sandbox
         self.manager = AccountClosureManager(sandbox)
         self.state_manager = ClosureStateManager()
         self.supabase = get_supabase_client() if get_supabase_client else None
+    
+    # ============================================================================
+    # PRODUCTION TASK MANAGEMENT - Shared Registry with Redis Persistence
+    # ============================================================================
+    
+    @classmethod
+    async def _store_active_task(cls, account_id: str, task: asyncio.Task):
+        """Store task in both class registry and Redis for distributed monitoring."""
+        async with cls._task_lock:
+            # Store in class registry for immediate access
+            cls._active_tasks[account_id] = task
+            
+            # Store task metadata in Redis for distributed monitoring
+            try:
+                from utils.alpaca.account_closure import ClosureStateManager
+                state_manager = ClosureStateManager()
+                
+                if state_manager.redis_client:
+                    task_metadata = {
+                        "task_id": id(task),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "process_id": os.getpid(),
+                        "status": "running"
+                    }
+                    state_manager.redis_client.hset(
+                        f"active_task:{account_id}", 
+                        mapping=task_metadata
+                    )
+                    # Set expiry to prevent Redis bloat (tasks shouldn't run > 7 days)
+                    state_manager.redis_client.expire(f"active_task:{account_id}", 604800)
+                    
+            except Exception as e:
+                logger.warning(f"Failed to store task metadata in Redis for {account_id}: {e}")
+    
+    @classmethod
+    async def _remove_active_task(cls, account_id: str):
+        """Remove task from both class registry and Redis."""
+        async with cls._task_lock:
+            # Remove from class registry
+            cls._active_tasks.pop(account_id, None)
+            
+            # Remove from Redis
+            try:
+                from utils.alpaca.account_closure import ClosureStateManager
+                state_manager = ClosureStateManager()
+                
+                if state_manager.redis_client:
+                    state_manager.redis_client.delete(f"active_task:{account_id}")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to remove task metadata from Redis for {account_id}: {e}")
+    
+    @classmethod
+    def get_active_task_status(cls, account_id: str) -> Dict[str, Any]:
+        """
+        Get status of active background task for an account.
         
-        # PRODUCTION FIX: Store active background tasks to prevent garbage collection
-        # and enable proper task management
-        self.active_tasks = {}  # Dict[account_id, asyncio.Task]
+        PRODUCTION IMPROVEMENT: Works across all processor instances.
+        """
+        # Check class registry first (fastest)
+        task = cls._active_tasks.get(account_id)
+        
+        if task:
+            return {
+                "active": True,
+                "done": task.done(),
+                "cancelled": task.cancelled(),
+                "exception": str(task.exception()) if task.done() and task.exception() else None,
+                "task_id": id(task),
+                "source": "local_registry"
+            }
+        
+        # Fallback: Check Redis for distributed monitoring
+        try:
+            from utils.alpaca.account_closure import ClosureStateManager
+            state_manager = ClosureStateManager()
+            
+            if state_manager.redis_client:
+                task_data = state_manager.redis_client.hgetall(f"active_task:{account_id}")
+                
+                if task_data:
+                    # Convert bytes to strings if needed
+                    if isinstance(task_data, dict) and task_data:
+                        task_info = {k.decode() if isinstance(k, bytes) else k: 
+                                   v.decode() if isinstance(v, bytes) else v 
+                                   for k, v in task_data.items()}
+                        
+                        return {
+                            "active": True,
+                            "task_id": task_info.get("task_id"),
+                            "created_at": task_info.get("created_at"),
+                            "process_id": task_info.get("process_id"),
+                            "status": task_info.get("status", "unknown"),
+                            "source": "redis_registry"
+                        }
+        except Exception as e:
+            logger.warning(f"Failed to check Redis task registry for {account_id}: {e}")
+        
+        return {"active": False, "status": "no_active_task", "source": "not_found"}
+    
+    @classmethod
+    async def cancel_active_task(cls, account_id: str) -> bool:
+        """
+        Cancel active background task for an account.
+        
+        PRODUCTION IMPROVEMENT: Works across all processor instances.
+        """
+        async with cls._task_lock:
+            task = cls._active_tasks.get(account_id)
+            
+            if task and not task.done():
+                task.cancel()
+                logger.info(f"Cancelled active closure task for account {account_id}")
+                
+                # Update Redis to reflect cancellation
+                try:
+                    from utils.alpaca.account_closure import ClosureStateManager
+                    state_manager = ClosureStateManager()
+                    
+                    if state_manager.redis_client:
+                        state_manager.redis_client.hset(
+                            f"active_task:{account_id}",
+                            "status", "cancelled"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to update Redis task status for {account_id}: {e}")
+                
+                return True
+                
+        return False
+    
+    @classmethod
+    def get_all_active_tasks(cls) -> Dict[str, Dict[str, Any]]:
+        """
+        Get status of all active tasks across the system.
+        
+        PRODUCTION MONITORING: Enables system-wide task visibility.
+        """
+        result = {}
+        
+        # Add local tasks
+        for account_id, task in cls._active_tasks.items():
+            result[account_id] = {
+                "task_id": id(task),
+                "done": task.done(),
+                "cancelled": task.cancelled(),
+                "source": "local_registry"
+            }
+        
+        # Add Redis tasks (for distributed monitoring)
+        try:
+            from utils.alpaca.account_closure import ClosureStateManager
+            state_manager = ClosureStateManager()
+            
+            if state_manager.redis_client:
+                # Scan for all active task keys
+                for key in state_manager.redis_client.scan_iter(match="active_task:*"):
+                    account_id = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
+                    
+                    if account_id not in result:  # Don't overwrite local registry data
+                        task_data = state_manager.redis_client.hgetall(key)
+                        if task_data:
+                            task_info = {k.decode() if isinstance(k, bytes) else k: 
+                                       v.decode() if isinstance(v, bytes) else v 
+                                       for k, v in task_data.items()}
+                            
+                            result[account_id] = {
+                                "task_id": task_info.get("task_id"),
+                                "created_at": task_info.get("created_at"),
+                                "process_id": task_info.get("process_id"),
+                                "status": task_info.get("status", "unknown"),
+                                "source": "redis_registry"
+                            }
+        except Exception as e:
+            logger.warning(f"Failed to scan Redis task registry: {e}")
+        
+        return result
         
     async def initiate_automated_closure(self, user_id: str, account_id: str, 
                                        ach_relationship_id: str) -> Dict[str, Any]:
@@ -135,16 +314,16 @@ class AutomatedAccountClosureProcessor:
             })
             
             # STEP 4: Start background process with proper task management
-            # PRODUCTION FIX: Store task reference to prevent garbage collection and enable monitoring
+            # PRODUCTION FIX: Use shared task registry for cross-instance monitoring
             task = asyncio.create_task(self._run_automated_closure_process(
                 user_id, account_id, ach_relationship_id, confirmation_number, detailed_logger
             ))
             
-            # Store task reference for proper management
-            self.active_tasks[account_id] = task
+            # Store task reference in shared registry
+            await self._store_active_task(account_id, task)
             
             # Add task completion callback for cleanup and error handling
-            task.add_done_callback(lambda t: self._handle_task_completion(account_id, t))
+            task.add_done_callback(lambda t: asyncio.create_task(self._handle_task_completion(account_id, t)))
             
             detailed_logger.log_step_success("BACKGROUND_PROCESS_STARTED", {
                 "method": "asyncio.create_task_with_reference",
@@ -183,7 +362,7 @@ class AutomatedAccountClosureProcessor:
                 # "log_file": detailed_logger.get_log_summary()  # Removed for security
             }
     
-    def _handle_task_completion(self, account_id: str, task: asyncio.Task):
+    async def _handle_task_completion(self, account_id: str, task: asyncio.Task):
         """
         Handle completion of background closure task.
         
@@ -191,8 +370,8 @@ class AutomatedAccountClosureProcessor:
         when background tasks complete, fail, or are cancelled.
         """
         try:
-            # Remove task from active tasks
-            self.active_tasks.pop(account_id, None)
+            # Remove from shared task registry
+            await self._remove_active_task(account_id)
             
             if task.cancelled():
                 logger.warning(f"Account closure task for {account_id} was cancelled")
@@ -220,36 +399,7 @@ class AutomatedAccountClosureProcessor:
         except Exception as e:
             logger.error(f"Error in task completion handler for {account_id}: {e}")
     
-    def get_active_task_status(self, account_id: str) -> Dict[str, Any]:
-        """
-        Get status of active background task for an account.
-        
-        PRODUCTION IMPROVEMENT: Enables monitoring of active closure processes.
-        """
-        task = self.active_tasks.get(account_id)
-        if not task:
-            return {"active": False, "status": "no_active_task"}
-        
-        return {
-            "active": True,
-            "done": task.done(),
-            "cancelled": task.cancelled(),
-            "exception": str(task.exception()) if task.done() and task.exception() else None,
-            "task_id": id(task)
-        }
-    
-    def cancel_active_task(self, account_id: str) -> bool:
-        """
-        Cancel active background task for an account.
-        
-        PRODUCTION IMPROVEMENT: Enables stopping runaway processes.
-        """
-        task = self.active_tasks.get(account_id)
-        if task and not task.done():
-            task.cancel()
-            logger.info(f"Cancelled active closure task for account {account_id}")
-            return True
-        return False
+
     
     async def _run_automated_closure_process(self, user_id: str, account_id: str, 
                                            ach_relationship_id: str, confirmation_number: str,

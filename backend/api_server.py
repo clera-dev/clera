@@ -2823,6 +2823,94 @@ async def resume_account_closure_endpoint(
         logger.error(f"Error resuming closure for account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error resuming account closure: {str(e)}")
 
+# ============================================================================
+# PRODUCTION TASK MONITORING - Account Closure Background Process Management
+# ============================================================================
+
+@app.get("/account-closure/task-status/{account_id}")
+async def get_account_closure_task_status_endpoint(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get status of active background task for a specific account closure.
+    
+    PRODUCTION ENDPOINT: Enables monitoring of running closure processes.
+    """
+    try:
+        from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+        
+        status = AutomatedAccountClosureProcessor.get_active_task_status(account_id)
+        
+        return {
+            "account_id": account_id,
+            "task_status": status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting task status for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
+
+@app.post("/account-closure/cancel-task/{account_id}")
+async def cancel_account_closure_task_endpoint(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Cancel active background task for a specific account closure.
+    
+    PRODUCTION ENDPOINT: Enables stopping runaway or problematic processes.
+    """
+    try:
+        from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+        
+        cancelled = await AutomatedAccountClosureProcessor.cancel_active_task(account_id)
+        
+        if cancelled:
+            logger.info(f"Cancelled closure task for account {account_id}")
+            return {
+                "success": True,
+                "message": f"Task for account {account_id} has been cancelled",
+                "account_id": account_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"No active task found for account {account_id}",
+                "account_id": account_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        
+    except Exception as e:
+        logger.error(f"Error cancelling task for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error cancelling task: {str(e)}")
+
+@app.get("/account-closure/all-active-tasks")
+async def get_all_active_tasks_endpoint(
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get status of all active account closure tasks across the system.
+    
+    PRODUCTION MONITORING: Provides system-wide visibility of running processes.
+    """
+    try:
+        from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+        
+        all_tasks = AutomatedAccountClosureProcessor.get_all_active_tasks()
+        
+        return {
+            "active_tasks": all_tasks,
+            "total_active": len(all_tasks),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting all active tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting active tasks: {str(e)}")
+
 # WebSocket Endpoint (Remaining at the end as it was before)
 @app.websocket("/ws/portfolio/{account_id}")
 async def websocket_portfolio_endpoint(websocket: WebSocket, account_id: str, api_key: str = Query(...)):
