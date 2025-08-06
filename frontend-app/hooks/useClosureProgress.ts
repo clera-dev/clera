@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { accountClosureService, ClosureStep, ProgressResponse } from '@/utils/services/accountClosureService';
+import { createClient } from '@/utils/supabase/client';
 
 export interface UseClosureProgressReturn {
   closureSteps: ClosureStep[];
@@ -43,6 +44,21 @@ export function useClosureProgress(userId: string | undefined): UseClosureProgre
     
     try {
       setLastUpdateStatus('loading');
+      
+      // PRODUCTION FIX: Only fetch progress for users with pending_closure status
+      // Quick check to avoid unnecessary API calls for closed accounts
+      const supabase = createClient();
+      const { data: onboardingData } = await supabase
+        .from('user_onboarding')
+        .select('status')
+        .eq('user_id', userId)
+        .single();
+      
+      if (!onboardingData || onboardingData.status !== 'pending_closure') {
+        // User doesn't have pending closure status - no need to fetch progress
+        setLastUpdateStatus('success');
+        return;
+      }
       
       const progressData = await accountClosureService.fetchClosureProgress(userId);
       

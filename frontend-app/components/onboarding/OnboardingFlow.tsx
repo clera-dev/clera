@@ -184,7 +184,15 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       const result = await createAlpacaAccount(onboardingData);
       
       if (result.error) {
-        // Handle the account already exists case as a success
+        // Handle EMAIL_EXISTS error specifically (after account closure)
+        if (result.code === "EMAIL_EXISTS") {
+          setSubmissionError(result.error);
+          setSubmitting(false);
+          // Do not navigate away on error
+          return;
+        }
+        
+        // Handle the account already exists case as a success (for other scenarios)
         if (result.accountExists) {
           setAccountExists(true);
           

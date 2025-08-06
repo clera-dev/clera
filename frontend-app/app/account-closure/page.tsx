@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client';
 import { CheckCircle2, Clock, DollarSign, Shield, Mail } from 'lucide-react';
 import { useAccountClosure } from '@/hooks/useAccountClosure';
 import { useClosureProgress } from '@/hooks/useClosureProgress';
+import { accountClosureService } from '@/utils/services/accountClosureService';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { clearUserSpecificLocalStorage } from '@/lib/utils/auth-storage';
@@ -53,16 +54,13 @@ export default function AccountClosurePage() {
 
       setUser(user);
 
-      // Get user status
-      const { data: onboardingData, error: onboardingError } = await supabase
-        .from('user_onboarding')
-        .select('status')
-        .eq('user_id', user.id)
-        .single();
+      // ARCHITECTURAL FIX: Use secure API route instead of direct database query
+      // This maintains proper layering boundaries and follows security best practices
+      const userStatusData = await accountClosureService.getUserStatus();
 
-      // Handle database/network errors gracefully
-      if (onboardingError) {
-        console.error('Error fetching user onboarding status:', onboardingError);
+      // Handle API/network errors gracefully
+      if (!userStatusData) {
+        console.error('Error fetching user onboarding status from API');
         // Don't redirect on error - let user stay on closure page
         // Set a default status that allows them to continue
         setUserStatus('pending_closure');
@@ -70,7 +68,7 @@ export default function AccountClosurePage() {
         return;
       }
 
-      const status = onboardingData?.status;
+      const status = userStatusData.status;
       setUserStatus(status);
 
       // Redirect if not in closure process

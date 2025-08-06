@@ -52,6 +52,10 @@ class AutomatedAccountClosureProcessor:
         self.state_manager = ClosureStateManager()
         self.supabase = get_supabase_client() if get_supabase_client else None
         
+        # PRODUCTION FIX: Store active background tasks to prevent garbage collection
+        # and enable proper task management
+        self.active_tasks = {}  # Dict[account_id, asyncio.Task]
+        
     async def initiate_automated_closure(self, user_id: str, account_id: str, 
                                        ach_relationship_id: str) -> Dict[str, Any]:
         """
@@ -130,14 +134,22 @@ class AutomatedAccountClosureProcessor:
                 "initiated_at": datetime.now().isoformat()
             })
             
-            # STEP 4: Start background process with asyncio.create_task (simple and effective)
-            asyncio.create_task(self._run_automated_closure_process(
+            # STEP 4: Start background process with proper task management
+            # PRODUCTION FIX: Store task reference to prevent garbage collection and enable monitoring
+            task = asyncio.create_task(self._run_automated_closure_process(
                 user_id, account_id, ach_relationship_id, confirmation_number, detailed_logger
             ))
             
+            # Store task reference for proper management
+            self.active_tasks[account_id] = task
+            
+            # Add task completion callback for cleanup and error handling
+            task.add_done_callback(lambda t: self._handle_task_completion(account_id, t))
+            
             detailed_logger.log_step_success("BACKGROUND_PROCESS_STARTED", {
-                "method": "asyncio.create_task",
-                "task": "automated_account_closure"
+                "method": "asyncio.create_task_with_reference",
+                "task": "automated_account_closure",
+                "task_id": id(task)
             })
             
             # STEP 5: Return immediate response to frontend
@@ -170,6 +182,74 @@ class AutomatedAccountClosureProcessor:
                 "error": "Account closure process failed. Please contact support if the issue persists."
                 # "log_file": detailed_logger.get_log_summary()  # Removed for security
             }
+    
+    def _handle_task_completion(self, account_id: str, task: asyncio.Task):
+        """
+        Handle completion of background closure task.
+        
+        PRODUCTION FIX: This callback ensures proper cleanup and error handling
+        when background tasks complete, fail, or are cancelled.
+        """
+        try:
+            # Remove task from active tasks
+            self.active_tasks.pop(account_id, None)
+            
+            if task.cancelled():
+                logger.warning(f"Account closure task for {account_id} was cancelled")
+                return
+            
+            # Check if task failed with exception
+            exception = task.exception()
+            if exception:
+                logger.error(f"Account closure task for {account_id} failed with exception: {exception}")
+                
+                # Update Redis state to indicate task failure
+                self.state_manager.update_closure_state(account_id, {
+                    "phase": "background_task_failed",
+                    "task_failure_reason": str(exception),
+                    "failed_at": datetime.now(timezone.utc).isoformat(),
+                    "requires_manual_intervention": True
+                })
+                
+                # Could trigger alerting/monitoring here
+                return
+            
+            # Task completed successfully
+            logger.info(f"Account closure task for {account_id} completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error in task completion handler for {account_id}: {e}")
+    
+    def get_active_task_status(self, account_id: str) -> Dict[str, Any]:
+        """
+        Get status of active background task for an account.
+        
+        PRODUCTION IMPROVEMENT: Enables monitoring of active closure processes.
+        """
+        task = self.active_tasks.get(account_id)
+        if not task:
+            return {"active": False, "status": "no_active_task"}
+        
+        return {
+            "active": True,
+            "done": task.done(),
+            "cancelled": task.cancelled(),
+            "exception": str(task.exception()) if task.done() and task.exception() else None,
+            "task_id": id(task)
+        }
+    
+    def cancel_active_task(self, account_id: str) -> bool:
+        """
+        Cancel active background task for an account.
+        
+        PRODUCTION IMPROVEMENT: Enables stopping runaway processes.
+        """
+        task = self.active_tasks.get(account_id)
+        if task and not task.done():
+            task.cancel()
+            logger.info(f"Cancelled active closure task for account {account_id}")
+            return True
+        return False
     
     async def _run_automated_closure_process(self, user_id: str, account_id: str, 
                                            ach_relationship_id: str, confirmation_number: str,
@@ -218,9 +298,11 @@ class AutomatedAccountClosureProcessor:
             # PHASE 7: FINAL SUPABASE UPDATE
             self.state_manager.update_closure_state(account_id, {"phase": "updating_final_status"})
             if self.supabase:
+                # PRODUCTION FIX: Ensure proper status update to 'closed' with completion timestamp
                 await self._update_supabase_status(user_id, "closed", {
-                    "completed_at": datetime.now().isoformat(),
-                    "confirmation_number": confirmation_number
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "confirmation_number": confirmation_number,
+                    "account_closure_completed": True
                 })
             
             # PHASE 8: CLEANUP REDIS STATE (process completed)
@@ -237,13 +319,30 @@ class AutomatedAccountClosureProcessor:
         except Exception as e:
             detailed_logger.log_step_failure("AUTOMATED_BACKGROUND_PROCESS", str(e))
             
+            # PRODUCTION IMPROVEMENT: Enhanced error handling with better state tracking
+            error_info = {
+                "process_failed": True,
+                "failure_reason": str(e),
+                "failure_type": type(e).__name__,
+                "requires_manual_review": True,
+                "failed_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Update Redis state with detailed error information
+            self.state_manager.update_closure_state(account_id, {
+                "phase": "background_process_failed",
+                **error_info
+            })
+            
             # Update Supabase to show failure but keep pending_closure for manual review
             if self.supabase:
-                await self._update_supabase_status(user_id, "pending_closure", {
-                    "process_failed": True,
-                    "failure_reason": str(e),
-                    "requires_manual_review": True
-                })
+                await self._update_supabase_status(user_id, "pending_closure", error_info)
+            
+            # Log critical error for monitoring/alerting
+            logger.critical(f"Account closure background process failed for {account_id}: {e}")
+            
+            # Re-raise exception so task completion callback can handle it
+            raise
     
     async def _handle_liquidation_phase(self, account_id: str, detailed_logger: AccountClosureLogger):
         """Handle position liquidation and order cancellation."""
@@ -702,7 +801,11 @@ class AutomatedAccountClosureProcessor:
             return
         
         try:
-            update_data = {"status": status, "updated_at": datetime.now().isoformat()}
+            update_data = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
+            
+            # PRODUCTION FIX: Set completion timestamp when account is closed
+            if status == "closed":
+                update_data["account_closure_completed_at"] = datetime.now(timezone.utc).isoformat()
             
             if additional_data:
                 # Store closure-specific data in onboarding_data jsonb field
@@ -724,6 +827,8 @@ class AutomatedAccountClosureProcessor:
             await asyncio.to_thread(
                 lambda: self.supabase.table("user_onboarding").update(update_data).eq("user_id", user_id).execute()
             )
+            
+            logger.info(f"Successfully updated user {user_id} status to {status}")
             
         except Exception as e:
             logger.error(f"Failed to update Supabase status for user {user_id}: {e}")

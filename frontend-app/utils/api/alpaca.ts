@@ -5,6 +5,8 @@ type ApiResponse<T> = {
   error?: string;
   code?: string;
   accountExists?: boolean;
+  userFriendlyTitle?: string;
+  suggestion?: string;
 };
 
 function getLiquidNetWorthMin(range: LiquidNetWorthRange): number {
@@ -140,17 +142,19 @@ export async function createAlpacaAccount(userData: OnboardingData): Promise<Api
       try {
         const errorData = JSON.parse(responseText);
         
-        // Handle specific account already exists error - but this should now be handled by the backend
-        if (response.status === 409 && errorData.accountExists) {
+        // Handle specific EMAIL_EXISTS error from backend
+        if (response.status === 409 && (errorData.detail?.code === "EMAIL_EXISTS" || errorData.accountExists)) {
           console.log('Account already exists for this email:', userData.email);
           return { 
-            error: errorData.error || "An account with this email address already exists. Please use a different email address.",
-            code: errorData.code || "EMAIL_EXISTS",
-            accountExists: true
+            error: errorData.detail?.message || errorData.error || "Email addresses cannot be reused after account closure. Please make a new Clera account with a different email.",
+            code: "EMAIL_EXISTS",
+            accountExists: true,
+            userFriendlyTitle: errorData.detail?.user_friendly_title || "Email Already Used",
+            suggestion: errorData.detail?.suggestion || "Try using a different email address to create your new account."
           };
         }
         
-        errorMessage = errorData.error || errorMessage;
+        errorMessage = errorData.detail?.message || errorData.error || errorMessage;
         
         // Add more detailed diagnostics for debugging
         console.error('Response status:', response.status);

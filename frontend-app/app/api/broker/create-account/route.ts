@@ -106,11 +106,14 @@ export async function POST(request: Request) {
         try {
           const errorData = JSON.parse(errorText);
           if (errorData.detail && errorData.detail.code === "EMAIL_EXISTS") {
+            // Pass through the detailed error information from backend
             return NextResponse.json(
               { 
-                error: 'An account with this email already exists',
-                code: 'EMAIL_EXISTS',
-                accountExists: true
+                error: errorData.detail.message,
+                code: errorData.detail.code,
+                accountExists: true,
+                userFriendlyTitle: errorData.detail.user_friendly_title,
+                suggestion: errorData.detail.suggestion
               },
               { status: 409 }
             );

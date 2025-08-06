@@ -924,19 +924,25 @@ async def create_alpaca_account(
             error_str = str(e)
             
             # Check for specific error codes from Alpaca
-            if '"code":40910000' in error_str and 'email address already exists' in error_str:
+            if ('"code":40910000' in error_str and 'email address already exists' in error_str) or \
+               ('EMAIL_EXISTS' in error_str and 'email address already exists' in error_str):
                 # This is a conflict error - account already exists but couldn't be looked up
                 logger.info("Account with this email already exists in Alpaca but couldn't be looked up")
                 raise HTTPException(
                     status_code=409,
                     detail={
                         "code": "EMAIL_EXISTS",
-                        "message": "An account with this email address already exists. Please use a different email address."
+                        "message": "Email addresses cannot be reused after account closure. Please make a new Clera account with a different email.",
+                        "user_friendly_title": "Email Already Used",
+                        "suggestion": "Try using a different email address to create your new account."
                     }
                 )
             # Re-raise other exceptions
             raise
     
+    except HTTPException:
+        # Re-raise HTTPExceptions (like our 409 EMAIL_EXISTS) as-is
+        raise
     except Exception as e:
         logger.error(f"Error creating Alpaca account: {str(e)}")
         logger.error(f"Error details: {repr(e)}")

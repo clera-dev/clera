@@ -59,6 +59,25 @@ export function useAccountClosure(): UseAccountClosureReturn {
         return;
       }
       
+      // PRODUCTION FIX: Only fetch closure data for users with pending_closure status
+      // Check user onboarding status first
+      const { data: onboardingData } = await supabase
+        .from('user_onboarding')
+        .select('status')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (!onboardingData || onboardingData.status !== 'pending_closure') {
+        // User doesn't have pending closure status - no need to fetch closure data
+        if (isMountedRef.current) {
+          setClosureData(null);
+          setLoading(false);
+          setError(null);
+        }
+        clearTimeout(maxLoadingTimeout);
+        return;
+      }
+      
       try {
         if (isMountedRef.current) {
           setLoading(true);

@@ -331,6 +331,47 @@ Recommendation from cursor: while we have < 10 account closures, just use:
 - API service health checks include Redis connectivity
 - Account closure progress is monitored via Redis state
 
+## Critical Bug Fixes (Production-Ready Improvements)
+
+### Background Task Management Fix
+
+**Issue Identified**: Background tasks created with `asyncio.create_task()` without storing references could be garbage collected or fail silently, causing accounts to get stuck in `pending_closure` status.
+
+**Root Cause**: 
+1. **No Task References**: Tasks were created but not stored, risking garbage collection
+2. **Silent Failures**: Exception handling swallowed errors without proper recovery
+3. **No Task Monitoring**: No way to track or manage active background processes
+
+**Solution Implemented**:
+```python
+# BEFORE (Problematic):
+asyncio.create_task(self._run_automated_closure_process(...))  # No reference stored!
+
+# AFTER (Production-Ready):
+task = asyncio.create_task(self._run_automated_closure_process(...))
+self.active_tasks[account_id] = task  # Store reference
+task.add_done_callback(lambda t: self._handle_task_completion(account_id, t))  # Monitor completion
+```
+
+**Improvements Made**:
+- ✅ **Task Reference Storage**: All background tasks stored in `self.active_tasks`
+- ✅ **Completion Callbacks**: Automatic cleanup and error detection
+- ✅ **Task Monitoring**: `get_active_task_status()` method for monitoring
+- ✅ **Task Cancellation**: `cancel_active_task()` method for stopping runaway processes
+- ✅ **Enhanced Error Handling**: Detailed error information in Redis state
+- ✅ **Exception Re-raising**: Ensures task completion callback can detect failures
+
+**New Methods Available**:
+```python
+# Check if account has active background task
+status = processor.get_active_task_status("account_id")
+
+# Cancel active task if needed
+cancelled = processor.cancel_active_task("account_id")
+
+# Task completion is automatically handled with detailed logging
+```
+
 ## Benefits
 
 ### Reliability
@@ -339,6 +380,8 @@ Recommendation from cursor: while we have < 10 account closures, just use:
 - **Multi-Day Processing**: Handles Alpaca's $50,000 daily transfer limits
 - **Recovery Mechanisms**: Stuck account detection and recovery scripts
 - **Comprehensive Logging**: Detailed process tracking and error handling
+- **🆕 Task Management**: Background tasks properly tracked and monitored
+- **🆕 Failure Detection**: Silent task failures automatically detected and logged
 
 ### Scalability
 
@@ -556,6 +599,8 @@ print('Redis ping:', r.ping())
 #### 2. Account Stuck in pending_closure
 **Symptoms**: Account shows pending_closure for days, no progress updates
 
+**Common Cause**: Background process died during withdrawal phase even though funds were fully withdrawn. The Redis state shows `phase: withdrawal` but the account has `$0.0` withdrawable cash and is ready for closure.
+
 **Step 1: Check Current Status**
 ```bash
 # Check account status with dry run
@@ -574,6 +619,77 @@ redis-cli get partial_withdrawal:<account_id>
 ```bash
 # Resume the closure process
 python scripts/fix_stuck_account_closure.py --account-id <account_id>
+```
+
+**Special Case: Account Stuck After Full Withdrawal**
+If the account has `$0.0` withdrawable cash but is stuck in `withdrawal` phase:
+
+```bash
+# Manual intervention to complete closure
+python -c "
+import asyncio
+from utils.alpaca.account_closure import ClosureStateManager
+from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+from utils.alpaca.account_closure_logger import AccountClosureLogger
+
+async def complete_stuck_closure():
+    account_id = '<account_id>'
+    processor = AutomatedAccountClosureProcessor(sandbox=True)
+    state_manager = ClosureStateManager()
+    
+    # Get existing state
+    closure_state = state_manager.get_closure_state(account_id)
+    if not closure_state:
+        print('❌ No closure state found')
+        return
+    
+    user_id = closure_state.get('user_id')
+    confirmation_number = closure_state.get('confirmation_number')
+    
+    # Verify account is ready for closure
+    account_status = await asyncio.to_thread(
+        processor.manager.get_closure_status, account_id
+    )
+    
+    withdrawable_cash = account_status.get('cash_withdrawable', 0)
+    current_step = account_status.get('current_step', '')
+    
+    print(f'Withdrawable cash: \${withdrawable_cash}')
+    print(f'Current step: {current_step}')
+    
+    if withdrawable_cash <= 1.0 and current_step == 'closing_account':
+        print('✅ Proceeding to complete account closure...')
+        
+        # Create logger and complete closure
+        detailed_logger = AccountClosureLogger(account_id, user_id)
+        result = await processor._handle_account_closure_phase(
+            account_id, user_id, confirmation_number, detailed_logger
+        )
+        
+        print(f'Account closure completed: {result}')
+    else:
+        print('❌ Account not ready for manual closure')
+
+asyncio.run(complete_stuck_closure())
+"
+```
+
+**Verification After Fix**:
+```bash
+# Verify account is now closed
+python -c "
+import asyncio
+from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+
+async def verify():
+    processor = AutomatedAccountClosureProcessor(sandbox=True)
+    account_info = await asyncio.to_thread(
+        processor.manager.broker_client.get_account_by_id, '<account_id>'
+    )
+    print(f'Account Status: {account_info.status}')
+
+asyncio.run(verify())
+"
 ```
 
 #### 3. Multi-Day Transfer Issues  

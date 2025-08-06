@@ -45,6 +45,15 @@ export interface ClosureState {
   isComplete: boolean;
 }
 
+export interface UserStatusResponse {
+  userId: string;
+  status: string | null;
+  alpacaAccountId?: string | null;
+  hasOnboardingData: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ProgressResponse {
   confirmation_number?: string;
   initiated_at?: string;
@@ -139,6 +148,31 @@ export class AccountClosureService {
   }
 
   /**
+   * Get current user's status using the secure API route
+   * ARCHITECTURAL FIX: This replaces direct client-side database queries
+   * with proper API route communication following security boundaries
+   */
+  async getUserStatus(): Promise<UserStatusResponse | null> {
+    try {
+      const response = await fetch('/api/user/status');
+      
+      if (!response.ok) {
+        // Log errors with appropriate levels
+        const isServerError = response.status >= 500;
+        this.logError('Failed to fetch user status', { status: response.status }, isServerError);
+        return null;
+      }
+      
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      // Network errors should be logged for observability
+      this.logError('Network error fetching user status', error, false);
+      return null;
+    }
+  }
+
+  /**
    * Fetch closure data from the API
    */
   async fetchClosureData(signal?: AbortSignal): Promise<ClosureData | null> {
@@ -202,10 +236,29 @@ export class AccountClosureService {
         return null;
       }
       
+      // PRODUCTION FIX: Handle potential HTML responses gracefully
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        this.logError('Progress API returned non-JSON response', { 
+          contentType, 
+          accountId,
+          status: response.status 
+        }, false);
+        return null;
+      }
+      
       const progressData = await response.json();
       return progressData;
     } catch (error) {
-      this.logError('Error fetching closure progress', error, false);
+      // PRODUCTION FIX: Handle JSON parsing errors specifically
+      if (error instanceof SyntaxError && error.message.includes('JSON')) {
+        this.logError('JSON parsing error - server returned non-JSON response', {
+          error: error.message,
+          accountId: await this.getAccountId(userId).catch(() => 'unknown')
+        }, false);
+      } else {
+        this.logError('Error fetching closure progress', error, false);
+      }
       return null;
     }
   }
