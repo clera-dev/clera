@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { OnboardingData, OnboardingStatus } from "@/lib/types/onboarding";
-import { getRedirectPathWithTransferLookup } from "@/lib/utils/userRouting";
+import { getRedirectPathWithServerTransferLookup } from "@/lib/utils/userRouting";
 
 /**
  * Waits for auth state to be consistent after authentication operations.
@@ -121,9 +121,9 @@ export const signUpAction = async (formData: FormData) => {
       
       const userStatus = onboardingData?.status;
       
-      // ARCHITECTURAL FIX: Use centralized routing logic with transfer lookup
-      // This eliminates duplicate Supabase queries and maintains separation of concerns
-      const redirectPath = await getRedirectPathWithTransferLookup(userStatus, user.id);
+      // ARCHITECTURAL FIX: Use centralized routing logic with proper server-side transfer lookup
+      // This eliminates duplicate Supabase queries and maintains proper client/server separation
+      const redirectPath = await getRedirectPathWithServerTransferLookup(userStatus, user.id, supabase);
       return redirect(redirectPath);
     }
     
@@ -165,9 +165,9 @@ export const signInAction = async (formData: FormData) => {
     
     const userStatus = onboardingData?.status;
     
-    // ARCHITECTURAL FIX: Use centralized routing logic with transfer lookup
-    // This eliminates duplicate Supabase queries and maintains separation of concerns
-    const redirectPath = await getRedirectPathWithTransferLookup(userStatus, user.id);
+    // ARCHITECTURAL FIX: Use centralized routing logic with proper server-side transfer lookup
+    // This eliminates duplicate Supabase queries and maintains proper client/server separation
+    const redirectPath = await getRedirectPathWithServerTransferLookup(userStatus, user.id, supabase);
     return redirect(redirectPath);
   }
 

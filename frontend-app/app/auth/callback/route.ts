@@ -1,7 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
 import { validateAndSanitizeRedirectUrl } from "@/utils/security";
-import { getRedirectPathWithTransferLookup } from "@/lib/utils/userRouting";
+import { getRedirectPathWithServerTransferLookup } from "@/lib/utils/userRouting";
 
 export async function GET(request: Request) {
   // The `/auth/callback` route is required for the server-side auth flow implemented
@@ -40,9 +40,9 @@ export async function GET(request: Request) {
     
     const userStatus = onboardingData?.status;
     
-    // ARCHITECTURAL FIX: Use centralized routing logic with transfer lookup
-    // This eliminates duplicate Supabase queries and maintains separation of concerns
-    const redirectPath = await getRedirectPathWithTransferLookup(userStatus, user.id);
+    // ARCHITECTURAL FIX: Use centralized routing logic with proper server-side transfer lookup
+    // This eliminates duplicate Supabase queries and maintains proper client/server separation
+    const redirectPath = await getRedirectPathWithServerTransferLookup(userStatus, user.id, supabase);
     return NextResponse.redirect(new URL(redirectPath, requestUrl.origin));
   }
 

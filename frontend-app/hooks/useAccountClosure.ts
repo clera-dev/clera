@@ -61,7 +61,20 @@ export function useAccountClosure(): UseAccountClosureReturn {
       
       // ARCHITECTURAL FIX: Use service layer instead of direct database query
       // This maintains proper layering boundaries and follows established patterns
-      const userStatusData = await accountClosureService.getUserStatus();
+      let userStatusData;
+      try {
+        userStatusData = await accountClosureService.getUserStatus();
+      } catch (err) {
+        // Handle getUserStatus errors gracefully - treat as "no pending closure"
+        console.warn('[useAccountClosure] Error fetching user status, treating as no pending closure:', err);
+        if (isMountedRef.current) {
+          setClosureData(null);
+          setLoading(false);
+          setError(null);
+        }
+        clearTimeout(maxLoadingTimeout);
+        return;
+      }
       
       if (!userStatusData || userStatusData.status !== 'pending_closure') {
         // User doesn't have pending closure status - no need to fetch closure data

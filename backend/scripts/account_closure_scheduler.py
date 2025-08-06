@@ -75,12 +75,19 @@ class AccountClosureScheduler:
                     
                     # Check if this account is waiting and ready to resume
                     if phase in ["withdrawal_waiting", "withdrawal_24hr_wait"] and next_action_time_str:
-                        next_action_time = datetime.fromisoformat(next_action_time_str)
+                        # CRITICAL FIX: Handle ISO-8601 "Z" timezone designator
+                        # datetime.fromisoformat() doesn't support "Z", so replace with "+00:00"
+                        normalized_time_str = next_action_time_str.replace('Z', '+00:00')
+                        next_action_time = datetime.fromisoformat(normalized_time_str)
                         
-                        # Ensure timezone awareness for comparison
+                        # CRITICAL FIX: Normalize all datetimes to UTC for reliable comparison
+                        # This prevents TypeError in some Python versions and ensures consistent behavior
                         if next_action_time.tzinfo is None:
                             # If naive, assume UTC (since that's what we store)
                             next_action_time = next_action_time.replace(tzinfo=timezone.utc)
+                        else:
+                            # If timezone-aware, convert to UTC for comparison
+                            next_action_time = next_action_time.astimezone(timezone.utc)
                         
                         if current_time >= next_action_time:
                             ready_accounts.append({

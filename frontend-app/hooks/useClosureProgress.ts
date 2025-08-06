@@ -48,7 +48,15 @@ export function useClosureProgress(userId: string | undefined): UseClosureProgre
       // Use accountClosureService to maintain proper layering
       const userStatusData = await accountClosureService.getUserStatus();
       
-      if (!userStatusData || userStatusData.status !== 'pending_closure') {
+      // CRITICAL FIX: Distinguish between API errors and valid non-pending status
+      if (!userStatusData) {
+        // API/network error - don't mask this, set error state
+        console.error('[useClosureProgress] Failed to fetch user status - API/network error');
+        setLastUpdateStatus('error');
+        return;
+      }
+      
+      if (userStatusData.status !== 'pending_closure') {
         // User doesn't have pending closure status - no need to fetch progress
         setLastUpdateStatus('success');
         return;
