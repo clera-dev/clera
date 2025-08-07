@@ -95,7 +95,13 @@ async def resume_account_closure(user_id: str, account_id: str, dry_run: bool = 
                 # Use environment variable to determine sandbox mode
                 sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
                 broker_client = BrokerClient(api_key, secret_key, sandbox=sandbox)
-                ach_relationships = broker_client.get_ach_relationships_for_account(account_id=account_id)
+                
+                # ARCHITECTURAL FIX: Wrap blocking Alpaca API call in asyncio.to_thread()
+                # This prevents the synchronous HTTP request from blocking the event loop
+                ach_relationships = await asyncio.to_thread(
+                    broker_client.get_ach_relationships_for_account,
+                    account_id=account_id
+                )
                 
                 if ach_relationships:
                     # Sort by created_at to get most recent first
@@ -127,9 +133,13 @@ async def resume_account_closure(user_id: str, account_id: str, dry_run: bool = 
         
         # FALLBACK: Use Supabase data if Alpaca failed, sorted by most recent
         if not ach_relationship_id:
-            result = supabase.table("user_bank_connections").select(
-                "relationship_id, created_at"
-            ).eq("user_id", user_id).order("created_at", desc=True).execute()
+            # ARCHITECTURAL FIX: Wrap blocking Supabase call in asyncio.to_thread()
+            # This prevents the synchronous database query from blocking the event loop
+            result = await asyncio.to_thread(
+                lambda: supabase.table("user_bank_connections").select(
+                    "relationship_id, created_at"
+                ).eq("user_id", user_id).order("created_at", desc=True).execute()
+            )
             
             if not result.data or len(result.data) == 0:
                 print(f"ERROR: No ACH relationship found for user {user_id}")

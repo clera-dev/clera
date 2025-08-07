@@ -71,7 +71,7 @@ class AutomatedAccountClosureProcessor:
             
             # Store task metadata in Redis for distributed monitoring
             try:
-                from utils.alpaca.account_closure import ClosureStateManager
+                # Use consistent relative import to avoid module duplication
                 state_manager = ClosureStateManager()
                 
                 if state_manager.redis_client:
@@ -100,7 +100,7 @@ class AutomatedAccountClosureProcessor:
             
             # Remove from Redis
             try:
-                from utils.alpaca.account_closure import ClosureStateManager
+                # Use consistent relative import to avoid module duplication
                 state_manager = ClosureStateManager()
                 
                 if state_manager.redis_client:
@@ -131,7 +131,7 @@ class AutomatedAccountClosureProcessor:
         
         # Fallback: Check Redis for distributed monitoring
         try:
-            from utils.alpaca.account_closure import ClosureStateManager
+            # Use consistent relative import to avoid module duplication
             state_manager = ClosureStateManager()
             
             if state_manager.redis_client:
@@ -173,7 +173,7 @@ class AutomatedAccountClosureProcessor:
                 
                 # Update Redis to reflect cancellation
                 try:
-                    from utils.alpaca.account_closure import ClosureStateManager
+                    # Use consistent relative import to avoid module duplication
                     state_manager = ClosureStateManager()
                     
                     if state_manager.redis_client:
@@ -208,7 +208,7 @@ class AutomatedAccountClosureProcessor:
         
         # Add Redis tasks (for distributed monitoring)
         try:
-            from utils.alpaca.account_closure import ClosureStateManager
+            # Use consistent relative import to avoid module duplication
             state_manager = ClosureStateManager()
             
             if state_manager.redis_client:

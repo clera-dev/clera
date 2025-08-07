@@ -62,7 +62,8 @@ export function useClosureProgress(userId: string | undefined): UseClosureProgre
         return;
       }
       
-      const progressData = await accountClosureService.fetchClosureProgress();
+      // PERFORMANCE FIX: Pass userStatusData to avoid duplicate API call
+      const progressData = await accountClosureService.fetchClosureProgress(userStatusData);
       
       if (progressData) {
         // Update closure steps based on progress

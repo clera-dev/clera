@@ -212,15 +212,38 @@ export class AccountClosureService {
   /**
    * Fetch closure progress from the API for the current authenticated user
    * ARCHITECTURAL FIX: This service only works with the current session user
+   * 
+   * @param userStatusData - Optional pre-fetched user status to avoid duplicate API calls
    */
-  async fetchClosureProgress(): Promise<ProgressResponse | null> {
+  async fetchClosureProgress(userStatusData?: UserStatusResponse | null): Promise<ProgressResponse | null> {
     try {
-      const accountId = await this.getAccountId();
+      let accountId: string | null = null;
       
-      if (!accountId) {
-        // Don't treat this as an error - just means no progress polling available
-        this.logError('No account ID found for current user - skipping progress polling', {}, false);
-        return null;
+      // Use provided user status if available to avoid duplicate API calls
+      if (userStatusData !== undefined) {
+        if (!userStatusData) {
+          this.logError('No user status data provided - skipping progress polling', {}, false);
+          return null;
+        }
+        
+        if (!userStatusData.alpacaAccountId) {
+          this.logError('No alpaca_account_id found in provided user status', { 
+            status: userStatusData.status,
+            hasOnboardingData: userStatusData.hasOnboardingData 
+          }, false);
+          return null;
+        }
+        
+        accountId = userStatusData.alpacaAccountId;
+      } else {
+        // Fallback to internal getAccountId() for backward compatibility
+        accountId = await this.getAccountId();
+        
+        if (!accountId) {
+          // Don't treat this as an error - just means no progress polling available
+          this.logError('No account ID found for current user - skipping progress polling', {}, false);
+          return null;
+        }
       }
       
       const response = await fetch(`/api/account-closure/progress/${accountId}`);
