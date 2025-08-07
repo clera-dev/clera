@@ -924,19 +924,25 @@ async def create_alpaca_account(
             error_str = str(e)
             
             # Check for specific error codes from Alpaca
-            if '"code":40910000' in error_str and 'email address already exists' in error_str:
+            if ('"code":40910000' in error_str and 'email address already exists' in error_str) or \
+               ('EMAIL_EXISTS' in error_str):
                 # This is a conflict error - account already exists but couldn't be looked up
                 logger.info("Account with this email already exists in Alpaca but couldn't be looked up")
                 raise HTTPException(
                     status_code=409,
                     detail={
                         "code": "EMAIL_EXISTS",
-                        "message": "An account with this email address already exists. Please use a different email address."
+                        "message": "Email addresses cannot be reused after account closure. Please make a new Clera account with a different email.",
+                        "user_friendly_title": "Email Already Used",
+                        "suggestion": "Try using a different email address to create your new account."
                     }
                 )
             # Re-raise other exceptions
             raise
     
+    except HTTPException:
+        # Re-raise HTTPExceptions (like our 409 EMAIL_EXISTS) as-is
+        raise
     except Exception as e:
         logger.error(f"Error creating Alpaca account: {str(e)}")
         logger.error(f"Error details: {repr(e)}")
@@ -2481,12 +2487,14 @@ async def initiate_account_closure_endpoint(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Initiate the account closure process.
+    Initiate the COMPLETE automated account closure process.
     
-    This starts the multi-step closure process:
-    1. Cancel all open orders
-    2. Liquidate all positions
-    3. (Settlement and withdrawal handled in separate calls)
+    This starts the full automated closure pipeline:
+    1. Cancel all open orders & liquidate positions (immediate)
+    2. Start automated background process for:
+       - Settlement waiting
+       - Multi-day fund withdrawal ($50k chunks with 24hr delays)
+       - Final account closure
     
     Body should contain:
     {
@@ -2496,7 +2504,7 @@ async def initiate_account_closure_endpoint(
     }
     """
     try:
-        logger.info(f"Initiating closure for account {account_id}")
+        logger.info(f"Initiating AUTOMATED closure for account {account_id}")
         
         # Validate request data
         ach_relationship_id = request_data.get("ach_relationship_id")
@@ -2512,17 +2520,49 @@ async def initiate_account_closure_endpoint(
                 detail="Both liquidation and irreversible action confirmations are required"
             )
         
+        # CRITICAL FIX: Get user_id from Supabase for automated process using async pattern
+        try:
+            from utils.supabase.db_client import get_user_id_by_alpaca_account_id
+            
+            # Use async wrapper to prevent event loop blocking
+            user_id = await asyncio.to_thread(get_user_id_by_alpaca_account_id, account_id)
+            
+            if not user_id:
+                raise HTTPException(status_code=404, detail="User not found for account ID")
+                
+            logger.info(f"Found user_id {user_id} for account {account_id}")
+            
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions without modification
+        except Exception as e:
+            logger.error(f"Failed to get user_id for account {account_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to identify user for automated process")
+        
         # Use sandbox mode based on environment
         sandbox = os.getenv("ALPACA_ENVIRONMENT", "sandbox").lower() == "sandbox"
-        result = initiate_account_closure(account_id, ach_relationship_id, sandbox=sandbox)
+        
+        # CRITICAL FIX: Use AutomatedAccountClosureProcessor instead of basic initiation
+        from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+        
+        processor = AutomatedAccountClosureProcessor(sandbox=sandbox)
+        result = await processor.initiate_automated_closure(
+            user_id=user_id,
+            account_id=account_id, 
+            ach_relationship_id=ach_relationship_id
+        )
+        
+        if result.get("success"):
+            logger.info(f"Automated account closure initiated successfully for account {account_id}")
+        else:
+            logger.error(f"Automated account closure failed for account {account_id}: {result.get('error')}")
         
         return result
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error initiating closure for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error initiating account closure: {str(e)}")
+        logger.error(f"Error initiating automated closure for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error initiating automated account closure: {str(e)}")
 
 @app.get("/account-closure/status/{account_id}")
 async def get_account_closure_status_endpoint(
@@ -2579,23 +2619,30 @@ async def get_account_closure_progress_endpoint(
         # Calculate total steps (excluding failed)
         total_steps = 5
         
-        # Get Supabase data for confirmation number and initiation date
+        # Get Supabase data for confirmation number and initiation date using async pattern
         supabase_data = {}
         try:
-            supabase = get_supabase_client()
+            from utils.supabase.db_client import get_supabase_client
             
-            # Find user by account_id
-            result = supabase.table("user_onboarding").select(
-                "account_closure_confirmation_number, account_closure_initiated_at, onboarding_data"
-            ).eq("alpaca_account_id", account_id).execute()
+            # Helper function for async wrapper
+            def get_account_closure_metadata(account_id: str) -> dict:
+                supabase = get_supabase_client()
+                result = supabase.table("user_onboarding").select(
+                    "account_closure_confirmation_number, account_closure_initiated_at, onboarding_data"
+                ).eq("alpaca_account_id", account_id).execute()
+                
+                if result.data:
+                    user_data = result.data[0]
+                    return {
+                        "confirmation_number": user_data.get("account_closure_confirmation_number"),
+                        "initiated_at": user_data.get("account_closure_initiated_at"),
+                        "closure_details": user_data.get("onboarding_data", {}).get("account_closure", {})
+                    }
+                return {}
             
-            if result.data:
-                user_data = result.data[0]
-                supabase_data = {
-                    "confirmation_number": user_data.get("account_closure_confirmation_number"),
-                    "initiated_at": user_data.get("account_closure_initiated_at"),
-                    "closure_details": user_data.get("onboarding_data", {}).get("account_closure", {})
-                }
+            # Use async wrapper to prevent event loop blocking
+            supabase_data = await asyncio.to_thread(get_account_closure_metadata, account_id)
+            
         except Exception as e:
             logger.warning(f"Could not fetch Supabase data for account {account_id}: {e}")
         
@@ -2775,6 +2822,94 @@ async def resume_account_closure_endpoint(
     except Exception as e:
         logger.error(f"Error resuming closure for account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error resuming account closure: {str(e)}")
+
+# ============================================================================
+# PRODUCTION TASK MONITORING - Account Closure Background Process Management
+# ============================================================================
+
+@app.get("/account-closure/task-status/{account_id}")
+async def get_account_closure_task_status_endpoint(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get status of active background task for a specific account closure.
+    
+    PRODUCTION ENDPOINT: Enables monitoring of running closure processes.
+    """
+    try:
+        from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+        
+        status = AutomatedAccountClosureProcessor.get_active_task_status(account_id)
+        
+        return {
+            "account_id": account_id,
+            "task_status": status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting task status for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
+
+@app.post("/account-closure/cancel-task/{account_id}")
+async def cancel_account_closure_task_endpoint(
+    account_id: str,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Cancel active background task for a specific account closure.
+    
+    PRODUCTION ENDPOINT: Enables stopping runaway or problematic processes.
+    """
+    try:
+        from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+        
+        cancelled = await AutomatedAccountClosureProcessor.cancel_active_task(account_id)
+        
+        if cancelled:
+            logger.info(f"Cancelled closure task for account {account_id}")
+            return {
+                "success": True,
+                "message": f"Task for account {account_id} has been cancelled",
+                "account_id": account_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"No active task found for account {account_id}",
+                "account_id": account_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        
+    except Exception as e:
+        logger.error(f"Error cancelling task for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error cancelling task: {str(e)}")
+
+@app.get("/account-closure/all-active-tasks")
+async def get_all_active_tasks_endpoint(
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get status of all active account closure tasks across the system.
+    
+    PRODUCTION MONITORING: Provides system-wide visibility of running processes.
+    """
+    try:
+        from utils.alpaca.automated_account_closure import AutomatedAccountClosureProcessor
+        
+        all_tasks = AutomatedAccountClosureProcessor.get_all_active_tasks()
+        
+        return {
+            "active_tasks": all_tasks,
+            "total_active": len(all_tasks),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting all active tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting active tasks: {str(e)}")
 
 # WebSocket Endpoint (Remaining at the end as it was before)
 @app.websocket("/ws/portfolio/{account_id}")

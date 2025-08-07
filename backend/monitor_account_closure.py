@@ -35,20 +35,134 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import sys
 
-# Add the backend directory to the Python path
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(backend_dir)
+# ARCHITECTURAL FIX: Service Factory Pattern for Production-Grade Dependency Management
+class ServiceFactory:
+    """
+    Production-grade service factory that handles lazy loading and dependency injection.
+    
+    This ensures:
+    - Services are available when imported as module or run as script
+    - Graceful degradation when dependencies are unavailable
+    - No hidden coupling to execution context
+    - Thread-safe singleton pattern
+    """
+    
+    _instance = None
+    _services = {}
+    _database_available = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ServiceFactory, cls).__new__(cls)
+        return cls._instance
+    
+    def _ensure_path_setup(self):
+        """Ensure backend directory is in Python path."""
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        if backend_dir not in sys.path:
+            sys.path.insert(0, backend_dir)
+    
+    def _load_services(self):
+        """Lazy load all database services with comprehensive error handling."""
+        if self._database_available is not None:
+            return  # Already loaded
+        
+        self._ensure_path_setup()
+        
+        try:
+            # CRITICAL FIX: Handle import-time initialization failures
+            # Services might fail during import due to missing env vars, db connection issues, etc.
+            
+            # Set up environment for imports if needed
+            self._setup_environment()
+            
+            # Import services with full exception handling
+            from utils.supabase.account_closure_service import account_closure_service
+            from utils.supabase.account_closure_analytics import account_closure_analytics
+            from utils.supabase.user_closure_service import user_closure_service
+            from utils.supabase.db_client import get_user_alpaca_account_id
+            
+            # Store services in registry
+            self._services = {
+                'account_closure_service': account_closure_service,
+                'account_closure_analytics': account_closure_analytics,
+                'user_closure_service': user_closure_service,
+                'get_user_alpaca_account_id': get_user_alpaca_account_id
+            }
+            self._database_available = True
+            
+        except Exception as e:
+            # Any failure during import means services are unavailable
+            self._database_available = False
+            self._services = {}
+            # Only print warning if we're running as main script
+            if __name__ == "__main__":
+                print(f"⚠️ Database logging not available: {e}")
+    
+    def _setup_environment(self):
+        """Setup environment variables if needed."""
+        import os
+        
+        # Load .env file if it exists and environment variables are missing
+        if not os.getenv("SUPABASE_URL"):
+            env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+            if os.path.exists(env_file):
+                try:
+                    from dotenv import load_dotenv
+                    load_dotenv(env_file)
+                except ImportError:
+                    pass  # dotenv not available, that's fine
+    
+    @property
+    def database_available(self) -> bool:
+        """Check if database services are available."""
+        if self._database_available is None:
+            self._load_services()
+        return self._database_available if self._database_available is not None else False
+    
+    def get_service(self, service_name: str):
+        """Get a service by name with lazy loading."""
+        if not self.database_available:
+            return None
+        return self._services.get(service_name)
+    
+    def validate_service(self, service_name: str) -> bool:
+        """Validate that a service is available and callable."""
+        service = self.get_service(service_name)
+        return service is not None
+    
+    def get_service_status(self) -> Dict[str, bool]:
+        """Get status of all services for debugging."""
+        return {
+            'database_available': self.database_available,
+            'account_closure_service': self.validate_service('account_closure_service'),
+            'account_closure_analytics': self.validate_service('account_closure_analytics'),
+            'user_closure_service': self.validate_service('user_closure_service'),
+            'get_user_alpaca_account_id': self.validate_service('get_user_alpaca_account_id')
+        }
+    
+    @property
+    def account_closure_service(self):
+        """Get account closure service."""
+        return self.get_service('account_closure_service')
+    
+    @property
+    def account_closure_analytics(self):
+        """Get account closure analytics service."""
+        return self.get_service('account_closure_analytics')
+    
+    @property
+    def user_closure_service(self):
+        """Get user closure service."""
+        return self.get_service('user_closure_service')
+    
+    @property
+    def get_user_alpaca_account_id(self):
+        """Get user alpaca account ID function."""
+        return self.get_service('get_user_alpaca_account_id')
 
-# Import database functions
-try:
-    from utils.supabase.account_closure_service import account_closure_service
-    from utils.supabase.account_closure_analytics import account_closure_analytics
-    from utils.supabase.user_closure_service import user_closure_service
-    from utils.supabase.db_client import get_user_alpaca_account_id
-    DATABASE_AVAILABLE = True
-except ImportError as e:
-    DATABASE_AVAILABLE = False
-    print(f"⚠️ Database logging not available: {e}")
+# Global service factory instance
+services = ServiceFactory()
 
 # Color codes for terminal output
 class Colors:
@@ -112,12 +226,12 @@ def format_database_log(log_entry: Dict[str, Any]) -> str:
 
 def show_database_logs(account_id: Optional[str] = None, user_id: Optional[str] = None, limit: int = 50):
     """Show recent database logs."""
-    if not DATABASE_AVAILABLE:
+    if not services.database_available:
         print(f"{Colors.YELLOW}Database logging not available{Colors.END}")
         return
     
     try:
-        logs = account_closure_service.get_logs_with_filters(
+        logs = services.account_closure_service.get_logs_with_filters(
             account_id=account_id,
             user_id=user_id,
             limit=limit
@@ -139,12 +253,12 @@ def show_database_logs(account_id: Optional[str] = None, user_id: Optional[str] 
 
 def show_account_summary(account_id: str):
     """Show account closure summary."""
-    if not DATABASE_AVAILABLE:
+    if not services.database_available:
         print(f"{Colors.YELLOW}Database logging not available{Colors.END}")
         return
     
     try:
-        summary = account_closure_service.get_account_summary(account_id)
+        summary = services.account_closure_service.get_account_summary(account_id)
         
         if not summary:
             print(f"{Colors.YELLOW}No summary found for account {account_id}{Colors.END}")
@@ -166,13 +280,13 @@ def show_account_summary(account_id: str):
 
 def show_user_logs(user_id: str, limit: int = 50):
     """Show logs for a specific user."""
-    if not DATABASE_AVAILABLE:
+    if not services.database_available:
         print(f"{Colors.YELLOW}Database logging not available{Colors.END}")
         return
     
     try:
         # Get the user's Alpaca account ID
-        account_id = get_user_alpaca_account_id(user_id)
+        account_id = services.get_user_alpaca_account_id(user_id)
         
         if not account_id:
             print(f"{Colors.YELLOW}No Alpaca account found for user {user_id}{Colors.END}")
@@ -189,12 +303,12 @@ def show_user_logs(user_id: str, limit: int = 50):
 
 def show_statistics(days: int = 30):
     """Show account closure statistics."""
-    if not DATABASE_AVAILABLE:
+    if not services.database_available:
         print(f"{Colors.YELLOW}Database logging not available{Colors.END}")
         return
     
     try:
-        stats = account_closure_analytics.generate_statistics(days)
+        stats = services.account_closure_analytics.generate_statistics(days)
         
         print(f"\n{Colors.BOLD}📈 Account Closure Statistics (Last {days} days):{Colors.END}")
         print(f"{Colors.CYAN}{'='*60}{Colors.END}")
@@ -223,12 +337,12 @@ def show_statistics(days: int = 30):
 
 def cleanup_logs(days_to_keep: int = 180):
     """Clean up old logs."""
-    if not DATABASE_AVAILABLE:
+    if not services.database_available:
         print(f"{Colors.YELLOW}Database logging not available{Colors.END}")
         return
     
     try:
-        deleted_count = account_closure_service.cleanup_old_logs(days_to_keep)
+        deleted_count = services.account_closure_service.cleanup_old_logs(days_to_keep)
         print(f"{Colors.GREEN}✅ Cleaned up {deleted_count} old log entries (older than {days_to_keep} days){Colors.END}")
         
     except Exception as e:
@@ -236,7 +350,7 @@ def cleanup_logs(days_to_keep: int = 180):
 
 def monitor_database_logs(account_id: Optional[str] = None, user_id: Optional[str] = None):
     """Monitor database logs in real-time."""
-    if not DATABASE_AVAILABLE:
+    if not services.database_available:
         print(f"{Colors.YELLOW}Database logging not available{Colors.END}")
         return
     
@@ -252,7 +366,7 @@ def monitor_database_logs(account_id: Optional[str] = None, user_id: Optional[st
     try:
         while True:
             # Get latest logs
-            logs = account_closure_service.get_logs_with_filters(
+            logs = services.account_closure_service.get_logs_with_filters(
                 account_id=account_id,
                 user_id=user_id,
                 limit=10
@@ -307,6 +421,27 @@ def monitor_database_logs(account_id: Optional[str] = None, user_id: Optional[st
     except KeyboardInterrupt:
         print(f"\n\n{Colors.YELLOW}Monitoring stopped by user{Colors.END}")
 
+def show_service_diagnostics():
+    """Show service availability diagnostics for troubleshooting."""
+    print(f"\n{Colors.BOLD}🔧 Service Diagnostics:{Colors.END}")
+    print(f"{Colors.CYAN}{'='*50}{Colors.END}")
+    
+    status = services.get_service_status()
+    
+    for service_name, available in status.items():
+        status_color = Colors.GREEN if available else Colors.RED
+        status_text = "✅ Available" if available else "❌ Unavailable"
+        print(f"{service_name}: {status_color}{status_text}{Colors.END}")
+    
+    print(f"{Colors.CYAN}{'='*50}{Colors.END}")
+    
+    if not services.database_available:
+        print(f"\n{Colors.YELLOW}💡 Troubleshooting Tips:{Colors.END}")
+        print("1. Ensure all dependencies are installed: pip install -r requirements.txt")
+        print("2. Check environment variables (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)")
+        print("3. Verify database connectivity")
+        print("4. Check if Supabase services are running")
+
 def main():
     parser = argparse.ArgumentParser(description="Account closure log monitor")
     parser.add_argument("account_id", nargs="?", help="Specific account ID to monitor")
@@ -318,6 +453,7 @@ def main():
     parser.add_argument("--summary", "-m", action="store_true", help="Show account closure summary")
     parser.add_argument("--user", "-u", type=str, help="Show logs for a specific user ID")
     parser.add_argument("--days", type=int, default=180, help="Number of days for statistics/cleanup (default: 180, i.e. 6 months)")
+    parser.add_argument("--diagnostics", "-x", action="store_true", help="Show service diagnostics")
     
     args = parser.parse_args()
     
@@ -327,6 +463,10 @@ def main():
     print(f"{Colors.END}")
     
     # Handle special commands
+    if args.diagnostics:
+        show_service_diagnostics()
+        return
+    
     if args.stats:
         show_statistics(args.days)
         return

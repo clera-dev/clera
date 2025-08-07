@@ -41,11 +41,11 @@ export function useAccountClosure(): UseAccountClosureReturn {
     // PRODUCTION UX: Set maximum loading time to prevent blocking navigation
     const maxLoadingTimeout = setTimeout(() => {
       if (isMountedRef.current && loadingRef.current) {
-        console.warn('[useAccountClosure] Timeout reached, stopping loading to allow navigation');
+        console.log('[useAccountClosure] Loading timeout reached, allowing navigation');
         setLoading(false);
         setError(null); // Don't show error for timeout
       }
-    }, 3000); // 3 second maximum
+    }, 6000); // 6 second maximum to accommodate slower API calls
     
     const fetchClosureDataWrapper = async () => {
       const supabase = createClient();
@@ -54,6 +54,34 @@ export function useAccountClosure(): UseAccountClosureReturn {
       if (!user) {
         if (isMountedRef.current) {
           setLoading(false);
+        }
+        clearTimeout(maxLoadingTimeout);
+        return;
+      }
+      
+      // ARCHITECTURAL FIX: Use service layer instead of direct database query
+      // This maintains proper layering boundaries and follows established patterns
+      let userStatusData;
+      try {
+        userStatusData = await accountClosureService.getUserStatus();
+      } catch (err) {
+        // Handle getUserStatus errors gracefully - treat as "no pending closure"
+        console.warn('[useAccountClosure] Error fetching user status, treating as no pending closure:', err);
+        if (isMountedRef.current) {
+          setClosureData(null);
+          setLoading(false);
+          setError(null);
+        }
+        clearTimeout(maxLoadingTimeout);
+        return;
+      }
+      
+      if (!userStatusData || userStatusData.status !== 'pending_closure') {
+        // User doesn't have pending closure status - no need to fetch closure data
+        if (isMountedRef.current) {
+          setClosureData(null);
+          setLoading(false);
+          setError(null);
         }
         clearTimeout(maxLoadingTimeout);
         return;

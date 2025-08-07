@@ -1,0 +1,42 @@
+Account Closure Confirmation
+
+Dear {{ user_name }},
+
+We have received and processed your account closure request. Your account closure process has been initiated and is now in progress.
+
+CONFIRMATION DETAILS
+===================
+Confirmation Number: {{ confirmation_number }}
+Account ID: {{ account_id }}
+Request Date: {{ request_date }}
+Estimated Completion: {{ estimated_completion }}
+
+WHAT HAPPENS NEXT
+================
+• Holdings Liquidation: All your investments will be sold at current market prices
+• Fund Transfer: Resulting cash will be transferred to your connected bank account
+• Account Closure: Your account will be permanently closed once all transfers complete
+• Final Documentation: You will receive final account statements and tax documents
+
+Timeline: Please allow {{ estimated_completion }} for this process to complete.
+
+⚠️ IMPORTANT NOTICE
+==================
+This process cannot be reversed once liquidation begins. Your account closure is now in progress and cannot be canceled.
+
+QUESTIONS OR CONCERNS?
+======================
+Our support team is available to help you during this process:
+
+Email: {{ support_email }}
+
+Please reference your confirmation number {{ confirmation_number }} when contacting support.
+
+Thank you for choosing Clera. We're here to help if you need anything during this transition.
+
+Best regards,
+The Clera Team
+
+---
+This is an automated message. Please do not reply to this email.
+© {{ current_year }} Clera. All rights reserved. 

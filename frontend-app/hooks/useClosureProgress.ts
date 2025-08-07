@@ -17,7 +17,7 @@ export interface UseClosureProgressReturn {
  * Custom hook for managing closure progress polling and retry logic
  * Handles step state management, auto-refresh, and retry mechanisms
  */
-export function useClosureProgress(userId: string): UseClosureProgressReturn {
+export function useClosureProgress(userId: string | undefined): UseClosureProgressReturn {
   const [closureSteps, setClosureSteps] = useState<ClosureStep[]>(() => 
     accountClosureService.getInitialClosureSteps()
   );
@@ -34,10 +34,36 @@ export function useClosureProgress(userId: string): UseClosureProgressReturn {
    * Fetch closure progress and update steps
    */
   const fetchClosureProgress = useCallback(async (): Promise<void> => {
+    // Skip if no user ID provided
+    if (!userId) {
+      // Don't log this as it's normal during initial load
+      setLastUpdateStatus('success');
+      return;
+    }
+    
     try {
       setLastUpdateStatus('loading');
       
-      const progressData = await accountClosureService.fetchClosureProgress(userId);
+      // PRODUCTION FIX: Only fetch progress for users with pending_closure status
+      // Use accountClosureService to maintain proper layering
+      const userStatusData = await accountClosureService.getUserStatus();
+      
+      // CRITICAL FIX: Distinguish between API errors and valid non-pending status
+      if (!userStatusData) {
+        // API/network error - don't mask this, set error state
+        console.error('[useClosureProgress] Failed to fetch user status - API/network error');
+        setLastUpdateStatus('error');
+        return;
+      }
+      
+      if (userStatusData.status !== 'pending_closure') {
+        // User doesn't have pending closure status - no need to fetch progress
+        setLastUpdateStatus('success');
+        return;
+      }
+      
+      // PERFORMANCE FIX: Pass userStatusData to avoid duplicate API call
+      const progressData = await accountClosureService.fetchClosureProgress(userStatusData);
       
       if (progressData) {
         // Update closure steps based on progress
@@ -48,6 +74,10 @@ export function useClosureProgress(userId: string): UseClosureProgressReturn {
         
         setLastUpdateStatus('success');
       } else {
+        // Progress data is null - this could be legitimate (no account) or an error
+        // We need to distinguish between these cases
+        // For now, treat null as an error to avoid hiding real backend/network issues
+        console.warn('[useClosureProgress] No progress data returned for user:', userId);
         setLastUpdateStatus('error');
       }
     } catch (error) {
@@ -60,10 +90,15 @@ export function useClosureProgress(userId: string): UseClosureProgressReturn {
    * Handle retry/resume process
    */
   const handleRetryResume = useCallback(async (): Promise<void> => {
+    if (!userId) {
+      console.warn('[useClosureProgress] Cannot retry without user ID');
+      return;
+    }
+    
     try {
       setIsRetrying(true);
       
-      const result = await accountClosureService.retryClosureProcess(userId);
+      const result = await accountClosureService.retryClosureProcess();
       
       if (result.success) {
         console.log('[useClosureProgress] Resume successful, action taken:', result.action_taken);
@@ -113,13 +148,18 @@ export function useClosureProgress(userId: string): UseClosureProgressReturn {
 
   // Initial load and polling effect
   useEffect(() => {
+    // Only start polling when we have a valid user ID
+    if (!userId) {
+      return;
+    }
+    
     fetchClosureProgress();
     
     // Poll for progress updates every 60 seconds
     const progressInterval = setInterval(fetchClosureProgress, 60000);
     
     return () => clearInterval(progressInterval);
-  }, [fetchClosureProgress]);
+  }, [fetchClosureProgress, userId]);
 
   return {
     closureSteps,

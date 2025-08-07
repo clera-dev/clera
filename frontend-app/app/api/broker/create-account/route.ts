@@ -106,14 +106,15 @@ export async function POST(request: Request) {
         try {
           const errorData = JSON.parse(errorText);
           if (errorData.detail && errorData.detail.code === "EMAIL_EXISTS") {
-            return NextResponse.json(
-              { 
-                error: 'An account with this email already exists',
-                code: 'EMAIL_EXISTS',
-                accountExists: true
-              },
-              { status: 409 }
-            );
+            // Pass through the detailed error information from backend
+                          return NextResponse.json(
+                {
+                  error: errorData.detail.message,
+                  code: errorData.detail.code,
+                  accountExists: true
+                },
+                { status: 409 }
+              );
           }
         } catch (parseError) {
           // If we can't parse the error, still return a generic 409 message

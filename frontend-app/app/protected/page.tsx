@@ -7,7 +7,7 @@ import OnboardingFlow from '@/components/onboarding/OnboardingFlow';
 import { getOnboardingDataAction } from '@/app/actions';
 import { InfoIcon } from 'lucide-react';
 import ManualBankEntry from '@/components/funding/ManualBankEntry';
-import AccountClosurePending from '@/components/account/AccountClosurePending';
+
 import { Skeleton } from '@/components/ui/skeleton';
 
 type FundingStep = 'welcome' | 'connect-bank';
@@ -106,9 +106,7 @@ export default function ProtectedPageClient() {
   
   const hasCompletedOnboarding = userStatus === 'submitted' || userStatus === 'approved';
 
-  if (userStatus === 'pending_closure') {
-    return <AccountClosurePending userId={user.id} />;
-  }
+  // pending_closure users are now redirected to /account-closure by middleware
   
   if (userStatus === 'closed') {
     return (

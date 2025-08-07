@@ -180,7 +180,8 @@ def create_or_get_alpaca_account(account_data: Dict[str, Any]) -> Tuple[Dict[str
         error_str = str(e)
         
         # Check if this is an "account already exists" error
-        if '"code":40910000' in error_str and 'email address already exists' in error_str:
+        if ('"code":40910000' in error_str and 'email address already exists' in error_str) or \
+           ('EMAIL_EXISTS' in error_str):
             email = account_data["contact"]["email_address"]
             logger.info(f"Account with email (redacted) already exists, looking it up")
             

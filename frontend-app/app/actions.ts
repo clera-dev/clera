@@ -5,9 +5,8 @@ import { createClient } from "@/utils/supabase/server";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { OnboardingData } from "@/lib/types/onboarding";
-
-export type OnboardingStatus = 'not_started' | 'in_progress' | 'submitted' | 'approved' | 'rejected' | 'pending_closure' | 'closed';
+import { OnboardingData, OnboardingStatus } from "@/lib/types/onboarding";
+import { getRedirectPathWithServerTransferLookup } from "@/lib/utils/userRouting";
 
 /**
  * Waits for auth state to be consistent after authentication operations.
@@ -57,6 +56,8 @@ async function waitForAuthStateConsistency(
   
   throw new Error('Auth state consistency check failed');
 }
+
+
 
 export const signUpAction = async (formData: FormData) => {
   const email = formData.get("email")?.toString();
@@ -120,29 +121,10 @@ export const signUpAction = async (formData: FormData) => {
       
       const userStatus = onboardingData?.status;
       
-      // Handle account closure statuses
-      if (userStatus === 'pending_closure' || userStatus === 'closed') {
-        // Redirect to protected page to handle closure status
-        return redirect("/protected");
-      }
-      
-      const hasCompletedOnboarding = 
-        userStatus === 'submitted' || 
-        userStatus === 'approved';
-      
-      if (hasCompletedOnboarding) {
-        // Check if user has funded their account (has transfers)
-        const { data: transfers } = await supabase
-          .from('user_transfers')
-          .select('id')
-          .eq('user_id', user.id)
-          .limit(1);
-        
-        // If they have completed onboarding and have funded their account, go to portfolio
-        if (transfers && transfers.length > 0) {
-          return redirect("/portfolio");
-        }
-      }
+      // ARCHITECTURAL FIX: Use centralized routing logic with proper server-side transfer lookup
+      // This eliminates duplicate Supabase queries and maintains proper client/server separation
+      const redirectPath = await getRedirectPathWithServerTransferLookup(userStatus, user.id, supabase);
+      return redirect(redirectPath);
     }
     
     // Default: redirect to protected route to start onboarding
@@ -183,29 +165,10 @@ export const signInAction = async (formData: FormData) => {
     
     const userStatus = onboardingData?.status;
     
-    // Handle account closure statuses
-    if (userStatus === 'pending_closure' || userStatus === 'closed') {
-      // Redirect to protected page to handle closure status
-      return redirect("/protected");
-    }
-    
-    const hasCompletedOnboarding = 
-      userStatus === 'submitted' || 
-      userStatus === 'approved';
-    
-    if (hasCompletedOnboarding) {
-      // Check if user has funded their account (has transfers)
-      const { data: transfers } = await supabase
-        .from('user_transfers')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-      
-      // If they have completed onboarding and have funded their account, go to portfolio
-      if (transfers && transfers.length > 0) {
-        return redirect("/portfolio");
-      }
-    }
+    // ARCHITECTURAL FIX: Use centralized routing logic with proper server-side transfer lookup
+    // This eliminates duplicate Supabase queries and maintains proper client/server separation
+    const redirectPath = await getRedirectPathWithServerTransferLookup(userStatus, user.id, supabase);
+    return redirect(redirectPath);
   }
 
   // Default: go to protected page for onboarding or funding
