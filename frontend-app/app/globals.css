@@ -354,6 +354,94 @@ body > div:last-child:not([id]):not([class]) {
   }
 }
 
+/* Safe area support for mobile browsers */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0);
+}
+
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+/* Mobile viewport fixes */
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari specific fixes */
+  .mobile-viewport-fix {
+    height: -webkit-fill-available;
+  }
+}
+
+/* Prevent double scroll bars on mobile */
+@media (max-width: 768px) {
+  body {
+    overflow: hidden;
+    height: 100vh;
+    height: 100dvh; /* Use dynamic viewport height when available */
+  }
+  
+  main {
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Dynamic mobile navigation height */
+:root {
+  --mobile-nav-height: 80px;
+  --viewport-height: 100vh;
+}
+
+/* Utility classes for dynamic mobile positioning */
+.mobile-footer-above-nav {
+  bottom: calc(var(--mobile-nav-height) + 8px);
+}
+
+.mobile-content-height {
+  height: calc(var(--viewport-height) - var(--mobile-nav-height));
+  max-height: calc(var(--viewport-height) - var(--mobile-nav-height));
+}
+
+/* Chat specific mobile responsiveness */
+.mobile-chat-container {
+  height: calc(var(--viewport-height) - var(--mobile-nav-height));
+  max-height: calc(var(--viewport-height) - var(--mobile-nav-height));
+}
+
+.mobile-chat-messages {
+  height: calc(var(--viewport-height) - var(--mobile-nav-height) - 120px); /* Account for header and input */
+  max-height: calc(var(--viewport-height) - var(--mobile-nav-height) - 120px);
+}
+
+/* Mobile suggested questions optimization */
+@media (max-width: 768px) {
+  .mobile-suggested-questions {
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  
+  .mobile-suggested-questions .grid {
+    gap: 0.5rem;
+  }
+  
+  .mobile-suggested-questions button {
+    min-height: 2.5rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    padding: 0.5rem 0.75rem;
+  }
+}
+
 /* Enhanced dialog backdrop for better contrast */
 [data-radix-dialog-overlay] {
   background-color: rgba(0, 0, 0, 0.75);

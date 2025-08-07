@@ -26,6 +26,8 @@ interface CleraAssistContextType {
   // Callbacks
   onToggleSideChat?: () => void;
   sideChatVisible?: boolean;
+  onToggleMobileChat?: () => void;
+  mobileChatVisible?: boolean;
 }
 
 const CleraAssistContext = createContext<CleraAssistContextType | undefined>(undefined);
@@ -34,12 +36,16 @@ interface CleraAssistProviderProps {
   children: ReactNode;
   onToggleSideChat?: () => void;
   sideChatVisible?: boolean;
+  onToggleMobileChat?: () => void;
+  mobileChatVisible?: boolean;
 }
 
 export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   children,
   onToggleSideChat,
-  sideChatVisible = false
+  sideChatVisible = false,
+  onToggleMobileChat,
+  mobileChatVisible = false
 }) => {
   const [userPreferences, setUserPreferencesState] = useState<UserPreferences>({
     isEnabled: true,
@@ -78,9 +84,19 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   }, [userPreferences]);
 
   const openChatWithPrompt = useCallback((prompt: string, context?: string) => {
-    // If we have a side chat toggle function, use it
-    if (onToggleSideChat && !sideChatVisible) {
-      onToggleSideChat();
+    // Detect if we're on mobile
+    const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
+    
+    if (isMobile) {
+      // Mobile: Use mobile chat toggle
+      if (onToggleMobileChat && !mobileChatVisible) {
+        onToggleMobileChat();
+      }
+    } else {
+      // Desktop: Use side chat toggle
+      if (onToggleSideChat && !sideChatVisible) {
+        onToggleSideChat();
+      }
     }
     
     // Wait a moment for the chat to open, then send the prompt
@@ -92,7 +108,7 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
     }, 100);
     
     setIsChatOpen(true);
-  }, [onToggleSideChat, sideChatVisible]);
+  }, [onToggleSideChat, sideChatVisible, onToggleMobileChat, mobileChatVisible]);
 
   const setUserPreferences = useCallback((newPreferences: Partial<UserPreferences>) => {
     setUserPreferencesState(prev => ({
@@ -120,7 +136,7 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
     isEnabled: userPreferences.isEnabled,
     userPreferences,
     currentPage,
-    isChatOpen: sideChatVisible,
+    isChatOpen: sideChatVisible || mobileChatVisible,
     
     // Actions
     openChatWithPrompt,
@@ -131,7 +147,9 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
     
     // Callbacks
     onToggleSideChat,
-    sideChatVisible
+    sideChatVisible,
+    onToggleMobileChat,
+    mobileChatVisible
   };
 
   return (

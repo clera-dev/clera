@@ -7,6 +7,7 @@ import Chat from '@/components/chat/Chat';
 import MobileChatHistory from '@/components/mobile/MobileChatHistory';
 import { createClient } from '@/utils/supabase/client';
 import { cn, getAlpacaAccountId } from '@/lib/utils';
+import { useMobileNavHeight } from '@/hooks/useMobileNavHeight';
 
 interface MobileChatModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export default function MobileChatModal({
   isOpen,
   onClose
 }: MobileChatModalProps) {
+  const { navHeight, viewportHeight } = useMobileNavHeight();
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -29,6 +31,29 @@ export default function MobileChatModal({
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [initialPrompt, setInitialPrompt] = useState<string | null>(null);
+
+  // Listen for Clera Assist prompts
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleCleraAssistPrompt = (event: CustomEvent) => {
+      const { prompt } = event.detail;
+      if (prompt) {
+        // For Clera Assist prompts, clear current session to force new chat
+        console.log('Clera Assist prompt received, preparing new chat:', prompt);
+        setCurrentSessionId(null); // This will force a new session when message is sent
+        setInitialMessages([]); // Clear any existing messages
+        setInitialPrompt(prompt);
+        setRefreshTrigger(prev => prev + 1); // Trigger refresh to ensure clean state
+      }
+    };
+
+    window.addEventListener('cleraAssistPrompt', handleCleraAssistPrompt as EventListener);
+    return () => {
+      window.removeEventListener('cleraAssistPrompt', handleCleraAssistPrompt as EventListener);
+    };
+  }, [isOpen]);
 
   // Load user data when modal opens
   useEffect(() => {
@@ -88,6 +113,7 @@ export default function MobileChatModal({
   const handleNewChat = () => {
     setCurrentSessionId(null);
     setInitialMessages([]);
+    setInitialPrompt(null);
     setRefreshTrigger(prev => prev + 1);
   };
 
@@ -139,7 +165,7 @@ export default function MobileChatModal({
           isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
         style={{
-          bottom: '80px' // Space for flat bottom navigation
+          bottom: `${navHeight}px` // Dynamic space for bottom navigation
         }}
         onClick={onClose}
       />
@@ -147,15 +173,15 @@ export default function MobileChatModal({
       {/* Modal container with slide-up animation - fills available space */}
       <div 
         className={cn(
-          "fixed inset-x-0 z-60 bg-background shadow-2xl transition-transform duration-300 ease-in-out flex flex-col",
+          "fixed inset-x-0 z-60 bg-background shadow-2xl transition-all duration-300 ease-in-out flex flex-col",
           isOpen ? "translate-y-0" : "translate-y-full"
         )}
         style={{
-          // Fill from top to rest on flat bottom nav
+          // Dynamic fill from top to rest on bottom nav
           transformOrigin: 'bottom center',
           top: '0',
-          bottom: '80px', // Standard nav bar height (h-20 = 80px)
-          height: 'calc(100vh - 80px)'
+          bottom: `${navHeight}px`, // Dynamic nav bar height
+          height: viewportHeight > 0 ? `${viewportHeight - navHeight}px` : `calc(100vh - ${navHeight}px)`
         }}
       >
         {/* Minimal header with icon buttons - no subtitle */}
@@ -198,6 +224,7 @@ export default function MobileChatModal({
               onSessionCreated={handleSessionCreated}
               onMessageSent={handleMessageSent}
               isSidebarMode={false}
+              initialPrompt={initialPrompt || undefined}
             />
           ) : error ? (
             <div className="flex items-center justify-center h-full px-4">

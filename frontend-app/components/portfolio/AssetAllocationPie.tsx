@@ -85,14 +85,15 @@ const CustomTooltip = ({ active, payload }: any) => {
 
 const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId, refreshTimestamp, sideChatVisible = false }) => {
     const [viewType, setViewType] = useState<'assetClass' | 'sector'>('assetClass');
-    
+    // Add mobile detection
+    const [isMobile, setIsMobile] = useState(false);
     // State for sector allocation data
     const [sectorData, setSectorData] = useState<SectorAllocationData | null>(null);
     const [isSectorLoading, setIsSectorLoading] = useState<boolean>(false);
     const [sectorError, setSectorError] = useState<string | null>(null);
 
-    // Use compact layout when chat sidebar is visible (splits screen in half)
-    const useCompactLayout = sideChatVisible;
+    // Use compact layout when chat sidebar is visible (splits screen in half) or on mobile
+    const useCompactLayout = sideChatVisible || isMobile;
 
     // Fetch sector data when the sector tab is active and accountId is available
     useEffect(() => {
@@ -220,6 +221,16 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
         }).sort((a, b) => b.rawValue - a.rawValue);
 
     }, [positions, cashStockBondData]);
+
+    // Add effect to detect mobile
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     // Conditional rendering based on viewType
     const renderContent = () => {
