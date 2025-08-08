@@ -110,6 +110,13 @@ export default function MobileChatModal({
     initializeUserData();
   }, [isOpen]);
 
+  // Clear any pending initial prompt when modal closes to avoid unintended auto-submissions
+  useEffect(() => {
+    if (!isOpen && initialPrompt) {
+      setInitialPrompt(null);
+    }
+  }, [isOpen, initialPrompt]);
+
   const handleNewChat = () => {
     setCurrentSessionId(null);
     setInitialMessages([]);
@@ -128,6 +135,10 @@ export default function MobileChatModal({
 
   const handleMessageSent = () => {
     setRefreshTrigger(prev => prev + 1);
+    // Ensure we do not keep stale prompts that could re-submit on reopen
+    if (initialPrompt) {
+      setInitialPrompt(null);
+    }
   };
 
   // Prevent body scroll when modal is open

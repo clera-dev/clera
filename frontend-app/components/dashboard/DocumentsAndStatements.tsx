@@ -12,7 +12,8 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle,
-  Loader2
+  Loader2,
+  ChevronDown
 } from "lucide-react";
 import { getAlpacaAccountId } from "@/lib/utils"; // Import reliable account ID utility
 
@@ -70,18 +71,18 @@ const getDocumentTypeColor = (type: string) => {
 const getDocumentTypeIcon = (type: string) => {
   switch (type) {
     case 'account_statement':
-      return <FileText className="h-5 w-5 text-blue-600" />;
+      return <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />;
     case 'trade_confirmation':
-      return <CheckCircle className="h-5 w-5 text-green-600" />;
+      return <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />;
     case 'tax_statement':
     case 'tax_1099_b_form':
     case 'tax_1099_div_form':
     case 'tax_1099_int_form':
-      return <FileText className="h-5 w-5 text-purple-600" />;
+      return <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-purple-600" />;
     case 'account_application':
-      return <FileText className="h-5 w-5 text-orange-600" />;
+      return <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-orange-600" />;
     default:
-      return <FileText className="h-5 w-5 text-gray-500" />;
+      return <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500" />;
   }
 };
 
@@ -178,19 +179,16 @@ interface DocumentTypeSelectorProps {
 }
 
 const DocumentTypeSelector = ({ documentType, onDocumentTypeChange }: DocumentTypeSelectorProps) => (
-  <div className="flex items-center gap-2">
-    <span className="text-sm text-muted-foreground">Filter:</span>
-    <select
-      value={documentType}
-      onChange={(e) => onDocumentTypeChange(e.target.value as DocumentType)}
-      className="text-sm border border-border rounded px-2 py-1 bg-background text-foreground"
-    >
-      <option value="all">All Documents</option>
-      <option value="account_statement">Account Statements</option>
-      <option value="trade_confirmation">Trade Confirmations</option>
-      <option value="tax_statement">Tax Documents</option>
-    </select>
-  </div>
+  <select
+    value={documentType}
+    onChange={(e) => onDocumentTypeChange(e.target.value as DocumentType)}
+    className="text-xs sm:text-sm border border-border rounded px-2 py-1 bg-background text-foreground max-w-[120px] sm:max-w-none"
+  >
+    <option value="all">All Documents</option>
+    <option value="account_statement">Account Statements</option>
+    <option value="trade_confirmation">Trade Confirmations</option>
+    <option value="tax_statement">Tax Documents</option>
+  </select>
 );
 
 // Loading State Component
@@ -199,7 +197,7 @@ const DocumentsLoading = () => (
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         <FileText className="h-5 w-5" />
-        Documents and Statements
+        Documents
       </CardTitle>
     </CardHeader>
     <CardContent>
@@ -221,7 +219,7 @@ const DocumentsError = ({ error, onRetry }: DocumentsErrorProps) => (
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         <FileText className="h-5 w-5" />
-        Documents and Statements
+        Documents
       </CardTitle>
     </CardHeader>
     <CardContent>
@@ -290,7 +288,7 @@ const DocumentItem = ({ document, onDownload, onViewDetails, isDownloading }: Do
   return (
     <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors">
       <div 
-        className="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer"
+        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
         onClick={() => onViewDetails(document)}
       >
         <div className="flex-shrink-0">
@@ -298,10 +296,10 @@ const DocumentItem = ({ document, onDownload, onViewDetails, isDownloading }: Do
         </div>
         <div className="flex-grow min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="font-semibold text-foreground text-sm truncate">
+            <p className="font-semibold text-foreground text-[15px] sm:text-sm md:text-base truncate sm:whitespace-normal whitespace-normal break-words">
               {document.display_name}
             </p>
-            <Badge className={`text-xs ${getDocumentTypeColor(document.type)} hidden sm:inline-flex`}>
+            <Badge className={`text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-0.5 ${getDocumentTypeColor(document.type)} hidden sm:inline-flex`}>
               {getDisplayType(document.type)}
             </Badge>
           </div>
@@ -309,7 +307,7 @@ const DocumentItem = ({ document, onDownload, onViewDetails, isDownloading }: Do
             <Calendar className="h-3 w-3" />
             <span>{documentDate.date}</span>
             {/* Show badge on mobile below the date */}
-            <Badge className={`text-xs ${getDocumentTypeColor(document.type)} sm:hidden ml-2`}>
+            <Badge className={`text-[10px] px-2 py-0.5 ${getDocumentTypeColor(document.type)} sm:hidden ml-2`}>
               {getDisplayType(document.type)}
             </Badge>
           </div>
@@ -325,7 +323,7 @@ const DocumentItem = ({ document, onDownload, onViewDetails, isDownloading }: Do
             onDownload(document);
           }}
           disabled={isDownloading}
-          className="h-8 px-2 sm:px-3"
+          className="h-8 px-2 sm:px-3 whitespace-nowrap"
         >
           {isDownloading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -430,12 +428,21 @@ const DocumentDetailsModal = ({ document, isOpen, onClose, onDownload, isDownloa
 
 // Main DocumentsAndStatements Component
 export default function DocumentsAndStatements() {
+  const [isMobile, setIsMobile] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [documentType, setDocumentType] = useState<DocumentType>('all');
   const [selectedDocument, setSelectedDocument] = useState<TradeDocument | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [downloadingDocumentId, setDownloadingDocumentId] = useState<string | null>(null);
 
   const { documents, isLoading, error, refetch } = useDocuments(documentType);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const handleDocumentClick = (document: TradeDocument) => {
     setSelectedDocument(document);
@@ -514,16 +521,36 @@ export default function DocumentsAndStatements() {
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
               Documents
             </CardTitle>
-            <DocumentTypeSelector documentType={documentType} onDocumentTypeChange={setDocumentType} />
+            <div className="flex items-center gap-1 pr-3">
+              {/* Desktop or expanded mobile: show filter on the right */}
+              {(!isMobile || expanded) && (
+                <div className="relative">
+                  <DocumentTypeSelector documentType={documentType} onDocumentTypeChange={setDocumentType} />
+                </div>
+              )}
+              {/* Mobile chevron on far right */}
+              {isMobile && (
+                <button
+                  type="button"
+                  aria-label={expanded ? 'Collapse' : 'Expand'}
+                  onClick={() => setExpanded((e) => !e)}
+                  className="p-1 sm:p-2 rounded-md hover:bg-accent/30 transition-colors"
+                >
+                  <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+              )}
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[300px] lg:h-[350px] pr-4">
+        {(!isMobile || expanded) && (
+          <CardContent>
+          {/* Remove inner scroll on mobile to avoid nested scroll traps; keep on large screens */}
+          <ScrollArea className="h-auto lg:h-[350px] max-h-none pr-0 lg:pr-4">
             <div className="space-y-2">
               {documents.map((document) => (
                 <DocumentItem
@@ -536,7 +563,8 @@ export default function DocumentsAndStatements() {
               ))}
             </div>
           </ScrollArea>
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       <DocumentDetailsModal

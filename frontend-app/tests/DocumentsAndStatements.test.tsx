@@ -100,7 +100,7 @@ describe('DocumentsAndStatements Component', () => {
 
       render(<DocumentsAndStatements />);
       
-      expect(screen.getByText('Documents and Statements')).toBeInTheDocument();
+      expect(screen.getByText('Documents')).toBeInTheDocument();
       expect(screen.getByRole('status')).toBeInTheDocument(); // Loading spinner
     });
   });

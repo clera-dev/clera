@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
   TrendingUp, 
+  ChevronDown,
   Clock, 
   CheckCircle, 
   XCircle, 
@@ -354,19 +355,16 @@ interface TimeRangeSelectorProps {
 }
 
 const TimeRangeSelector = ({ timeRange, onTimeRangeChange }: TimeRangeSelectorProps) => (
-  <div className="flex items-center gap-2">
-    <span className="text-sm text-muted-foreground">Time Range:</span>
-    <select
-      value={timeRange}
-      onChange={(e) => onTimeRangeChange(e.target.value as TimeRange)}
-      className="text-sm border border-border rounded px-2 py-1 bg-background text-foreground"
-    >
-      <option value="1m">1 Month</option>
-      <option value="3m">3 Months</option>
-      <option value="6m">6 Months</option>
-      <option value="1y">1 Year</option>
-    </select>
-  </div>
+  <select
+    value={timeRange}
+    onChange={(e) => onTimeRangeChange(e.target.value as TimeRange)}
+    className="text-sm border border-border rounded px-2 py-1 bg-background text-foreground"
+  >
+    <option value="1m">1 Month</option>
+    <option value="3m">3 Months</option>
+    <option value="6m">6 Months</option>
+    <option value="1y">1 Year</option>
+  </select>
 );
 
 // Loading State Component
@@ -680,9 +678,20 @@ export default function OrderHistory() {
   const [timeRange, setTimeRange] = useState<TimeRange>('1y');
   const [selectedOrder, setSelectedOrder] = useState<OrderHistoryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // Mobile collapse support (must be declared before any early returns)
+  const [isMobile, setIsMobile] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const { orders, isLoading, error, refetch } = useOrderHistory(timeRange);
   const { hasPositions } = usePositionsCheck();
+
+  // Keep hook order stable across renders by running on every render
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const handleOrderClick = (order: OrderHistoryItem) => {
     setSelectedOrder(order);
@@ -720,28 +729,47 @@ export default function OrderHistory() {
   return (
     <>
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
+        <CardHeader className={isMobile ? "select-none" : undefined}>
+          <div className="flex items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />
               Order History
             </CardTitle>
-            <TimeRangeSelector timeRange={timeRange} onTimeRangeChange={setTimeRange} />
+            <div className="flex items-center gap-2">
+              {/* Desktop or expanded mobile: show filter on the right */}
+              {(!isMobile || expanded) && (
+                <TimeRangeSelector timeRange={timeRange} onTimeRangeChange={setTimeRange} />
+              )}
+              {/* Mobile chevron on far right */}
+              {isMobile && (
+                <button
+                  type="button"
+                  aria-label={expanded ? 'Collapse' : 'Expand'}
+                  onClick={() => setExpanded((e) => !e)}
+                  className="p-2 -mr-1 rounded-md hover:bg-accent/30 transition-colors"
+                >
+                  <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+              )}
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[300px] pr-4">
-            <div className="space-y-3">
-              {orders.map((order, index) => (
-                <OrderItem
-                  key={order.id || index}
-                  order={order}
-                  onClick={handleOrderClick}
-                />
-              ))}
-            </div>
-          </ScrollArea>
-        </CardContent>
+        {(!isMobile || expanded) && (
+          <CardContent>
+            {/* Avoid nested scroll on mobile; enable ScrollArea only on larger screens */}
+            <ScrollArea className="h-auto max-h-none pr-0 lg:h-[300px] lg:pr-4">
+              <div className="space-y-3">
+                {orders.map((order, index) => (
+                  <OrderItem
+                    key={order.id || index}
+                    order={order}
+                    onClick={handleOrderClick}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        )}
       </Card>
 
       <OrderDetailsModal

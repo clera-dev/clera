@@ -228,8 +228,10 @@ export default function Chat({
   // --- End Effect for first message ---
 
   // Handle input submission (for new sessions OR subsequent messages)
-  const handleSendMessage = useCallback(async () => {
-    const trimmedInput = input.trim();
+  // Accept an optional content override to avoid racing on state updates (e.g., auto-submit flows)
+  const handleSendMessage = useCallback(async (contentOverride?: string) => {
+    const sourceContent = typeof contentOverride === 'string' ? contentOverride : input;
+    const trimmedInput = sourceContent.trim();
     if (!trimmedInput || isProcessing || isInterrupting) return;
 
     const contentToSend = trimmedInput;
@@ -496,12 +498,9 @@ export default function Chat({
       const submitTimer = setTimeout(() => {
         // Make sure we have all required data and are not processing
         if (!isProcessing && !isInterrupting && accountId && userId) {
-          // Set input temporarily, then immediately call handleSendMessage which will clear it
+          // Call send directly with the prompt to avoid racing on setState
           setInput(initialPrompt);
-          // Use immediate timeout to ensure setInput processes first
-          setTimeout(() => {
-            handleSendMessage();
-          }, 10);
+          handleSendMessage(initialPrompt);
           // Don't set isFirstMessageSent here - let the session creation flow handle it
         } else {
           // Reset the flag if submission was blocked so it can retry
@@ -511,7 +510,7 @@ export default function Chat({
       
       return () => clearTimeout(submitTimer);
     }
-  }, [initialPrompt, isFirstMessageSent, handleSendMessage, accountId, userId]); // Removed isProcessing and isInterrupting from deps
+  }, [initialPrompt, isFirstMessageSent, handleSendMessage, accountId, userId, isProcessing, isInterrupting]);
 
   // Listen for Clera Assist prompts (fallback for runtime events)
   useEffect(() => {
@@ -523,12 +522,11 @@ export default function Chat({
           return;
         }
         
-        // Set the prompt as input
+        // Set the prompt as input and submit using the value directly
         setInput(prompt);
-        // Auto-submit after a delay
         setTimeout(() => {
           if (!isProcessing && !isInterrupting && accountId && userId) {
-            handleSendMessage();
+            handleSendMessage(prompt);
             // Don't set isFirstMessageSent here - let the session creation flow handle it
           }
         }, 200);

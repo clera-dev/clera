@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 
 interface UserPreferences {
   isEnabled: boolean;
@@ -55,7 +56,7 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   });
   
   const [currentPage, setCurrentPage] = useState<string>('');
-  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const { isMobile } = useBreakpoint();
 
   // Load user preferences from localStorage on mount
   React.useEffect(() => {
@@ -84,10 +85,10 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   }, [userPreferences]);
 
   const openChatWithPrompt = useCallback((prompt: string, context?: string) => {
-    // Detect if we're on mobile
-    const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
-    
-    if (isMobile) {
+    // Determine mobile by width only to avoid misclassifying large touch devices
+    const currentlyMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : isMobile;
+
+    if (currentlyMobile) {
       // Mobile: Use mobile chat toggle
       if (onToggleMobileChat && !mobileChatVisible) {
         onToggleMobileChat();
@@ -107,8 +108,7 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
       }));
     }, 100);
     
-    setIsChatOpen(true);
-  }, [onToggleSideChat, sideChatVisible, onToggleMobileChat, mobileChatVisible]);
+  }, [onToggleSideChat, sideChatVisible, onToggleMobileChat, mobileChatVisible, isMobile]);
 
   const setUserPreferences = useCallback((newPreferences: Partial<UserPreferences>) => {
     setUserPreferencesState(prev => ({
@@ -125,18 +125,21 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   }, []);
 
   const toggleChatVisibility = useCallback(() => {
-    if (onToggleSideChat) {
-      onToggleSideChat();
+    const currentlyMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : isMobile;
+    if (currentlyMobile) {
+      onToggleMobileChat?.();
+    } else {
+      onToggleSideChat?.();
     }
-    setIsChatOpen(!isChatOpen);
-  }, [onToggleSideChat, isChatOpen]);
+  }, [onToggleSideChat, onToggleMobileChat, isMobile]);
 
   const contextValue: CleraAssistContextType = {
     // State
     isEnabled: userPreferences.isEnabled,
     userPreferences,
     currentPage,
-    isChatOpen: sideChatVisible || mobileChatVisible,
+    // Single source of truth: visibility comes solely from parent-provided state
+    isChatOpen: !!(sideChatVisible || mobileChatVisible),
     
     // Actions
     openChatWithPrompt,

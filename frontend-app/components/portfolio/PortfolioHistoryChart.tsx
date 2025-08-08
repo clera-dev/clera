@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import { Button } from '@/components/ui/button'; // Assuming button component exists
 import { format, fromUnixTime } from 'date-fns';
-import { useMobileChartTooltip } from '@/components/ui/mobile-tooltip';
+import { useMobileChartTooltip, MobileTooltip } from '@/components/ui/mobile-tooltip';
 
 // Define the props interface matching the data from the parent
 interface PortfolioHistoryData {
@@ -387,8 +387,12 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
         ))}
       </div>
       
-      {/* Mobile Tooltip */}
-      <mobileTooltip.TooltipComponent />
+      {/* Mobile Tooltip - stable component identity */}
+      <MobileTooltip
+        content={mobileTooltip.content}
+        isVisible={mobileTooltip.isVisible}
+        position={mobileTooltip.position}
+      />
     </div>
   );
 };

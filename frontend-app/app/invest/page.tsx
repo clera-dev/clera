@@ -474,7 +474,7 @@ export default function InvestPage() {
 
         {/* Stock Information Dialog */}
         <Dialog open={!!selectedSymbol} onOpenChange={(open) => !open && setSelectedSymbol(null)}>
-          <DialogContent className="w-[100vw] h-[calc(100vh-var(--mobile-nav-height,80px))] sm:w-[95vw] sm:h-[95vh] lg:max-w-[70vw] xl:max-w-[60vw] p-0 sm:max-h-[90vh] overflow-hidden border-0 shadow-xl sm:rounded-lg left-0 top-0 sm:left-1/2 sm:top-1/2 translate-x-0 translate-y-0 sm:-translate-x-1/2 sm:-translate-y-1/2 z-[50] flex flex-col">
+          <DialogContent className="w-[100vw] h-[calc(100vh_-_var(--mobile-nav-height,_80px))] sm:w-[95vw] sm:h-[95vh] lg:max-w-[70vw] xl:max-w-[60vw] p-0 sm:max-h-[90vh] overflow-hidden border-0 shadow-xl sm:rounded-lg left-0 top-0 sm:left-1/2 sm:top-1/2 translate-x-0 translate-y-0 sm:-translate-x-1/2 sm:-translate-y-1/2 z-[50] flex flex-col">
             <DialogHeader className="bg-slate-950 p-4 flex flex-row items-center justify-between sticky top-0 z-10 border-b border-slate-800">
               <DialogTitle className="text-white text-xl font-semibold">{selectedSymbol}</DialogTitle>
               <DialogClose className="text-white hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded-full p-1">

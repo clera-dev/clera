@@ -1,6 +1,6 @@
 # --- Builder Stage ---
 # Use an official Python runtime as a parent image
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -20,7 +20,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 # --- Runtime Stage ---
 # Use a slim Python image for the final stage
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set environment variables with defaults to prevent startup failures
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install dependencies from wheels built in the builder stage
 COPY --from=builder /wheels /wheels
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/* \
     && rm -rf /wheels
 

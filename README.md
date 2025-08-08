@@ -25,6 +25,12 @@ And to redeploy AWS servers (anytime you change backend):
    copilot svc deploy --name api-service --env production
    copilot svc deploy --name websocket-lb-service --env production
 ```
+
+To run in the background and allow you to close your laptop while it runs:
+```bash
+nohup copilot svc deploy --name api-service --env production > deployment.log 2>&1 &
+```
+
 If it crashes because there isn't enough room in docker, run:
 ``` bash
 # WARNING: This command is extremely destructive and will delete ALL unused Docker containers, images, and volumes on your machine!
