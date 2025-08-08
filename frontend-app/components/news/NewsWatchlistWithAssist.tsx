@@ -102,7 +102,7 @@ const NewsWatchlistWithAssist: React.FC<NewsWatchlistWithAssistProps> = ({
 
   // Create contextual prompt with watchlist analysis
   const generatePrompt = useContextualPrompt(
-    "I'm looking at my news watchlist with {watchlistContext} showing {diversificationContext}. Can you briefly suggest which sectors I should follow from the available options and how to stay informed without getting overwhelmed?\n\nAvailable sectors: {availableSectors}\n\nCurrently selected: {selectedSectors}\n\nPlease focus on practical recommendations for a young investor building wealth.",
+    "Given my news watchlist ({watchlistContext}, {diversificationContext}), recommend which sectors to follow and which to drop to stay informed without noise.\n\nAvailable sectors: {availableSectors}\nCurrently selected: {selectedSectors}",
     "news_watchlist_optimization",
     {
       watchlistContext: watchlistContext,
@@ -121,7 +121,7 @@ const NewsWatchlistWithAssist: React.FC<NewsWatchlistWithAssistProps> = ({
     }
     
     if (!hasSelectedCategories) {
-      return "I'm looking at the news watchlist but haven't selected any categories yet. Can you guide me on which sectors and market areas young investors should follow to build investment knowledge and stay informed about opportunities?";
+      return "I haven't selected any categories yet. Suggest a small set of sectors to follow that will give good coverage without overwhelm, and explain why.";
     }
     
     return generatePrompt();

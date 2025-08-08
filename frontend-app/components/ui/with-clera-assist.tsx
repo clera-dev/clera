@@ -57,7 +57,7 @@ export const assistConfigs = {
     riskScores: createAssistConfig(
       "Risk and diversification scores",
       "portfolio_analytics",
-      "I'm looking at my portfolio analytics with a risk score of {riskScore}/10 and diversification score of {divScore}/10. Can you explain what these scores mean, whether they're good for my situation, and what I can do to improve them?",
+      "My analytics show risk {riskScore}/10 and diversification {divScore}/10. Explain what these mean and give 1–2 specific improvements for each.",
       {
         triggerText: "Explain these scores",
         description: "Get a simple explanation of your risk and diversification metrics",
@@ -68,7 +68,7 @@ export const assistConfigs = {
     assetAllocation: createAssistConfig(
       "Asset allocation breakdown",
       "portfolio_allocation",
-      "I'm looking at my asset allocation chart showing {stockPercentage}% stocks, {bondPercentage}% bonds, and {otherPercentage}% other investments. Can you explain if this allocation makes sense for my goals and suggest any improvements?",
+      "Assess my mix: {stockPercentage}% stocks, {bondPercentage}% bonds, {otherPercentage}% other. Is this sensible long term? Recommend 1–2 concrete tweaks.",
       {
         triggerText: "Ask about allocation",
         description: "Understand if your investment mix is right for you",
@@ -79,7 +79,7 @@ export const assistConfigs = {
     holdings: createAssistConfig(
       "Portfolio holdings",
       "portfolio_holdings",
-      "I'm reviewing my portfolio holdings. Can you analyze my current positions and let me know if there are any concerns or opportunities I should be aware of?",
+      "Evaluate my current positions. Point out any concentration risks or weak links and suggest 1–2 actions (e.g., trim/add/rebalance).",
       {
         triggerText: "Analyze holdings",
         description: "Get insights about your current investments",
@@ -92,7 +92,7 @@ export const assistConfigs = {
     summary: createAssistConfig(
       "News summary",
       "news_summary",
-      "I'm reading this news summary: '{summaryText}'. Can you break this down in simple terms and explain specifically how this news affects my investments?",
+      "Summarize in plain English how this news affects a diversified long-term portfolio and flag 1–2 actionable watch items: '{summaryText}'.",
       {
         triggerText: "Simplify this",
         description: "Get a plain-English explanation of how this news affects you",
@@ -103,7 +103,7 @@ export const assistConfigs = {
     marketNews: createAssistConfig(
       "Market news",
       "market_news",
-      "I'm looking at this market news: '{newsTitle}'. Can you explain what this means for the overall market and my portfolio specifically?",
+      "Explain the market implications and practical portfolio takeaways for: '{newsTitle}'.",
       {
         triggerText: "Explain impact",
         description: "Understand how this news affects your investments",
@@ -116,7 +116,7 @@ export const assistConfigs = {
     recommendations: createAssistConfig(
       "Investment recommendations",
       "investment_recommendations",
-      "I'm looking at these investment recommendations. Can you explain why these stocks are suggested and whether they align with my investment goals?",
+      "Explain the rationale behind these recommendations and whether they fit a long-term, diversified plan. Call out risks and required conviction.",
       {
         triggerText: "Why these picks?",
         description: "Understand the reasoning behind these investment suggestions",
@@ -127,7 +127,7 @@ export const assistConfigs = {
     stockAnalysis: createAssistConfig(
       "Stock analysis",
       "stock_analysis",
-      "I'm researching {stockSymbol}. Can you provide a comprehensive analysis of this stock including its fundamentals, risks, and whether it would be a good fit for my portfolio?",
+      "Analyze {stockSymbol}: key fundamentals, moat, risks, and whether it suits a diversified long-term portfolio.",
       {
         triggerText: "Analyze this stock",
         description: "Get detailed insights about this investment opportunity",
@@ -140,7 +140,7 @@ export const assistConfigs = {
     accountInfo: createAssistConfig(
       "Account information",
       "account_dashboard",
-      "I'm looking at my account dashboard. Can you help me understand my account status and if there's anything I should be doing to optimize my setup?",
+      "Review my account status and suggest 1–2 next steps to optimize setup and readiness (e.g., funding, diversification, alerts).",
       {
         triggerText: "Explain my account",
         description: "Get guidance on your account setup and next steps",
@@ -151,7 +151,7 @@ export const assistConfigs = {
     bankConnection: createAssistConfig(
       "Bank connection",
       "bank_funding",
-      "I'm looking at my bank connection and funding options. Can you explain the different ways to fund my account and which would be best for me?",
+      "Recommend a simple, safe funding approach and timing given typical cash flow and investing cadence.",
       {
         triggerText: "Funding options",
         description: "Learn about the best ways to fund your account",

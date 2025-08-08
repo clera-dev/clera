@@ -32,7 +32,7 @@ const InvestmentGrowthWithAssist: React.FC<InvestmentGrowthWithAssistProps> = ({
   
   // Create contextual prompt with growth planning data
   const generatePrompt = useContextualPrompt(
-    "I'm looking at the investment growth calculator {valueContext}. Can you briefly explain how compound growth works and give me 1-2 strategies to accelerate my wealth building?",
+    "Using the growth calculator {valueContext}. Briefly explain compound growth and give 1–2 realistic strategies to accelerate my progress based on my current portfolio and goals.",
     "investment_growth_projection",
     {
       valueContext: valueContext,
@@ -46,7 +46,7 @@ const InvestmentGrowthWithAssist: React.FC<InvestmentGrowthWithAssistProps> = ({
     }
     
     if (currentPortfolioValue === 0) {
-      return "I'm looking at the investment growth calculator but haven't started investing yet. Can you explain how compound growth works and help me understand what to expect as I begin building wealth through investing?";
+      return "I haven't started investing yet. Give a short overview of compound growth and a simple, actionable plan to start (how much, how often, where).";
     }
     
     return generatePrompt();

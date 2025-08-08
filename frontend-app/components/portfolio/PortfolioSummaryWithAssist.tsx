@@ -51,15 +51,20 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
   
   // Create contextual prompt with portfolio performance data
   const generatePrompt = useContextualPrompt(
-    "I'm looking at my portfolio summary showing {timeRange} performance. {performanceContext} Can you briefly explain what this means for my investment journey?",
+    "Please review my portfolio summary for the {timeRange} period. {performanceSentence} Give me a short interpretation and 1–2 practical next steps.",
     "portfolio_summary",
     {
       timeRange: selectedTimeRange,
-      performanceContext: hasHistoryData 
-        ? hasPositiveReturn 
-          ? "My portfolio has gained value over this period."
-          : "My portfolio has declined in value over this period."
-        : "I'm viewing my portfolio tracking chart."
+      performanceSentence: (() => {
+        if (!hasHistoryData || !portfolioHistory) return "I don't have enough history yet.";
+        const plPctArray = portfolioHistory.profit_loss_pct || [];
+        const lastPlPct = plPctArray.length ? plPctArray[plPctArray.length - 1] : null;
+        if (typeof lastPlPct === 'number') {
+          const pct = (lastPlPct * 100).toFixed(1);
+          return Number(pct) >= 0 ? `Change: +${pct}%.` : `Change: ${pct}%.`;
+        }
+        return hasPositiveReturn ? "The portfolio is up." : "The portfolio is down.";
+      })()
     }
   );
 
@@ -69,7 +74,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
     }
     
     if (!hasHistoryData) {
-      return "I'm looking at my portfolio summary but don't have much performance history yet. Can you quickly explain what to expect as I build my investment portfolio?";
+      return "I don't have much performance history yet. Give me a brief overview of what to monitor and how to judge progress fairly over time.";
     }
     
     return generatePrompt();

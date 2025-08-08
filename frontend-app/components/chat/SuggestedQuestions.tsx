@@ -9,12 +9,12 @@ const SuggestedQuestions: React.FC<SuggestedQuestionProps> = ({ onSelect }) => {
   const { isMobile } = useBreakpoint();
 
   const questions = [
-    "How is this account split between stocks and bonds?",
-    "What news is impacting my portfolio today?",
-    "How can I diversify better?",
-    "How can I improve my risk score?",
-    "Can you optimize my portfolio?",
-    "What is my worst performing investment?"
+    "What is my current stock vs. bond mix, and is it sensible long term?",
+    "Summarize today’s market news that actually matters for me.",
+    "Where am I over‑concentrated, and how can I diversify smartly?",
+    "My risk and diversification scores: what 1–2 actions improve them?",
+    "Suggest 1–2 concrete tweaks to optimize my portfolio.",
+    "Which positions are dragging performance, and what are my options?"
   ];
 
   return (

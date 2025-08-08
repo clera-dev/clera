@@ -65,7 +65,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
 
   // Create contextual prompt with news analysis
   const generatePrompt = useContextualPrompt(
-    "I'm looking at trending market news with {newsCount} articles. Can you analyze these specific headlines and explain what they might mean for the market and my investments?\n\n<trending_news_headlines>\n{newsHeadlines}\n</trending_news_headlines>\n\nPlease focus on the most important trends and actionable insights for me.",
+    "Analyze these {newsCount} trending headlines and summarize what matters most for market direction and a diversified long-term portfolio. Then give 1–2 specific watch-outs or actions if warranted.\n\n<trending_news_headlines>\n{newsHeadlines}\n</trending_news_headlines>",
     "trending_news_analysis",
     {
       newsCount: newsCount.toString(),
@@ -85,7 +85,7 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
     }
     
     if (!hasNews) {
-      return "I'm looking at the trending news section but don't see any articles right now. Can you explain what kinds of financial news young investors should pay attention to and how to develop good news consumption habits for long-term investing?";
+      return "No articles are showing. Briefly explain which types of news usually matter for long-term investors and how to avoid overreacting to noise.";
     }
     
     return generatePrompt();

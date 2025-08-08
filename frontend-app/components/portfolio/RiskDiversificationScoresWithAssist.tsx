@@ -35,7 +35,7 @@ const RiskDiversificationScoresWithAssist: React.FC<RiskDiversificationScoresWit
   
   // Create contextual prompt with risk/diversification data
   const generatePrompt = useContextualPrompt(
-    "I'm looking at my portfolio analytics with a risk score of {riskScore}/10 and diversification score of {divScore}/10. Can you briefly explain what these scores mean and give me 1-2 specific actions to improve them?",
+    "My portfolio analytics show risk {riskScore}/10 and diversification {divScore}/10. Clearly eplain what these mean and give 1–2 specific actions to improve each.",
     "portfolio_analytics",
     {
       riskScore: riskScore.toFixed(1),
@@ -49,7 +49,7 @@ const RiskDiversificationScoresWithAssist: React.FC<RiskDiversificationScoresWit
     }
     
     if (!initialData) {
-      return "I'm looking at my portfolio analytics but don't have scores yet. Can you quickly explain what risk and diversification scores measure and what good targets are for young investors?";
+      return "I don't have analytics scores yet. Briefly explain what risk and diversification scores measure and suggest good targets and habits to move toward them.";
     }
     
     return generatePrompt();
