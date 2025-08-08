@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChevronDown } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp } from "lucide-react";
@@ -13,6 +14,7 @@ import {
   getTransferStatusIcon, 
   getTransferStatusColorClasses 
 } from "@/components/ui/transfer-ui-utils";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface TransferHistoryItem {
   id: string;
@@ -33,6 +35,8 @@ export default function TransferHistory() {
   const [transfers, setTransfers] = useState<TransferHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { isMobile } = useBreakpoint();
+  const [expanded, setExpanded] = useState(false);
 
   const syncTransferStatuses = async () => {
     try {
@@ -86,6 +90,8 @@ export default function TransferHistory() {
   useEffect(() => {
     fetchTransferHistory();
   }, []);
+
+  // Responsive behavior handled centrally by useBreakpoint
 
   if (isLoading) {
     return (
@@ -154,14 +160,29 @@ export default function TransferHistory() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" />
-          Transfer History
-        </CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Transfer History
+          </CardTitle>
+          {/* Chevron on mobile to expand/collapse */}
+          {isMobile && (
+            <button
+              type="button"
+              aria-label={expanded ? 'Collapse' : 'Expand'}
+              onClick={() => setExpanded((e) => !e)}
+              className="p-2 -mr-1 rounded-md hover:bg-accent/30 transition-colors"
+            >
+              <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+        </div>
       </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-[300px] pr-4">
-          <div className="space-y-3">
+      {(!isMobile || expanded) && (
+        <CardContent>
+          {/* On mobile, let the page scroll; prevent nested scroll traps */}
+          <ScrollArea className="h-auto max-h-none pr-0 lg:h-[300px] lg:pr-4">
+            <div className="space-y-3">
             {transfers.map((transfer, index) => {
               const initiated = formatTransferDate(transfer.created_at);
               const completed = transfer.updated_at ? formatTransferDate(transfer.updated_at) : null;
@@ -204,9 +225,10 @@ export default function TransferHistory() {
                 </div>
               );
             })}
-          </div>
-        </ScrollArea>
-      </CardContent>
+            </div>
+          </ScrollArea>
+        </CardContent>
+      )}
     </Card>
   );
 } 

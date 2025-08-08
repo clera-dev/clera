@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { Button } from '@/components/ui/button'; // Assuming button component exists
 import { format, fromUnixTime } from 'date-fns';
+import { useMobileChartTooltip, MobileTooltip } from '@/components/ui/mobile-tooltip';
 
 // Define the props interface matching the data from the parent
 interface PortfolioHistoryData {
@@ -55,24 +56,18 @@ const formatPercentage = (value: number | null | undefined): string => {
 };
 
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const dataPoint = payload[0].payload;
     return (
       <div className="bg-card border rounded-lg p-3 shadow-lg">
-        <div className="space-y-2">
-          <div>
-            <p className="text-xs uppercase text-muted-foreground">DATE</p>
-            <p className="text-base font-semibold">
-              {format(new Date(dataPoint.timestamp * 1000), 'MMM dd, yyyy')}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-muted-foreground">VALUE</p>
-            <p className="text-base font-semibold">
-              {formatCurrency(dataPoint.equity)}
-            </p>
-          </div>
+        <div className="space-y-1">
+          <p className="text-base font-semibold">
+            {formatCurrency(dataPoint.equity)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {format(new Date(dataPoint.timestamp * 1000), 'MMM dd, yyyy')}
+          </p>
         </div>
       </div>
     );
@@ -88,6 +83,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
   allTimeReturnAmount,
   allTimeReturnPercent
 }) => {
+  const mobileTooltip = useMobileChartTooltip();
 
   // Use memo for time range to prevent repeated calls
   const handleTimeRangeChange = (range: string) => {
@@ -226,7 +222,93 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
 
   return (
     <div className="space-y-4">
-      <div style={{ width: '100%', height: 350 }} className="bg-background rounded-lg">
+      <div 
+        style={{ width: '100%', height: 350 }} 
+        className="bg-background rounded-lg relative"
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const xWithin = e.clientX - rect.left;
+          const chartWidth = rect.width - 55; // Account for Y-axis width
+          const dataIndex = Math.round((xWithin / chartWidth) * (chartData.length - 1));
+          const dataPoint = chartData[dataIndex];
+          if (dataPoint) {
+            const tooltipContent = (
+              <div className="space-y-1">
+                <p className="text-base font-semibold">
+                  {formatCurrency(dataPoint.equity)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {format(new Date(dataPoint.timestamp * 1000), 'MMM dd, yyyy')}
+                </p>
+              </div>
+            );
+            // Position at top of chart area
+            mobileTooltip.showTooltip(e.clientX, rect.top + 10, tooltipContent);
+          }
+        }}
+        onMouseLeave={() => {
+          mobileTooltip.hideTooltip();
+        }}
+        onTouchStart={(e) => {
+          if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            // Position tooltip at top of the chart area
+            const y = rect.top + 10;
+            
+            // Find the closest data point
+            const chartWidth = rect.width - 55; // Account for Y-axis width
+            const dataIndex = Math.round((x / chartWidth) * (chartData.length - 1));
+            const dataPoint = chartData[dataIndex];
+            
+            if (dataPoint) {
+              const tooltipContent = (
+                <div className="space-y-1">
+                  <p className="text-base font-semibold">
+                    {formatCurrency(dataPoint.equity)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(dataPoint.timestamp * 1000), 'MMM dd, yyyy')}
+                  </p>
+                </div>
+              );
+              // Show at same x but near top, to avoid finger/mouse obstruction
+              mobileTooltip.showTooltip(touch.clientX, rect.top + 10, tooltipContent);
+            }
+          }
+        }}
+        onTouchMove={(e) => {
+          if (mobileTooltip.isVisible && e.touches.length === 1) {
+            const touch = e.touches[0];
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = rect.top + 10;
+            
+            // Update tooltip position and content
+            const chartWidth = rect.width - 55;
+            const dataIndex = Math.round((x / chartWidth) * (chartData.length - 1));
+            const dataPoint = chartData[dataIndex];
+            
+            if (dataPoint) {
+              const tooltipContent = (
+                <div className="space-y-1">
+                  <p className="text-base font-semibold">
+                    {formatCurrency(dataPoint.equity)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(dataPoint.timestamp * 1000), 'MMM dd, yyyy')}
+                  </p>
+                </div>
+              );
+              mobileTooltip.showTooltip(touch.clientX, rect.top + 10, tooltipContent);
+            }
+          }
+        }}
+        onTouchEnd={() => {
+          mobileTooltip.hideTooltip();
+        }}
+      >
         <ResponsiveContainer>
           <AreaChart 
             data={chartData} 
@@ -261,12 +343,13 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
               width={50}
             />
             <Tooltip 
-              content={<CustomTooltip />} 
+              content={() => null}
               cursor={{ 
                 stroke: 'rgba(255, 255, 255, 0.3)', 
                 strokeWidth: 1, 
                 strokeDasharray: '3 3' 
-              }} 
+              }}
+              // Keep cursor line but hide built-in tooltip; unified overlay handles content
             />
             <Area
               type="monotone"
@@ -309,6 +392,14 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
           </Button>
         ))}
       </div>
+      
+      {/* Unified overlay tooltip following x at top of chart area */}
+      <MobileTooltip
+        content={mobileTooltip.content}
+        isVisible={mobileTooltip.isVisible}
+        position={mobileTooltip.position}
+        offset={0}
+      />
     </div>
   );
 };

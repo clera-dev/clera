@@ -37,6 +37,7 @@ interface ChatProps {
   isLimitReached: boolean;
   onSessionCreated?: (sessionId: string) => void;
   isSidebarMode?: boolean;
+  initialPrompt?: string;
 }
 
 export default function Chat({ 
@@ -51,6 +52,7 @@ export default function Chat({
   isLimitReached,
   onSessionCreated,
   isSidebarMode = false,
+  initialPrompt,
 }: ChatProps) {
   // Use our secure chat client instead of direct LangGraph SDK
   const chatClient = useSecureChat();
@@ -61,6 +63,7 @@ export default function Chat({
   const [pendingFirstMessage, setPendingFirstMessage] = useState<string | null>(null);
   const [isFirstMessageSent, setIsFirstMessageSent] = useState(false); // New state to prevent duplicates
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const autoSubmissionTriggered = useRef(false); // Track if auto-submission has been triggered for this prompt
   
   // Mobile detection state
   const [isMobile, setIsMobile] = useState(false);
@@ -225,9 +228,11 @@ export default function Chat({
   // --- End Effect for first message ---
 
   // Handle input submission (for new sessions OR subsequent messages)
-  const handleSendMessage = useCallback(async () => {
-    const trimmedInput = input.trim();
-    if (!trimmedInput || isProcessing || isInterrupting) return;
+  // Accept an optional content override to avoid racing on state updates (e.g., auto-submit flows)
+  const handleSendMessage = useCallback(async (contentOverride?: string): Promise<boolean> => {
+    const sourceContent = typeof contentOverride === 'string' ? contentOverride : input;
+    const trimmedInput = sourceContent.trim();
+    if (!trimmedInput || isProcessing || isInterrupting) return false;
 
     const contentToSend = trimmedInput;
     setInput('');
@@ -270,6 +275,7 @@ export default function Chat({
                     onSessionCreated(targetThreadId); // Notify parent immediately
                 }
                 // 3. DO NOT submit here - the useEffect will handle it once currentThreadId is set.
+                return true;
             } else {
                 throw new Error("Failed to create chat session or received invalid response.");
             }
@@ -278,6 +284,7 @@ export default function Chat({
             // TODO: Show error to user?
             // Clear pending message if session creation fails?
              setPendingFirstMessage(null);
+             return false;
         } finally {
              setIsCreatingSession(false); // Stop loading indicator
         }
@@ -326,8 +333,10 @@ export default function Chat({
         } catch (err) {
             console.error("Error submitting subsequent message:", err);
             // Keep retry state for potential retry (don't clear lastFailedMessage)
+            return false;
         }
     }
+    return true;
 
   }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend]);
 
@@ -483,22 +492,48 @@ export default function Chat({
     }
   }, [isProcessing, isInterrupting]);
 
-  // Listen for Clera Assist prompts
+  // Handle auto-submission of initial prompt
+  useEffect(() => {
+    if (initialPrompt && initialPrompt.trim() && !isFirstMessageSent && accountId && userId && !autoSubmissionTriggered.current) {
+      const submitTimer = setTimeout(async () => {
+        if (!isProcessing && !isInterrupting && accountId && userId) {
+          try {
+            autoSubmissionTriggered.current = true; // set right before attempting
+            setInput(initialPrompt);
+            const ok = await handleSendMessage(initialPrompt);
+            if (!ok) {
+              autoSubmissionTriggered.current = false; // allow retry on failure
+            }
+          } catch (e) {
+            autoSubmissionTriggered.current = false; // allow retry if exception
+          }
+        } else {
+          // Reset to allow a later retry when ready
+          autoSubmissionTriggered.current = false;
+        }
+      }, 500);
+      return () => clearTimeout(submitTimer);
+    }
+  }, [initialPrompt, isFirstMessageSent, handleSendMessage, accountId, userId, isProcessing, isInterrupting]);
+
+  // Listen for Clera Assist prompts (fallback for runtime events)
   useEffect(() => {
     const handleCleraAssistPrompt = (event: CustomEvent) => {
       const { prompt, context } = event.detail;
-      if (prompt) {
-        // Set the prompt as input
+      if (prompt && prompt.trim() && accountId && userId) {
+        // Skip if this is the same prompt as initialPrompt (already handled by primary useEffect)
+        if (initialPrompt && prompt === initialPrompt) {
+          return;
+        }
+        
+        // Set the prompt as input and submit using the value directly
         setInput(prompt);
-        // Use a ref to trigger submission after the input is set
         setTimeout(() => {
-          // Trigger form submission programmatically
-          const form = document.querySelector('form[data-chat-form="true"]') as HTMLFormElement;
-          if (form) {
-            const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-            form.dispatchEvent(submitEvent);
+          if (!isProcessing && !isInterrupting && accountId && userId) {
+            handleSendMessage(prompt);
+            // Don't set isFirstMessageSent here - let the session creation flow handle it
           }
-        }, 100);
+        }, 200);
       }
     };
 
@@ -506,7 +541,7 @@ export default function Chat({
     return () => {
       window.removeEventListener('cleraAssistPrompt', handleCleraAssistPrompt as EventListener);
     };
-  }, []);
+  }, [isProcessing, isInterrupting, handleSendMessage, accountId, userId, initialPrompt]);
 
   // Update internal state when the session ID prop changes (e.g., new chat started or existing selected)
   useEffect(() => {
@@ -517,10 +552,14 @@ export default function Chat({
       if (initialSessionId === undefined) {
         // console.log("New Chat detected - clearing all chat state immediately");
         setCurrentThreadId(null);
-        setInput('');
+        // Don't clear input if we have an initial prompt (Clera Assist)
+        if (!initialPrompt) {
+          setInput('');
+        }
         setIsCreatingSession(false);
         setPendingFirstMessage(null);
         setIsFirstMessageSent(false);
+        autoSubmissionTriggered.current = false; // Reset auto-submission flag for new chat
         chatClient.setMessages([]); // Clear messages immediately
         return; // Don't proceed with normal logic
       }
@@ -533,13 +572,14 @@ export default function Chat({
           setIsCreatingSession(false);
           setPendingFirstMessage(null);
           setIsFirstMessageSent(false);
+          autoSubmissionTriggered.current = false; // Reset auto-submission flag when switching threads
           
           // PRODUCTION FIX: Clear messages synchronously, let useEffect handle loading
           // This is deterministic and doesn't rely on timing
           chatClient.setMessages([]);
       }
       
-  }, [initialSessionId, currentThreadId, chatClient]); 
+  }, [initialSessionId, currentThreadId, chatClient, initialPrompt]); 
 
   // Create a string representation of the error, or null if no error
   const errorMessage = error ? String(error) : null;
@@ -609,12 +649,18 @@ export default function Chat({
         <div ref={messagesEndRef} />
       </div>
       
-      {/* Suggested Questions - Fixed position when no messages */}
+      {/* Suggested Questions - Responsive positioning when no messages */}
       {messagesToDisplay.length === 0 && 
        !isProcessing && 
        !isInterrupting && 
        !currentThreadId && (
-          <div className="flex-shrink-0 px-4 pb-4">
+          <div className={cn(
+            "flex-shrink-0",
+            // Mobile: minimal padding to maximize input space
+            isMobile && isFullscreen 
+              ? "px-2 pb-2" 
+              : "px-4 pb-4"
+          )}>
           <SuggestedQuestions onSelect={handleSuggestedQuestion} />
         </div>
       )}

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 
 interface UserPreferences {
   isEnabled: boolean;
@@ -26,6 +27,8 @@ interface CleraAssistContextType {
   // Callbacks
   onToggleSideChat?: () => void;
   sideChatVisible?: boolean;
+  onToggleMobileChat?: () => void;
+  mobileChatVisible?: boolean;
 }
 
 const CleraAssistContext = createContext<CleraAssistContextType | undefined>(undefined);
@@ -34,12 +37,16 @@ interface CleraAssistProviderProps {
   children: ReactNode;
   onToggleSideChat?: () => void;
   sideChatVisible?: boolean;
+  onToggleMobileChat?: () => void;
+  mobileChatVisible?: boolean;
 }
 
 export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   children,
   onToggleSideChat,
-  sideChatVisible = false
+  sideChatVisible = false,
+  onToggleMobileChat,
+  mobileChatVisible = false
 }) => {
   const [userPreferences, setUserPreferencesState] = useState<UserPreferences>({
     isEnabled: true,
@@ -49,7 +56,7 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   });
   
   const [currentPage, setCurrentPage] = useState<string>('');
-  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const { isMobile } = useBreakpoint();
 
   // Load user preferences from localStorage on mount
   React.useEffect(() => {
@@ -78,9 +85,17 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   }, [userPreferences]);
 
   const openChatWithPrompt = useCallback((prompt: string, context?: string) => {
-    // If we have a side chat toggle function, use it
-    if (onToggleSideChat && !sideChatVisible) {
-      onToggleSideChat();
+    // Use centralized breakpoint logic
+    const currentlyMobile = isMobile;
+
+    if (currentlyMobile) {
+      // Enforce exclusivity: close side chat if open, open mobile chat if closed
+      if (sideChatVisible) onToggleSideChat?.();
+      if (!mobileChatVisible) onToggleMobileChat?.();
+    } else {
+      // Enforce exclusivity: close mobile chat if open, open side chat if closed
+      if (mobileChatVisible) onToggleMobileChat?.();
+      if (!sideChatVisible) onToggleSideChat?.();
     }
     
     // Wait a moment for the chat to open, then send the prompt
@@ -91,8 +106,7 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
       }));
     }, 100);
     
-    setIsChatOpen(true);
-  }, [onToggleSideChat, sideChatVisible]);
+  }, [onToggleSideChat, sideChatVisible, onToggleMobileChat, mobileChatVisible, isMobile]);
 
   const setUserPreferences = useCallback((newPreferences: Partial<UserPreferences>) => {
     setUserPreferencesState(prev => ({
@@ -109,18 +123,39 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   }, []);
 
   const toggleChatVisibility = useCallback(() => {
-    if (onToggleSideChat) {
-      onToggleSideChat();
+    // Use centralized breakpoint logic
+    const currentlyMobile = isMobile;
+    if (currentlyMobile) {
+      // Close side chat if open, then toggle mobile
+      if (sideChatVisible) onToggleSideChat?.();
+      onToggleMobileChat?.();
+    } else {
+      // Close mobile chat if open, then toggle side
+      if (mobileChatVisible) onToggleMobileChat?.();
+      onToggleSideChat?.();
     }
-    setIsChatOpen(!isChatOpen);
-  }, [onToggleSideChat, isChatOpen]);
+  }, [onToggleSideChat, onToggleMobileChat, isMobile, sideChatVisible, mobileChatVisible]);
+
+  // Enforce mutual exclusivity on breakpoint changes
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isMobile && sideChatVisible) {
+      // Moving to mobile: ensure side chat is closed
+      onToggleSideChat?.();
+    } else if (!isMobile && mobileChatVisible) {
+      // Moving to desktop: ensure mobile chat is closed
+      onToggleMobileChat?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile]);
 
   const contextValue: CleraAssistContextType = {
     // State
     isEnabled: userPreferences.isEnabled,
     userPreferences,
     currentPage,
-    isChatOpen: sideChatVisible,
+    // Single source of truth: visibility comes solely from parent-provided state
+    isChatOpen: !!(sideChatVisible || mobileChatVisible),
     
     // Actions
     openChatWithPrompt,
@@ -131,7 +166,9 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
     
     // Callbacks
     onToggleSideChat,
-    sideChatVisible
+    sideChatVisible,
+    onToggleMobileChat,
+    mobileChatVisible
   };
 
   return (

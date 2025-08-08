@@ -13,6 +13,8 @@ import { Menu, ChevronLeft } from "lucide-react";
 import { useAccountClosure } from "@/hooks/useAccountClosure";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import MobileBottomNav from "@/components/mobile/MobileBottomNav";
+import { useMobileNavHeight } from "@/hooks/useMobileNavHeight";
+import { useDynamicBottomSpacing } from "@/hooks/useDynamicBottomSpacing";
 import MobileChatModal from "@/components/mobile/MobileChatModal";
 
 interface ClientLayoutProps {
@@ -36,6 +38,7 @@ export const useSidebarCollapse = () => {
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const { paddingBottom } = useDynamicBottomSpacing();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSideChatOpen, setIsSideChatOpen] = useState(false);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
@@ -402,8 +405,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         disableTransitionOnChange
       >
         <CleraAssistProvider
-          onToggleSideChat={canShowSideChat ? handleCleraAssistChat : undefined}
-          sideChatVisible={isMobile ? isMobileChatOpen : isSideChatOpen}
+          onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
+          sideChatVisible={isSideChatOpen}
+          onToggleMobileChat={handleMobileChatToggle}
+          mobileChatVisible={isMobileChatOpen}
         >
         <div className="flex h-screen relative">
           {/* Tablet hamburger button - only for tablet, not mobile */}
@@ -436,7 +441,15 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         
         {/* Main content area - adjusted to account for sidebar width and mobile nav */}
         <main className={`flex-1 overflow-hidden relative ${shouldShowSidebar ? 'ml-0' : ''}`}>
-          <div className={`h-full overflow-auto ${isMobile && shouldShowMobileNav ? 'pb-20' : ''}`}>
+          <div 
+            className={`h-full ${
+              // Only add overflow-auto if we're not in side-by-side mode to prevent dual scrollbars
+              canShowSideChat ? 'overflow-hidden' : 'overflow-auto'
+            }`}
+            style={{
+              paddingBottom: isMobile && shouldShowMobileNav ? paddingBottom : 0
+            }}
+          >
             {canShowSideChat ? (
               <SideBySideLayout 
                 isChatOpen={isSideChatOpen} 

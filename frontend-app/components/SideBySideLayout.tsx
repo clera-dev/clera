@@ -59,7 +59,7 @@ export default function SideBySideLayout({
     <div className="relative h-full w-full overflow-hidden">
       {/* Content container - takes full width when chat is closed, 50% when open */}
       <div 
-        className="absolute top-0 bottom-0 left-0 overflow-auto transition-all duration-300"
+        className="absolute top-0 bottom-0 left-0 overflow-y-auto overflow-x-hidden transition-all duration-300"
         style={{ 
           width: isChatOpen ? "50%" : "100%",
           right: isChatOpen ? "50%" : 0
