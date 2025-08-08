@@ -229,10 +229,10 @@ export default function Chat({
 
   // Handle input submission (for new sessions OR subsequent messages)
   // Accept an optional content override to avoid racing on state updates (e.g., auto-submit flows)
-  const handleSendMessage = useCallback(async (contentOverride?: string) => {
+  const handleSendMessage = useCallback(async (contentOverride?: string): Promise<boolean> => {
     const sourceContent = typeof contentOverride === 'string' ? contentOverride : input;
     const trimmedInput = sourceContent.trim();
-    if (!trimmedInput || isProcessing || isInterrupting) return;
+    if (!trimmedInput || isProcessing || isInterrupting) return false;
 
     const contentToSend = trimmedInput;
     setInput('');
@@ -275,6 +275,7 @@ export default function Chat({
                     onSessionCreated(targetThreadId); // Notify parent immediately
                 }
                 // 3. DO NOT submit here - the useEffect will handle it once currentThreadId is set.
+                return true;
             } else {
                 throw new Error("Failed to create chat session or received invalid response.");
             }
@@ -283,6 +284,7 @@ export default function Chat({
             // TODO: Show error to user?
             // Clear pending message if session creation fails?
              setPendingFirstMessage(null);
+             return false;
         } finally {
              setIsCreatingSession(false); // Stop loading indicator
         }
@@ -331,8 +333,10 @@ export default function Chat({
         } catch (err) {
             console.error("Error submitting subsequent message:", err);
             // Keep retry state for potential retry (don't clear lastFailedMessage)
+            return false;
         }
     }
+    return true;
 
   }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend]);
 
@@ -491,23 +495,23 @@ export default function Chat({
   // Handle auto-submission of initial prompt
   useEffect(() => {
     if (initialPrompt && initialPrompt.trim() && !isFirstMessageSent && accountId && userId && !autoSubmissionTriggered.current) {
-      // Mark that we're triggering auto-submission for this prompt
-      autoSubmissionTriggered.current = true;
-      
-      // Auto-submit the initial prompt after ensuring component is ready
-      const submitTimer = setTimeout(() => {
-        // Make sure we have all required data and are not processing
+      const submitTimer = setTimeout(async () => {
         if (!isProcessing && !isInterrupting && accountId && userId) {
-          // Call send directly with the prompt to avoid racing on setState
-          setInput(initialPrompt);
-          handleSendMessage(initialPrompt);
-          // Don't set isFirstMessageSent here - let the session creation flow handle it
+          try {
+            autoSubmissionTriggered.current = true; // set right before attempting
+            setInput(initialPrompt);
+            const ok = await handleSendMessage(initialPrompt);
+            if (!ok) {
+              autoSubmissionTriggered.current = false; // allow retry on failure
+            }
+          } catch (e) {
+            autoSubmissionTriggered.current = false; // allow retry if exception
+          }
         } else {
-          // Reset the flag if submission was blocked so it can retry
+          // Reset to allow a later retry when ready
           autoSubmissionTriggered.current = false;
         }
-      }, 500); // Increased delay to ensure user data is loaded
-      
+      }, 500);
       return () => clearTimeout(submitTimer);
     }
   }, [initialPrompt, isFirstMessageSent, handleSendMessage, accountId, userId, isProcessing, isInterrupting]);

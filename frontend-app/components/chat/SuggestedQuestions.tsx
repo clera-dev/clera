@@ -1,22 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 
 interface SuggestedQuestionProps {
   onSelect: (question: string) => void;
 }
 
 const SuggestedQuestions: React.FC<SuggestedQuestionProps> = ({ onSelect }) => {
-  const [isMobile, setIsMobile] = useState(false);
-
-  // Detect mobile devices
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  const { isMobile } = useBreakpoint();
 
   const questions = [
     "How is this account split between stocks and bonds?",
