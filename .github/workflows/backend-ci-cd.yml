@@ -54,7 +54,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "semgrep==1.64.0"
-          semgrep --config p/owasp-top-ten --sarif -o semgrep-results.sarif --exit-code 0
+          semgrep --config p/owasp-top-ten --sarif -o semgrep-results.sarif
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
           
       - name: Upload SARIF file
         if: ${{ hashFiles('backend/semgrep-results.sarif') != '' }}
