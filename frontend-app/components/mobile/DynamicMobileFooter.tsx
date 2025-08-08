@@ -77,12 +77,4 @@ export function MobileInvestmentFooter({
 /**
  * Hook to get dynamic bottom spacing for content that needs to avoid the mobile nav
  */
-export function useDynamicBottomSpacing(additionalGap: number = 8) {
-  const { navHeight, isMobile } = useMobileNavHeight();
-  
-  return {
-    paddingBottom: isMobile ? `${navHeight + additionalGap}px` : '0px',
-    marginBottom: isMobile ? `${navHeight + additionalGap}px` : '0px',
-    bottomOffset: isMobile ? navHeight + additionalGap : 0,
-  };
-}
+// Moved to hooks/useDynamicBottomSpacing.ts to respect layering.

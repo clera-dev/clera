@@ -14,7 +14,7 @@ import { useAccountClosure } from "@/hooks/useAccountClosure";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import MobileBottomNav from "@/components/mobile/MobileBottomNav";
 import { useMobileNavHeight } from "@/hooks/useMobileNavHeight";
-import { useDynamicBottomSpacing } from "@/components/mobile/DynamicMobileFooter";
+import { useDynamicBottomSpacing } from "@/hooks/useDynamicBottomSpacing";
 import MobileChatModal from "@/components/mobile/MobileChatModal";
 
 interface ClientLayoutProps {
