@@ -23,17 +23,22 @@ export function useMobileNavHeight() {
       const navElement = document.querySelector('[data-mobile-nav="true"]');
       if (navElement) {
         const rect = navElement.getBoundingClientRect();
-        const measuredHeight = rect.height;
-        // Only update if we got a reasonable height (nav should be at least 60px)
-        if (measuredHeight >= 60) {
-          setNavHeight(measuredHeight);
+        const measuredHeight = Math.round(rect.height);
+        // Accept any positive height and de-jitter small oscillations; clamp to sane bounds
+        if (measuredHeight > 0 && measuredHeight < 200) {
+          setNavHeight(prev => {
+            // If we had no prior valid height, take the measurement immediately
+            if (prev <= 0) return measuredHeight;
+            // Avoid churn on sub-pixel/layout thrash (<1px difference)
+            return Math.abs(prev - measuredHeight) > 1 ? measuredHeight : prev;
+          });
         } else {
           // Keep previous height or default if height seems invalid
-          setNavHeight(prev => prev > 0 ? prev : 80);
+          setNavHeight(prev => (prev > 0 ? prev : 80));
         }
       } else {
         // Fallback to default if nav not found, but don't override existing valid height
-        setNavHeight(prev => prev > 0 ? prev : 80);
+        setNavHeight(prev => (prev > 0 ? prev : 80));
       }
     } else {
       setNavHeight(0); // No mobile nav on desktop
