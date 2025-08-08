@@ -14,6 +14,7 @@ import {
   getTransferStatusIcon, 
   getTransferStatusColorClasses 
 } from "@/components/ui/transfer-ui-utils";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface TransferHistoryItem {
   id: string;
@@ -34,7 +35,7 @@ export default function TransferHistory() {
   const [transfers, setTransfers] = useState<TransferHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const { isMobile } = useBreakpoint();
   const [expanded, setExpanded] = useState(false);
 
   const syncTransferStatuses = async () => {
@@ -90,12 +91,7 @@ export default function TransferHistory() {
     fetchTransferHistory();
   }, []);
 
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
+  // Responsive behavior handled centrally by useBreakpoint
 
   if (isLoading) {
     return (

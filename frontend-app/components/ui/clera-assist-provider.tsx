@@ -85,19 +85,17 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   }, [userPreferences]);
 
   const openChatWithPrompt = useCallback((prompt: string, context?: string) => {
-    // Determine mobile by width only to avoid misclassifying large touch devices
-    const currentlyMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : isMobile;
+    // Use centralized breakpoint logic
+    const currentlyMobile = isMobile;
 
     if (currentlyMobile) {
-      // Mobile: Use mobile chat toggle
-      if (onToggleMobileChat && !mobileChatVisible) {
-        onToggleMobileChat();
-      }
+      // Enforce exclusivity: close side chat if open, open mobile chat if closed
+      if (sideChatVisible) onToggleSideChat?.();
+      if (!mobileChatVisible) onToggleMobileChat?.();
     } else {
-      // Desktop: Use side chat toggle
-      if (onToggleSideChat && !sideChatVisible) {
-        onToggleSideChat();
-      }
+      // Enforce exclusivity: close mobile chat if open, open side chat if closed
+      if (mobileChatVisible) onToggleMobileChat?.();
+      if (!sideChatVisible) onToggleSideChat?.();
     }
     
     // Wait a moment for the chat to open, then send the prompt
@@ -125,13 +123,31 @@ export const CleraAssistProvider: React.FC<CleraAssistProviderProps> = ({
   }, []);
 
   const toggleChatVisibility = useCallback(() => {
-    const currentlyMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : isMobile;
+    // Use centralized breakpoint logic
+    const currentlyMobile = isMobile;
     if (currentlyMobile) {
+      // Close side chat if open, then toggle mobile
+      if (sideChatVisible) onToggleSideChat?.();
       onToggleMobileChat?.();
     } else {
+      // Close mobile chat if open, then toggle side
+      if (mobileChatVisible) onToggleMobileChat?.();
       onToggleSideChat?.();
     }
-  }, [onToggleSideChat, onToggleMobileChat, isMobile]);
+  }, [onToggleSideChat, onToggleMobileChat, isMobile, sideChatVisible, mobileChatVisible]);
+
+  // Enforce mutual exclusivity on breakpoint changes
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isMobile && sideChatVisible) {
+      // Moving to mobile: ensure side chat is closed
+      onToggleSideChat?.();
+    } else if (!isMobile && mobileChatVisible) {
+      // Moving to desktop: ensure mobile chat is closed
+      onToggleMobileChat?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile]);
 
   const contextValue: CleraAssistContextType = {
     // State

@@ -90,6 +90,7 @@ export function useMobileChartTooltip() {
 
   useEffect(() => {
     const checkMobile = () => {
+      if (typeof window === 'undefined') return;
       setIsMobile(window.innerWidth < 768 || 'ontouchstart' in window);
     };
     
@@ -99,7 +100,7 @@ export function useMobileChartTooltip() {
   }, []);
 
   const showTooltip = (x: number, y: number, tooltipContent: React.ReactNode) => {
-    if (!isMobile) return; // Only show on mobile
+    // Show tooltip on all devices for unified behavior
     setPosition({ x, y });
     setContent(tooltipContent);
     setIsVisible(true);
