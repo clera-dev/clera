@@ -96,6 +96,24 @@ export function useMobileNavHeight() {
     }
   }, [navHeight, viewportHeight]);
 
+  // Ensure global CSS variables are cleaned up when the last consumer unmounts
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Maintain a simple reference count to avoid clobbering other hook instances
+      (window as any).__cleraMobileNavHeightRefs = ((window as any).__cleraMobileNavHeightRefs || 0) + 1;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        const currentRefs = Math.max(0, ((window as any).__cleraMobileNavHeightRefs || 1) - 1);
+        (window as any).__cleraMobileNavHeightRefs = currentRefs;
+        if (currentRefs === 0) {
+          document.documentElement.style.removeProperty('--mobile-nav-height');
+          document.documentElement.style.removeProperty('--viewport-height');
+        }
+      }
+    };
+  }, []);
+
   return {
     navHeight,
     viewportHeight,

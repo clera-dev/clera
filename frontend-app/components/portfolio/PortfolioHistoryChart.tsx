@@ -293,7 +293,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
                   </div>
                 </div>
               );
-              mobileTooltip.updatePosition(touch.clientX, touch.clientY);
+              mobileTooltip.showTooltip(touch.clientX, touch.clientY, tooltipContent);
             }
           }
         }}
@@ -343,7 +343,7 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
                 strokeWidth: 1, 
                 strokeDasharray: '3 3' 
               }}
-              active={!mobileTooltip.isMobile}
+              active={mobileTooltip.isMobile ? false : undefined}
             />
             <Area
               type="monotone"

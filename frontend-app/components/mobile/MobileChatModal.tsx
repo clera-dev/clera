@@ -33,19 +33,16 @@ export default function MobileChatModal({
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [initialPrompt, setInitialPrompt] = useState<string | null>(null);
 
-  // Listen for Clera Assist prompts
+  // Listen for Clera Assist prompts regardless of modal open state
   useEffect(() => {
-    if (!isOpen) return;
-
     const handleCleraAssistPrompt = (event: CustomEvent) => {
       const { prompt } = event.detail;
       if (prompt) {
-        // For Clera Assist prompts, clear current session to force new chat
-        console.log('Clera Assist prompt received, preparing new chat:', prompt);
-        setCurrentSessionId(null); // This will force a new session when message is sent
-        setInitialMessages([]); // Clear any existing messages
+        // Prepare a fresh session and buffer the prompt for auto-submit on open
+        setCurrentSessionId(null);
+        setInitialMessages([]);
         setInitialPrompt(prompt);
-        setRefreshTrigger(prev => prev + 1); // Trigger refresh to ensure clean state
+        setRefreshTrigger(prev => prev + 1);
       }
     };
 
@@ -53,7 +50,7 @@ export default function MobileChatModal({
     return () => {
       window.removeEventListener('cleraAssistPrompt', handleCleraAssistPrompt as EventListener);
     };
-  }, [isOpen]);
+  }, []);
 
   // Load user data when modal opens
   useEffect(() => {
@@ -110,12 +107,7 @@ export default function MobileChatModal({
     initializeUserData();
   }, [isOpen]);
 
-  // Clear any pending initial prompt when modal closes to avoid unintended auto-submissions
-  useEffect(() => {
-    if (!isOpen && initialPrompt) {
-      setInitialPrompt(null);
-    }
-  }, [isOpen, initialPrompt]);
+  // Note: initialPrompt is cleared after a successful send in handleMessageSent
 
   const handleNewChat = () => {
     setCurrentSessionId(null);
@@ -192,7 +184,7 @@ export default function MobileChatModal({
           transformOrigin: 'bottom center',
           top: '0',
           bottom: `${navHeight}px`, // Dynamic nav bar height
-          height: viewportHeight > 0 ? `${viewportHeight - navHeight}px` : `calc(100vh - ${navHeight}px)`
+          height: viewportHeight > 0 ? `${Math.max(viewportHeight - navHeight, 0)}px` : `calc(100vh - ${navHeight}px)`
         }}
       >
         {/* Minimal header with icon buttons - no subtitle */}
