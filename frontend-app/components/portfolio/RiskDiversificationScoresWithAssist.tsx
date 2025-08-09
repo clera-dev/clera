@@ -35,7 +35,7 @@ const RiskDiversificationScoresWithAssist: React.FC<RiskDiversificationScoresWit
   
   // Create contextual prompt with risk/diversification data
   const generatePrompt = useContextualPrompt(
-    "My portfolio analytics show risk {riskScore}/10 and diversification {divScore}/10. Clearly eplain what these mean and give 1–2 specific actions to improve each.",
+    "My portfolio analytics show risk {riskScore}/10 and diversification {divScore}/10. Clearly explain what these mean and give 1–2 specific actions to improve each.",
     "portfolio_analytics",
     {
       riskScore: riskScore.toFixed(1),
