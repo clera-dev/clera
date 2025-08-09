@@ -200,12 +200,9 @@ export const useContextualPrompt = (
       prompt = prompt.replace(new RegExp(`{${key}}`, 'g'), value);
     });
     
-    // Add context information
-    const contextInfo = `\n\nContext: I'm currently on the ${context.replace(/_/g, ' ')} page.`;
-    
     // Add conciseness instruction
-    const conciseInstruction = "\n\nFocus on the most important points and actionable advice.";
+    const conciseInstruction = "\n\nPlease keep it concise and focus on the most important points and actionable recommendations. If you need additional details, state exactly what you need and why before advising.";
     
-    return prompt + contextInfo + conciseInstruction;
+    return prompt + conciseInstruction;
   }, [template, context, variables]);
 }; 

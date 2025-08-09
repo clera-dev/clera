@@ -68,7 +68,7 @@ const AssetAllocationPieWithAssist: React.FC<AssetAllocationPieWithAssistProps> 
   
   // Create contextual prompt with allocation data
   const generatePrompt = useContextualPrompt(
-    "I'm looking at my asset allocation showing {numPositions} holdings with {allocationContext}. Can you quickly tell me if this allocation makes sense for a young investor and suggest 1-2 improvements?",
+    "Assess my asset allocation: {numPositions} holdings with {allocationContext}. Is this sensible for a long-term investor? Recommend 1–2 concrete tweaks.",
     "portfolio_allocation",
     {
       numPositions: positions.length.toString(),

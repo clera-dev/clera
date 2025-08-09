@@ -75,7 +75,7 @@ const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
 
   // Create contextual prompt with holdings analysis
   const generatePrompt = useContextualPrompt(
-    "I'm looking at my holdings showing {holdingsContext} with {diversificationContext} and {performanceContext}. Can you quickly evaluate my holdings strategy and suggest 1-2 improvements?",
+    "Evaluate my current holdings: {holdingsContext}, {diversificationContext}, and {performanceContext}. Provide a brief assessment and 1–2 specific improvements (e.g., trimming concentration, adding a core ETF, or rebalancing).",
     "holdings_analysis",
     {
       holdingsContext: holdingsContext,
@@ -91,7 +91,7 @@ const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
     }
     
     if (positions.length === 0) {
-      return "I'm looking at my holdings section but don't have any positions yet. Can you explain how to choose my first investments and what young investors should consider when building their initial portfolio?";
+      return "I have no positions yet. Help me choose my first investments: suggest an approach for starting simple, avoiding overtrading, and building a diversified core.";
     }
     
     return generatePrompt();

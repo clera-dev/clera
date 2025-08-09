@@ -33,7 +33,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const container = screen.getByText('How is this account split between stocks and bonds?').closest('.grid');
+      const container = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.grid');
       
       // Should use original grid layout classes
       expect(container).toHaveClass('grid-cols-1');
@@ -47,7 +47,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const button = screen.getByText('How is this account split between stocks and bonds?').closest('button');
+      const button = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('button');
       
       // Should have desktop classes
       expect(button).toHaveClass('py-3');
@@ -62,7 +62,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const container = screen.getByText('How is this account split between stocks and bonds?').closest('.grid');
+      const container = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.grid');
       
       // Should use mobile grid layout classes
       expect(container).toHaveClass('grid-cols-2');
@@ -76,7 +76,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const button = screen.getByText('How is this account split between stocks and bonds?').closest('button');
+      const button = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('button');
       
       // Should have mobile classes
       expect(button).toHaveClass('py-2');
@@ -89,7 +89,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const outerContainer = screen.getByText('How is this account split between stocks and bonds?').closest('.mobile-suggested-questions');
+      const outerContainer = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.mobile-suggested-questions');
       
       expect(outerContainer).toBeInTheDocument();
       expect(outerContainer).toHaveClass('mobile-suggested-questions');
@@ -100,7 +100,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const outerContainer = screen.getByText('How is this account split between stocks and bonds?').closest('.px-3');
+      const outerContainer = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.px-3');
       
       expect(outerContainer).not.toHaveClass('mobile-suggested-questions');
     });
@@ -113,7 +113,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      let container = screen.getByText('How is this account split between stocks and bonds?').closest('.grid');
+      let container = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.grid');
       expect(container).toHaveClass('grid-cols-1');
 
       // Resize to mobile
@@ -121,7 +121,7 @@ describe('Mobile Suggested Questions', () => {
         mockInnerWidth(375);
       });
 
-      container = screen.getByText('How is this account split between stocks and bonds?').closest('.grid');
+      container = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.grid');
       expect(container).toHaveClass('grid-cols-2');
       expect(container).toHaveClass('grid-rows-3');
     });
@@ -132,7 +132,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      let container = screen.getByText('How is this account split between stocks and bonds?').closest('.grid');
+      let container = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.grid');
       expect(container).toHaveClass('grid-cols-2');
 
       // Resize to desktop
@@ -140,7 +140,7 @@ describe('Mobile Suggested Questions', () => {
         mockInnerWidth(1024);
       });
 
-      container = screen.getByText('How is this account split between stocks and bonds?').closest('.grid');
+      container = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.grid');
       expect(container).toHaveClass('grid-cols-1');
       expect(container).toHaveClass('md:grid-cols-2');
     });
@@ -153,15 +153,15 @@ describe('Mobile Suggested Questions', () => {
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
       // Check that all 6 questions are rendered
-      expect(screen.getByText('How is this account split between stocks and bonds?')).toBeInTheDocument();
-      expect(screen.getByText('What news is impacting my portfolio today?')).toBeInTheDocument();
-      expect(screen.getByText('How can I diversify better?')).toBeInTheDocument();
-      expect(screen.getByText('How can I improve my risk score?')).toBeInTheDocument();
-      expect(screen.getByText('Can you optimize my portfolio?')).toBeInTheDocument();
-      expect(screen.getByText('What is my worst performing investment?')).toBeInTheDocument();
+      expect(screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?')).toBeInTheDocument();
+      expect(screen.getByText('Summarize today’s market news that actually matters for me.')).toBeInTheDocument();
+      expect(screen.getByText('Where am I over‑concentrated, and how can I diversify smartly?')).toBeInTheDocument();
+      expect(screen.getByText('My risk and diversification scores: what 1–2 actions improve them?')).toBeInTheDocument();
+      expect(screen.getByText('Suggest 1–2 concrete tweaks to optimize my portfolio.')).toBeInTheDocument();
+      expect(screen.getByText('Which positions are dragging performance, and what are my options?')).toBeInTheDocument();
 
       // Grid should be 2 columns, 3 rows
-      const container = screen.getByText('How is this account split between stocks and bonds?').closest('.grid');
+      const container = screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?').closest('.grid');
       expect(container).toHaveClass('grid-cols-2');
       expect(container).toHaveClass('grid-rows-3');
     });
@@ -172,12 +172,12 @@ describe('Mobile Suggested Questions', () => {
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
       // Check that all 6 questions are rendered
-      expect(screen.getByText('How is this account split between stocks and bonds?')).toBeInTheDocument();
-      expect(screen.getByText('What news is impacting my portfolio today?')).toBeInTheDocument();
-      expect(screen.getByText('How can I diversify better?')).toBeInTheDocument();
-      expect(screen.getByText('How can I improve my risk score?')).toBeInTheDocument();
-      expect(screen.getByText('Can you optimize my portfolio?')).toBeInTheDocument();
-      expect(screen.getByText('What is my worst performing investment?')).toBeInTheDocument();
+      expect(screen.getByText('What is my current stock vs. bond mix, and is it sensible long term?')).toBeInTheDocument();
+      expect(screen.getByText('Summarize today’s market news that actually matters for me.')).toBeInTheDocument();
+      expect(screen.getByText('Where am I over‑concentrated, and how can I diversify smartly?')).toBeInTheDocument();
+      expect(screen.getByText('My risk and diversification scores: what 1–2 actions improve them?')).toBeInTheDocument();
+      expect(screen.getByText('Suggest 1–2 concrete tweaks to optimize my portfolio.')).toBeInTheDocument();
+      expect(screen.getByText('Which positions are dragging performance, and what are my options?')).toBeInTheDocument();
 
       // Grid should be 1 column on mobile, 2 on medium+
       const container = screen.getByText('How is this account split between stocks and bonds?').closest('.grid');
@@ -192,10 +192,10 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const question = screen.getByText('How can I diversify better?');
+      const question = screen.getByText('Where am I over‑concentrated, and how can I diversify smartly?');
       fireEvent.click(question);
-
-      expect(mockOnSelect).toHaveBeenCalledWith('How can I diversify better?');
+      
+      expect(mockOnSelect).toHaveBeenCalledWith('Where am I over‑concentrated, and how can I diversify smartly?');
     });
 
     test('should call onSelect when question is clicked on desktop', () => {
@@ -203,10 +203,10 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const question = screen.getByText('Can you optimize my portfolio?');
+      const question = screen.getByText('Suggest 1–2 concrete tweaks to optimize my portfolio.');
       fireEvent.click(question);
-
-      expect(mockOnSelect).toHaveBeenCalledWith('Can you optimize my portfolio?');
+      
+      expect(mockOnSelect).toHaveBeenCalledWith('Suggest 1–2 concrete tweaks to optimize my portfolio.');
     });
 
     test('should have proper hover states on both mobile and desktop', () => {
@@ -214,7 +214,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const button = screen.getByText('How can I diversify better?').closest('button');
+      const button = screen.getByText('Where am I over‑concentrated, and how can I diversify smartly?').closest('button');
       expect(button).toHaveClass('hover:bg-zinc-800');
       expect(button).toHaveClass('transition-colors');
     });
@@ -226,7 +226,7 @@ describe('Mobile Suggested Questions', () => {
 
       render(<SuggestedQuestions onSelect={mockOnSelect} />);
 
-      const button = screen.getByText('How can I diversify better?').closest('button');
+      const button = screen.getByText('Where am I over‑concentrated, and how can I diversify smartly?').closest('button');
       const span = button.querySelector('span');
       
       expect(span).toHaveClass('text-white');

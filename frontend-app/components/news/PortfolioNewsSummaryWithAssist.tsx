@@ -66,7 +66,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
   
   // Create contextual prompt with news analysis
   const generatePrompt = useContextualPrompt(
-    "I'm reading my personalized portfolio news summary below. Can you briefly analyze how this specific news might impact my investments and suggest what I should watch for?\n\n<portfolio_news_summary>\n{summaryText}\n</portfolio_news_summary>\n\nPlease focus on the most important actionable insights and keep your response concise and practical.",
+    "Analyze the personalized portfolio news summary below. Explain the likely impact on a diversified long-term portfolio and call out 1–2 concrete watch items or actions if needed.\n\n<portfolio_news_summary>\n{summaryText}\n</portfolio_news_summary>",
     "portfolio_news_analysis",
     {
       summaryText: portfolioSummary?.summary_text || "No summary available"
@@ -80,7 +80,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
     }
     
     if (summaryError) {
-      return "I'm having trouble accessing my personalized news summary. Can you help me understand what financial news I should be paying attention to as someone in my 20s who's actively building wealth?";
+      return "The personalized summary isn't available. What kinds of market news should a long-term investor actually pay attention to, and what can usually be ignored?";
     }
     
     return generatePrompt();
