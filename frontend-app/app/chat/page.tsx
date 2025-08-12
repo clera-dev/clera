@@ -241,7 +241,7 @@ export default function ChatPage() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <h1 className="text-2xl lg:text-3xl font-bold">Ask Clera</h1>
-              <p className="text-lg text-muted-foreground mt-1">Your AI financial advisor is ready to help</p>
+              <p className="text-lg text-muted-foreground mt-1">I'm here to answer your investment questions</p>
             </div>
             
             <div className="flex items-center gap-3">

@@ -8,7 +8,7 @@ export const maxDuration = 299; // ~5 minutes for complex agent workflows
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { thread_id, input, user_id } = body;
+    const { thread_id, input, run_id } = body;
 
     // Extract and validate account ID
     const account_id = ConversationAuthService.extractAccountId(body, 'account_id');
@@ -49,12 +49,13 @@ export async function POST(request: NextRequest) {
         input: input,
         config: LangGraphStreamingService.createSecureConfig(user.id, account_id)
       },
-      // CRITICAL FIX: Use the service's optimized streamMode for consistent event handling
-      // This ensures both normal streaming and interrupt handling use the same event format
-      streamMode: ['updates', 'messages'],
       onError: (error) => {
         console.error('[StreamChat] LangGraph streaming error:', error);
-      }
+      },
+      // Provide persistence context
+      runId: run_id,
+      userId: user.id,
+      accountId: account_id,
     });
 
   } catch (error: any) {

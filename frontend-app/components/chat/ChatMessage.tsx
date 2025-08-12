@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Message } from '@/utils/api/chat-client';
+import { CheckIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import UserAvatar from './UserAvatar';
 
@@ -32,7 +33,7 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
             ? "px-3 py-2 max-w-[95%]" 
             : isSidebarMode
             ? "px-3 py-2 max-w-[90%]" // Side-by-side: tighter padding and width
-            : "px-6 py-4 max-w-[85%]" // Desktop full-screen: more generous padding
+            : "px-3 py-2 max-w-[85%]" // Desktop: sleeker minimal padding
         )}>
           <div className={cn(
             "text-blue-700 dark:text-blue-300 flex items-center gap-2",
@@ -40,9 +41,9 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
               ? "text-sm" 
               : isSidebarMode 
               ? "text-sm" 
-              : "text-lg" // Desktop full-screen: larger status text
+              : "text-base" // Desktop: align with user bubble size for a consistent, sleek look
           )}>
-            <div className="flex space-x-1">
+            <div className="flex space-x-1" aria-hidden>
               <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
               <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
               <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
@@ -71,7 +72,7 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
           ? (isUser ? "px-3 py-2" : "px-3 py-2") // Mobile: equal padding
           : isSidebarMode
           ? (isUser ? "px-3 py-2" : "px-3 py-2") // Side-by-side: equal padding
-          : (isUser ? "px-6 py-4" : "px-6 py-4") // Desktop full-screen: more generous padding
+          : (isUser ? "px-3 py-2" : "px-3 py-2") // Desktop full-screen: sleeker minimal padding
       )}>
         <div className={cn(
           "break-words",
@@ -80,7 +81,7 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
             ? "text-sm leading-relaxed" // Mobile: compact
             : isSidebarMode 
             ? "text-sm leading-relaxed" // Sidebar: compact 
-            : "text-lg leading-loose", // Desktop full-screen: larger and more spaced
+            : "text-base leading-relaxed", // Desktop: sleeker, tighter typography
           isUser 
             ? "prose-invert" 
             : "text-foreground"

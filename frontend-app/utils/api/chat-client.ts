@@ -8,6 +8,7 @@ export type Message = {
   role: 'system' | 'user' | 'assistant';
   content: string;
   isStatus?: boolean; // For temporary status/progress messages
+  runId?: string; // Anchor tool activities to a specific user query
 };
 
 export type ChatRequest = {
