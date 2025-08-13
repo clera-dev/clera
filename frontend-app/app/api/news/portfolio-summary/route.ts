@@ -467,8 +467,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch summary', details: summaryError.message }, { status: 500 });
     }
 
+    // Force regeneration via query param (dev/operator override)
+    const forceRegenerate = requestUrl.searchParams.get('force') === '1' || requestUrl.searchParams.get('regenerate') === '1';
+
     // Check if summary exists and whether it's stale (older than 24 hours)
-    const isStale = !summary ? true : (() => {
+    const isStale = forceRegenerate ? true : (!summary ? true : (() => {
       const generatedTime = new Date(summary.generated_at).getTime();
       const now = new Date().getTime();
       const hoursSinceGeneration = (now - generatedTime) / (1000 * 60 * 60);
@@ -486,7 +489,7 @@ export async function GET(request: Request) {
         console.log(`Summary is still fresh (${hoursSinceGeneration.toFixed(2)} hours old, threshold: ${refreshThreshold} hours)`);
         return false;
       }
-    })();
+    })());
     
     // Check if generation is already in progress for this user using Redis
     const generationInProgress = await isUserLockActive(user.id);
