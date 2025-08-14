@@ -12,9 +12,9 @@ import {
   parseSummary, 
   splitIntoBullets, 
   getFallbackSections, 
-  renderWithEmphasis, 
   sanitizeForPrompt 
 } from '@/utils/newsTextProcessing';
+import { renderWithEmphasis } from '@/utils/newsTextRendering';
 
 interface EnrichedArticle {
   url: string;

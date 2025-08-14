@@ -467,8 +467,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch summary', details: summaryError.message }, { status: 500 });
     }
 
-    // Force regeneration via query param (dev/operator override)
-    const forceRegenerate = requestUrl.searchParams.get('force') === '1' || requestUrl.searchParams.get('regenerate') === '1';
+    // Force regeneration via query param (dev/operator override only)
+    // Security: Only allow force regeneration for privileged users to prevent cost amplification attacks
+    const isForceRequested = requestUrl.searchParams.get('force') === '1' || requestUrl.searchParams.get('regenerate') === '1';
+    const isPrivilegedAccess = 
+      request.headers.get('x-admin-key') === process.env.ADMIN_SECRET || // Internal admin header
+      process.env.NODE_ENV === 'development'; // Allow in development
+    const forceRegenerate = isForceRequested && isPrivilegedAccess;
 
     // Check if summary exists and whether it's stale (older than 24 hours)
     const isStale = forceRegenerate ? true : (!summary ? true : (() => {
