@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
 import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface EnrichedArticle {
   url: string;
@@ -129,21 +129,52 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
 
   const splitIntoBullets = (text: string, maxBullets: number = 4): string[] => {
     const normalized = text.replace(/\s+/g, ' ').trim();
-    // Split at sentence boundaries when the next char is likely a sentence start
-    let pieces = normalized.split(/(?<=[\.!?])\s+(?=[A-Z\(])/);
+    // Browser-compatible sentence splitting without look-behind assertions
     const result: string[] = [];
-    for (let i = 0; i < pieces.length; i++) {
-      let current = (pieces[i] || '').trim();
+    let currentPiece = '';
+    
+    for (let i = 0; i < normalized.length; i++) {
+      currentPiece += normalized[i];
+      
+      // Check if we've reached a sentence boundary
+      if (/[\.!?]/.test(normalized[i])) {
+        const nextChar = normalized[i + 1];
+        const nextNextChar = normalized[i + 2];
+        
+        // If next char is whitespace and following char is capital letter or opening parenthesis
+        if (nextChar && /\s/.test(nextChar) && nextNextChar && /[A-Z\(]/.test(nextNextChar)) {
+          const trimmed = currentPiece.trim();
+          if (trimmed) {
+            result.push(trimmed);
+            currentPiece = '';
+          }
+        }
+      }
+    }
+    
+    // Add any remaining text
+    if (currentPiece.trim()) {
+      result.push(currentPiece.trim());
+    }
+    
+    // Post-process to handle abbreviations and short pieces
+    const processed: string[] = [];
+    for (let i = 0; i < result.length; i++) {
+      let current = result[i];
       if (!current) continue;
+      
       const endsWithAbbrev = /(U\.S\.|U\.K\.|U\.N\.|E\.U\.|Inc\.|Ltd\.|Co\.|Mr\.|Ms\.|Dr\.)$/.test(current);
       const tooShort = current.length < 40;
-      if ((endsWithAbbrev || tooShort) && i < pieces.length - 1) {
-        current = current + ' ' + (pieces[++i] || '').trim();
+      
+      if ((endsWithAbbrev || tooShort) && i < result.length - 1) {
+        current = current + ' ' + (result[++i] || '').trim();
       }
-      if (current) result.push(current);
-      if (result.length >= maxBullets) break;
+      
+      if (current) processed.push(current);
+      if (processed.length >= maxBullets) break;
     }
-    return result;
+    
+    return processed;
   };
 
   const getFallbackSections = (text: string) => {
@@ -248,21 +279,19 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                       <li key={`y-${idx}`} className="flex items-start gap-2">
                         <span className="text-muted-foreground" aria-hidden>•</span>
                         <span className="flex-1 leading-6">{b}</span>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="text-blue-400 hover:text-blue-300 p-1"
-                                onClick={() => handleBulletAssist("Market Recap", b)}
-                                aria-label="Learn more"
-                              >
-                                <ArrowUpRight className="w-4 h-4" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="left">Learn more</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                              onClick={() => handleBulletAssist("Market Recap", b)}
+                              aria-label="Learn more"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Learn more</TooltipContent>
+                        </Tooltip>
                       </li>
                     ))}
                   </ul>
@@ -278,23 +307,21 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                     <ul className="space-y-2">
                       {structured.today.map((b, idx) => (
                         <li key={`t-${idx}`} className="flex items-start gap-2">
-                          <span className="text-muted-foreground" aria-hidden>•</span>
-                          <span className="flex-1 leading-6">{b}</span>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="text-blue-400 hover:text-blue-300 p-1"
-                                  onClick={() => handleBulletAssist("What to Watch Out For", b)}
-                                  aria-label="Learn more"
-                                >
-                                  <ArrowUpRight className="w-4 h-4" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">Learn more</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                                                  <span className="text-muted-foreground" aria-hidden>•</span>
+                        <span className="flex-1 leading-6">{b}</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                              onClick={() => handleBulletAssist("What to Watch Out For", b)}
+                              aria-label="Learn more"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Learn more</TooltipContent>
+                        </Tooltip>
                         </li>
                       ))}
                     </ul>
@@ -370,21 +397,19 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                       <li key={`y-enabled-${idx}`} className="flex items-start gap-2">
                         <span className="text-gray-400" aria-hidden>•</span>
                         <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="text-blue-400 hover:text-blue-300 p-1"
-                                onClick={() => handleBulletAssist("Market Recap", b)}
-                                aria-label="Learn more"
-                              >
-                                <ArrowUpRight className="w-4 h-4" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="left">Learn more</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                              onClick={() => handleBulletAssist("Market Recap", b)}
+                              aria-label="Learn more"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Learn more</TooltipContent>
+                        </Tooltip>
                       </li>
                     ))}
                   </ul>
@@ -396,23 +421,21 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                     <ul className="space-y-2">
                       {(structured.today.length ? structured.today : fallback.today).map((b, idx) => (
                         <li key={`t-enabled-${idx}`} className="flex items-start gap-2">
-                          <span className="text-gray-400" aria-hidden>•</span>
-                          <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="text-blue-400 hover:text-blue-300 p-1"
-                                    onClick={() => handleBulletAssist("What to Watch Out For", b)}
-                                  aria-label="Learn more"
-                                >
-                                  <ArrowUpRight className="w-4 h-4" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">Learn more</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                                                  <span className="text-gray-400" aria-hidden>•</span>
+                        <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                                onClick={() => handleBulletAssist("What to Watch Out For", b)}
+                              aria-label="Learn more"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Learn more</TooltipContent>
+                        </Tooltip>
                         </li>
                       ))}
                     </ul>
