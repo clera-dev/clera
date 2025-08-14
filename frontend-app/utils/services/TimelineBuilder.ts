@@ -44,16 +44,19 @@ export class TimelineBuilder {
       return [];
     }
 
-    // Filter activities for this specific run (handle optional runId)
-    const relevantActivities = activities.filter(activity => activity.runId === runId);
+    // Filter activities for this specific run (handle optional runId via 'default')
+    const relevantActivities = activities.filter(activity => 
+      activity.runId === runId || (!activity.runId && runId === 'default')
+    );
     
     if (relevantActivities.length < this.config.minimumActivities) {
       return [];
     }
 
     // Filter out tools that shouldn't appear in timeline
+    const mapper = this.config.toolMapper ?? defaultToolMapper;
     const filteredActivities = relevantActivities.filter(activity => 
-      !this.config.toolMapper!.shouldFilterTool(activity.toolName)
+      !mapper.shouldFilterTool(activity.toolName)
     );
 
     if (filteredActivities.length === 0) {
@@ -157,7 +160,8 @@ export class TimelineBuilder {
     const stepMap = new Map<string, TimelineStep>();
 
     for (const activity of activities) {
-      let label = this.config.toolMapper!.mapToolName(activity.toolName);
+      const mapper = this.config.toolMapper ?? defaultToolMapper;
+      let label = mapper.mapToolName(activity.toolName);
       if (!label) continue; // safety
 
       // Special handling: show "Putting it all together" only when transfer_back_to_clera is complete
@@ -197,8 +201,9 @@ export class TimelineBuilder {
     // Order by the last occurrence of each label to ensure steps that repeat (e.g., "Putting it all together")
     // end up positioned where they finish, not where they first appeared.
     const lastIndexMap: Record<string, number> = {};
+    const mapper2 = this.config.toolMapper ?? defaultToolMapper;
     activities.forEach((act, idx) => {
-      const lbl = this.config.toolMapper!.mapToolName(act.toolName);
+      const lbl = mapper2.mapToolName(act.toolName);
       if (lbl) lastIndexMap[lbl] = idx;
     });
 

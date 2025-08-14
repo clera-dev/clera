@@ -1,5 +1,5 @@
 // Constants for rate limiting
-export const DAILY_QUERY_LIMIT = 60; // Maximum number of queries per day
+export const DAILY_QUERY_LIMIT = 100; // Maximum number of queries per day
 export const DAILY_QUERY_LIMIT_MESSAGE = "You've reached your daily limit of queries. Please try again tomorrow or upgrade your plan.";
 
 // Authentication routes

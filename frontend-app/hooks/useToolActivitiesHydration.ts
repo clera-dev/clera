@@ -40,12 +40,25 @@ export function useToolActivitiesHydration({
             const runIsComplete = run.status === 'complete' || run.ended_at;
             const activityStatus = runIsComplete ? 'complete' : (t.status === 'complete' ? 'complete' : 'running');
             
+            // Safely parse timestamps; fallback to current time to avoid NaN breaking comparisons
+            const startedAtMs = (() => {
+              const d = t?.started_at ? new Date(t.started_at) : new Date();
+              const ms = d.getTime();
+              return Number.isNaN(ms) ? Date.now() : ms;
+            })();
+            const completedAtMs = (() => {
+              if (!t?.completed_at) return undefined;
+              const d = new Date(t.completed_at);
+              const ms = d.getTime();
+              return Number.isNaN(ms) ? undefined : ms;
+            })();
+
             return {
               id: `${run.run_id}-${t.tool_key}-${t.started_at}`,
               toolName: t.tool_label || t.tool_key,
               status: activityStatus,
-              startedAt: new Date(t.started_at).getTime(),
-              completedAt: t.completed_at ? new Date(t.completed_at).getTime() : undefined,
+              startedAt: startedAtMs,
+              completedAt: completedAtMs,
               // include runId to anchor rendering under the correct user message
               runId: run.run_id,
             };
@@ -54,11 +67,9 @@ export function useToolActivitiesHydration({
         
         // Merge persisted activities with current ones (preserving new activities like "Thinking")
         const currentActivities = chatClient.state.toolActivities;
-        const currentRunIds = new Set(currentActivities.map((a: any) => a.runId));
-        
-        // Only add persisted activities that don't conflict with current ones
-        const newPersistedActivities = persistedActivities.filter((persisted: any) => 
-          !currentRunIds.has(persisted.runId)
+        // Deduplicate by unique activity id, not by runId, to avoid dropping other events from the same run
+        const newPersistedActivities = persistedActivities.filter((persisted: any) =>
+          !currentActivities.some((c: any) => c.id === persisted.id)
         );
         
         const mergedActivities = [...currentActivities, ...newPersistedActivities];

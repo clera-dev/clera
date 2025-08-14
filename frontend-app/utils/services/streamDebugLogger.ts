@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { promises as fsp } from 'fs';
 import path from 'path';
 
 interface StreamDebugLoggerOptions {
@@ -17,6 +18,27 @@ export class StreamDebugLogger {
   private queue: string[] = [];
   private isFlushing: boolean = false;
 
+  private safeStringify(value: any): string {
+    const seen = new WeakSet();
+    const replacer = (_key: string, val: any) => {
+      if (typeof val === 'bigint') return val.toString();
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) return '[Circular]';
+        seen.add(val);
+      }
+      return val;
+    };
+    try {
+      return JSON.stringify(value, replacer);
+    } catch {
+      try {
+        return String(value);
+      } catch {
+        return '[Unserializable]';
+      }
+    }
+  }
+
   constructor(options: StreamDebugLoggerOptions = {}) {
     // Default path inside project tmp dir
     const defaultPath = path.resolve(process.cwd(), 'tmp', 'langgraph_stream_debug.txt');
@@ -24,18 +46,22 @@ export class StreamDebugLogger {
       ? options.filePath
       : defaultPath;
 
-    // Ensure directory exists
-    try {
-      const dir = path.dirname(this.logFilePath);
-      fs.mkdirSync(dir, { recursive: true });
-      this.enabled = process.env.LANGGRAPH_DEBUG_LOG === '1' || process.env.NODE_ENV === 'development';
-      if (this.enabled) {
-        this.initStream();
-      }
-    } catch (e) {
-      // If we cannot create dir, disable logging silently
-      console.error('[StreamDebugLogger] Failed to ensure log directory:', e);
-      this.enabled = false;
+    // Enable based on env flags
+    this.enabled = process.env.LANGGRAPH_DEBUG_LOG === '1' || process.env.NODE_ENV === 'development';
+
+    // Asynchronously ensure directory exists exactly once per process and then init stream.
+    // Avoids blocking the event loop on every request.
+    if (this.enabled) {
+      ensureLogDir(this.logFilePath)
+        .then(() => {
+          // Stream init happens lazily after directory is ready
+          this.initStream();
+        })
+        .catch((e) => {
+          // If we cannot create dir, disable logging silently
+          console.error('[StreamDebugLogger] Failed to ensure log directory:', e);
+          this.enabled = false;
+        });
     }
   }
 
@@ -95,19 +121,19 @@ export class StreamDebugLogger {
   logSessionStart(threadId: string, info: Record<string, any>, runId?: string) {
     if (!this.enabled) return;
     const timestamp = new Date().toISOString();
-    this.log(JSON.stringify({ type: 'session_start', timestamp, threadId, runId: runId || 'unknown', info }));
+    this.log(this.safeStringify({ type: 'session_start', timestamp, threadId, runId: runId || 'unknown', info }));
   }
 
   logSessionEnd(threadId: string, summary: Record<string, any>) {
     if (!this.enabled) return;
     const timestamp = new Date().toISOString();
-    this.log(JSON.stringify({ type: 'session_end', timestamp, threadId, summary }));
+    this.log(this.safeStringify({ type: 'session_end', timestamp, threadId, summary }));
   }
 
   logDerivedEvent(threadId: string, kind: string, data?: Record<string, any>, runId?: string) {
     if (!this.enabled) return;
     const timestamp = new Date().toISOString();
-    this.log(JSON.stringify({ type: 'derived_event', timestamp, threadId, runId: runId || 'unknown', kind, data }));
+    this.log(this.safeStringify({ type: 'derived_event', timestamp, threadId, runId: runId || 'unknown', kind, data }));
   }
 
   logChunk(threadId: string, rawChunk: any, runId?: string) {
@@ -161,12 +187,26 @@ export class StreamDebugLogger {
       }
 
       const timestamp = new Date().toISOString();
-      const entry = JSON.stringify({ type: 'raw_chunk', timestamp, threadId, runId: runId || 'unknown', event: safeEvent, dataSummary });
+      const entry = this.safeStringify({ type: 'raw_chunk', timestamp, threadId, runId: runId || 'unknown', event: safeEvent, dataSummary });
       this.log(entry);
     } catch (e) {
       // Ignore logging errors
     }
   }
+}
+
+// --- Module-level, one-time async directory initialization ---
+let dirInitPromises: Record<string, Promise<void>> = {};
+function ensureLogDir(filePath: string): Promise<void> {
+  const dir = path.dirname(filePath);
+  if (!dirInitPromises[dir]) {
+    dirInitPromises[dir] = fsp.mkdir(dir, { recursive: true }).then(() => undefined).catch((e) => {
+      // Propagate error to caller; also remove cached promise to allow retry on next request
+      delete dirInitPromises[dir];
+      throw e;
+    });
+  }
+  return dirInitPromises[dir];
 }
 
 

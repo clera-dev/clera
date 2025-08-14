@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
     const account_id = url.searchParams.get('account_id');
     const limitParam = url.searchParams.get('limit');
     const parsedLimit = limitParam !== null ? Number(limitParam) : 25;
-    const safeLimit = Number.isNaN(parsedLimit) ? 25 : parsedLimit;
+    const safeLimitFloat = Number.isNaN(parsedLimit) ? 25 : parsedLimit;
+    const safeLimit = Math.trunc(safeLimitFloat);
     if (!thread_id || !account_id) {
       return NextResponse.json({ error: 'thread_id and account_id are required' }, { status: 400 });
     }

@@ -9,6 +9,7 @@ export interface ConversationAuthContext {
   user: AuthUser;
   accountId: string;
   supabase: any;
+  authToken?: string;
 }
 
 /**
@@ -57,6 +58,13 @@ export class ConversationAuthService {
     try {
       // Create supabase server client for authentication
       const supabase = await createClient();
+      
+      // Get auth token from session for backend communication
+      let authToken: string | null = null;
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (!sessionError && session?.access_token) {
+        authToken = session.access_token;
+      }
       
       // Verify user is authenticated
       const {
@@ -117,7 +125,8 @@ export class ConversationAuthService {
         context: {
           user,
           accountId,
-          supabase
+          supabase,
+          authToken: authToken || undefined
         }
       };
 

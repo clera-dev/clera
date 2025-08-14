@@ -2440,6 +2440,10 @@ async def get_sector_allocation(request: Request, account_id: str = Query(..., d
         logger.error(f"Unexpected error in get_sector_allocation for account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
+# Include tool events router
+from api.tool_events import router as tool_events_router
+app.include_router(tool_events_router)
+
 # Ensure to add this router to the main FastAPI app if `router` is used:
 # app.include_router(router)
 

@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       return LangGraphStreamingService.createErrorStreamingResponse(errorData.error, status);
     }
 
-    const { user } = authResult.context!;
+    const { user, authToken } = authResult.context!;
 
     // Create streaming service instance
     const streamingService = LangGraphStreamingService.create();
@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
       runId: safeRunId,
       userId: user.id,
       accountId: account_id,
+      authToken: authToken || undefined,
     });
 
   } catch (error: any) {
