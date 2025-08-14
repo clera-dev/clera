@@ -8,6 +8,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
 import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { 
+  parseSummary, 
+  splitIntoBullets, 
+  getFallbackSections, 
+  renderWithEmphasis, 
+  sanitizeForPrompt 
+} from '@/utils/newsTextProcessing';
 
 interface EnrichedArticle {
   url: string;
@@ -100,147 +107,28 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
   };
 
   // Parse model output into headline, yesterday bullets, and today bullets.
-  const parseSummary = (text: string) => {
-    const normalize = (s: string) => s.replace(/’/g, "'").trim();
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    let headline = '';
-    const yesterday: string[] = [];
-    const today: string[] = [];
-    let mode: 'none' | 'y' | 't' = 'none';
-    for (const line of lines) {
-      const n = normalize(line);
-      if (!headline && !/^yesterday'?s market recap:/i.test(n) && !/^what to watch today:/i.test(n) && !/^•\s*/.test(n) && !/^\-\s*/.test(n)) {
-        headline = line;
-        continue;
-      }
-      if (/^yesterday'?s market recap:/i.test(n)) { mode = 'y'; continue; }
-      if (/^what to watch today:/i.test(n)) { mode = 't'; continue; }
-      const bullet = n.replace(/^•\s*/, '').replace(/^\-\s*/, '').trim();
-      if (!bullet) continue;
-      if (mode === 'y') yesterday.push(bullet);
-      else if (mode === 't') today.push(bullet);
-    }
-    return { headline, yesterday, today };
-  };
+
 
   const structured = portfolioSummary?.summary_text
     ? parseSummary(portfolioSummary.summary_text.replace(/\\n/g, '\n'))
     : { headline: '', yesterday: [], today: [] };
 
-  const splitIntoBullets = (text: string, maxBullets: number = 4): string[] => {
-    const normalized = text.replace(/\s+/g, ' ').trim();
-    // Browser-compatible sentence splitting without look-behind assertions
-    const result: string[] = [];
-    let currentPiece = '';
-    
-    for (let i = 0; i < normalized.length; i++) {
-      currentPiece += normalized[i];
-      
-      // Check if we've reached a sentence boundary
-      if (/[\.!?]/.test(normalized[i])) {
-        const nextChar = normalized[i + 1];
-        const nextNextChar = normalized[i + 2];
-        
-        // If next char is whitespace and following char is capital letter or opening parenthesis
-        if (nextChar && /\s/.test(nextChar) && nextNextChar && /[A-Z\(]/.test(nextNextChar)) {
-          const trimmed = currentPiece.trim();
-          if (trimmed) {
-            result.push(trimmed);
-            currentPiece = '';
-          }
-        }
-      }
-    }
-    
-    // Add any remaining text
-    if (currentPiece.trim()) {
-      result.push(currentPiece.trim());
-    }
-    
-    // Post-process to handle abbreviations and short pieces
-    const processed: string[] = [];
-    for (let i = 0; i < result.length; i++) {
-      let current = result[i];
-      if (!current) continue;
-      
-      const endsWithAbbrev = /(U\.S\.|U\.K\.|U\.N\.|E\.U\.|Inc\.|Ltd\.|Co\.|Mr\.|Ms\.|Dr\.)$/.test(current);
-      const tooShort = current.length < 40;
-      
-      if ((endsWithAbbrev || tooShort) && i < result.length - 1) {
-        current = current + ' ' + (result[++i] || '').trim();
-      }
-      
-      if (current) processed.push(current);
-      if (processed.length >= maxBullets) break;
-    }
-    
-    return processed;
-  };
 
-  const getFallbackSections = (text: string) => {
-    const cleaned = text.replace(/\\n/g, '\n');
-    const parts = cleaned.split(/\n\n+/);
-    const y = parts[0] ? splitIntoBullets(parts[0].replace(/\n/g, ' ')) : [];
-    const t = parts[1] ? splitIntoBullets(parts[1].replace(/\n/g, ' ')) : [];
-    return { yesterday: y, today: t };
-  };
+
+
 
   const fallback = (!structured.yesterday.length && !structured.today.length && portfolioSummary?.summary_text)
     ? getFallbackSections(portfolioSummary.summary_text)
     : { yesterday: [] as string[], today: [] as string[] };
 
-  // Emphasis: bold common company names and safe tickers (avoid generic acronyms)
-  const COMPANY_NAMES = [
-    'Apple', 'Microsoft', 'Tesla', 'Nvidia', 'Meta', 'Alphabet', 'Google', 'Amazon',
-    'Cisco', 'Applied Materials', 'Broadcom', 'AMD', 'Intel', 'Oracle', 'Salesforce',
-    'Netflix', 'Spotify', 'Uber'
-  ];
-  const TICKER_STOP = new Set(['US', 'AI', 'CPI', 'GDP', 'CEO', 'EPS', 'FOMC', 'ETF']);
 
-  const renderWithEmphasis = (text: string): React.ReactNode => {
-    // Step 1: Emphasize known company names (including multi-word)
-    let parts: (string | React.ReactNode)[] = [text];
-    COMPANY_NAMES.forEach((name) => {
-      const regex = new RegExp(`\\b${name.replace(/ /g, '\\s+')}\\b`, 'gi');
-      const next: (string | React.ReactNode)[] = [];
-      parts.forEach((piece, idx) => {
-        if (typeof piece !== 'string') { next.push(piece); return; }
-        const segments = piece.split(regex);
-        const matches = piece.match(regex) || [];
-        segments.forEach((seg, i) => {
-          if (seg) next.push(seg);
-          if (i < matches.length) {
-            next.push(<strong key={`n-${name}-${idx}-${i}`}>{matches[i]}</strong>);
-          }
-        });
-      });
-      parts = next;
-    });
 
-    // Step 2: Emphasize ticker-like tokens (2–5 uppercase letters), excluding stopwords
-    const tickerRegex = /\b[A-Z]{2,5}\b/g;
-    const next: (string | React.ReactNode)[] = [];
-    parts.forEach((piece, pIdx) => {
-      if (typeof piece !== 'string') { next.push(piece); return; }
-      const segments = piece.split(tickerRegex);
-      const matches = piece.match(tickerRegex) || [];
-      segments.forEach((seg, i) => {
-        if (seg) next.push(seg);
-        if (i < matches.length) {
-          const tk = matches[i];
-          if (!TICKER_STOP.has(tk)) {
-            next.push(<strong key={`t-${tk}-${pIdx}-${i}`}>{tk}</strong>);
-          } else {
-            next.push(tk);
-          }
-        }
-      });
-    });
-    return <>{next}</>;
-  };
+
 
   const handleBulletAssist = (sectionLabel: string, bullet: string) => {
-    const prompt = `Deep-dive this news point from the user's daily briefing.\nSection: ${sectionLabel}\nBullet: "${bullet}"\n\nExplain what it means, why it matters to a long-term growth investor, key drivers, risks, and concrete upcoming catalysts. Provide 2–4 reputable sources/links.`;
+    const sanitizedBullet = sanitizeForPrompt(bullet);
+    const sanitizedSection = sanitizeForPrompt(sectionLabel);
+    const prompt = `Deep-dive this news point from the user's daily briefing.\nSection: ${sanitizedSection}\nBullet: "${sanitizedBullet}"\n\nExplain what it means, why it matters to a long-term growth investor, key drivers, risks, and concrete upcoming catalysts.`;
     openChatWithPrompt(prompt, 'portfolio_news_bullet');
   };
 
