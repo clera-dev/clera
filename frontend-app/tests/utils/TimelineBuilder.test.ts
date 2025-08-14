@@ -3,7 +3,7 @@
  * Tests timeline construction logic and statistics
  */
 
-import { TimelineBuilder, defaultTimelineBuilder } from '@/utils/services/TimelineBuilder';
+import { TimelineBuilder, createTimelineBuilder } from '@/utils/services/TimelineBuilder';
 import { ToolActivity } from '@/types/chat';
 import { ToolNameMapper } from '@/utils/services/ToolNameMapper';
 
@@ -288,18 +288,19 @@ describe('TimelineBuilder', () => {
     });
   });
 
-  describe('defaultTimelineBuilder', () => {
-    it('should be a singleton instance', () => {
-      expect(defaultTimelineBuilder).toBeInstanceOf(TimelineBuilder);
+  describe('createTimelineBuilder', () => {
+    it('should create an instance with default config', () => {
+      const instance = createTimelineBuilder();
+      expect(instance).toBeInstanceOf(TimelineBuilder);
     });
 
     it('should work with real tool mapper', () => {
+      const instance = createTimelineBuilder();
       const activities = [
         createMockActivity('1', 'run-1', 'web_search', 'complete')
       ];
 
-      // Should not throw and should return reasonable results
-      const timeline = defaultTimelineBuilder.buildTimelineForRun(activities, 'run-1');
+      const timeline = instance.buildTimelineForRun(activities, 'run-1');
       expect(Array.isArray(timeline)).toBe(true);
     });
   });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingService';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
+import { createClient as createServerSupabase } from '@/utils/supabase/server';
 
 // CRITICAL FIX: Set maximum duration for LangGraph agent processing (up to 800 seconds on Pro/Enterprise)
 export const maxDuration = 299; // ~5 minutes for complex agent workflows
@@ -42,6 +43,39 @@ export async function POST(request: NextRequest) {
 
     console.log('[StreamChat] Starting stream via LangGraphStreamingService for thread:', thread_id);
 
+    // Validate or safely resolve run_id to avoid hijacking or overwriting existing runs
+    const supabase = await createServerSupabase();
+    const isValidUuidV4 = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+    let safeRunId: string;
+    if (isValidUuidV4(run_id)) {
+      // Check if the run already exists; only allow reuse if it belongs to this user and thread
+      const { data: existing, error: selErr } = await supabase
+        .from('chat_runs')
+        .select('id, user_id, thread_id')
+        .eq('id', run_id)
+        .limit(1)
+        .maybeSingle();
+      if (!selErr && existing && existing.user_id === user.id && existing.thread_id === thread_id) {
+        safeRunId = run_id;
+      } else {
+        safeRunId = typeof crypto !== 'undefined' && (crypto as any).randomUUID
+          ? (crypto as any).randomUUID()
+          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+              const r = Math.random() * 16 | 0;
+              const v = c === 'x' ? r : (r & 0x3 | 0x8);
+              return v.toString(16);
+            });
+      }
+    } else {
+      safeRunId = typeof crypto !== 'undefined' && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+    }
+
     // Create streaming response using the service for consistency
     return streamingService.createStreamingResponse({
       threadId: thread_id,
@@ -53,7 +87,7 @@ export async function POST(request: NextRequest) {
         console.error('[StreamChat] LangGraph streaming error:', error);
       },
       // Provide persistence context
-      runId: run_id,
+      runId: safeRunId,
       userId: user.id,
       accountId: account_id,
     });

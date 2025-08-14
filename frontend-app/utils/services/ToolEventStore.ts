@@ -67,21 +67,21 @@ export class ToolEventStore {
         .eq('id', params.runId);
       if (error) console.error('[ToolEventStore.finalizeRun] update error', error);
 
-      // When a run is finalized successfully, mark any remaining 'running' tool calls as complete
-      // This ensures data consistency for interrupted or aborted streams
-      if (params.status === 'complete') {
-        const { error: toolUpdateError } = await supabase
-          .from('chat_tool_calls')
-          .update({ 
-            status: 'complete',
-            completed_at: new Date().toISOString()
-          })
-          .eq('run_id', params.runId)
-          .eq('status', 'running');
-        
-        if (toolUpdateError) {
-          console.error('[ToolEventStore.finalizeRun] tool completion error', toolUpdateError);
-        }
+      // When a run is finalized, mark any remaining 'running' tool calls accordingly
+      // - If run completed: mark as 'complete'
+      // - If run errored: mark as 'error'
+      const terminalStatus = params.status === 'complete' ? 'complete' : 'error';
+      const { error: toolUpdateError } = await supabase
+        .from('chat_tool_calls')
+        .update({ 
+          status: terminalStatus,
+          completed_at: new Date().toISOString()
+        })
+        .eq('run_id', params.runId)
+        .eq('status', 'running');
+      
+      if (toolUpdateError) {
+        console.error('[ToolEventStore.finalizeRun] tool update error', toolUpdateError);
       }
     } catch (e) {
       console.error('[ToolEventStore.finalizeRun] exception', e);
@@ -94,16 +94,19 @@ export class ToolEventStore {
       const startedAt = params.at ? new Date(params.at).toISOString() : new Date().toISOString();
       const { error } = await supabase
         .from('chat_tool_calls')
-        .insert({
+        .upsert({
           run_id: params.runId,
           tool_key: params.toolKey,
           tool_label: params.toolLabel,
           agent: params.agent || null,
           status: 'running' as ToolStatus,
           started_at: startedAt,
+        }, {
+          onConflict: 'run_id,tool_key',
+          ignoreDuplicates: true,
         });
-      if (error && !String(error.message).includes('duplicate')) {
-        console.error('[ToolEventStore.upsertToolStart] insert error', error);
+      if (error) {
+        console.error('[ToolEventStore.upsertToolStart] upsert error', error);
       }
     } catch (e) {
       console.error('[ToolEventStore.upsertToolStart] exception', e);
@@ -135,18 +138,21 @@ export class ToolEventStore {
           .eq('id', data[0].id);
         if (updErr) console.error('[ToolEventStore.upsertToolComplete] update error', updErr);
       } else {
-        // No running row found; insert a completed record to avoid data loss
-        const { error: insErr } = await supabase
+        // No running row found; upsert a completed record to avoid data loss and constraint violations
+        const { error: upsertErr } = await supabase
           .from('chat_tool_calls')
-          .insert({
+          .upsert({
             run_id: params.runId,
             tool_key: params.toolKey,
             tool_label: params.toolKey,
             status: params.status as ToolStatus,
             started_at: completedAt,
             completed_at: completedAt,
+          }, {
+            onConflict: 'run_id,tool_key',
+            ignoreDuplicates: false,
           });
-        if (insErr) console.error('[ToolEventStore.upsertToolComplete] insert fallback error', insErr);
+        if (upsertErr) console.error('[ToolEventStore.upsertToolComplete] upsert fallback error', upsertErr);
       }
     } catch (e) {
       console.error('[ToolEventStore.upsertToolComplete] exception', e);

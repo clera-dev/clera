@@ -25,7 +25,7 @@ export class StreamDebugLogger {
     try {
       const dir = path.dirname(this.logFilePath);
       fs.mkdirSync(dir, { recursive: true });
-      this.enabled = true;
+      this.enabled = process.env.LANGGRAPH_DEBUG_LOG === '1' || process.env.NODE_ENV === 'development';
     } catch (e) {
       // If we cannot create dir, disable logging silently
       console.error('[StreamDebugLogger] Failed to ensure log directory:', e);

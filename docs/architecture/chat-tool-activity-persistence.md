@@ -56,8 +56,8 @@ create table if not exists public.chat_tool_calls (
 
 create index if not exists chat_tool_calls_run_started_idx on public.chat_tool_calls (run_id, started_at);
 create index if not exists chat_tool_calls_run_status_idx on public.chat_tool_calls (run_id, status);
--- helps avoid accidental duplicates from retries
-create unique index if not exists chat_tool_calls_dedupe on public.chat_tool_calls (run_id, tool_key, started_at);
+-- prevents duplicate tool calls for the same run and tool (excluding started_at for proper deduplication)
+create unique index if not exists chat_tool_calls_dedupe on public.chat_tool_calls (run_id, tool_key);
 ```
 
 #### Row-Level Security (RLS)
@@ -114,7 +114,7 @@ PII: do not store user content; keep only `tool_key`, `tool_label`, `agent`, tim
   - Pass `run_id` into the streaming service for event persistence.
 
 #### 2) Fetch persisted tool activities for a thread
-- New route: `POST /api/conversations/get-tool-activities`
+- New route: `GET /api/conversations/get-tool-activities`
   - Input: `{ thread_id: string, limit?: number }`
   - Output: array of runs with tool calls:
 ```json
@@ -227,7 +227,7 @@ create table if not exists public.chat_tool_calls (
 
 create index if not exists chat_tool_calls_run_started_idx on public.chat_tool_calls (run_id, started_at);
 create index if not exists chat_tool_calls_run_status_idx on public.chat_tool_calls (run_id, status);
-create unique index if not exists chat_tool_calls_dedupe on public.chat_tool_calls (run_id, tool_key, started_at);
+create unique index if not exists chat_tool_calls_dedupe on public.chat_tool_calls (run_id, tool_key);
 
 -- RLS
 alter table public.chat_runs enable row level security;
@@ -286,7 +286,7 @@ create policy if not exists chat_tool_calls_update on public.chat_tool_calls for
 2) Add feature flag to environment.
 3) Add `run_id` propagation in `POST /api/conversations/stream-chat`.
 4) Implement `ToolEventStore` and wire into streaming service derived events.
-5) Add `POST /api/conversations/get-tool-activities` and client hydration in `Chat.tsx`.
+5) Add `GET /api/conversations/get-tool-activities` and client hydration in `Chat.tsx`.
 6) Add tests (unit, integration, UI) and run CI.
 7) Dark launch, monitor, then ramp.
 

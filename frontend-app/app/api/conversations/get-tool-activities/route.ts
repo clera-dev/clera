@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 import { createClient as createServerSupabase } from '@/utils/supabase/server';
 
-export async function POST(request: NextRequest) {
+// Read-only fetch of tool activities should be a GET to align with REST semantics
+export async function GET(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { thread_id, account_id, limit = 25 } = body || {};
+    const url = new URL(request.url);
+    const thread_id = url.searchParams.get('thread_id');
+    const account_id = url.searchParams.get('account_id');
+    const limitParam = url.searchParams.get('limit');
+    const parsedLimit = limitParam !== null ? Number(limitParam) : 25;
+    const safeLimit = Number.isNaN(parsedLimit) ? 25 : parsedLimit;
     if (!thread_id || !account_id) {
       return NextResponse.json({ error: 'thread_id and account_id are required' }, { status: 400 });
     }
@@ -26,7 +31,7 @@ export async function POST(request: NextRequest) {
       .eq('thread_id', thread_id)
       .eq('user_id', user.id)
       .order('started_at', { ascending: false })
-      .limit(Math.max(1, Math.min(200, Number(limit))))
+      .limit(Math.max(1, Math.min(200, safeLimit)))
       ;
     if (runsErr) {
       return NextResponse.json({ error: 'Failed to fetch runs' }, { status: 500 });
@@ -69,7 +74,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ runs: result });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Internal error' }, { status: 500 });
+    // Do not leak internal error details to the client
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
 

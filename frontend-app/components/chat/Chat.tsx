@@ -22,9 +22,8 @@ import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import { InterruptConfirmation } from './InterruptConfirmation';
 import ModelProviderRetryPopup from './ModelProviderRetryPopup';
-import { createClient as createServerSupabase } from '@/utils/supabase/server';
 import { TimelineRenderer } from './TimelineRenderer';
-import { defaultTimelineBuilder } from '@/utils/services/TimelineBuilder';
+import { createTimelineBuilder, TimelineBuilder } from '@/utils/services/TimelineBuilder';
 
 // Collapsible tool details per user message using modular architecture
 function PerMessageToolDetails({
@@ -33,17 +32,19 @@ function PerMessageToolDetails({
   isMobile,
   isFullscreen,
   isSidebarMode,
+  timelineBuilder,
 }: {
   runId: string;
   activities: any[];
   isMobile: boolean;
   isFullscreen: boolean;
   isSidebarMode?: boolean;
+  timelineBuilder: TimelineBuilder;
 }) {
   const [open, setOpen] = useState<boolean>(false);
   
   // Use TimelineBuilder to construct timeline steps
-  const timelineSteps = defaultTimelineBuilder.buildTimelineForRun(activities, runId);
+  const timelineSteps = timelineBuilder.buildTimelineForRun(activities, runId);
   
   if (timelineSteps.length === 0) return null;
   
@@ -131,6 +132,7 @@ export default function Chat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const timelineBuilderRef = useRef<TimelineBuilder>(createTimelineBuilder());
 
   // Derived state from secure chat client
   const isProcessing = chatClient.state.isLoading || isCreatingSession;
@@ -153,10 +155,9 @@ export default function Chat({
     (async () => {
       if (!currentThreadId) return;
       try {
-        const res = await fetch('/api/conversations/get-tool-activities', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ thread_id: currentThreadId, account_id: accountId })
+        const params = new URLSearchParams({ thread_id: currentThreadId, account_id: accountId });
+        const res = await fetch(`/api/conversations/get-tool-activities?${params.toString()}`, {
+          method: 'GET'
         });
         if (!res.ok) return;
         const data = await res.json();
@@ -190,7 +191,7 @@ export default function Chat({
         );
         
         const mergedActivities = [...currentActivities, ...newPersistedActivities];
-        (chatClient as any).setState({ toolActivities: mergedActivities });
+        chatClient.mergePersistedToolActivities(mergedActivities);
 
         // Store sorted runIds for assignment once messages are hydrated
         const sortedRuns = [...runs].sort((a: any, b: any) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
@@ -786,6 +787,7 @@ export default function Chat({
                         isMobile={isMobile}
                         isFullscreen={isFullscreen}
                         isSidebarMode={isSidebarMode}
+                        timelineBuilder={timelineBuilderRef.current}
                       />
                     )
                     : null
@@ -855,6 +857,7 @@ export default function Chat({
                           isMobile={isMobile}
                           isFullscreen={isFullscreen}
                           isSidebarMode={isSidebarMode}
+                          timelineBuilder={timelineBuilderRef.current}
                         />
                       )}
                       <ChatMessage

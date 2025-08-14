@@ -1,4 +1,5 @@
 import { Message } from './chat-client';
+import { ToolActivity } from '@/types/chat';
 
 export interface ChatState {
   messages: Message[];
@@ -23,19 +24,14 @@ export interface SecureChatClient {
   clearModelProviderError: () => void;
   setMessages: (messages: Message[]) => void;
   addMessagesWithStatus: (userMessage: Message) => void;
+  mergePersistedToolActivities: (activities: ToolActivity[]) => void;
   subscribe: (listener: () => void) => () => void;
   setLongProcessingCallback: (callback: () => void) => void; // ARCHITECTURE FIX: Proper separation of concerns
   clearLongProcessingCallback: () => void; // MEMORY LEAK FIX: Clear callback on unmount
   cleanup: () => void;
 }
 
-export interface ToolActivity {
-  id: string;
-  toolName: string;
-  status: 'running' | 'complete';
-  startedAt: number;
-  completedAt?: number;
-}
+// ToolActivity is defined centrally in '@/types/chat'.
 
 export class SecureChatClientImpl implements SecureChatClient {
   private _state: ChatState = {
@@ -112,6 +108,16 @@ export class SecureChatClientImpl implements SecureChatClient {
     this.setState({ messages: [...validMessages] }); // Create defensive copy
   }
 
+  // Safely merge server-persisted tool activities into client state
+  // Only appends activities for runs not already present, to avoid duplicating current in-memory runs
+  mergePersistedToolActivities(activities: ToolActivity[]) {
+    if (!Array.isArray(activities) || activities.length === 0) return;
+    const existingRunIds = new Set((this._state.toolActivities || []).map(a => a.runId).filter(Boolean) as string[]);
+    const incoming = activities.filter(a => a.runId && !existingRunIds.has(a.runId));
+    if (incoming.length === 0) return;
+    this.setState({ toolActivities: [...this._state.toolActivities, ...incoming] });
+  }
+
   private addToolStart(toolName: string) {
     const normalized = this.normalizeToolLabel(toolName);
     // Anchor to currentQueryRunId so entries never move across questions
@@ -121,7 +127,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     // Enhanced duplicate prevention: check for existing activity by tool name and runId
     // Also check for very recent activities (within 1 second) to catch rapid duplicates
     const now = Date.now();
-    const existingActivity = this._state.toolActivities.find((a: any) => 
+    const existingActivity = this._state.toolActivities.find((a: ToolActivity) => 
       a.runId === runId && (
         a.toolName === normalized || 
         (now - a.startedAt < 1000 && a.toolName === normalized)
@@ -133,9 +139,9 @@ export class SecureChatClientImpl implements SecureChatClient {
     }
     
     // Before adding new running activity, mark any other running ones as complete
-    const updatedActivities = this._state.toolActivities.map((a: any) => {
+    const updatedActivities = this._state.toolActivities.map<ToolActivity>((a: ToolActivity) => {
       if (a.runId === runId && a.status === 'running') {
-        return { ...a, status: 'complete', completedAt: Date.now() };
+        return { ...a, status: 'complete' as const, completedAt: Date.now() };
       }
       return a;
     });
@@ -147,21 +153,20 @@ export class SecureChatClientImpl implements SecureChatClient {
       toolName: normalized,
       status: 'running',
       startedAt: Date.now(),
-    } as any;
-    // @ts-ignore
-    (activity as any).runId = runId;
-    this.setState({ toolActivities: [...updatedActivities, activity as any] });
+      runId,
+    };
+    this.setState({ toolActivities: [...updatedActivities, activity] });
   }
 
   private markToolComplete(toolName: string) {
     const normalized = this.normalizeToolLabel(toolName);
-    const activities = [...this._state.toolActivities];
+    const activities: ToolActivity[] = [...this._state.toolActivities];
     const runId = this.currentQueryRunId || 'unknown';
     // Find the latest running activity for this tool
     for (let i = activities.length - 1; i >= 0; i--) {
-      const a: any = activities[i];
+      const a = activities[i];
       if (a.toolName === normalized && a.status === 'running' && a.runId === runId) {
-        activities[i] = { ...a, status: 'complete', completedAt: Date.now() } as any;
+        activities[i] = { ...a, status: 'complete' as const, completedAt: Date.now() };
         this.setState({ toolActivities: activities });
         return;
       }
@@ -173,18 +178,17 @@ export class SecureChatClientImpl implements SecureChatClient {
       status: 'complete',
       startedAt: Date.now(),
       completedAt: Date.now(),
-    } as any;
-    // @ts-ignore
-    (activity as any).runId = runId;
-    this.setState({ toolActivities: [...activities as any[], activity as any] });
+      runId,
+    };
+    this.setState({ toolActivities: [...activities, activity] });
   }
 
   private completeAllRunningForCurrentRun() {
     const runId = this.currentQueryRunId;
     if (!runId) return;
-    const updated = this._state.toolActivities.map((a: any) => {
+    const updated = this._state.toolActivities.map<ToolActivity>((a: ToolActivity) => {
       if (a.runId === runId && a.status === 'running') {
-        return { ...a, status: 'complete', completedAt: Date.now() };
+        return { ...a, status: 'complete' as const, completedAt: Date.now() };
       }
       return a;
     });
@@ -195,16 +199,16 @@ export class SecureChatClientImpl implements SecureChatClient {
   private markRunCompleted(): void {
     const runId = this.currentQueryRunId || 'unknown';
     // Avoid duplicate markers for a run
-    const alreadyMarked = this._state.toolActivities.some((a: any) => a.runId === runId && a.toolName === '__run_completed__');
+    const alreadyMarked = this._state.toolActivities.some((a: ToolActivity) => a.runId === runId && a.toolName === '__run_completed__');
     if (alreadyMarked) return;
-    const activity = {
+    const activity: ToolActivity = {
       id: `run-complete-${Date.now()}`,
       toolName: '__run_completed__',
       status: 'complete',
       startedAt: Date.now(),
       completedAt: Date.now(),
-      runId
-    } as any;
+      runId,
+    };
     const updated = [...this._state.toolActivities, activity];
     this.setState({ toolActivities: updated });
   }

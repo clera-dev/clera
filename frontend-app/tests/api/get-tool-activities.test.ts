@@ -31,7 +31,7 @@ jest.mock('@/utils/supabase/server', () => ({
   })
 }));
 
-import { POST } from '@/app/api/conversations/get-tool-activities/route';
+import { GET } from '@/app/api/conversations/get-tool-activities/route';
 
 // Minimal polyfill for NextRequest usage in route
 // Next.js bundles its own Request; to avoid conflicts, we mock global.
@@ -44,8 +44,8 @@ beforeAll(() => {
 
 describe('GET tool activities API', () => {
   test('returns grouped runs with tool calls', async () => {
-    const req = new (global as any).Request('http://localhost/api', { method: 'POST', body: JSON.stringify({ thread_id: 'thread_1', account_id: 'acct' }) });
-    const res = await POST(req as any);
+    const req = new (global as any).Request('http://localhost/api?thread_id=thread_1&account_id=acct', { method: 'GET' });
+    const res = await GET(req as any);
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(Array.isArray(json.runs)).toBe(true);

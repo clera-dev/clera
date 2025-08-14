@@ -196,9 +196,12 @@ export class TimelineBuilder {
       if (lbl) lastIndexMap[lbl] = idx;
     });
 
-    return Object.entries(lastIndexMap)
+    const ordered = Object.entries(lastIndexMap)
       .sort(([, aIdx], [, bIdx]) => aIdx - bIdx)
-      .map(([label]) => stepMap.get(label)!) as TimelineStep[];
+      .map(([label]) => stepMap.get(label))
+      .filter((step): step is TimelineStep => Boolean(step));
+
+    return ordered;
   }
 
   private haveAllActivitiesCompleted(activities: ToolActivity[]): boolean {
@@ -255,8 +258,10 @@ export class TimelineBuilder {
   }
 }
 
-// Default instance for easy importing
-export const defaultTimelineBuilder = new TimelineBuilder();
+// Factory to avoid shared mutable singletons
+export function createTimelineBuilder(config?: Partial<TimelineConfig>): TimelineBuilder {
+  return new TimelineBuilder(config);
+}
 
 // Export type for dependency injection
 export type ITimelineBuilder = TimelineBuilder;
