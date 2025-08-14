@@ -43,67 +43,6 @@ export class AuthError extends Error {
  */
 export class AuthService {
   /**
-   * Simple authentication without account authorization
-   * 
-   * @param request - The incoming request
-   * @returns Simple auth context with user and token
-   * @throws AuthError if authentication fails
-   */
-  static async authenticate(request: NextRequest): Promise<{ user: any; authToken: string }> {
-    const supabase = await createClient();
-    
-    let user: any = null;
-    let accessToken: string | null = null;
-
-    // Try JWT-based authentication first (Authorization header)
-    const authHeader = request.headers.get('authorization');
-    if (authHeader?.startsWith('Bearer ')) {
-      const explicitToken = authHeader.substring(7);
-      
-      try {
-        const { data: { user: jwtUser }, error: jwtError } = await supabase.auth.getUser(explicitToken);
-        
-        if (!jwtError && jwtUser) {
-          user = jwtUser;
-          accessToken = explicitToken;
-        }
-      } catch (error) {
-        // JWT validation failed, fall through to session-based auth
-      }
-    }
-
-    // Fall back to session-based authentication (cookies)
-    if (!user || !accessToken) {
-      try {
-        const { data: { user: sessionUser }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError || !sessionUser) {
-          throw new AuthError('Unauthorized - no valid session or JWT token', 401);
-        }
-
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError || !session?.access_token) {
-          throw new AuthError('Authentication session required', 401);
-        }
-
-        user = sessionUser;
-        accessToken = session.access_token;
-      } catch (error) {
-        if (error instanceof AuthError) {
-          throw error;
-        }
-        throw new AuthError('Authentication failed', 401);
-      }
-    }
-
-    return {
-      user,
-      authToken: accessToken,
-    };
-  }
-
-  /**
    * Authenticate and authorize a user for a specific account with dual auth support
    * 
    * INDUSTRY BEST PRACTICE: Supports both authentication patterns:

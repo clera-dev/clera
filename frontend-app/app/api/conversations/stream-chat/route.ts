@@ -3,6 +3,7 @@ import { randomUUID as nodeRandomUUID, randomBytes } from 'crypto';
 import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingService';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 import { createClient as createServerSupabase } from '@/utils/supabase/server';
+import { ToolEventStore } from '@/utils/services/ToolEventStore';
 
 // CRITICAL FIX: Set maximum duration for LangGraph agent processing (up to 800 seconds on Pro/Enterprise)
 export const maxDuration = 299; // ~5 minutes for complex agent workflows
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
       return LangGraphStreamingService.createErrorStreamingResponse(errorData.error, status);
     }
 
-    const { user, authToken } = authResult.context!;
+    const { user } = authResult.context!;
 
     // Create streaming service instance
     const streamingService = LangGraphStreamingService.create();
@@ -96,7 +97,19 @@ export async function POST(request: NextRequest) {
       runId: safeRunId,
       userId: user.id,
       accountId: account_id,
-      authToken: authToken || undefined,
+      // Persistence callbacks
+      onRunStart: async (runId, threadId, userId, accountId) => {
+        await ToolEventStore.startRun({ runId, threadId, userId, accountId });
+      },
+      onToolStart: async (runId, toolKey, toolLabel, agent) => {
+        await ToolEventStore.upsertToolStart({ runId, toolKey, toolLabel, agent });
+      },
+      onToolComplete: async (runId, toolKey, status) => {
+        await ToolEventStore.upsertToolComplete({ runId, toolKey, status });
+      },
+      onRunFinalize: async (runId, status) => {
+        await ToolEventStore.finalizeRun({ runId, status });
+      },
     });
 
   } catch (error: any) {

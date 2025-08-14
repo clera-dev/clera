@@ -8,19 +8,7 @@ const MAX_LIMIT = 100; // Industry-standard for paginated APIs
 
 export async function POST(request: NextRequest) {
   try {
-    // Handle empty request body gracefully
-    let body;
-    try {
-      const text = await request.text();
-      body = text ? JSON.parse(text) : {};
-    } catch (parseError) {
-      console.error('JSON parse error in get-sessions:', parseError);
-      return NextResponse.json(
-        { error: 'Invalid JSON in request body' },
-        { status: 400 }
-      );
-    }
-    
+    const body = await request.json();
     const { portfolio_id } = body;
     let limit = body.limit ?? 20;
 

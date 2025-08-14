@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     // Fetch last N runs for this thread (user constrained via RLS)
     const { data: runs, error: runsErr } = await supabase
       .from('chat_runs')
-      .select('*')
+      .select('id, started_at, ended_at, status')
       .eq('thread_id', thread_id)
       .eq('user_id', user.id)
       .order('started_at', { ascending: false })
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     const runIds = runs.map((r: any) => r.id);
     const { data: tools, error: toolsErr } = await supabase
       .from('chat_tool_calls')
-      .select('*')
+      .select('run_id, tool_key, tool_label, agent, status, started_at, completed_at, metadata')
       .in('run_id', runIds)
       .order('started_at', { ascending: true });
     if (toolsErr) {

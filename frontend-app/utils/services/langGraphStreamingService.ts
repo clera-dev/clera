@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Client } from '@langchain/langgraph-sdk';
 import { StreamDebugLogger } from './streamDebugLogger';
-import { ServerToolEventClient } from './ServerToolEventClient';
 
 // Types for LangGraph streaming
 export interface LangGraphChunk {
@@ -33,6 +32,11 @@ export interface LangGraphStreamingOptions {
     data: any;
   };
   onError?: (error: Error) => void;
+  // Persistence callbacks (optional - set by API routes)
+  onRunStart?: (runId: string, threadId: string, userId: string, accountId: string) => Promise<void>;
+  onToolStart?: (runId: string, toolKey: string, toolLabel: string, agent?: string) => Promise<void>;
+  onToolComplete?: (runId: string, toolKey: string, status?: 'complete' | 'error') => Promise<void>;
+  onRunFinalize?: (runId: string, status: 'complete' | 'error') => Promise<void>;
 }
 
 /**
@@ -113,14 +117,13 @@ export class LangGraphStreamingService {
           //   }, options.runId);
           // } catch {}
 
-          // Persist run start (non-blocking)
-          if (options.runId && options.userId && options.accountId) {
-            ServerToolEventClient.startRun({
-              runId: options.runId,
-              threadId: options.threadId,
-              userId: options.userId,
-              accountId: options.accountId,
-            }, options.authToken).catch(err => console.error('[LangGraphStreamingService] Failed to start run:', err));
+          // Start run persistence if callback provided
+          if (options.onRunStart && options.runId && options.userId && options.accountId) {
+            try {
+              await options.onRunStart(options.runId, options.threadId, options.userId, options.accountId);
+            } catch (err) {
+              console.error('[LangGraphStreamingService] Failed to persist run start:', err);
+            }
           }
 
           const langGraphStream = serviceInstance.langGraphClient.runs.stream(
@@ -173,28 +176,29 @@ export class LangGraphStreamingService {
                 controller.enqueue(new TextEncoder().encode(toolEventText));
                 // serviceInstance.debugLogger?.logDerivedEvent(options.threadId, toolEvent.type, toolEvent.data, options.runId);
 
-                // Persist tool lifecycle
-                try {
-                  if (options.runId && toolEvent.type === 'tool_update') {
-                    const toolName = (toolEvent.data?.toolName || '').toString();
-                    const toolKey = toolName.replace(/\s+/g, '_').toLowerCase();
-                    if (toolEvent.data?.status === 'start') {
-                      ServerToolEventClient.upsertToolStart({
-                        runId: options.runId,
+                // Handle tool persistence if callbacks provided
+                if (options.runId && toolEvent.type === 'tool_update') {
+                  const toolName = (toolEvent.data?.toolName || '').toString();
+                  const toolKey = toolName.replace(/\s+/g, '_').toLowerCase();
+                  
+                  if (toolEvent.data?.status === 'start' && options.onToolStart) {
+                    try {
+                      await options.onToolStart(
+                        options.runId,
                         toolKey,
-                        toolLabel: toolName,
-                        agent: (toolEvent as any)?.agent,
-                      }, options.authToken).catch(err => console.error('[LangGraphStreamingService] Failed to persist tool start:', err));
-                    } else if (toolEvent.data?.status === 'complete') {
-                      ServerToolEventClient.upsertToolComplete({
-                        runId: options.runId,
-                        toolKey,
-                        status: 'complete',
-                      }, options.authToken).catch(err => console.error('[LangGraphStreamingService] Failed to persist tool complete:', err));
+                        toolName,
+                        (toolEvent as any)?.agent
+                      );
+                    } catch (err) {
+                      console.error('[LangGraphStreamingService] Failed to persist tool start:', err);
+                    }
+                  } else if (toolEvent.data?.status === 'complete' && options.onToolComplete) {
+                    try {
+                      await options.onToolComplete(options.runId, toolKey, 'complete');
+                    } catch (err) {
+                      console.error('[LangGraphStreamingService] Failed to persist tool complete:', err);
                     }
                   }
-                } catch (e) {
-                  console.error('[LangGraphStreamingService] Persist tool event error', e);
                 }
               }
 
@@ -225,12 +229,18 @@ export class LangGraphStreamingService {
                       const startEvt = { type: 'tool_update', data: { toolName: name, status: 'start' } };
                       controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(startEvt)}\n\n`));
                       // serviceInstance.debugLogger?.logDerivedEvent(options.threadId, 'tool_update', { toolName: name, status: 'start' }, options.runId);
-                      if (options.runId) {
-                        ServerToolEventClient.upsertToolStart({ 
-                          runId: options.runId, 
-                          toolKey: key.replace(/\s+/g,'_'), 
-                          toolLabel: name 
-                        }, options.authToken).catch(err => console.error('[LangGraphStreamingService] Failed to persist heuristic tool start:', err));
+                      
+                      // Handle heuristic tool start persistence
+                      if (options.runId && options.onToolStart) {
+                        try {
+                          await options.onToolStart(
+                            options.runId,
+                            key.replace(/\s+/g, '_'),
+                            name
+                          );
+                        } catch (err) {
+                          console.error('[LangGraphStreamingService] Failed to persist heuristic tool start:', err);
+                        }
                       }
                     }
                   }
@@ -247,16 +257,16 @@ export class LangGraphStreamingService {
 
           // console.log('[LangGraphStreamingService] Stream completed successfully');
           controller.close();
-          // Log session end summary
-          // try {
-          //   serviceInstance.debugLogger?.logSessionEnd(options.threadId, { eventCounts });
-          // } catch {}
-
-          // Persist run completion
-          if (options.runId) {
-            ServerToolEventClient.finalizeRun({ runId: options.runId, status: 'complete' }, options.authToken)
-              .catch(err => console.error('[LangGraphStreamingService] Failed to finalize run:', err));
+          
+          // Finalize run on successful completion
+          if (options.runId && options.onRunFinalize) {
+            try {
+              await options.onRunFinalize(options.runId, 'complete');
+            } catch (err) {
+              console.error('[LangGraphStreamingService] Failed to finalize run:', err);
+            }
           }
+          
           // Log session end summary
           // try {
           //   serviceInstance.debugLogger?.logSessionEnd(options.threadId, { eventCounts });
@@ -277,9 +287,14 @@ export class LangGraphStreamingService {
           // try {
           //   serviceInstance.debugLogger?.logSessionEnd(options.threadId, { error: String(error) });
           // } catch {}
-          if ((options as any)?.runId) {
-            ServerToolEventClient.finalizeRun({ runId: (options as any).runId, status: 'error' }, (options as any).authToken)
-              .catch(err => console.error('[LangGraphStreamingService] Failed to finalize run on error:', err));
+          
+          // Finalize run on error
+          if (options.runId && options.onRunFinalize) {
+            try {
+              await options.onRunFinalize(options.runId, 'error');
+            } catch (err) {
+              console.error('[LangGraphStreamingService] Failed to finalize run on error:', err);
+            }
           }
         }
       }

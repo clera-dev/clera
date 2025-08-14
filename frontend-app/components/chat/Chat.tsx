@@ -92,6 +92,11 @@ export default function Chat({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const timelineBuilderRef = useRef<TimelineBuilder>(createTimelineBuilder());
 
+  // Reset timeline builder per thread to isolate state between conversations
+  useEffect(() => {
+    timelineBuilderRef.current = createTimelineBuilder();
+  }, [currentThreadId]);
+
   // Derived state from secure chat client
   const isProcessing = chatClient.state.isLoading || isCreatingSession;
   const error = chatClient.state.error;
