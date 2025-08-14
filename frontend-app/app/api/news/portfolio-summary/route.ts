@@ -5,6 +5,7 @@ import { OpenAI } from 'openai';
 import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
 import redisClient from '@/utils/redis';
+import { timingSafeEqual } from 'crypto';
 
 const sentimentAnalyzer = new Sentiment();
 
@@ -467,8 +468,35 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch summary', details: summaryError.message }, { status: 500 });
     }
 
+    // Force regeneration via query param (dev/operator override only)
+    // Security: Only allow force regeneration for privileged users to prevent cost amplification attacks
+    const isForceRequested = requestUrl.searchParams.get('force') === '1' || requestUrl.searchParams.get('regenerate') === '1';
+    
+    // Secure constant-time comparison to prevent timing side-channel attacks
+    const isValidAdminKey = (() => {
+      const providedKey = request.headers.get('x-admin-key');
+      const expectedKey = process.env.ADMIN_SECRET;
+      
+      if (!providedKey || !expectedKey) return false;
+      if (providedKey.length !== expectedKey.length) return false;
+      
+      try {
+        return timingSafeEqual(
+          Buffer.from(providedKey, 'utf8'),
+          Buffer.from(expectedKey, 'utf8')
+        );
+      } catch {
+        return false;
+      }
+    })();
+    
+    const isPrivilegedAccess = 
+      isValidAdminKey || // Internal admin header (secure comparison)
+      process.env.NODE_ENV === 'development'; // Allow in development
+    const forceRegenerate = isForceRequested && isPrivilegedAccess;
+
     // Check if summary exists and whether it's stale (older than 24 hours)
-    const isStale = !summary ? true : (() => {
+    const isStale = forceRegenerate ? true : (!summary ? true : (() => {
       const generatedTime = new Date(summary.generated_at).getTime();
       const now = new Date().getTime();
       const hoursSinceGeneration = (now - generatedTime) / (1000 * 60 * 60);
@@ -486,7 +514,7 @@ export async function GET(request: Request) {
         console.log(`Summary is still fresh (${hoursSinceGeneration.toFixed(2)} hours old, threshold: ${refreshThreshold} hours)`);
         return false;
       }
-    })();
+    })());
     
     // Check if generation is already in progress for this user using Redis
     const generationInProgress = await isUserLockActive(user.id);

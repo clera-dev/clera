@@ -2,11 +2,19 @@
 
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Globe, Volume2, Loader2, AlertCircle } from "lucide-react";
+import { Globe, Volume2, Loader2, AlertCircle, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
 import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { 
+  parseSummary, 
+  splitIntoBullets, 
+  getFallbackSections, 
+  sanitizeForPrompt 
+} from '@/utils/newsTextProcessing';
+import { renderWithEmphasis } from '@/utils/newsTextRendering';
 
 interface EnrichedArticle {
   url: string;
@@ -98,6 +106,32 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
     return "Get specific analysis of how this news affects your investments and what actions to consider";
   };
 
+  // Parse model output into headline, yesterday bullets, and today bullets.
+
+
+  const structured = portfolioSummary?.summary_text
+    ? parseSummary(portfolioSummary.summary_text.replace(/\\n/g, '\n'))
+    : { headline: '', yesterday: [], today: [] };
+
+
+
+
+
+  const fallback = (!structured.yesterday.length && !structured.today.length && portfolioSummary?.summary_text)
+    ? getFallbackSections(portfolioSummary.summary_text)
+    : { yesterday: [] as string[], today: [] as string[] };
+
+
+
+
+
+  const handleBulletAssist = (sectionLabel: string, bullet: string) => {
+    const sanitizedBullet = sanitizeForPrompt(bullet);
+    const sanitizedSection = sanitizeForPrompt(sectionLabel);
+    const prompt = `Deep-dive this news point from the user's daily briefing.\nSection: ${sanitizedSection}\nBullet: "${sanitizedBullet}"\n\nExplain what it means, why it matters to a long-term growth investor, key drivers, risks, and concrete upcoming catalysts.`;
+    openChatWithPrompt(prompt, 'portfolio_news_bullet');
+  };
+
   if (!isEnabled) {
     // Fallback to original component when assist is disabled
     return (
@@ -111,7 +145,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
         <CardContent className="flex-1 flex flex-col overflow-hidden p-3 pt-0">
           <div className="space-y-1 mb-2">
             <div className="flex items-center justify-between">
-              <p className="text-base font-medium">Your Summary:</p>
+              <p className="text-base font-medium">Market Recap:</p>
             </div>
             {isLoadingSummary && (
               <div className="flex items-center space-x-2 text-muted-foreground text-sm">
@@ -127,9 +161,60 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
             )}
             {!isLoadingSummary && !summaryError && portfolioSummary && (
               <div className="text-sm text-muted-foreground space-y-3">
-                <p style={{ whiteSpace: 'pre-line' }}>
-                  {portfolioSummary.summary_text.replace(/\\n/g, '\n')}
-                </p>
+                {structured.yesterday.length > 0 ? (
+                  <ul className="space-y-2">
+                    {structured.yesterday.map((b, idx) => (
+                      <li key={`y-${idx}`} className="flex items-start gap-2">
+                        <span className="text-muted-foreground" aria-hidden>•</span>
+                        <span className="flex-1 leading-6">{b}</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                              onClick={() => handleBulletAssist("Market Recap", b)}
+                              aria-label="Learn more"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Learn more</TooltipContent>
+                        </Tooltip>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p style={{ whiteSpace: 'pre-line' }}>
+                    {portfolioSummary.summary_text.replace(/\\n/g, '\n')}
+                  </p>
+                )}
+
+                {structured.today.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-base font-medium text-foreground mb-1">What to Watch Out For:</p>
+                    <ul className="space-y-2">
+                      {structured.today.map((b, idx) => (
+                        <li key={`t-${idx}`} className="flex items-start gap-2">
+                                                  <span className="text-muted-foreground" aria-hidden>•</span>
+                        <span className="flex-1 leading-6">{b}</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                              onClick={() => handleBulletAssist("What to Watch Out For", b)}
+                              aria-label="Learn more"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Learn more</TooltipContent>
+                        </Tooltip>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {/* Display Enriched Referenced Articles */}
                 {portfolioSummary.referenced_articles.length > 0 ? (
                   <div className="space-y-3">
@@ -176,7 +261,7 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
         
         <div className="space-y-1 mb-2 flex-1 flex flex-col">
           <div className="flex items-center justify-between">
-            <p className="text-base font-medium">Your Summary:</p>
+            <p className="text-base font-medium">Market Recap:</p>
           </div>
           
           <div className="flex-1 overflow-auto">
@@ -193,10 +278,57 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
               </Alert>
             )}
             {!isLoadingSummary && !summaryError && portfolioSummary && (
-              <div className="text-sm text-muted-foreground space-y-3">
-                <p style={{ whiteSpace: 'pre-line' }}>
-                  {portfolioSummary.summary_text.replace(/\\n/g, '\n')}
-                </p>
+              <div className="text-[15px] text-gray-200 space-y-3">
+                {(structured.yesterday.length ? structured.yesterday : fallback.yesterday).length > 0 ? (
+                  <ul className="space-y-2">
+                    {(structured.yesterday.length ? structured.yesterday : fallback.yesterday).map((b, idx) => (
+                      <li key={`y-enabled-${idx}`} className="flex items-start gap-2">
+                        <span className="text-gray-400" aria-hidden>•</span>
+                        <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                              onClick={() => handleBulletAssist("Market Recap", b)}
+                              aria-label="Learn more"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Learn more</TooltipContent>
+                        </Tooltip>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                {(structured.today.length ? structured.today : fallback.today).length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-base font-medium text-foreground mb-1">What to Watch Out For:</p>
+                    <ul className="space-y-2">
+                      {(structured.today.length ? structured.today : fallback.today).map((b, idx) => (
+                        <li key={`t-enabled-${idx}`} className="flex items-start gap-2">
+                                                  <span className="text-gray-400" aria-hidden>•</span>
+                        <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                                onClick={() => handleBulletAssist("What to Watch Out For", b)}
+                              aria-label="Learn more"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Learn more</TooltipContent>
+                        </Tooltip>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {/* Display Enriched Referenced Articles */}
                 {portfolioSummary.referenced_articles.length > 0 ? (
                   <div className="space-y-3">

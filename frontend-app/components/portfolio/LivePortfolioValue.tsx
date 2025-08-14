@@ -222,10 +222,18 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
                 // Error events don't usually provide much detail in the event object itself
                 console.error('WebSocket connection error occurred', {
                     url: urlToConnect, // Log the URL it tried to connect to
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    readyState: ws.readyState
                 });
                 
                 setIsConnected(false);
+                
+                // If this is the first error and we haven't tried many times, try fallback immediately
+                const currentAttempts = connectionAttemptsRef.current;
+                if (currentAttempts === 0) {
+                    console.log('First WebSocket connection attempt failed, switching to fallback mode');
+                    setUseFallback(true);
+                }
                 // The 'close' event usually follows 'error', which handles reconnection/fallback
             };
             
