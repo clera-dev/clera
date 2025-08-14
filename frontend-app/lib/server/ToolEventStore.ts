@@ -1,10 +1,11 @@
 /**
  * ToolEventStore: Server-side only persistence for chat tool activities
- * 
+ *
  * SECURITY: This module uses SUPABASE_SERVICE_ROLE_KEY for server-side writes
  * that bypass RLS. It should ONLY be imported by server-side API routes.
  */
 
+import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 
 interface StartRunParams {
@@ -210,3 +211,5 @@ export class ToolEventStore {
     }
   }
 }
+
+

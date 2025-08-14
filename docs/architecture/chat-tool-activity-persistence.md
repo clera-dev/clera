@@ -56,8 +56,8 @@ create table if not exists public.chat_tool_calls (
 
 create index if not exists chat_tool_calls_run_started_idx on public.chat_tool_calls (run_id, started_at);
 create index if not exists chat_tool_calls_run_status_idx on public.chat_tool_calls (run_id, status);
--- prevents duplicate tool calls for the same run and tool (excluding started_at for proper deduplication)
-create unique index if not exists chat_tool_calls_dedupe on public.chat_tool_calls (run_id, tool_key);
+-- allows multiple tool invocations per run while maintaining query performance
+create index if not exists chat_tool_calls_run_tool_started_idx on public.chat_tool_calls (run_id, tool_key, started_at);
 ```
 
 #### Row-Level Security (RLS)

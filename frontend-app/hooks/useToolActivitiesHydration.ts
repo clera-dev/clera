@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SecureChatClient } from '@/utils/api/secure-chat-client';
 
 interface UseToolActivitiesHydrationParams {
@@ -19,6 +19,7 @@ export function useToolActivitiesHydration({
   onRunIdsLoaded,
 }: UseToolActivitiesHydrationParams) {
   const persistedRunIdsRef = useRef<string[] | null>(null);
+  const [persistedRunIds, setPersistedRunIds] = useState<string[] | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -77,11 +78,13 @@ export function useToolActivitiesHydration({
 
         // Store sorted runIds for assignment once messages are hydrated
         const sortedRuns = [...runs].sort((a: any, b: any) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
-        persistedRunIdsRef.current = sortedRuns.map((r: any) => r.run_id);
+        const loadedRunIds: string[] = sortedRuns.map((r: any) => r.run_id);
+        persistedRunIdsRef.current = loadedRunIds;
+        setPersistedRunIds(loadedRunIds);
 
         // Notify parent component of loaded run IDs
         if (onRunIdsLoaded) {
-          onRunIdsLoaded(persistedRunIdsRef.current);
+          onRunIdsLoaded(loadedRunIds);
         }
       } catch (err) {
         console.error('Failed to hydrate tool activities', err);
@@ -90,6 +93,6 @@ export function useToolActivitiesHydration({
   }, [currentThreadId, accountId, chatClient, onRunIdsLoaded]);
 
   return {
-    persistedRunIds: persistedRunIdsRef.current,
+    persistedRunIds,
   };
 }

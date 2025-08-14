@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Message } from '@/utils/api/chat-client';
 import { useSecureChat } from '@/utils/api/secure-chat-client';
 import { useMessageRetry } from '@/hooks/useMessageRetry';
@@ -90,12 +90,8 @@ export default function Chat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const timelineBuilderRef = useRef<TimelineBuilder>(createTimelineBuilder());
-
-  // Reset timeline builder per thread to isolate state between conversations
-  useEffect(() => {
-    timelineBuilderRef.current = createTimelineBuilder();
-  }, [currentThreadId]);
+  // Create a fresh TimelineBuilder per thread and propagate it to children
+  const timelineBuilder = useMemo(() => createTimelineBuilder(), [currentThreadId]);
 
   // Derived state from secure chat client
   const isProcessing = chatClient.state.isLoading || isCreatingSession;
@@ -664,7 +660,7 @@ export default function Chat({
           isMobile={isMobile}
           isFullscreen={isFullscreen}
           isSidebarMode={isSidebarMode}
-          timelineBuilder={timelineBuilderRef.current}
+          timelineBuilder={timelineBuilder}
         />
 
         

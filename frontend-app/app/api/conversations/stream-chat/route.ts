@@ -3,7 +3,7 @@ import { randomUUID as nodeRandomUUID, randomBytes } from 'crypto';
 import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingService';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 import { createClient as createServerSupabase } from '@/utils/supabase/server';
-import { ToolEventStore } from '@/utils/services/ToolEventStore';
+import { ToolEventStore } from '@/lib/server/ToolEventStore';
 
 // CRITICAL FIX: Set maximum duration for LangGraph agent processing (up to 800 seconds on Pro/Enterprise)
 export const maxDuration = 299; // ~5 minutes for complex agent workflows

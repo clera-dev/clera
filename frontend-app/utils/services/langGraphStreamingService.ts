@@ -117,12 +117,15 @@ export class LangGraphStreamingService {
           //   }, options.runId);
           // } catch {}
 
-          // Start run persistence if callback provided
+          // Start run persistence if callback provided (fire-and-forget)
           if (options.onRunStart && options.runId && options.userId && options.accountId) {
             try {
-              await options.onRunStart(options.runId, options.threadId, options.userId, options.accountId);
+              const p = options.onRunStart(options.runId, options.threadId, options.userId, options.accountId);
+              Promise.resolve(p).catch((err) => {
+                console.error('[LangGraphStreamingService] Failed to persist run start:', err);
+              });
             } catch (err) {
-              console.error('[LangGraphStreamingService] Failed to persist run start:', err);
+              console.error('[LangGraphStreamingService] Failed to invoke run start callback:', err);
             }
           }
 
@@ -183,20 +186,26 @@ export class LangGraphStreamingService {
                   
                   if (toolEvent.data?.status === 'start' && options.onToolStart) {
                     try {
-                      await options.onToolStart(
+                      const p = options.onToolStart(
                         options.runId,
                         toolKey,
                         toolName,
                         (toolEvent as any)?.agent
                       );
+                      Promise.resolve(p).catch((err) => {
+                        console.error('[LangGraphStreamingService] Failed to persist tool start:', err);
+                      });
                     } catch (err) {
-                      console.error('[LangGraphStreamingService] Failed to persist tool start:', err);
+                      console.error('[LangGraphStreamingService] Failed to invoke tool start callback:', err);
                     }
                   } else if (toolEvent.data?.status === 'complete' && options.onToolComplete) {
                     try {
-                      await options.onToolComplete(options.runId, toolKey, 'complete');
+                      const p = options.onToolComplete(options.runId, toolKey, 'complete');
+                      Promise.resolve(p).catch((err) => {
+                        console.error('[LangGraphStreamingService] Failed to persist tool complete:', err);
+                      });
                     } catch (err) {
-                      console.error('[LangGraphStreamingService] Failed to persist tool complete:', err);
+                      console.error('[LangGraphStreamingService] Failed to invoke tool complete callback:', err);
                     }
                   }
                 }
@@ -233,13 +242,16 @@ export class LangGraphStreamingService {
                       // Handle heuristic tool start persistence
                       if (options.runId && options.onToolStart) {
                         try {
-                          await options.onToolStart(
+                          const p = options.onToolStart(
                             options.runId,
                             key.replace(/\s+/g, '_'),
                             name
                           );
+                          Promise.resolve(p).catch((err) => {
+                            console.error('[LangGraphStreamingService] Failed to persist heuristic tool start:', err);
+                          });
                         } catch (err) {
-                          console.error('[LangGraphStreamingService] Failed to persist heuristic tool start:', err);
+                          console.error('[LangGraphStreamingService] Failed to invoke heuristic tool start callback:', err);
                         }
                       }
                     }
@@ -258,12 +270,15 @@ export class LangGraphStreamingService {
           // console.log('[LangGraphStreamingService] Stream completed successfully');
           controller.close();
           
-          // Finalize run on successful completion
+          // Finalize run on successful completion (fire-and-forget)
           if (options.runId && options.onRunFinalize) {
             try {
-              await options.onRunFinalize(options.runId, 'complete');
+              const p = options.onRunFinalize(options.runId, 'complete');
+              Promise.resolve(p).catch((err) => {
+                console.error('[LangGraphStreamingService] Failed to finalize run:', err);
+              });
             } catch (err) {
-              console.error('[LangGraphStreamingService] Failed to finalize run:', err);
+              console.error('[LangGraphStreamingService] Failed to invoke run finalize callback:', err);
             }
           }
           
@@ -288,12 +303,15 @@ export class LangGraphStreamingService {
           //   serviceInstance.debugLogger?.logSessionEnd(options.threadId, { error: String(error) });
           // } catch {}
           
-          // Finalize run on error
+          // Finalize run on error (fire-and-forget)
           if (options.runId && options.onRunFinalize) {
             try {
-              await options.onRunFinalize(options.runId, 'error');
+              const p = options.onRunFinalize(options.runId, 'error');
+              Promise.resolve(p).catch((err) => {
+                console.error('[LangGraphStreamingService] Failed to finalize run on error:', err);
+              });
             } catch (err) {
-              console.error('[LangGraphStreamingService] Failed to finalize run on error:', err);
+              console.error('[LangGraphStreamingService] Failed to invoke run finalize callback on error:', err);
             }
           }
         }

@@ -1,3 +1,4 @@
+import 'server-only';
 import fs from 'fs';
 import { promises as fsp } from 'fs';
 import path from 'path';
@@ -11,12 +12,18 @@ interface StreamDebugLoggerOptions {
  * Writes sanitized event metadata to a newline-delimited .txt file.
  * Disabled unless LANGGRAPH_DEBUG_LOG=1 or in development.
  */
+type SharedLoggerState = {
+  stream: fs.WriteStream | null;
+  queue: string[];
+  isFlushing: boolean;
+  enabled: boolean;
+};
+
 export class StreamDebugLogger {
   private logFilePath: string;
   private enabled: boolean;
-  private logStream: fs.WriteStream | null = null;
-  private queue: string[] = [];
-  private isFlushing: boolean = false;
+  // Shared state across all instances by file path
+  private static sharedByPath: Map<string, SharedLoggerState> = new Map();
 
   private safeStringify(value: any): string {
     const seen = new WeakSet();
@@ -54,11 +61,10 @@ export class StreamDebugLogger {
     if (this.enabled) {
       ensureLogDir(this.logFilePath)
         .then(() => {
-          // Stream init happens lazily after directory is ready
-          this.initStream();
+          // Initialize shared state lazily
+          StreamDebugLogger.ensureShared(this.logFilePath, this.enabled);
         })
         .catch((e) => {
-          // If we cannot create dir, disable logging silently
           console.error('[StreamDebugLogger] Failed to ensure log directory:', e);
           this.enabled = false;
         });
@@ -68,52 +74,63 @@ export class StreamDebugLogger {
   log(line: string) {
     if (!this.enabled) return;
     try {
-      if (!this.ensureStream()) return;
-      this.queue.push(line + '\n');
-      this.flushQueue();
+      StreamDebugLogger.enqueue(this.logFilePath, line, this.enabled);
     } catch (e) {
       // Never throw from logger
     }
   }
 
-  private initStream() {
-    try {
-      this.logStream = fs.createWriteStream(this.logFilePath, { flags: 'a', encoding: 'utf8' });
-      this.logStream.on('error', () => {
-        // Disable logging on stream errors to avoid impacting request path
-        this.enabled = false;
-        this.logStream?.destroy();
-        this.logStream = null;
-        this.queue = [];
-      });
-    } catch {
-      this.enabled = false;
-      this.logStream = null;
-      this.queue = [];
+  private static ensureShared(filePath: string, enabled: boolean): SharedLoggerState | null {
+    let state = this.sharedByPath.get(filePath);
+    if (!state) {
+      state = { stream: null, queue: [], isFlushing: false, enabled };
+      this.sharedByPath.set(filePath, state);
+    } else {
+      state.enabled = state.enabled || enabled;
     }
+    if (!state.enabled) return null;
+    if (!state.stream) {
+      try {
+        const stream = fs.createWriteStream(filePath, { flags: 'a', encoding: 'utf8' });
+        stream.on('error', () => {
+          // Disable logging on stream errors to avoid impacting request path
+          state!.enabled = false;
+          try { stream.destroy(); } catch {}
+          state!.stream = null;
+          state!.queue = [];
+        });
+        state.stream = stream;
+      } catch {
+        state.enabled = false;
+        state.stream = null;
+        state.queue = [];
+      }
+    }
+    return state;
   }
 
-  private ensureStream(): boolean {
-    if (!this.logStream) {
-      this.initStream();
-    }
-    return !!this.logStream;
+  private static enqueue(filePath: string, line: string, enabled: boolean) {
+    const state = this.ensureShared(filePath, enabled);
+    if (!state || !state.enabled || !state.stream) return;
+    state.queue.push(line + '\n');
+    this.flush(filePath, state);
   }
 
-  private flushQueue() {
-    if (!this.logStream || this.isFlushing) return;
-    this.isFlushing = true;
+  private static flush(filePath: string, state?: SharedLoggerState) {
+    const s = state || this.sharedByPath.get(filePath);
+    if (!s || !s.stream || s.isFlushing) return;
+    s.isFlushing = true;
     const writeNext = () => {
-      if (!this.logStream) { this.isFlushing = false; return; }
+      if (!s.stream) { s.isFlushing = false; return; }
       let chunk: string | undefined;
-      while ((chunk = this.queue.shift())) {
-        const canContinue = this.logStream.write(chunk);
+      while ((chunk = s.queue.shift())) {
+        const canContinue = s.stream.write(chunk);
         if (!canContinue) {
-          this.logStream.once('drain', writeNext);
+          s.stream.once('drain', writeNext);
           return;
         }
       }
-      this.isFlushing = false;
+      s.isFlushing = false;
     };
     writeNext();
   }
@@ -121,19 +138,19 @@ export class StreamDebugLogger {
   logSessionStart(threadId: string, info: Record<string, any>, runId?: string) {
     if (!this.enabled) return;
     const timestamp = new Date().toISOString();
-    this.log(this.safeStringify({ type: 'session_start', timestamp, threadId, runId: runId || 'unknown', info }));
+    StreamDebugLogger.enqueue(this.logFilePath, this.safeStringify({ type: 'session_start', timestamp, threadId, runId: runId || 'unknown', info }), this.enabled);
   }
 
   logSessionEnd(threadId: string, summary: Record<string, any>) {
     if (!this.enabled) return;
     const timestamp = new Date().toISOString();
-    this.log(this.safeStringify({ type: 'session_end', timestamp, threadId, summary }));
+    StreamDebugLogger.enqueue(this.logFilePath, this.safeStringify({ type: 'session_end', timestamp, threadId, summary }), this.enabled);
   }
 
   logDerivedEvent(threadId: string, kind: string, data?: Record<string, any>, runId?: string) {
     if (!this.enabled) return;
     const timestamp = new Date().toISOString();
-    this.log(this.safeStringify({ type: 'derived_event', timestamp, threadId, runId: runId || 'unknown', kind, data }));
+    StreamDebugLogger.enqueue(this.logFilePath, this.safeStringify({ type: 'derived_event', timestamp, threadId, runId: runId || 'unknown', kind, data }), this.enabled);
   }
 
   logChunk(threadId: string, rawChunk: any, runId?: string) {
@@ -188,7 +205,7 @@ export class StreamDebugLogger {
 
       const timestamp = new Date().toISOString();
       const entry = this.safeStringify({ type: 'raw_chunk', timestamp, threadId, runId: runId || 'unknown', event: safeEvent, dataSummary });
-      this.log(entry);
+      StreamDebugLogger.enqueue(this.logFilePath, entry, this.enabled);
     } catch (e) {
       // Ignore logging errors
     }

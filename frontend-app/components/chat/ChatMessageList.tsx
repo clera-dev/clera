@@ -41,6 +41,17 @@ export function ChatMessageList({
   const preFinal = isFinalAssistant ? msgs.slice(0, lastIndex) : msgs;
   const finalOnly = isFinalAssistant ? [lastMsg] : [];
 
+  // Precompute latest user runId before each index to avoid O(n^2) scans in render
+  const latestUserRunIdBeforeIndex: (string | undefined)[] = new Array(preFinal.length);
+  let lastUserRunIdSeen: string | undefined = undefined;
+  for (let i = 0; i < preFinal.length; i++) {
+    latestUserRunIdBeforeIndex[i] = lastUserRunIdSeen;
+    const m: any = preFinal[i];
+    if (m && m.role === 'user' && m.runId) {
+      lastUserRunIdSeen = m.runId as string;
+    }
+  }
+
   const renderedRunIds = new Set<string>();
   
   return (
@@ -48,8 +59,7 @@ export function ChatMessageList({
       {preFinal.map((msg: Message, index: number) => {
         // Get runId from the message itself (status messages and assistant responses now both have runIds)
         // Fall back to finding the previous user message if needed
-        const prevUserRunId = (msg as any).runId || 
-          [...preFinal.slice(0, index)].reverse().find(m => m.role === 'user' && (m as any).runId)?.['runId' as keyof Message] as any;
+        const prevUserRunId = (msg as any).runId || latestUserRunIdBeforeIndex[index];
         const detailsBlock = (placeAfter: boolean) => (
           prevUserRunId && !renderedRunIds.has(prevUserRunId as string) && (toolActivities as any[]).some(a => a.runId === prevUserRunId)
             ? (
@@ -117,7 +127,7 @@ export function ChatMessageList({
 
       {finalOnly.map((msg: Message, index: number) => (
         (() => {
-          const runId = (msg as any).runId || [...preFinal].reverse().find(m => m.role === 'user' && (m as any).runId)?.['runId' as keyof Message];
+          const runId = (msg as any).runId || lastUserRunIdSeen;
           const shouldRenderDetails = runId && !renderedRunIds.has(runId as string) && (toolActivities as any[]).some(a => a.runId === runId);
           if (shouldRenderDetails) renderedRunIds.add(runId as string);
           return (

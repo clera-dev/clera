@@ -134,11 +134,8 @@ export class SecureChatClientImpl implements SecureChatClient {
     // Enhanced duplicate prevention: check for existing activity by tool name and runId
     // Also check for very recent activities (within 1 second) to catch rapid duplicates
     const now = Date.now();
-    const existingActivity = this._state.toolActivities.find((a: ToolActivity) => 
-      a.runId === runId && (
-        a.toolName === normalized || 
-        (now - a.startedAt < 1000 && a.toolName === normalized)
-      )
+    const existingActivity = this._state.toolActivities.find((a: ToolActivity) =>
+      a.runId === runId && a.toolName === normalized && (now - a.startedAt < 1000)
     );
     if (existingActivity) {
       // console.log(`[SecureChatClient] Preventing duplicate tool: ${normalized} for runId: ${runId}`);

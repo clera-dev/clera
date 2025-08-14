@@ -20,46 +20,49 @@ export function useRunIdAssignment({
   const tryAssignRunIdsToMessages = useCallback(() => {
     if (!persistedRunIds || persistedRunIds.length === 0) return;
 
+    // Build an index of user messages and their positional index within the user-only list
     const userMessages = messages.filter(m => m.role === 'user');
-    let needsUpdate = false;
+    const userIndexByMessage = new Map<Message, number>();
+    for (let i = 0; i < userMessages.length; i++) {
+      userIndexByMessage.set(userMessages[i], i);
+    }
 
-    // Check if any user messages need runId assignment
-    userMessages.forEach((userMsg, index) => {
-      if (!userMsg.runId && index < persistedRunIds.length) {
-        needsUpdate = true;
+    // Create immutable updates for messages that need runIds (both user and assistant)
+    let changed = false;
+    const updatedMessages = messages.map((message, idx) => {
+      if (message.runId) return message;
+
+      // Assign runId to user messages based on their index among user messages
+      if (message.role === 'user') {
+        const userIdx = userIndexByMessage.get(message);
+        if (userIdx !== undefined && userIdx < persistedRunIds.length) {
+          changed = true;
+          return { ...message, runId: persistedRunIds[userIdx] };
+        }
+        return message;
       }
-    });
 
-    if (!needsUpdate) return;
-
-    // Create immutable updates for messages that need runIds
-    const updatedMessages = messages.map((message) => {
-      const userMsgIndex = userMessages.findIndex(um => um === message);
-      
-      // If this is a user message that needs a runId
-      if (userMsgIndex !== -1 && !message.runId && userMsgIndex < persistedRunIds.length) {
-        return { ...message, runId: persistedRunIds[userMsgIndex] };
-      }
-      
-      // If this is an assistant message that follows a user message needing runId assignment
-      if (message.role === 'assistant' && !message.runId) {
-        // Find the preceding user message
-        const messageIndex = messages.indexOf(message);
-        const precedingUserMsg = messages.slice(0, messageIndex).reverse().find(m => m.role === 'user');
-        
-        if (precedingUserMsg) {
-          const precedingUserIndex = userMessages.findIndex(um => um === precedingUserMsg);
-          if (precedingUserIndex !== -1 && precedingUserIndex < persistedRunIds.length) {
-            return { ...message, runId: persistedRunIds[precedingUserIndex] };
+      // Assign runId to assistant messages based on the preceding user message's index
+      if (message.role === 'assistant') {
+        for (let j = idx - 1; j >= 0; j--) {
+          const prev = messages[j];
+          if (prev.role === 'user') {
+            const prevUserIdx = userIndexByMessage.get(prev);
+            if (prevUserIdx !== undefined && prevUserIdx < persistedRunIds.length) {
+              changed = true;
+              return { ...message, runId: persistedRunIds[prevUserIdx] };
+            }
+            break;
           }
         }
       }
-      
-      return message; // No change needed
+
+      return message;
     });
 
-    // Only update if something actually changed
-    chatClient.setMessages(updatedMessages);
+    if (changed) {
+      chatClient.setMessages(updatedMessages);
+    }
   }, [messages, chatClient, persistedRunIds]);
 
   useEffect(() => {
