@@ -112,8 +112,15 @@ export class SecureChatClientImpl implements SecureChatClient {
   // Only appends activities for runs not already present, to avoid duplicating current in-memory runs
   mergePersistedToolActivities(activities: ToolActivity[]) {
     if (!Array.isArray(activities) || activities.length === 0) return;
-    const existingRunIds = new Set((this._state.toolActivities || []).map(a => a.runId).filter(Boolean) as string[]);
-    const incoming = activities.filter(a => a.runId && !existingRunIds.has(a.runId));
+    // Deduplicate at the activity level (runId + toolName + startedAt)
+    const existingKeys = new Set(
+      (this._state.toolActivities || []).map(a => `${a.runId || 'unknown'}|${a.toolName}|${a.startedAt}`)
+    );
+    const incoming = activities.filter(a => {
+      if (!a) return false;
+      const key = `${a.runId || 'unknown'}|${a.toolName}|${a.startedAt}`;
+      return !existingKeys.has(key);
+    });
     if (incoming.length === 0) return;
     this.setState({ toolActivities: [...this._state.toolActivities, ...incoming] });
   }

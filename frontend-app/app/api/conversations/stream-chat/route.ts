@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID as nodeRandomUUID, randomBytes } from 'crypto';
 import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingService';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 import { createClient as createServerSupabase } from '@/utils/supabase/server';
@@ -44,6 +45,23 @@ export async function POST(request: NextRequest) {
     console.log('[StreamChat] Starting stream via LangGraphStreamingService for thread:', thread_id);
 
     // Validate or safely resolve run_id to avoid hijacking or overwriting existing runs
+    const secureRandomUUID = (): string => {
+      // Prefer Web Crypto if available
+      const g: any = globalThis as any;
+      if (g?.crypto && typeof g.crypto.randomUUID === 'function') {
+        try { return g.crypto.randomUUID(); } catch {}
+      }
+      // Fallback to Node crypto randomUUID
+      if (typeof nodeRandomUUID === 'function') {
+        try { return nodeRandomUUID(); } catch {}
+      }
+      // Final fallback: RFC4122 v4 from secure random bytes
+      const bytes = randomBytes(16);
+      bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+      bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx
+      const hex = bytes.toString('hex');
+      return `${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}`;
+    };
     const supabase = await createServerSupabase();
     const isValidUuidV4 = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
     let safeRunId: string;
@@ -58,22 +76,10 @@ export async function POST(request: NextRequest) {
       if (!selErr && existing && existing.user_id === user.id && existing.thread_id === thread_id) {
         safeRunId = run_id;
       } else {
-        safeRunId = typeof crypto !== 'undefined' && (crypto as any).randomUUID
-          ? (crypto as any).randomUUID()
-          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-              const r = Math.random() * 16 | 0;
-              const v = c === 'x' ? r : (r & 0x3 | 0x8);
-              return v.toString(16);
-            });
+        safeRunId = secureRandomUUID();
       }
     } else {
-      safeRunId = typeof crypto !== 'undefined' && (crypto as any).randomUUID
-        ? (crypto as any).randomUUID()
-        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-            const r = Math.random() * 16 | 0;
-            const v = c === 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-          });
+      safeRunId = secureRandomUUID();
     }
 
     // Create streaming response using the service for consistency

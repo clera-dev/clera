@@ -13,6 +13,9 @@ interface StreamDebugLoggerOptions {
 export class StreamDebugLogger {
   private logFilePath: string;
   private enabled: boolean;
+  private logStream: fs.WriteStream | null = null;
+  private queue: string[] = [];
+  private isFlushing: boolean = false;
 
   constructor(options: StreamDebugLoggerOptions = {}) {
     // Default path inside project tmp dir
@@ -26,6 +29,9 @@ export class StreamDebugLogger {
       const dir = path.dirname(this.logFilePath);
       fs.mkdirSync(dir, { recursive: true });
       this.enabled = process.env.LANGGRAPH_DEBUG_LOG === '1' || process.env.NODE_ENV === 'development';
+      if (this.enabled) {
+        this.initStream();
+      }
     } catch (e) {
       // If we cannot create dir, disable logging silently
       console.error('[StreamDebugLogger] Failed to ensure log directory:', e);
@@ -36,10 +42,54 @@ export class StreamDebugLogger {
   log(line: string) {
     if (!this.enabled) return;
     try {
-      fs.appendFileSync(this.logFilePath, line + '\n', { encoding: 'utf8' });
+      if (!this.ensureStream()) return;
+      this.queue.push(line + '\n');
+      this.flushQueue();
     } catch (e) {
       // Never throw from logger
     }
+  }
+
+  private initStream() {
+    try {
+      this.logStream = fs.createWriteStream(this.logFilePath, { flags: 'a', encoding: 'utf8' });
+      this.logStream.on('error', () => {
+        // Disable logging on stream errors to avoid impacting request path
+        this.enabled = false;
+        this.logStream?.destroy();
+        this.logStream = null;
+        this.queue = [];
+      });
+    } catch {
+      this.enabled = false;
+      this.logStream = null;
+      this.queue = [];
+    }
+  }
+
+  private ensureStream(): boolean {
+    if (!this.logStream) {
+      this.initStream();
+    }
+    return !!this.logStream;
+  }
+
+  private flushQueue() {
+    if (!this.logStream || this.isFlushing) return;
+    this.isFlushing = true;
+    const writeNext = () => {
+      if (!this.logStream) { this.isFlushing = false; return; }
+      let chunk: string | undefined;
+      while ((chunk = this.queue.shift())) {
+        const canContinue = this.logStream.write(chunk);
+        if (!canContinue) {
+          this.logStream.once('drain', writeNext);
+          return;
+        }
+      }
+      this.isFlushing = false;
+    };
+    writeNext();
   }
 
   logSessionStart(threadId: string, info: Record<string, any>, runId?: string) {

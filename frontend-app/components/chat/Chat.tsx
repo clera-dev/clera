@@ -22,53 +22,11 @@ import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import { InterruptConfirmation } from './InterruptConfirmation';
 import ModelProviderRetryPopup from './ModelProviderRetryPopup';
-import { TimelineRenderer } from './TimelineRenderer';
 import { createTimelineBuilder, TimelineBuilder } from '@/utils/services/TimelineBuilder';
-
-// Collapsible tool details per user message using modular architecture
-function PerMessageToolDetails({
-  runId,
-  activities,
-  isMobile,
-  isFullscreen,
-  isSidebarMode,
-  timelineBuilder,
-}: {
-  runId: string;
-  activities: any[];
-  isMobile: boolean;
-  isFullscreen: boolean;
-  isSidebarMode?: boolean;
-  timelineBuilder: TimelineBuilder;
-}) {
-  const [open, setOpen] = useState<boolean>(false);
-  
-  // Use TimelineBuilder to construct timeline steps
-  const timelineSteps = timelineBuilder.buildTimelineForRun(activities, runId);
-  
-  if (timelineSteps.length === 0) return null;
-  
-  return (
-    <div className="mt-3 mb-3">
-      <button
-        type="button"
-        className="text-foreground text-sm hover:text-primary transition-colors inline-flex items-center gap-1 mb-2"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span>{open ? 'Hide details' : 'Show details'}</span>
-        <span className={cn('transition-transform', open ? 'rotate-90' : '')}>›</span>
-      </button>
-      {open && (
-        <TimelineRenderer 
-          steps={timelineSteps}
-          compact={isMobile || isSidebarMode}
-          className="mt-2"
-        />
-      )}
-    </div>
-  );
-}
+import { PerMessageToolDetails } from './PerMessageToolDetails';
+import { ChatMessageList } from './ChatMessageList';
+import { useToolActivitiesHydration } from '@/hooks/useToolActivitiesHydration';
+import { useRunIdAssignment } from '@/hooks/useRunIdAssignment';
 
 // ChatSkeleton removed - status messages now provide proper feedback
 import SuggestedQuestions from './SuggestedQuestions';
@@ -141,7 +99,6 @@ export default function Chat({
   const isInterrupting = interrupt !== null;
   const interruptMessage = interrupt?.value || null;
   const toolActivities = chatClient.state.toolActivities;
-  const persistedRunIdsRef = useRef<string[] | null>(null);
   
   // Use retry popup state from the hook
   const shouldShowRetryPopup = messageRetry.shouldShowRetryPopup;
@@ -150,87 +107,20 @@ export default function Chat({
   // The chatClient's state will now be the primary message store.
   // We'll manage optimistic updates directly in the client.
   const messagesToDisplay = chatClient.state.messages;
-  // Hydrate persisted tool activities for current thread on mount/switch
-  useEffect(() => {
-    (async () => {
-      if (!currentThreadId) return;
-      try {
-        const params = new URLSearchParams({ thread_id: currentThreadId, account_id: accountId });
-        const res = await fetch(`/api/conversations/get-tool-activities?${params.toString()}`, {
-          method: 'GET'
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        const runs = Array.isArray(data.runs) ? data.runs : [];
-        // Convert persisted runs into tool activity items in chronological order
-        const persistedActivities = runs.flatMap((run: any) =>
-          (run.tool_calls || []).map((t: any) => {
-            // If the run itself is complete, all its activities should be marked complete
-            // This prevents pulsing when revisiting completed threads
-            const runIsComplete = run.status === 'complete' || run.ended_at;
-            const activityStatus = runIsComplete ? 'complete' : (t.status === 'complete' ? 'complete' : 'running');
-            
-            return {
-              id: `${run.run_id}-${t.tool_key}-${t.started_at}`,
-              toolName: t.tool_label || t.tool_key,
-              status: activityStatus,
-              startedAt: new Date(t.started_at).getTime(),
-              completedAt: t.completed_at ? new Date(t.completed_at).getTime() : undefined,
-              // include runId to anchor rendering under the correct user message
-              runId: run.run_id,
-            };
-          })
-        );
-        // Merge persisted activities with current ones (preserving new activities like "Thinking")
-        const currentActivities = chatClient.state.toolActivities;
-        const currentRunIds = new Set(currentActivities.map((a: any) => a.runId));
-        
-        // Only add persisted activities that don't conflict with current ones
-        const newPersistedActivities = persistedActivities.filter((persisted: any) => 
-          !currentRunIds.has(persisted.runId)
-        );
-        
-        const mergedActivities = [...currentActivities, ...newPersistedActivities];
-        chatClient.mergePersistedToolActivities(mergedActivities);
+  
+  // Use custom hook for tool activities hydration
+  const { persistedRunIds } = useToolActivitiesHydration({
+    currentThreadId: currentThreadId || undefined,
+    accountId,
+    chatClient,
+  });
 
-        // Store sorted runIds for assignment once messages are hydrated
-        const sortedRuns = [...runs].sort((a: any, b: any) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
-        persistedRunIdsRef.current = sortedRuns.map((r: any) => r.run_id);
-
-        // Try to assign immediately if messages are already present
-        tryAssignRunIdsToMessages();
-      } catch {}
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentThreadId, accountId]);
-
-  // Assign runIds to messages as soon as both messages and runIds are available
-  useEffect(() => {
-    tryAssignRunIdsToMessages();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messagesToDisplay]);
-
-  function tryAssignRunIdsToMessages() {
-    const runIds = persistedRunIdsRef.current;
-    if (!runIds || runIds.length === 0) return;
-    const current = [...chatClient.state.messages] as any[];
-    if (current.length === 0) return;
-    let changed = false;
-    let idx = 0;
-    for (let i = 0; i < current.length && idx < runIds.length; i++) {
-      const m: any = current[i];
-      if (m.role === 'user') {
-        if (!m.runId) {
-          m.runId = runIds[idx];
-          changed = true;
-        }
-        idx++;
-      }
-    }
-    if (changed) {
-      chatClient.setMessages(current as any);
-    }
-  }
+  // Use custom hook for runId assignment
+  const { tryAssignRunIdsToMessages } = useRunIdAssignment({
+    messages: messagesToDisplay,
+    chatClient,
+    persistedRunIds,
+  });
 
   // --- Effect to load initial/thread messages into the client's state ---
   useEffect(() => {
@@ -761,118 +651,16 @@ export default function Chat({
             : "space-y-8 px-8 py-6" // Desktop full-screen: generous spacing
         )}
       >
-        {(() => {
-          // Ensure tool activity list appears below the blue status bubble and above the final assistant response
-          const msgs = messagesToDisplay;
-          const lastIndex = msgs.length - 1;
-          const lastMsg = msgs[lastIndex];
-          const isFinalAssistant = lastMsg && lastMsg.role === 'assistant' && !lastMsg.isStatus;
-          const preFinal = isFinalAssistant ? msgs.slice(0, lastIndex) : msgs;
-          const finalOnly = isFinalAssistant ? [lastMsg] : [];
-
-          const renderedRunIds = new Set<string>();
-          return (
-            <>
-              {preFinal.map((msg: Message, index: number) => {
-                // Get runId from the message itself (status messages and assistant responses now both have runIds)
-                // Fall back to finding the previous user message if needed
-                const prevUserRunId = (msg as any).runId || 
-                  [...preFinal.slice(0, index)].reverse().find(m => m.role === 'user' && (m as any).runId)?.['runId' as keyof Message] as any;
-                const detailsBlock = (placeAfter: boolean) => (
-                  prevUserRunId && !renderedRunIds.has(prevUserRunId as string) && (toolActivities as any[]).some(a => a.runId === prevUserRunId)
-                    ? (
-                      <PerMessageToolDetails
-                        runId={prevUserRunId as any}
-                        activities={toolActivities as any}
-                        isMobile={isMobile}
-                        isFullscreen={isFullscreen}
-                        isSidebarMode={isSidebarMode}
-                        timelineBuilder={timelineBuilderRef.current}
-                      />
-                    )
-                    : null
-                );
-
-                // For assistant final messages (non-status) that already exist in preFinal, render details just above them
-                if (msg.role === 'assistant' && !(msg as any).isStatus) {
-                  const details = detailsBlock(false);
-                  if (details && prevUserRunId) {
-                    renderedRunIds.add(prevUserRunId as string);
-                  }
-                  return (
-                    <div key={msg.id || `msg-${index}`}>
-                      {details}
-                      <ChatMessage
-                        message={msg}
-                        isLast={index === preFinal.length - 1}
-                        isMobileMode={isMobile && isFullscreen}
-                        isSidebarMode={isSidebarMode}
-                      />
-                    </div>
-                  );
-                }
-
-                // For status messages, render details below the blue bubble while the run is in progress
-                if ((msg as any).isStatus) {
-                  const details = detailsBlock(true);
-                  if (details && prevUserRunId) {
-                    renderedRunIds.add(prevUserRunId as string);
-                  }
-                  return (
-                    <div key={msg.id || `msg-${index}`}>
-                      <ChatMessage
-                        message={msg}
-                        isLast={index === preFinal.length - 1}
-                        isMobileMode={isMobile && isFullscreen}
-                        isSidebarMode={isSidebarMode}
-                      />
-                      {details}
-                    </div>
-                  );
-                }
-
-                // Default: render plain message
-                return (
-                  <ChatMessage
-                    key={msg.id || `msg-${index}`}
-                    message={msg}
-                    isLast={index === preFinal.length - 1}
-                    isMobileMode={isMobile && isFullscreen}
-                    isSidebarMode={isSidebarMode}
-                  />
-                );
-              })}
-
-              {finalOnly.map((msg: Message, index: number) => (
-                (() => {
-                  const runId = (msg as any).runId || [...preFinal].reverse().find(m => m.role === 'user' && (m as any).runId)?.['runId' as keyof Message];
-                  const shouldRenderDetails = runId && !renderedRunIds.has(runId as string) && (toolActivities as any[]).some(a => a.runId === runId);
-                  if (shouldRenderDetails) renderedRunIds.add(runId as string);
-                  return (
-                    <div key={msg.id || `final-${index}`}> 
-                      {shouldRenderDetails && (
-                        <PerMessageToolDetails
-                          runId={runId as any}
-                          activities={toolActivities as any}
-                          isMobile={isMobile}
-                          isFullscreen={isFullscreen}
-                          isSidebarMode={isSidebarMode}
-                          timelineBuilder={timelineBuilderRef.current}
-                        />
-                      )}
-                      <ChatMessage
-                        message={msg}
-                        isLast={true}
-                        isMobileMode={isMobile && isFullscreen}
-                        isSidebarMode={isSidebarMode}
-                      />
-                    </div>
-                  );
-                })()
-              ))}
-            </>
-          );
-        })()}
+        <ChatMessageList
+          messages={messagesToDisplay}
+          toolActivities={toolActivities}
+          currentUserId={userId}
+          isProcessing={isProcessing}
+          isMobile={isMobile}
+          isFullscreen={isFullscreen}
+          isSidebarMode={isSidebarMode}
+          timelineBuilder={timelineBuilderRef.current}
+        />
 
         
         {isInterrupting && interrupt && (

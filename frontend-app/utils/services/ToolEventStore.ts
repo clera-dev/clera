@@ -1,4 +1,5 @@
 import { createClient as createServerSupabase } from '@/utils/supabase/server';
+import { createClient as createDirectSupabase } from '@supabase/supabase-js';
 
 export type ToolStatus = 'running' | 'complete' | 'error';
 
@@ -35,7 +36,27 @@ export interface UpsertToolCompleteParams {
  */
 export class ToolEventStore {
   private static async getClient() {
+    // Prefer service-role client for server-only writes to bypass user RLS
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (url && serviceKey) {
+      try {
+        return createDirectSupabase(url, serviceKey, { auth: { persistSession: false } });
+      } catch {}
+    }
+    // Fallback to SSR client (will be constrained by RLS)
     return await createServerSupabase();
+  }
+
+  private static toIsoOrNow(input?: string | Date): string {
+    try {
+      if (!input) return new Date().toISOString();
+      const date = new Date(input);
+      if (isNaN(date.getTime())) return new Date().toISOString();
+      return date.toISOString();
+    } catch {
+      return new Date().toISOString();
+    }
   }
 
   static async startRun(params: StartRunParams): Promise<void> {
@@ -91,7 +112,7 @@ export class ToolEventStore {
   static async upsertToolStart(params: UpsertToolStartParams): Promise<void> {
     try {
       const supabase = await this.getClient();
-      const startedAt = params.at ? new Date(params.at).toISOString() : new Date().toISOString();
+      const startedAt = this.toIsoOrNow(params.at);
       const { error } = await supabase
         .from('chat_tool_calls')
         .upsert({
@@ -103,7 +124,7 @@ export class ToolEventStore {
           started_at: startedAt,
         }, {
           onConflict: 'run_id,tool_key',
-          ignoreDuplicates: true,
+          ignoreDuplicates: false,
         });
       if (error) {
         console.error('[ToolEventStore.upsertToolStart] upsert error', error);
@@ -116,7 +137,7 @@ export class ToolEventStore {
   static async upsertToolComplete(params: UpsertToolCompleteParams): Promise<void> {
     try {
       const supabase = await this.getClient();
-      const completedAt = params.at ? new Date(params.at).toISOString() : new Date().toISOString();
+      const completedAt = this.toIsoOrNow(params.at);
 
       // Update the latest running record for this tool in this run
       const { data, error: selErr } = await supabase

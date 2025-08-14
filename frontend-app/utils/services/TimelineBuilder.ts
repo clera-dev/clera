@@ -182,9 +182,15 @@ export class TimelineBuilder {
         });
       } else {
         // Update completion/running flags – complete trumps running
-        if (isComplete) existing.isComplete = true;
+        if (isComplete) {
+          existing.isComplete = true;
+          // Ensure running is cleared when completion arrives for the same tool
+          existing.isRunning = false;
+        }
         // If currently running and step not marked complete yet, mark running
-        if (isRunning && !existing.isComplete) existing.isRunning = true;
+        if (isRunning && !existing.isComplete) {
+          existing.isRunning = true;
+        }
       }
     }
 

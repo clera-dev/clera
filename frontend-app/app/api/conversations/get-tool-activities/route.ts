@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
-import { createClient as createServerSupabase } from '@/utils/supabase/server';
 
 // Read-only fetch of tool activities should be a GET to align with REST semantics
 export async function GET(request: NextRequest) {
@@ -21,9 +20,7 @@ export async function GET(request: NextRequest) {
       const err = await auth.error!.json();
       return NextResponse.json({ error: err.error }, { status: auth.error!.status });
     }
-    const { user } = auth.context!;
-
-    const supabase = await createServerSupabase();
+    const { user, supabase } = auth.context!;
     // Fetch last N runs for this thread (user constrained via RLS)
     const { data: runs, error: runsErr } = await supabase
       .from('chat_runs')
