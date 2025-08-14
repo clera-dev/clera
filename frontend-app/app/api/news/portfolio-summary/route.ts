@@ -5,6 +5,7 @@ import { OpenAI } from 'openai';
 import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
 import redisClient from '@/utils/redis';
+import { timingSafeEqual } from 'crypto';
 
 const sentimentAnalyzer = new Sentiment();
 
@@ -470,8 +471,27 @@ export async function GET(request: Request) {
     // Force regeneration via query param (dev/operator override only)
     // Security: Only allow force regeneration for privileged users to prevent cost amplification attacks
     const isForceRequested = requestUrl.searchParams.get('force') === '1' || requestUrl.searchParams.get('regenerate') === '1';
+    
+    // Secure constant-time comparison to prevent timing side-channel attacks
+    const isValidAdminKey = (() => {
+      const providedKey = request.headers.get('x-admin-key');
+      const expectedKey = process.env.ADMIN_SECRET;
+      
+      if (!providedKey || !expectedKey) return false;
+      if (providedKey.length !== expectedKey.length) return false;
+      
+      try {
+        return timingSafeEqual(
+          Buffer.from(providedKey, 'utf8'),
+          Buffer.from(expectedKey, 'utf8')
+        );
+      } catch {
+        return false;
+      }
+    })();
+    
     const isPrivilegedAccess = 
-      request.headers.get('x-admin-key') === process.env.ADMIN_SECRET || // Internal admin header
+      isValidAdminKey || // Internal admin header (secure comparison)
       process.env.NODE_ENV === 'development'; // Allow in development
     const forceRegenerate = isForceRequested && isPrivilegedAccess;
 

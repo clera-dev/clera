@@ -133,10 +133,10 @@ export const getFallbackSections = (text: string) => {
 // Sanitize input to prevent prompt injection
 export const sanitizeForPrompt = (input: string): string => {
   return input
+    .replace(/\\/g, '\\\\')         // Escape backslashes FIRST
     .replace(/"/g, '\\"')           // Escape double quotes
     .replace(/\r?\n/g, ' ')         // Replace newlines with spaces
     .replace(/\r/g, ' ')            // Replace carriage returns with spaces
     .replace(/\t/g, ' ')            // Replace tabs with spaces
-    .replace(/\\/g, '\\\\')         // Escape backslashes
     .trim();                        // Remove leading/trailing whitespace
 };
