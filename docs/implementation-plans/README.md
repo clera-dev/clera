@@ -41,6 +41,9 @@ This directory contains the complete implementation plan for adding personalized
 #### Database Schema
 ```sql
 -- Complete SQL provided in implementation plan
+-- Prerequisite for gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE public.user_personalization (
   id UUID NOT NULL DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL,

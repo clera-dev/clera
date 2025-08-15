@@ -14,6 +14,28 @@ import { getPersonalizationData } from "@/utils/api/personalization-client";
  * Service class for handling personalization context injection into AI conversations
  */
 export class PersonalizationService {
+  /**
+   * Sanitizes user-provided text for safe inclusion in LLM system prompts.
+   * - Normalizes Unicode
+   * - Removes control characters and disallowed punctuation
+   * - Allows letters (incl. accents), spaces, hyphens, and apostrophes
+   * - Collapses whitespace and trims
+   * - Enforces a conservative max length
+   */
+  private static sanitizeUserName(name: string): string {
+    if (!name) return '';
+    try {
+      const normalized = name.normalize('NFKC');
+      const withoutControls = normalized.replace(/[\u0000-\u001F\u007F]/g, '');
+      // Allow letters (Latin incl. accents), spaces, hyphens, apostrophes only
+      const whitelisted = withoutControls.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ' -]/g, '');
+      const collapsed = whitelisted.replace(/\s+/g, ' ').trim();
+      // Enforce length guard consistent with validation rules
+      return collapsed.slice(0, 50);
+    } catch {
+      return '';
+    }
+  }
   
   /**
    * Fetches and formats personalization context for a user
@@ -43,9 +65,12 @@ export class PersonalizationService {
   static formatPersonalizationPrompt(data: PersonalizationData): string {
     const contextParts: string[] = [];
     
-    // Add user's name for personalization
+    // Add user's name for personalization (sanitized to prevent prompt injection)
     if (data.firstName) {
-      contextParts.push(`The user's name is ${data.firstName}.`);
+      const safeName = this.sanitizeUserName(data.firstName);
+      if (safeName) {
+        contextParts.push(`The user's name is ${safeName}.`);
+      }
     }
     
     // Add investment goals with context
@@ -213,7 +238,8 @@ Please use this information to personalize your responses, but don't explicitly 
       const summaryParts: string[] = [];
       
       if (data.firstName) {
-        summaryParts.push(`Name: ${data.firstName}`);
+        const safeName = this.sanitizeUserName(data.firstName);
+        if (safeName) summaryParts.push(`Name: ${safeName}`);
       }
       
       if (data.investmentGoals && data.investmentGoals.length > 0) {

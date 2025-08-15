@@ -22,8 +22,8 @@ import { Button } from "@/components/ui/button";
 import { usePostOnboardingNavigation } from "@/utils/navigation";
 import { 
   PersonalizationFormData, 
-  initialPersonalizationData 
 } from "@/lib/types/personalization";
+import { initialPersonalizationData } from "@/utils/services/personalization-data";
 
 // Define the Step type
 type Step = "welcome" | "personalization" | "personalization_success" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";

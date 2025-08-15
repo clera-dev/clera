@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { 
   PersonalizationData,
-  PersonalizationFormData, 
+  PersonalizationFormData
+} from '@/lib/types/personalization';
+import {
   validatePersonalizationData,
   formatPersonalizationForDatabase,
   formatPersonalizationFromDatabase
-} from '@/lib/types/personalization';
+} from '@/utils/services/personalization-data';
 
 /**
  * GET /api/personalization

@@ -261,9 +261,11 @@ export default function Chat({
     const trimmedInput = sourceContent.trim();
     if (!trimmedInput || isProcessing || isInterrupting) return false;
 
-    // Enhance message with personalization context
+    // Prepare personalization enrichment in parallel, but don't block UI
     const baseContent = trimmedInput;
-    const contentToSend = await PersonalizationService.enhanceMessageWithContext(baseContent, userId);
+    const contentPromise = PersonalizationService.enhanceMessageWithContext(baseContent, userId);
+
+    // Optimistically clear input and render the message immediately
     setInput('');
 
     // Reset textarea height after sending
@@ -287,7 +289,8 @@ export default function Chat({
         setIsCreatingSession(true); // Start loading indicator for session creation
         //console.log("No current thread ID. Attempting to create new session...");
         try {
-            const newTitle = formatChatTitle(contentToSend);
+            // Use the original user input for the thread title to avoid leaking personalization context
+            const newTitle = formatChatTitle(baseContent);
             // Pass accountId and userId correctly
             const newSession = await createChatSession(accountId, userId, newTitle);
 
@@ -296,6 +299,7 @@ export default function Chat({
                 //console.log("New session created successfully:", targetThreadId);
 
                 // 1. Set the pending message content (enhanced with personalization)
+                const contentToSend = await contentPromise;
                 setPendingFirstMessage(contentToSend);
                 // 2. Update the thread ID state - this will trigger the useEffect
                 setCurrentThreadId(targetThreadId);
@@ -323,6 +327,7 @@ export default function Chat({
 
         // --- MODIFIED: Send only the new message for subsequent messages ---
         // LangGraph server maintains thread state, so we only need to send the new message
+        const contentToSend = await contentPromise;
         const runInput = {
             messages: [{ type: 'human' as const, content: contentToSend }],
         };

@@ -99,6 +99,23 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert LangGraph messages to our frontend format
+    // Helper to strip personalization context from stored human messages
+    const stripPersonalizationContext = (text: string): string => {
+      try {
+        if (!text) return text;
+        const pcMarker = 'PERSONALIZATION CONTEXT:';
+        const umMarker = 'User Message:';
+        const pcIndex = text.indexOf(pcMarker);
+        const umIndex = text.indexOf(umMarker);
+        if (pcIndex !== -1 && umIndex !== -1 && umIndex > pcIndex) {
+          return text.substring(umIndex + umMarker.length).trim();
+        }
+        return text;
+      } catch {
+        return text;
+      }
+    };
+
     const formattedMessages = messages
       .filter(msg => {
         // Filter out tool calls and internal messages
@@ -132,9 +149,12 @@ export async function POST(request: NextRequest) {
           content = String(msg.content || '');
         }
 
+        const role = msg.type === 'human' ? 'user' : 'assistant';
+        const normalizedContent = role === 'user' ? stripPersonalizationContext(content) : content;
+
         return {
-          role: msg.type === 'human' ? 'user' : 'assistant',
-          content: content
+          role,
+          content: normalizedContent
         };
       });
     

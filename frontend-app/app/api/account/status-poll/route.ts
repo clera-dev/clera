@@ -1,19 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { AuthService } from '@/utils/api/auth-service';
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify user authentication
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     // Parse the request body to get account ID
     const { accountId } = await request.json();
     
@@ -24,6 +13,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Authenticate and authorize user for this account; obtain validated JWT
+    const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
+
     // Call the backend API to get account status
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
@@ -33,13 +25,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    const response = await fetch(`${backendUrl}/api/account/${accountId}/status`, {
+    // Encode account ID to prevent path traversal/SSRF via crafted values
+    const safeAccountId = encodeURIComponent(authContext.accountId);
+    const response = await fetch(`${backendUrl}/api/account/${safeAccountId}/status`, {
       method: 'GET',
       headers: {
         'X-API-Key': backendApiKey,
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${user.id}`, // Use user ID as token for backend auth
+        'Authorization': `Bearer ${authContext.authToken}`, // Use validated JWT token
       },
+      cache: 'no-store'
     });
 
     if (!response.ok) {
@@ -74,14 +69,13 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
+    // Normalize authentication/authorization errors first
+    const authError = AuthService.handleAuthError(error);
+    if (authError.status !== 500) {
+      return NextResponse.json({ error: authError.message, accountReady: false }, { status: authError.status });
+    }
+
     console.error('Error in account status poll API route:', error);
-    
-    return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-        accountReady: false 
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error', accountReady: false }, { status: 500 });
   }
 }

@@ -67,7 +67,7 @@ CREATE TABLE public.user_personalization (
   experience_level TEXT NOT NULL CHECK (experience_level IN ('no_experience', 'some_familiarity', 'comfortable', 'professional')),
   
   -- Monthly Investment Goal
-  monthly_investment_goal INTEGER NOT NULL DEFAULT 250, -- in dollars
+  monthly_investment_goal INTEGER NOT NULL DEFAULT 1, -- in dollars
   
   -- Market Interests (multiple selection)
   market_interests TEXT[] NOT NULL DEFAULT '{}',
@@ -83,7 +83,7 @@ CREATE TABLE public.user_personalization (
 ) TABLESPACE pg_default;
 
 -- Create indexes for performance
-CREATE INDEX idx_user_personalization_user_id ON public.user_personalization USING btree (user_id) TABLESPACE pg_default;
+CREATE INDEX IF NOT EXISTS idx_user_personalization_user_id ON public.user_personalization USING btree (user_id) TABLESPACE pg_default;
 
 -- Row Level Security
 ALTER TABLE public.user_personalization ENABLE ROW LEVEL SECURITY;
@@ -96,7 +96,9 @@ CREATE POLICY "Users can insert their own personalization data" ON public.user_p
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update their own personalization data" ON public.user_personalization
-  FOR UPDATE USING (auth.uid() = user_id);
+  FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 -- Update trigger for updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -330,7 +332,7 @@ User Context:
 - Risk Tolerance: {riskTolerance} 
 - Investment Timeline: {timeline}
 - Experience Level: {experienceLevel}
-- Monthly Investment Budget: ${monthlyInvestmentRange}
+- Monthly Investment Budget: {monthlyInvestmentGoal}
 - Market Interests: {marketInterests}
 
 Please provide personalized advice based on this context. Tailor your recommendations to their goals, risk tolerance, and experience level.
@@ -469,7 +471,8 @@ frontend-app/
 ├── lib/types/
 │   └── personalization.ts (NEW)
 ├── utils/services/
-│   └── personalization-service.ts (NEW)
+│   ├── personalization-service.ts (NEW)
+│   └── personalization-data.ts (NEW)  // validation, mappers, defaults
 └── app/api/personalization/
     ├── route.ts (NEW)
     └── goals/route.ts (NEW)

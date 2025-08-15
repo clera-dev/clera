@@ -20,9 +20,8 @@ import {
   INVESTMENT_TIMELINE_DESCRIPTIONS,
   EXPERIENCE_LEVEL_DESCRIPTIONS,
   MARKET_INTEREST_DESCRIPTIONS,
-  validatePersonalizationData,
-  initialPersonalizationData,
 } from "@/lib/types/personalization";
+import { validatePersonalizationData, initialPersonalizationData } from "@/utils/services/personalization-data";
 import { Check, Rocket, Smile, Shield, ArrowLeft } from "lucide-react";
 import { getPersonalizationData, saveOrUpdatePersonalizationData } from "@/utils/api/personalization-client";
 

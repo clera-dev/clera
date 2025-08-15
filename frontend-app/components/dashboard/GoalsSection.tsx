@@ -79,8 +79,8 @@ export default function GoalsSection({ userId, firstName }: GoalsSectionProps) {
             <p className="text-muted-foreground mb-4">
               Complete your personalization to set investment goals
             </p>
-            <Button variant="outline" onClick={() => window.location.href = '/protected'}>
-              Complete Setup
+            <Button variant="outline" onClick={() => window.location.href = '/account/update-personalization'}>
+              Complete Personalization
             </Button>
           </div>
         </CardContent>

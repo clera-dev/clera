@@ -15,6 +15,29 @@ interface PersonalizationApiResponse {
 }
 
 /**
+ * Safely extracts an error message from a Response without assuming JSON.
+ * Consumes the body only on error paths.
+ */
+async function extractErrorMessage(response: Response): Promise<string> {
+  try {
+    const contentType = response.headers.get('content-type') || '';
+    const bodyText = await response.text();
+    if (!bodyText) return `HTTP ${response.status}`;
+    if (contentType.includes('application/json')) {
+      try {
+        const json = JSON.parse(bodyText);
+        return json.error || json.message || JSON.stringify(json);
+      } catch {
+        return bodyText; // Not valid JSON despite header
+      }
+    }
+    return bodyText;
+  } catch {
+    return `HTTP ${response.status}`;
+  }
+}
+
+/**
  * Fetches the user's personalization data
  */
 export async function getPersonalizationData(): Promise<PersonalizationData | null> {
@@ -27,8 +50,8 @@ export async function getPersonalizationData(): Promise<PersonalizationData | nu
     });
 
     if (!response.ok) {
-      await response.json().catch(() => null);
-      console.error('Error fetching personalization data');
+      const errorMessage = await extractErrorMessage(response);
+      console.error('Error fetching personalization data:', errorMessage);
       return null;
     }
 
@@ -52,7 +75,7 @@ export async function getPersonalizationData(): Promise<PersonalizationData | nu
  */
 export async function savePersonalizationData(
   data: PersonalizationFormData
-): Promise<{ success: boolean; data?: PersonalizationData; error?: string }> {
+): Promise<{ success: boolean; data?: PersonalizationData; error?: string; statusCode?: number }> {
   try {
     const response = await fetch('/api/personalization', {
       method: 'POST',
@@ -62,15 +85,17 @@ export async function savePersonalizationData(
       body: JSON.stringify(data),
     });
 
-    const result: PersonalizationApiResponse = await response.json();
-
     if (!response.ok) {
-      console.error('Error saving personalization data');
+      const errorMessage = await extractErrorMessage(response);
+      console.error('Error saving personalization data:', errorMessage);
       return {
         success: false,
-        error: result.error || 'Failed to save personalization data'
+        error: errorMessage || 'Failed to save personalization data',
+        statusCode: response.status
       };
     }
+
+    const result: PersonalizationApiResponse = await response.json();
 
     if (result.success && result.data) {
       return {
@@ -98,7 +123,7 @@ export async function savePersonalizationData(
  */
 export async function updatePersonalizationData(
   data: PersonalizationFormData
-): Promise<{ success: boolean; data?: PersonalizationData; error?: string }> {
+): Promise<{ success: boolean; data?: PersonalizationData; error?: string; statusCode?: number }> {
   try {
     const response = await fetch('/api/personalization', {
       method: 'PUT',
@@ -108,15 +133,17 @@ export async function updatePersonalizationData(
       body: JSON.stringify(data),
     });
 
-    const result: PersonalizationApiResponse = await response.json();
-
     if (!response.ok) {
-      console.error('Error updating personalization data');
+      const errorMessage = await extractErrorMessage(response);
+      console.error('Error updating personalization data:', errorMessage);
       return {
         success: false,
-        error: result.error || 'Failed to update personalization data'
+        error: errorMessage || 'Failed to update personalization data',
+        statusCode: response.status
       };
     }
+
+    const result: PersonalizationApiResponse = await response.json();
 
     if (result.success && result.data) {
       return {
@@ -149,7 +176,7 @@ export async function saveOrUpdatePersonalizationData(
   const updateResult = await updatePersonalizationData(data);
   
   // If update fails because no data exists, try to create
-  if (!updateResult.success && updateResult.error?.includes('No personalization data found')) {
+  if (!updateResult.success && updateResult.statusCode === 404) {
     return await savePersonalizationData(data);
   }
   

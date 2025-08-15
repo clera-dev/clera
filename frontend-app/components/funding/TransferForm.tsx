@@ -169,6 +169,7 @@ export default function TransferForm({
 
   const handleLoadingComplete = () => {
     // Transfer polling completed successfully
+    setShowLoading(false);
     if (onTransferComplete) {
       onTransferComplete(amount);
     } else {
