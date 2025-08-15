@@ -158,10 +158,11 @@ export class TimelineBuilder {
 
   private convertActivitiesToSteps(activities: ToolActivity[]): TimelineStep[] {
     const stepMap = new Map<string, TimelineStep>();
+    const orderedLabels: string[] = [];
 
     for (const activity of activities) {
       const mapper = this.config.toolMapper ?? defaultToolMapper;
-      let label = mapper.mapToolName(activity.toolName);
+      const label = mapper.mapToolName(activity.toolName);
       if (!label) continue; // safety
 
       // Special handling: show "Putting it all together" only when transfer_back_to_clera is complete
@@ -176,6 +177,7 @@ export class TimelineBuilder {
       const isRunning = activity.status === 'running';
 
       if (!existing) {
+        // First time we see this label: create the step and remember insertion order
         stepMap.set(label, {
           id: activity.id,
           label,
@@ -184,12 +186,12 @@ export class TimelineBuilder {
           isLast: false,
           timestamp: activity.startedAt
         });
+        orderedLabels.push(label);
       } else {
         // Update completion/running flags – complete trumps running
         if (isComplete) {
           existing.isComplete = true;
-          // Ensure running is cleared when completion arrives for the same tool
-          existing.isRunning = false;
+          existing.isRunning = false; // ensure running is cleared when completion arrives
         }
         // If currently running and step not marked complete yet, mark running
         if (isRunning && !existing.isComplete) {
@@ -198,18 +200,9 @@ export class TimelineBuilder {
       }
     }
 
-    // Order by the last occurrence of each label to ensure steps that repeat (e.g., "Putting it all together")
-    // end up positioned where they finish, not where they first appeared.
-    const lastIndexMap: Record<string, number> = {};
-    const mapper2 = this.config.toolMapper ?? defaultToolMapper;
-    activities.forEach((act, idx) => {
-      const lbl = mapper2.mapToolName(act.toolName);
-      if (lbl) lastIndexMap[lbl] = idx;
-    });
-
-    const ordered = Object.entries(lastIndexMap)
-      .sort(([, aIdx], [, bIdx]) => aIdx - bIdx)
-      .map(([label]) => stepMap.get(label))
+    // Preserve the order of first appearance (by startedAt, since activities were pre-sorted)
+    const ordered = orderedLabels
+      .map((label) => stepMap.get(label))
       .filter((step): step is TimelineStep => Boolean(step));
 
     return ordered;

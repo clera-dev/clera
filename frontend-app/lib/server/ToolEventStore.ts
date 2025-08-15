@@ -92,22 +92,37 @@ export class ToolEventStore {
       const client = this.getClient();
       const now = this.toIsoOrNow();
       
-      const { error } = await client
+      // Check if this exact tool is already running (prevent duplicates of the same call)
+      const { data: existing, error: selectError } = await client
         .from('chat_tool_calls')
-        .upsert({
-          run_id: params.runId,
-          tool_key: params.toolKey,
-          tool_label: params.toolLabel,
-          agent: params.agent || null,
-          started_at: now,
-          status: 'running'
-        }, {
-          onConflict: 'run_id,tool_key',
-          ignoreDuplicates: false
-        });
+        .select('id')
+        .eq('run_id', params.runId)
+        .eq('tool_key', params.toolKey)
+        .eq('status', 'running')
+        .limit(1)
+        .maybeSingle();
       
-      if (error) {
-        console.error('[ToolEventStore] Failed to upsert tool start:', error);
+      if (selectError) {
+        console.error('[ToolEventStore] Failed to check existing tool start:', selectError);
+        return;
+      }
+      
+      // Only insert if not already running
+      if (!existing) {
+        const { error: insertError } = await client
+          .from('chat_tool_calls')
+          .insert({
+            run_id: params.runId,
+            tool_key: params.toolKey,
+            tool_label: params.toolLabel,
+            agent: params.agent || null,
+            started_at: now,
+            status: 'running'
+          });
+        
+        if (insertError) {
+          console.error('[ToolEventStore] Failed to insert tool start:', insertError);
+        }
       }
     } catch (err) {
       console.error('[ToolEventStore] Failed to upsert tool start:', err);
@@ -149,23 +164,20 @@ export class ToolEventStore {
           console.error('[ToolEventStore] Failed to update tool completion:', updateError);
         }
       } else {
-        // No running tool call found, upsert a new one
-        const { error: upsertError } = await client
+        // No running tool call found, insert a new completed one
+        const { error: insertError } = await client
           .from('chat_tool_calls')
-          .upsert({
+          .insert({
             run_id: params.runId,
             tool_key: params.toolKey,
             tool_label: params.toolKey, // fallback if no label provided
             started_at: now,
             completed_at: now,
             status
-          }, {
-            onConflict: 'run_id,tool_key',
-            ignoreDuplicates: false
           });
           
-        if (upsertError) {
-          console.error('[ToolEventStore] Failed to upsert tool completion:', upsertError);
+        if (insertError) {
+          console.error('[ToolEventStore] Failed to insert tool completion:', insertError);
         }
       }
     } catch (err) {
@@ -191,20 +203,19 @@ export class ToolEventStore {
         console.error('[ToolEventStore] Failed to finalize run:', runError);
       }
       
-      // If run failed, mark any remaining running tool calls as error
-      if (params.status === 'error') {
-        const { error: toolError } = await client
-          .from('chat_tool_calls')
-          .update({
-            status: 'error',
-            completed_at: now
-          })
-          .eq('run_id', params.runId)
-          .eq('status', 'running');
-          
-        if (toolError) {
-          console.error('[ToolEventStore] Failed to mark running tools as error:', toolError);
-        }
+      // Mark ALL remaining running tool calls as complete/error based on run status
+      const finalToolStatus = params.status === 'error' ? 'error' : 'complete';
+      const { error: toolError } = await client
+        .from('chat_tool_calls')
+        .update({
+          status: finalToolStatus,
+          completed_at: now
+        })
+        .eq('run_id', params.runId)
+        .eq('status', 'running');
+        
+      if (toolError) {
+        console.error('[ToolEventStore] Failed to mark running tools as complete:', toolError);
       }
     } catch (err) {
       console.error('[ToolEventStore] Failed to finalize run:', err);

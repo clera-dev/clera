@@ -1,5 +1,6 @@
 import { Message } from './chat-client';
 import { ToolActivity } from '@/types/chat';
+import { ToolActivityManager } from '@/utils/services/ToolActivityManager';
 
 export interface ChatState {
   messages: Message[];
@@ -25,6 +26,7 @@ export interface SecureChatClient {
   setMessages: (messages: Message[]) => void;
   addMessagesWithStatus: (userMessage: Message) => void;
   mergePersistedToolActivities: (activities: ToolActivity[]) => void;
+  fetchAndHydrateToolActivities: (threadId: string, accountId: string) => Promise<string[]>;
   subscribe: (listener: () => void) => () => void;
   setLongProcessingCallback: (callback: () => void) => void; // ARCHITECTURE FIX: Proper separation of concerns
   clearLongProcessingCallback: () => void; // MEMORY LEAK FIX: Clear callback on unmount
@@ -47,6 +49,7 @@ export class SecureChatClientImpl implements SecureChatClient {
   private eventSource: EventSource | null = null;
   private isStreaming: boolean = false;
   private hasReceivedRealContent: boolean = false;
+  private toolActivityManager: ToolActivityManager;
   private hasReceivedInterrupt: boolean = false;
   private streamCompletedSuccessfully: boolean = false; // NEW: Track if chunk processing handled completion
   private longProcessingTimer: NodeJS.Timeout | null = null; // Track long processing timer
@@ -54,6 +57,15 @@ export class SecureChatClientImpl implements SecureChatClient {
   private longProcessingCallback: (() => void) | null = null; // ARCHITECTURE FIX: Callback for UI layer
   private lastThreadId: string | null = null; // Track thread for toolActivities lifecycle
   private currentQueryRunId: string | null = null; // Track current user query for tool grouping
+
+  constructor() {
+    this.toolActivityManager = new ToolActivityManager();
+    
+    // Set up the callback to sync tool activities to state
+    this.toolActivityManager.setStateUpdateCallback((activities: ToolActivity[]) => {
+      this.setState({ toolActivities: activities });
+    });
+  }
 
   /**
    * Returns an immutable copy of the current state
@@ -111,110 +123,33 @@ export class SecureChatClientImpl implements SecureChatClient {
   // Safely merge server-persisted tool activities into client state
   // Only appends activities for runs not already present, to avoid duplicating current in-memory runs
   mergePersistedToolActivities(activities: ToolActivity[]) {
-    if (!Array.isArray(activities) || activities.length === 0) return;
-    // Deduplicate at the activity level (runId + toolName + startedAt)
-    const existingKeys = new Set(
-      (this._state.toolActivities || []).map(a => `${a.runId || 'unknown'}|${a.toolName}|${a.startedAt}`)
-    );
-    const incoming = activities.filter(a => {
-      if (!a) return false;
-      const key = `${a.runId || 'unknown'}|${a.toolName}|${a.startedAt}`;
-      return !existingKeys.has(key);
-    });
-    if (incoming.length === 0) return;
-    this.setState({ toolActivities: [...this._state.toolActivities, ...incoming] });
+    this.toolActivityManager.mergePersistedActivities(activities);
+  }
+
+  // Fetch persisted tool activities for a thread and merge into state. Returns sorted runIds.
+  async fetchAndHydrateToolActivities(threadId: string, accountId: string): Promise<string[]> {
+    return this.toolActivityManager.fetchAndHydrateToolActivities(threadId, accountId);
   }
 
   private addToolStart(toolName: string) {
-    const normalized = this.normalizeToolLabel(toolName);
-    // Anchor to currentQueryRunId so entries never move across questions
-    const runId = this.currentQueryRunId || 'unknown';
-    
-
-    // Enhanced duplicate prevention: check for existing activity by tool name and runId
-    // Also check for very recent activities (within 1 second) to catch rapid duplicates
-    const now = Date.now();
-    const existingActivity = this._state.toolActivities.find((a: ToolActivity) =>
-      a.runId === runId && a.toolName === normalized && (now - a.startedAt < 1000)
-    );
-    if (existingActivity) {
-      // console.log(`[SecureChatClient] Preventing duplicate tool: ${normalized} for runId: ${runId}`);
-      return; // Don't add duplicates
-    }
-    
-    // Before adding new running activity, mark any other running ones as complete
-    const updatedActivities = this._state.toolActivities.map<ToolActivity>((a: ToolActivity) => {
-      if (a.runId === runId && a.status === 'running') {
-        return { ...a, status: 'complete' as const, completedAt: Date.now() };
-      }
-      return a;
-    });
-    this.setState({ toolActivities: updatedActivities });
-
-    // Now create and add the new activity
-    const activity: ToolActivity = {
-      id: `${normalized}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      toolName: normalized,
-      status: 'running',
-      startedAt: Date.now(),
-      runId,
-    };
-    this.setState({ toolActivities: [...updatedActivities, activity] });
+    this.toolActivityManager.setCurrentRunId(this.currentQueryRunId);
+    this.toolActivityManager.addToolStart(toolName);
   }
 
   private markToolComplete(toolName: string) {
-    const normalized = this.normalizeToolLabel(toolName);
-    const activities: ToolActivity[] = [...this._state.toolActivities];
-    const runId = this.currentQueryRunId || 'unknown';
-    // Find the latest running activity for this tool
-    for (let i = activities.length - 1; i >= 0; i--) {
-      const a = activities[i];
-      if (a.toolName === normalized && a.status === 'running' && a.runId === runId) {
-        activities[i] = { ...a, status: 'complete' as const, completedAt: Date.now() };
-        this.setState({ toolActivities: activities });
-        return;
-      }
-    }
-    // If none running, add a completed entry for traceability
-    const activity: ToolActivity = {
-      id: `${normalized}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      toolName: normalized,
-      status: 'complete',
-      startedAt: Date.now(),
-      completedAt: Date.now(),
-      runId,
-    };
-    this.setState({ toolActivities: [...activities, activity] });
+    this.toolActivityManager.setCurrentRunId(this.currentQueryRunId);
+    this.toolActivityManager.markToolComplete(toolName);
   }
 
   private completeAllRunningForCurrentRun() {
-    const runId = this.currentQueryRunId;
-    if (!runId) return;
-    const updated = this._state.toolActivities.map<ToolActivity>((a: ToolActivity) => {
-      if (a.runId === runId && a.status === 'running') {
-        return { ...a, status: 'complete' as const, completedAt: Date.now() };
-      }
-      return a;
-    });
-    this.setState({ toolActivities: updated });
+    this.toolActivityManager.setCurrentRunId(this.currentQueryRunId);
+    this.toolActivityManager.completeAllRunningForCurrentRun();
   }
 
   // Explicit run completion marker so TimelineBuilder can add "Done" only at the right time
   private markRunCompleted(): void {
-    const runId = this.currentQueryRunId || 'unknown';
-    // Avoid duplicate markers for a run
-    const alreadyMarked = this._state.toolActivities.some((a: ToolActivity) => a.runId === runId && a.toolName === '__run_completed__');
-    if (alreadyMarked) return;
-    const activity: ToolActivity = {
-      id: `run-complete-${Date.now()}`,
-      toolName: '__run_completed__',
-      status: 'complete',
-      startedAt: Date.now(),
-      completedAt: Date.now(),
-      runId,
-    };
-    const updated = [...this._state.toolActivities, activity];
-    this.setState({ toolActivities: updated });
+    this.toolActivityManager.setCurrentRunId(this.currentQueryRunId);
+    this.toolActivityManager.markRunCompleted();
   }
 
   // Removed addCompletionMarker - TimelineBuilder now handles "Done" naturally
@@ -222,15 +157,33 @@ export class SecureChatClientImpl implements SecureChatClient {
   // Helper to ensure a runId is generated before we attach messages/activities
   private ensureCurrentRunId(): string {
     if (this.currentQueryRunId) return this.currentQueryRunId;
-    const uuid = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
-      ? (crypto as any).randomUUID()
-      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-          const r = Math.random() * 16 | 0;
-          const v = c === 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        });
+    const uuid = this.generateRunId();
     this.currentQueryRunId = uuid;
     return uuid;
+  }
+
+  // Centralized UUIDv4 generator for client use
+  private generateRunId(): string {
+    try {
+      const g: any = globalThis as any;
+      if (g?.crypto && typeof g.crypto.randomUUID === 'function') {
+        return g.crypto.randomUUID();
+      }
+      if (g?.crypto && typeof g.crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(16);
+        g.crypto.getRandomValues(bytes);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+        bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx
+        const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+        return `${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}`;
+      }
+    } catch {}
+    // Final fallback (non-crypto): maintain format to avoid UI/DB surprises
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 
   addMessagesWithStatus(userMessage: Message) {
@@ -417,14 +370,7 @@ export class SecureChatClientImpl implements SecureChatClient {
 
       // New user query starts: tag new run id and ensure clean state
       if (!this.currentQueryRunId) {
-        // Generate a UUIDv4-like run id acceptable to DB (xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx)
-        const uuid = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
-          ? (crypto as any).randomUUID()
-          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-              const r = Math.random() * 16 | 0;
-              const v = c === 'x' ? r : (r & 0x3 | 0x8);
-              return v.toString(16);
-            });
+        const uuid = this.generateRunId();
         this.currentQueryRunId = uuid;
         
         // CRITICAL FIX: When starting a new query, remove any orphaned activities 
@@ -992,11 +938,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     return nodeMessages[nodeName] || `🔄 Processing with ${nodeName}...`;
   }
 
-  private normalizeToolLabel(name: string): string {
-    if (!name) return 'tool';
-    // Return the raw tool key in lower snake_case for consistent mapping by ToolNameMapper
-    return String(name).trim().toLowerCase();
-  }
+
 
   private isCurrentlyStreamingFinalResponse(): boolean {
     // Check if we have an assistant message that's being actively streamed (not a status message)
