@@ -1,4 +1,6 @@
 import { Message } from './chat-client';
+import { ToolActivity } from '@/types/chat';
+import { ToolActivityManager } from '@/utils/services/ToolActivityManager';
 
 export interface ChatState {
   messages: Message[];
@@ -11,6 +13,7 @@ export interface ChatState {
     ns?: string[];
   } | null;
   modelProviderError: boolean; // NEW: Flag for graceful model provider error handling
+  toolActivities: ToolActivity[]; // NEW: Track tool start/complete lifecycle
 }
 
 export interface SecureChatClient {
@@ -22,11 +25,15 @@ export interface SecureChatClient {
   clearModelProviderError: () => void;
   setMessages: (messages: Message[]) => void;
   addMessagesWithStatus: (userMessage: Message) => void;
+  mergePersistedToolActivities: (activities: ToolActivity[]) => void;
+  fetchAndHydrateToolActivities: (threadId: string, accountId: string) => Promise<string[]>;
   subscribe: (listener: () => void) => () => void;
   setLongProcessingCallback: (callback: () => void) => void; // ARCHITECTURE FIX: Proper separation of concerns
   clearLongProcessingCallback: () => void; // MEMORY LEAK FIX: Clear callback on unmount
   cleanup: () => void;
 }
+
+// ToolActivity is defined centrally in '@/types/chat'.
 
 export class SecureChatClientImpl implements SecureChatClient {
   private _state: ChatState = {
@@ -35,17 +42,30 @@ export class SecureChatClientImpl implements SecureChatClient {
     error: null,
     interrupt: null,
     modelProviderError: false,
+    toolActivities: [],
   };
   
   private stateListeners: Set<() => void> = new Set();
   private eventSource: EventSource | null = null;
   private isStreaming: boolean = false;
   private hasReceivedRealContent: boolean = false;
+  private toolActivityManager: ToolActivityManager;
   private hasReceivedInterrupt: boolean = false;
   private streamCompletedSuccessfully: boolean = false; // NEW: Track if chunk processing handled completion
   private longProcessingTimer: NodeJS.Timeout | null = null; // Track long processing timer
   private gracePeriodTimer: NodeJS.Timeout | null = null; // MEMORY LEAK FIX: Track grace period timer
   private longProcessingCallback: (() => void) | null = null; // ARCHITECTURE FIX: Callback for UI layer
+  private lastThreadId: string | null = null; // Track thread for toolActivities lifecycle
+  private currentQueryRunId: string | null = null; // Track current user query for tool grouping
+
+  constructor() {
+    this.toolActivityManager = new ToolActivityManager();
+    
+    // Set up the callback to sync tool activities to state
+    this.toolActivityManager.setStateUpdateCallback((activities: ToolActivity[]) => {
+      this.setState({ toolActivities: activities });
+    });
+  }
 
   /**
    * Returns an immutable copy of the current state
@@ -57,7 +77,8 @@ export class SecureChatClientImpl implements SecureChatClient {
       isLoading: this._state.isLoading,
       error: this._state.error,
       interrupt: this._state.interrupt ? { ...this._state.interrupt } : null, // Deep copy of interrupt object
-      modelProviderError: this._state.modelProviderError
+      modelProviderError: this._state.modelProviderError,
+      toolActivities: [...this._state.toolActivities],
     };
   }
 
@@ -99,6 +120,72 @@ export class SecureChatClientImpl implements SecureChatClient {
     this.setState({ messages: [...validMessages] }); // Create defensive copy
   }
 
+  // Safely merge server-persisted tool activities into client state
+  // Only appends activities for runs not already present, to avoid duplicating current in-memory runs
+  mergePersistedToolActivities(activities: ToolActivity[]) {
+    this.toolActivityManager.mergePersistedActivities(activities);
+  }
+
+  // Fetch persisted tool activities for a thread and merge into state. Returns sorted runIds.
+  async fetchAndHydrateToolActivities(threadId: string, accountId: string): Promise<string[]> {
+    return this.toolActivityManager.fetchAndHydrateToolActivities(threadId, accountId);
+  }
+
+  private addToolStart(toolName: string) {
+    this.toolActivityManager.setCurrentRunId(this.currentQueryRunId);
+    this.toolActivityManager.addToolStart(toolName);
+  }
+
+  private markToolComplete(toolName: string) {
+    this.toolActivityManager.setCurrentRunId(this.currentQueryRunId);
+    this.toolActivityManager.markToolComplete(toolName);
+  }
+
+  private completeAllRunningForCurrentRun() {
+    this.toolActivityManager.setCurrentRunId(this.currentQueryRunId);
+    this.toolActivityManager.completeAllRunningForCurrentRun();
+  }
+
+  // Explicit run completion marker so TimelineBuilder can add "Done" only at the right time
+  private markRunCompleted(): void {
+    this.toolActivityManager.setCurrentRunId(this.currentQueryRunId);
+    this.toolActivityManager.markRunCompleted();
+  }
+
+  // Removed addCompletionMarker - TimelineBuilder now handles "Done" naturally
+
+  // Helper to ensure a runId is generated before we attach messages/activities
+  private ensureCurrentRunId(): string {
+    if (this.currentQueryRunId) return this.currentQueryRunId;
+    const uuid = this.generateRunId();
+    this.currentQueryRunId = uuid;
+    return uuid;
+  }
+
+  // Centralized UUIDv4 generator for client use
+  private generateRunId(): string {
+    try {
+      const g: any = globalThis as any;
+      if (g?.crypto && typeof g.crypto.randomUUID === 'function') {
+        return g.crypto.randomUUID();
+      }
+      if (g?.crypto && typeof g.crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(16);
+        g.crypto.getRandomValues(bytes);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+        bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx
+        const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+        return `${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}`;
+      }
+    } catch {}
+    // Final fallback (non-crypto): maintain format to avoid UI/DB surprises
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
   addMessagesWithStatus(userMessage: Message) {
     // CRITICAL FIX: Validate message content to prevent backend errors
     if (!userMessage.content || userMessage.content.trim() === '') {
@@ -106,21 +193,24 @@ export class SecureChatClientImpl implements SecureChatClient {
       return;
     }
 
+    // Ensure we have a runId BEFORE constructing messages
+    const runIdForMsg = this.ensureCurrentRunId();
+
     // Add both user message and status message atomically to prevent timing issues
     const statusMessage: Message = {
       role: 'assistant',
       content: 'Analyzing your request...',
-      isStatus: true
+      isStatus: true,
+      runId: runIdForMsg,
     };
-    
+
     // Ensure we preserve all existing messages and add the new ones atomically
-    const newMessages = [...this._state.messages, userMessage, statusMessage];
-    
-    // console.log('[SecureChatClient] Adding user message and status, total messages:', newMessages.length);
-    
-    this.setState({ 
-      messages: newMessages
-    });
+    const newMessages = [...this._state.messages, { ...userMessage, runId: runIdForMsg }, statusMessage];
+
+    this.setState({ messages: newMessages });
+
+    // Immediately add "Thinking" step so the timeline appears right away
+    this.addToolStart('Thinking');
   }
 
   /**
@@ -274,6 +364,26 @@ export class SecureChatClientImpl implements SecureChatClient {
       // Status message is now added by the caller before startStream is called
       // This prevents timing issues with React batching
 
+      // Don't clear tool activities here - they are isolated by runId
+      // The UI will only show activities for the current query's runId
+      this.lastThreadId = threadId;
+
+      // New user query starts: tag new run id and ensure clean state
+      if (!this.currentQueryRunId) {
+        const uuid = this.generateRunId();
+        this.currentQueryRunId = uuid;
+        
+        // CRITICAL FIX: When starting a new query, remove any orphaned activities 
+        // that might have been created without proper runIds
+        // This prevents cross-contamination between queries in the same thread
+        const cleanActivities = this._state.toolActivities.filter((a: any) => 
+          a.runId && a.runId !== 'unknown' && a.runId !== this.currentQueryRunId
+        );
+        this.setState({ toolActivities: cleanActivities });
+      }
+
+      const runId = this.currentQueryRunId!;
+
       // Close existing stream if any
       if (this.eventSource) {
         // console.log('[SecureChatClient] Closing existing stream');
@@ -300,6 +410,7 @@ export class SecureChatClientImpl implements SecureChatClient {
           input: input,
           user_id: userId,
           account_id: accountId,
+          run_id: runId,
         }),
         signal: abortController?.signal,
       });
@@ -385,6 +496,10 @@ export class SecureChatClientImpl implements SecureChatClient {
           }
         }
       }
+
+      // Stream completed - reset runId so next user query starts fresh
+      // This also triggers automatic timeline collapse in Chat.tsx
+      this.currentQueryRunId = null;
 
       // console.log('[SecureChatClient] Stream completed successfully, final state:', {
       //   hasReceivedRealContent: this.hasReceivedRealContent,
@@ -587,6 +702,11 @@ export class SecureChatClientImpl implements SecureChatClient {
       } else {
         // console.log('[SecureChatClient] Skipping node status update - real content already received');
       }
+      // Heuristic: treat certain node updates as tool starts
+      if (nodeName === 'tool_node') {
+        const toolName = chunk.data?.nodeData?.name || chunk.data?.nodeData?.tool || 'tool';
+        this.addToolStart(toolName);
+      }
       return;
     }
 
@@ -629,10 +749,11 @@ export class SecureChatClientImpl implements SecureChatClient {
           if (content && content.trim().length > 0) {
             hasValidContent = true;
             
-            // Create new message with safe ID assignment
+            // Create new message with safe ID assignment and runId for timeline association
             const newMessage: Message = { 
               role: 'assistant', 
               content: content.trim(),
+              runId: this.currentQueryRunId || undefined,
               ...(messageData.id !== undefined && { id: messageData.id })
             };
             
@@ -687,16 +808,57 @@ export class SecureChatClientImpl implements SecureChatClient {
           messages: [...nonStatusMessages, ...newMessages],
           isLoading: false // Mark as complete since we have the final response
         });
+
+        // Ensure all running tool activities for this run flip to complete
+        this.completeAllRunningForCurrentRun();
         
         // CRITICAL FIX: Mark that chunk processing handled completion successfully
         // This prevents the redundant completion logic from interfering
         this.streamCompletedSuccessfully = true;
+        // Signal run completion for timeline Done rendering (only when we really start the final answer)
+        this.markRunCompleted();
         
         // console.log('[SecureChatClient] Complete messages applied successfully - marked as completed by chunk processing');
         return;
       } else {
         // console.log('[SecureChatClient] No valid content found in messages_complete event - no AI messages from Clera with content');
       }
+    }
+
+    // 4b. Handle tool update events surfaced by streaming service
+    if (chunk.type === 'tool_update' && chunk.data) {
+      const toolName = chunk.data.toolName || 'tool';
+      const status = chunk.data.status;
+      if (status === 'start') {
+        this.addToolStart(toolName);
+      } else if (status === 'complete') {
+        this.markToolComplete(toolName);
+      }
+      return;
+    }
+
+    // 4c. Handle run completion events
+    // Removed run_complete handling - TimelineBuilder will add "Done" naturally
+
+    // 4c. Handle agent transfer events to update status bubble AND show in timeline
+    if (chunk.type === 'agent_transfer' && chunk.data?.toAgent) {
+      this.updateStatusForTransfer(chunk.data.toAgent);
+      
+      // Also add transfer to timeline based on agent name
+      const agent = chunk.data.toAgent;
+      if (agent === 'financial_analyst_agent') {
+        this.addToolStart('transfer_to_financial_analyst_agent');
+      } else if (agent === 'portfolio_management_agent') {
+        this.addToolStart('transfer_to_portfolio_management_agent'); 
+      } else if (agent === 'trade_execution_agent') {
+        this.addToolStart('transfer_to_trade_execution_agent');
+      } else if (agent === 'Clera') {
+        // IMPORTANT: Do NOT add a timeline step here.
+        // We only show "Putting it all together" when we actually receive
+        // the backend-confirmed transfer_back_to_clera completion, or when
+        // the first token of Clera's final answer starts (handled elsewhere).
+      }
+      return;
     }
 
     // 5. Handle messages metadata (progress indication)
@@ -718,18 +880,24 @@ export class SecureChatClientImpl implements SecureChatClient {
         tokenContent = chunk.data.content;
       }
 
-      if (tokenContent) {
+        if (tokenContent) {
         const currentMessages = [...this._state.messages];
         
         // First token: Remove status message and start building response
-        if (!this.hasReceivedRealContent) {
+          if (!this.hasReceivedRealContent) {
           // console.log('[SecureChatClient] First token received, removing status messages');
           this.hasReceivedRealContent = true;
           
           // Remove status messages and add new assistant message with first token
           const filteredMessages = currentMessages.filter(msg => !msg.isStatus);
-          const newMessage: Message = { role: 'assistant', content: tokenContent };
+          const newMessage: Message = { 
+            role: 'assistant', 
+            content: tokenContent,
+            runId: this.currentQueryRunId || undefined
+          };
           this.setState({ messages: [...filteredMessages, newMessage] });
+            // Signal run completion for timeline Done rendering on first token
+            this.markRunCompleted();
         } else {
           // Subsequent tokens: Append to existing assistant message
           const lastMessage = currentMessages[currentMessages.length - 1];
@@ -740,7 +908,11 @@ export class SecureChatClientImpl implements SecureChatClient {
           } else {
             // Edge case: No existing assistant message, create new one
             const filteredMessages = currentMessages.filter(msg => !msg.isStatus);
-            const newMessage: Message = { role: 'assistant', content: tokenContent };
+            const newMessage: Message = { 
+              role: 'assistant', 
+              content: tokenContent,
+              runId: this.currentQueryRunId || undefined
+            };
             this.setState({ messages: [...filteredMessages, newMessage] });
           }
         }
@@ -765,6 +937,8 @@ export class SecureChatClientImpl implements SecureChatClient {
     
     return nodeMessages[nodeName] || `🔄 Processing with ${nodeName}...`;
   }
+
+
 
   private isCurrentlyStreamingFinalResponse(): boolean {
     // Check if we have an assistant message that's being actively streamed (not a status message)

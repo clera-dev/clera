@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Message } from '@/utils/api/chat-client';
 import { useSecureChat } from '@/utils/api/secure-chat-client';
 import { useMessageRetry } from '@/hooks/useMessageRetry';
@@ -22,6 +22,12 @@ import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import { InterruptConfirmation } from './InterruptConfirmation';
 import ModelProviderRetryPopup from './ModelProviderRetryPopup';
+import { createTimelineBuilder, TimelineBuilder } from '@/utils/services/TimelineBuilder';
+import { PerMessageToolDetails } from './PerMessageToolDetails';
+import { ChatMessageList } from './ChatMessageList';
+import { useToolActivitiesHydration } from '@/hooks/useToolActivitiesHydration';
+import { useRunIdAssignment } from '@/hooks/useRunIdAssignment';
+
 // ChatSkeleton removed - status messages now provide proper feedback
 import SuggestedQuestions from './SuggestedQuestions';
 
@@ -68,6 +74,9 @@ export default function Chat({
   // Mobile detection state
   const [isMobile, setIsMobile] = useState(false);
   
+  // Memoize the first message flag reset callback to prevent unnecessary re-renders
+  const onFirstMessageFlagReset = useCallback(() => setIsFirstMessageSent(false), []);
+
   // Initialize message retry hook to handle retry orchestration
   const messageRetry = useMessageRetry({
     userId,
@@ -75,12 +84,14 @@ export default function Chat({
     chatClient,
     onMessageSent,
     onQuerySent,
-    onFirstMessageFlagReset: () => setIsFirstMessageSent(false),
+    onFirstMessageFlagReset,
   });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Create a fresh TimelineBuilder per thread and propagate it to children
+  const timelineBuilder = useMemo(() => createTimelineBuilder(), [currentThreadId]);
 
   // Derived state from secure chat client
   const isProcessing = chatClient.state.isLoading || isCreatingSession;
@@ -88,6 +99,7 @@ export default function Chat({
   const interrupt = chatClient.state.interrupt;
   const isInterrupting = interrupt !== null;
   const interruptMessage = interrupt?.value || null;
+  const toolActivities = chatClient.state.toolActivities;
   
   // Use retry popup state from the hook
   const shouldShowRetryPopup = messageRetry.shouldShowRetryPopup;
@@ -96,6 +108,20 @@ export default function Chat({
   // The chatClient's state will now be the primary message store.
   // We'll manage optimistic updates directly in the client.
   const messagesToDisplay = chatClient.state.messages;
+  
+  // Use custom hook for tool activities hydration
+  const { persistedRunIds } = useToolActivitiesHydration({
+    currentThreadId: currentThreadId || undefined,
+    accountId,
+    chatClient,
+  });
+
+  // Use custom hook for runId assignment
+  const { tryAssignRunIdsToMessages } = useRunIdAssignment({
+    messages: messagesToDisplay,
+    chatClient,
+    persistedRunIds,
+  });
 
   // --- Effect to load initial/thread messages into the client's state ---
   useEffect(() => {
@@ -224,7 +250,7 @@ export default function Chat({
         // Keep retry state for potential retry (don't clear lastFailedMessage)
       });
     }
-  }, [currentThreadId, pendingFirstMessage, chatClient, userId, accountId, onMessageSent, onQuerySent, isProcessing, isFirstMessageSent, messageRetry.prepareForSend]); // Add isFirstMessageSent to dependency array
+  }, [currentThreadId, pendingFirstMessage, chatClient, userId, accountId, onMessageSent, onQuerySent, isProcessing, isFirstMessageSent]); // Remove messageRetry.prepareForSend to prevent unnecessary re-triggers
   // --- End Effect for first message ---
 
   // Handle input submission (for new sessions OR subsequent messages)
@@ -338,7 +364,7 @@ export default function Chat({
     }
     return true;
 
-  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend]);
+  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession]); // Remove messageRetry.prepareForSend
 
   // Handle suggested question selection
   const handleSuggestedQuestion = useCallback(async (question: string) => {
@@ -438,7 +464,7 @@ export default function Chat({
             // Keep retry state for potential retry (don't clear lastFailedMessage)
         }
     }
-  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend]);
+  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession]); // Remove messageRetry.prepareForSend
 
   // Auto-adjust textarea height
   useEffect(() => {
@@ -626,15 +652,17 @@ export default function Chat({
             : "space-y-8 px-8 py-6" // Desktop full-screen: generous spacing
         )}
       >
-        {messagesToDisplay.map((msg: Message, index: number) => (
-            <ChatMessage 
-            key={msg.id || `msg-${index}`}
-            message={msg}
-            isLast={index === messagesToDisplay.length - 1}
-            isMobileMode={isMobile && isFullscreen} // Only true mobile devices in fullscreen
-            isSidebarMode={isSidebarMode}
-          />
-        ))}
+        <ChatMessageList
+          messages={messagesToDisplay}
+          toolActivities={toolActivities}
+          currentUserId={userId}
+          isProcessing={isProcessing}
+          isMobile={isMobile}
+          isFullscreen={isFullscreen}
+          isSidebarMode={isSidebarMode}
+          timelineBuilder={timelineBuilder}
+        />
+
         
         {isInterrupting && interrupt && (
           <InterruptConfirmation
