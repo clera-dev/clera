@@ -27,6 +27,7 @@ import { PerMessageToolDetails } from './PerMessageToolDetails';
 import { ChatMessageList } from './ChatMessageList';
 import { useToolActivitiesHydration } from '@/hooks/useToolActivitiesHydration';
 import { useRunIdAssignment } from '@/hooks/useRunIdAssignment';
+import { PersonalizationService } from '@/utils/services/personalization-service';
 
 // ChatSkeleton removed - status messages now provide proper feedback
 import SuggestedQuestions from './SuggestedQuestions';
@@ -260,7 +261,9 @@ export default function Chat({
     const trimmedInput = sourceContent.trim();
     if (!trimmedInput || isProcessing || isInterrupting) return false;
 
-    const contentToSend = trimmedInput;
+    // Enhance message with personalization context
+    const baseContent = trimmedInput;
+    const contentToSend = await PersonalizationService.enhanceMessageWithContext(baseContent, userId);
     setInput('');
 
     // Reset textarea height after sending
@@ -269,10 +272,10 @@ export default function Chat({
       inputRef.current.rows = 1; // Reset rows
     }
 
-    // Add user message and status immediately - BEFORE any async operations
+    // Add user message and status immediately - BEFORE any async operations (using original content for display)
     const userMessage: Message = {
       role: 'user',
-      content: contentToSend
+      content: baseContent // Show original message to user, not enhanced version
     };
     chatClient.addMessagesWithStatus(userMessage);
 
@@ -292,7 +295,7 @@ export default function Chat({
                 targetThreadId = newSession.id;
                 //console.log("New session created successfully:", targetThreadId);
 
-                // 1. Set the pending message content
+                // 1. Set the pending message content (enhanced with personalization)
                 setPendingFirstMessage(contentToSend);
                 // 2. Update the thread ID state - this will trigger the useEffect
                 setCurrentThreadId(targetThreadId);

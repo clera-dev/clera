@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { OnboardingData } from "@/lib/types/onboarding";
 import { initialOnboardingData } from "./OnboardingTypes";
 import ProgressBar from "./ProgressBar";
+import PersonalizationStep from "./PersonalizationStep";
 import WelcomePage from "./WelcomePage";
 import ContactInfoStep from "./ContactInfoStep";
 import PersonalInfoStep from "./PersonalInfoStep";
@@ -12,18 +13,26 @@ import FinancialProfileStep from "./FinancialProfileStep";
 import DisclosuresStep from "./DisclosuresStep";
 import AgreementsStep from "./AgreementsStep";
 import OnboardingSuccessLoading from "./OnboardingSuccessLoading";
+import PersonalizationSuccess from "./PersonalizationSuccess";
+import { getPersonalizationData } from "@/utils/api/personalization-client";
 import { createAlpacaAccount } from "@/utils/api/alpaca";
 import { saveOnboardingData } from "@/utils/api/onboarding-client";
 import { OnboardingStatus } from "@/lib/types/onboarding";
 import { Button } from "@/components/ui/button";
 import { usePostOnboardingNavigation } from "@/utils/navigation";
+import { 
+  PersonalizationFormData, 
+  initialPersonalizationData 
+} from "@/lib/types/personalization";
 
 // Define the Step type
-type Step = "welcome" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";
+type Step = "welcome" | "personalization" | "personalization_success" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";
 
 // Single source of truth for step sequence
 const ONBOARDING_STEPS: Step[] = [
   "welcome",
+  "personalization",
+  "personalization_success",
   "contact", 
   "personal",
   "financial",
@@ -36,6 +45,8 @@ const ONBOARDING_STEPS: Step[] = [
 // Step display names for UI components
 const STEP_DISPLAY_NAMES: Record<Step, string> = {
   "welcome": "Welcome",
+  "personalization": "Personalize Experience",
+  "personalization_success": "Personalization Saved",
   "contact": "Contact Info",
   "personal": "Personal Info", 
   "financial": "Financial Profile",
@@ -48,13 +59,15 @@ const STEP_DISPLAY_NAMES: Record<Step, string> = {
 // Define an enum for numeric step indices (derived from the steps array)
 enum StepIndex {
   Welcome = 0,
-  Contact = 1,
-  Personal = 2,
-  Financial = 3,
-  Disclosures = 4,
-  Agreements = 5,
-  Loading = 6,
-  Success = 7
+  Personalization = 1,
+  PersonalizationSuccess = 2,
+  Contact = 3,
+  Personal = 4,
+  Financial = 5,
+  Disclosures = 6,
+  Agreements = 7,
+  Loading = 8,
+  Success = 9
 }
 
 interface OnboardingFlowProps {
@@ -70,10 +83,16 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   const [onboardingData, setOnboardingData] = useState<OnboardingData>(
     initialData || initialOnboardingData
   );
+  const [personalizationData, setPersonalizationData] = useState<PersonalizationFormData>(
+    initialPersonalizationData
+  );
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [accountCreated, setAccountCreated] = useState<boolean>(false);
   const [accountExists, setAccountExists] = useState<boolean>(false);
+  const [createdAccountId, setCreatedAccountId] = useState<string | null>(null);
+  const [hasPersonalization, setHasPersonalization] = useState<boolean>(false);
+  const [personalizationChecked, setPersonalizationChecked] = useState<boolean>(false);
 
   // Map for converting step string to numeric index (derived from ONBOARDING_STEPS)
   const stepToIndex: Record<Step, number> = ONBOARDING_STEPS.reduce((acc, step, index) => {
@@ -81,23 +100,23 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     return acc;
   }, {} as Record<Step, number>);
 
-  // Calculate total steps dynamically from ONBOARDING_STEPS (excluding welcome, loading, success)
+  // Calculate total steps dynamically from ONBOARDING_STEPS (excluding welcome, personalization, loading, success)
   const totalSteps = ONBOARDING_STEPS.filter(step => 
-    step !== "welcome" && step !== "loading" && step !== "success"
+    step !== "welcome" && step !== "personalization" && step !== "personalization_success" && step !== "loading" && step !== "success"
   ).length;
 
   // Save progress to Supabase when steps change
   useEffect(() => {
     const currentStepIndex = stepToIndex[currentStep];
-    if (currentStepIndex > 0 && currentStepIndex <= totalSteps) {
+    if (currentStepIndex > 2 && currentStepIndex <= totalSteps + 2) { // Skip welcome (0), personalization (1), personalization_success (2)
       saveOnboardingProgress();
     }
   }, [currentStep, onboardingData]);
 
   // Scroll to top when step changes (but not on initial load)
   useEffect(() => {
-    // Skip scroll on initial load (welcome step)
-    if (currentStep !== "welcome") {
+    // Skip scroll on initial load (welcome and personalization steps)
+    if (currentStep !== "welcome" && currentStep !== "personalization" && currentStep !== "personalization_success") {
       // Use setTimeout to ensure the new content is rendered
       const timeoutId = setTimeout(() => {
         // Use instant scroll to ensure it works reliably
@@ -114,6 +133,22 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
 
   // Check for intended redirect on mount
   useEffect(() => {
+    // Prefetch personalization so we can skip that step if already completed
+    (async () => {
+      try {
+        const existing = await getPersonalizationData();
+        if (existing) {
+          setHasPersonalization(true);
+          setPersonalizationData(existing);
+        }
+      } catch (e) {
+        // non-fatal
+        console.warn('Unable to prefetch personalization');
+      } finally {
+        setPersonalizationChecked(true);
+      }
+    })();
+
     // Set a cookie to capture any intended redirect if the user tries to navigate away
     const path = window.location.pathname;
     if (path === '/protected') {
@@ -131,11 +166,27 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     setOnboardingData(prev => ({ ...prev, ...newData }));
   };
 
+  const updatePersonalizationData = (newData: Partial<PersonalizationFormData>) => {
+    setPersonalizationData(prev => ({ ...prev, ...newData }));
+    // If the user edits personalization later, allow showing those steps again
+    if (hasPersonalization) {
+      setHasPersonalization(false);
+    }
+  };
+
   const nextStep = () => {
     const currentIndex = ONBOARDING_STEPS.indexOf(currentStep);
     
     if (currentIndex < ONBOARDING_STEPS.length - 1) {
-      setCurrentStep(ONBOARDING_STEPS[currentIndex + 1]);
+      let next = ONBOARDING_STEPS[currentIndex + 1];
+      // If personalization already exists, skip personalization steps
+      if (hasPersonalization) {
+        while (next === "personalization" || next === "personalization_success") {
+          const idx = ONBOARDING_STEPS.indexOf(next);
+          next = ONBOARDING_STEPS[Math.min(idx + 1, ONBOARDING_STEPS.length - 1)];
+        }
+      }
+      setCurrentStep(next);
     }
   };
 
@@ -143,7 +194,15 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     const currentIndex = ONBOARDING_STEPS.indexOf(currentStep);
     
     if (currentIndex > 0) {
-      setCurrentStep(ONBOARDING_STEPS[currentIndex - 1]);
+      let prev = ONBOARDING_STEPS[currentIndex - 1];
+      // If personalization already exists, skip back over personalization steps
+      if (hasPersonalization) {
+        while (prev === "personalization_success" || prev === "personalization") {
+          const idx = ONBOARDING_STEPS.indexOf(prev);
+          prev = ONBOARDING_STEPS[Math.max(idx - 1, 0)];
+        }
+      }
+      setCurrentStep(prev);
     }
   };
 
@@ -209,7 +268,8 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           
           setAccountCreated(true);
           setSubmitting(false);
-          setCurrentStep("loading"); // Show loading page instead of navigating away
+          // For existing accounts, skip polling and go straight to completion
+          handleLoadingComplete();
           return;
         }
         
@@ -233,6 +293,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       );
       
       setAccountCreated(true);
+      setCreatedAccountId(result.data?.id); // Store account ID for status polling
       setSubmitting(false);
       setCurrentStep("loading"); // Show loading page instead of navigating away
     } catch (error) {
@@ -249,10 +310,31 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     router.push('/protected');
   };
 
+  const handleLoadingError = (error: string) => {
+    // If account creation fails during polling, return user to agreements step with error
+    setSubmissionError(error);
+    setSubmitting(false);
+    setCurrentStep("agreements");
+  };
+
   const renderCurrentStep = () => {
+    // Block rendering until personalization check completes to avoid flicker
+    if (!personalizationChecked) {
+      return null;
+    }
     switch (currentStep) {
       case "welcome":
-        return <WelcomePage onContinue={nextStep} />;
+        return <WelcomePage onContinue={nextStep} firstName={personalizationData.firstName} />;
+      case "personalization":
+        return (
+          <PersonalizationStep 
+            data={personalizationData} 
+            onUpdate={updatePersonalizationData} 
+            onContinue={() => setCurrentStep("personalization_success")}
+          />
+        );
+      case "personalization_success":
+        return <PersonalizationSuccess onComplete={nextStep} />;
       case "contact":
         return (
           <ContactInfoStep 
@@ -301,7 +383,13 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           />
         );
       case "loading":
-        return <OnboardingSuccessLoading onComplete={handleLoadingComplete} />;
+        return (
+          <OnboardingSuccessLoading 
+            accountId={createdAccountId || undefined}
+            onComplete={handleLoadingComplete} 
+            onError={handleLoadingError}
+          />
+        );
       case "success":
         // This step is no longer used, navigation happens directly
         return null;
@@ -317,27 +405,29 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       return 100;
     }
     
-    // For welcome and loading steps, show 0%
-    if (currentStep === "welcome" || currentStep === "loading") {
+    // For personalization, welcome and loading steps, show 0%
+    if (currentStep === "personalization" || currentStep === "welcome" || currentStep === "loading") {
       return 0;
     }
     
     // For other steps, calculate percentage based on step index
     const currentStepIndex = stepToIndex[currentStep];
-    return Math.round((currentStepIndex / totalSteps) * 100);
+    // Adjust for personalization and welcome being excluded from progress
+    const adjustedIndex = currentStepIndex - 2; // Subtract personalization (0) and welcome (1)
+    return Math.round((adjustedIndex / totalSteps) * 100);
   };
 
   return (
     <div className="flex flex-col w-full">
       <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
-        {/* Progress bar - don't show for welcome, loading, or success pages */}
-        {currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success" && (
+        {/* Progress bar - don't show for personalization, welcome, loading, or success pages */}
+        {currentStep !== "personalization" && currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success" && (
           <div className="mb-6">
             <ProgressBar 
-              currentStep={stepToIndex[currentStep]} 
+              currentStep={stepToIndex[currentStep] - 2} // Adjust for personalization and welcome being excluded
               totalSteps={totalSteps}
               stepNames={ONBOARDING_STEPS
-                .filter(step => step !== "welcome" && step !== "loading" && step !== "success")
+                .filter(step => step !== "personalization" && step !== "welcome" && step !== "loading" && step !== "success")
                 .map(step => STEP_DISPLAY_NAMES[step])
               }
               percentComplete={calculateProgress()}

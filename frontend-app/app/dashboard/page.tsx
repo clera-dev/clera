@@ -15,6 +15,7 @@ import { Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getAlpacaAccountId } from "@/lib/utils"; // Import reliable account ID utility
 import TransferHistory from "@/components/funding/TransferHistory";
+import GoalsSection from "@/components/dashboard/GoalsSection";
 
 // Define a more accurate type for account details based on Supabase fetch
 interface FetchedAccountDetails {
@@ -35,6 +36,7 @@ export default function DashboardPage() {
   const [accountDetails, setAccountDetails] = useState<FetchedAccountDetails | null>(null);
   const [alpacaAccountId, setAlpacaAccountId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -51,8 +53,9 @@ export default function DashboardPage() {
           return; 
         }
         
-        // Save user email for future use
+        // Save user email and ID for future use
         setUserEmail(user.email || null);
+        setUserId(user.id);
         
         // 2. Get user first/last name and alpaca account ID from user_onboarding
         let firstName = "User";
@@ -295,7 +298,15 @@ export default function DashboardPage() {
             <TransferHistory />
           </div>
 
-          {/* Row 3: Documents and Disclosures */}
+          {/* Row 3: Goals Section */}
+          <div className="grid grid-cols-1 gap-6">
+            <GoalsSection 
+              userId={userId || ''} 
+              firstName={userData?.firstName}
+            />
+          </div>
+
+          {/* Row 4: Documents and Disclosures */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <DocumentsAndStatements />
             <div className="bg-card border border-border rounded-lg p-6">
@@ -320,7 +331,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Row 4: Account Management */}
+          {/* Row 5: Account Management */}
           {alpacaAccountId && (
             <div className="mt-8">
               <DangerZone

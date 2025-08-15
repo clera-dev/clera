@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
+import FundingSuccessLoading from "./FundingSuccessLoading";
 
 interface TransferFormProps {
   alpacaAccountId: string;
@@ -29,6 +30,8 @@ export default function TransferForm({
   const [isTransferring, setIsTransferring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transferCompleted, setTransferCompleted] = useState(false);
+  const [showLoading, setShowLoading] = useState(false);
+  const [transferId, setTransferId] = useState<string | null>(null);
   
   const isValidAmount = () => {
     const numAmount = parseFloat(amount);
@@ -120,17 +123,12 @@ export default function TransferForm({
       
       // Save data with the new transfer ID
       saveDataToLocalStorage(data.id);
+      setTransferId(data.id);
       
       console.log("Transfer successful.");
       
-      // If parent component wants to handle completion (e.g., step-based flow), 
-      // call callback immediately instead of showing local success page
-      if (onTransferComplete) {
-        onTransferComplete(amount);
-      } else {
-        // Default behavior: show local success page
-        setTransferCompleted(true);
-      }
+      // Show loading screen to poll transfer status
+      setShowLoading(true);
       
     } catch (error) {
       console.error('Error initiating transfer:', error);
@@ -168,6 +166,36 @@ export default function TransferForm({
       setIsTransferring(false);
     }
   };
+
+  const handleLoadingComplete = () => {
+    // Transfer polling completed successfully
+    if (onTransferComplete) {
+      onTransferComplete(amount);
+    } else {
+      // Default behavior: show local success page
+      setTransferCompleted(true);
+    }
+  };
+
+  const handleLoadingError = (error: string) => {
+    // If transfer status polling fails, return user to transfer form with error
+    setError(error);
+    setShowLoading(false);
+    setIsTransferring(false);
+  };
+
+  // If transfer is being polled, show loading screen
+  if (showLoading) {
+    return (
+      <FundingSuccessLoading 
+        transferId={transferId || undefined}
+        accountId={alpacaAccountId}
+        amount={amount}
+        onComplete={handleLoadingComplete} 
+        onError={handleLoadingError}
+      />
+    );
+  }
 
   // If transfer is completed, show the beautiful success page
   if (transferCompleted) {
