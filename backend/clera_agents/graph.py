@@ -66,9 +66,6 @@ from clera_agents import trade_execution_agent as te_module
 # Import personalization service
 from utils.personalization_service import create_personalized_supervisor_prompt
 
-# FIXED: Import the corrected personalization function
-from utils.personalization_service import create_personalized_supervisor_prompt_from_state
-
 
 ###############################################################################
 # Define the conversation state type
@@ -767,11 +764,11 @@ Always validate requests have both ticker and dollar amount before executing tra
 )
 
 
-# Create supervisor workflow with FIXED personalization that works with state
+# Create supervisor workflow with personalized system prompt
 workflow = create_supervisor(
     [financial_analyst_agent, portfolio_management_agent, trade_execution_agent],
     model=main_llm,
-    prompt=create_personalized_supervisor_prompt_from_state,  # FIXED: Works with state only
+    prompt=create_personalized_supervisor_prompt,  # Function instead of static string
     output_mode="full_history", 
     supervisor_name="Clera", 
     state_schema=State

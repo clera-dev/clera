@@ -344,23 +344,14 @@ class PersonalizationService:
                     logger.debug(f"No LangGraph config available: {e}")
                     return base_prompt
             
-            # Enhanced debug logging
-            logger.debug(f"Config type: {type(config)}")
-            if hasattr(config, 'keys'):
-                logger.debug(f"Config keys: {list(config.keys())}")
-            
             if not config or not isinstance(config.get('configurable'), dict):
                 logger.debug("No valid LangGraph config available for personalization")
                 return base_prompt
-            
-            logger.debug(f"Configurable content: {config['configurable']}")
             
             user_id = config['configurable'].get('user_id')
             if not user_id:
                 logger.debug("No user_id in LangGraph config")
                 return base_prompt
-            
-            logger.debug(f"Found user_id: {user_id}")
             
             # Fetch personalization context
             context = PersonalizationService.get_user_personalization_context(user_id)
@@ -411,127 +402,10 @@ def create_personalized_supervisor_prompt(state, config: RunnableConfig = None):
     # Import here to avoid circular imports
     from clera_agents.graph import supervisor_clera_system_prompt
     
-    # Ensure we have a config with user_id. If LangGraph did not pass one,
-    # fallback to extracting it from the current graph state (state['user_id']).
-    if config is None:
-        config = {}
-    # Normalize to dict form
-    if hasattr(config, 'to_dict'):
-        config = config.to_dict()
-    if not isinstance(config, dict):
-        config = {}
-    if 'configurable' not in config or not isinstance(config.get('configurable'), dict):
-        config['configurable'] = {}
-    # Inject user_id from state if missing
-    if 'user_id' not in config['configurable']:
-        possible_uid = None
-        if isinstance(state, dict):
-            possible_uid = state.get('user_id')
-        else:
-            possible_uid = getattr(state, 'user_id', None)
-        if possible_uid:
-            config['configurable']['user_id'] = possible_uid
-    
     # Build the personalized system prompt
     personalized_prompt = PersonalizationService.build_personalized_system_prompt(
-        supervisor_clera_system_prompt,
-        config=config
-    )
-    
-    # Create the message list that LangGraph expects
-    messages: List[AnyMessage] = []
-    
-    # Add the personalized system message
-    messages.append(SystemMessage(content=personalized_prompt))
-    
-    # Add existing messages from state
-    if hasattr(state, 'messages'):
-        messages.extend(state.messages)
-    elif isinstance(state, dict) and 'messages' in state:
-        messages.extend(state['messages'])
-    
-    return messages
-
-
-# CRITICAL FIX: New function that works with state only (no config dependency)
-def create_personalized_supervisor_prompt_from_state(state):
-    """
-    Create supervisor prompt with user personalization context FROM STATE ONLY.
-    
-    This function is designed to work when LangGraph cloud doesn't pass config.
-    It extracts user_id directly from the state object.
-    
-    Args:
-        state: The current graph state (should contain user_id)
-        
-    Returns:
-        List[AnyMessage]: List of messages with personalized system prompt
-    """
-    from langchain_core.messages import SystemMessage, AnyMessage
-    from typing import List
-    
-    # Import here to avoid circular imports
-    from clera_agents.graph import supervisor_clera_system_prompt
-    
-    # Extract user_id from state - try multiple sources
-    user_id = None
-    account_id = None
-    
-    # Method 1: Direct state fields
-    if isinstance(state, dict):
-        user_id = state.get('user_id')
-        account_id = state.get('account_id')
-    elif hasattr(state, 'user_id'):
-        user_id = state.user_id
-        account_id = getattr(state, 'account_id', None)
-    
-    # Method 2: Extract from input (if present)
-    if not user_id and hasattr(state, 'messages') and state.messages:
-        # Check if input was enriched with user context
-        for msg in state.messages:
-            if hasattr(msg, 'additional_kwargs'):
-                input_data = msg.additional_kwargs
-                if 'user_id' in input_data:
-                    user_id = input_data['user_id']
-                    account_id = input_data.get('account_id')
-                    break
-    
-    # Method 3: Check if there's input data in state directly
-    if not user_id and isinstance(state, dict):
-        # Sometimes LangGraph puts input data directly in state
-        if 'user_id' in state:
-            user_id = state['user_id']
-            account_id = state.get('account_id')
-    
-    logger.info(f"PROMPT_FROM_STATE: user_id={user_id}, account_id={account_id}")
-    logger.info(f"PROMPT_FROM_STATE: state type={type(state)}, keys={list(state.keys()) if isinstance(state, dict) else 'N/A'}")
-    
-    if not user_id:
-        logger.warning("No user_id found in state - using base prompt")
-        # Return base prompt without personalization
-        messages: List[AnyMessage] = []
-        messages.append(SystemMessage(content=supervisor_clera_system_prompt))
-        
-        # Add existing messages from state
-        if hasattr(state, 'messages'):
-            messages.extend(state.messages)
-        elif isinstance(state, dict) and 'messages' in state:
-            messages.extend(state['messages'])
-        
-        return messages
-    
-    # Create a fake config for the existing function
-    fake_config = {
-        'configurable': {
-            'user_id': user_id,
-            'account_id': account_id
-        }
-    }
-    
-    # Build the personalized system prompt using existing function
-    personalized_prompt = PersonalizationService.build_personalized_system_prompt(
         supervisor_clera_system_prompt, 
-        config=fake_config
+        config=config
     )
     
     # Create the message list that LangGraph expects
