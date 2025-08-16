@@ -58,8 +58,9 @@ export async function POST(request: NextRequest) {
     // Pending states: APPROVAL_PENDING, AML_REVIEW  
     // Failed states: ACTION_REQUIRED, DISABLED, etc.
     const status = data.status || '';
-    const accountReady = ['APPROVED', 'ACTIVE'].includes(status);
-    const accountFailed = ['ACTION_REQUIRED', 'DISABLED', 'REJECTED'].includes(status);
+    const normalizedStatus = status.toUpperCase();
+    const accountReady = ['APPROVED', 'ACTIVE'].includes(normalizedStatus);
+    const accountFailed = ['ACTION_REQUIRED', 'DISABLED', 'REJECTED'].includes(normalizedStatus);
     
     return NextResponse.json({
       ...data,

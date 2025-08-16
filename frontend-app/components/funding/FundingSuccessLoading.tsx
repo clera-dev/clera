@@ -41,12 +41,11 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
     
     const pollTransferStatus = async () => {
       try {
-        const response = await fetch('/api/transfer/status-poll', {
-          method: 'POST',
+        const response = await fetch(`/api/transfer/status-poll?transferId=${encodeURIComponent(transferId || '')}&accountId=${encodeURIComponent(accountId || '')}`, {
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ transferId, accountId }),
         });
 
         const data = await response.json();
@@ -134,7 +133,7 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
     }, 5000); // Poll every 5 seconds
 
     return () => clearInterval(pollInterval);
-  }, [transferId, onComplete, onError]);
+  }, [transferId, accountId, onComplete, onError]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">

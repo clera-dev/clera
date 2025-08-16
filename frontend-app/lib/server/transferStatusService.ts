@@ -1,3 +1,5 @@
+import 'server-only';
+
 export interface TransferStatusData {
   status: string;
   transfer_completed: boolean;
@@ -6,13 +8,7 @@ export interface TransferStatusData {
   updated_at?: string;
 }
 
-export interface TransferStateFlags {
-  transferReady: boolean;
-  transferFailed: boolean;
-  isPending: boolean;
-}
-
-function getBackendConfig() {
+function requireBackendConfig() {
   const backendUrl = process.env.BACKEND_API_URL;
   const backendApiKey = process.env.BACKEND_API_KEY;
   if (!backendUrl || !backendApiKey) {
@@ -31,7 +27,7 @@ export async function fetchTransferStatusFromBackend(params: {
   authToken: string;
 }): Promise<TransferStatusData> {
   const { accountId, transferId, authToken } = params;
-  const { backendUrl, backendApiKey } = getBackendConfig();
+  const { backendUrl, backendApiKey } = requireBackendConfig();
 
   const safeAccountId = encodeId(accountId);
   const safeTransferId = encodeId(transferId);
@@ -95,17 +91,6 @@ export async function fetchTransferStatusFromBackend(params: {
     amount: specific.amount?.toString?.() ?? specific.amount,
     created_at: specific.created_at,
     updated_at: specific.updated_at,
-  };
-}
-
-export function evaluateTransferState(status: string | undefined): TransferStateFlags {
-  const up = String(status || '').toUpperCase();
-  const transferReady = ['COMPLETED', 'SETTLED', 'QUEUED'].includes(up);
-  const transferFailed = ['FAILED', 'CANCELLED', 'REJECTED', 'RETURNED'].includes(up);
-  return {
-    transferReady,
-    transferFailed,
-    isPending: !transferReady && !transferFailed,
   };
 }
 

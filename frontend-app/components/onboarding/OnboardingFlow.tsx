@@ -420,8 +420,8 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   return (
     <div className="flex flex-col w-full">
       <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
-        {/* Progress bar - don't show for personalization, welcome, loading, or success pages */}
-        {currentStep !== "personalization" && currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success" && (
+        {/* Progress bar - don't show for personalization, personalization_success, welcome, loading, or success pages */}
+        {currentStep !== "personalization" && currentStep !== "personalization_success" && currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success" && (
           <div className="mb-6">
             <ProgressBar 
               currentStep={stepToIndex[currentStep] - 2} // Adjust for personalization and welcome being excluded

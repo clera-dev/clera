@@ -58,11 +58,18 @@ export async function POST(request: NextRequest) {
 
     console.log(`Submitting message.`);
 
+    // CRITICAL FIX: Inject user context directly into the input since config isn't reaching prompt function
+    const enrichedInput = {
+      ...input,
+      user_id: user.id,      // Add user_id to input
+      account_id: account_id // Add account_id to input
+    };
+
     const run = await langGraphClient.runs.create(
       thread_id,
       process.env.LANGGRAPH_ASSISTANT_ID || 'agent',
       {
-        input: input,
+        input: enrichedInput,  // Use enriched input with user context
         config: runConfig
       }
     );

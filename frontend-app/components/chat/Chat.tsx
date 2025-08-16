@@ -27,7 +27,7 @@ import { PerMessageToolDetails } from './PerMessageToolDetails';
 import { ChatMessageList } from './ChatMessageList';
 import { useToolActivitiesHydration } from '@/hooks/useToolActivitiesHydration';
 import { useRunIdAssignment } from '@/hooks/useRunIdAssignment';
-import { PersonalizationService } from '@/utils/services/personalization-service';
+
 
 // ChatSkeleton removed - status messages now provide proper feedback
 import SuggestedQuestions from './SuggestedQuestions';
@@ -261,9 +261,8 @@ export default function Chat({
     const trimmedInput = sourceContent.trim();
     if (!trimmedInput || isProcessing || isInterrupting) return false;
 
-    // Prepare personalization enrichment in parallel, but don't block UI
-    const baseContent = trimmedInput;
-    const contentPromise = PersonalizationService.enhanceMessageWithContext(baseContent, userId);
+    // Send clean user message - personalization context now handled by backend
+    const contentToSend = trimmedInput;
 
     // Optimistically clear input and render the message immediately
     setInput('');
@@ -274,10 +273,10 @@ export default function Chat({
       inputRef.current.rows = 1; // Reset rows
     }
 
-    // Add user message and status immediately - BEFORE any async operations (using original content for display)
+    // Add user message and status immediately - BEFORE any async operations
     const userMessage: Message = {
       role: 'user',
-      content: baseContent // Show original message to user, not enhanced version
+      content: contentToSend
     };
     chatClient.addMessagesWithStatus(userMessage);
 
@@ -289,8 +288,8 @@ export default function Chat({
         setIsCreatingSession(true); // Start loading indicator for session creation
         //console.log("No current thread ID. Attempting to create new session...");
         try {
-            // Use the original user input for the thread title to avoid leaking personalization context
-            const newTitle = formatChatTitle(baseContent);
+            // Use the user input for the thread title
+            const newTitle = formatChatTitle(contentToSend);
             // Pass accountId and userId correctly
             const newSession = await createChatSession(accountId, userId, newTitle);
 
@@ -298,8 +297,7 @@ export default function Chat({
                 targetThreadId = newSession.id;
                 //console.log("New session created successfully:", targetThreadId);
 
-                // 1. Set the pending message content (enhanced with personalization)
-                const contentToSend = await contentPromise;
+                // 1. Set the pending message content
                 setPendingFirstMessage(contentToSend);
                 // 2. Update the thread ID state - this will trigger the useEffect
                 setCurrentThreadId(targetThreadId);
@@ -327,7 +325,6 @@ export default function Chat({
 
         // --- MODIFIED: Send only the new message for subsequent messages ---
         // LangGraph server maintains thread state, so we only need to send the new message
-        const contentToSend = await contentPromise;
         const runInput = {
             messages: [{ type: 'human' as const, content: contentToSend }],
         };

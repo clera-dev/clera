@@ -28,6 +28,7 @@ export default function GoalsSection({ userId, firstName }: GoalsSectionProps) {
     const fetchData = async () => {
       try {
         setIsLoading(true);
+        setError(null); // Clear any previous errors
         const data = await getPersonalizationData();
         setPersonalizationData(data);
         
@@ -58,6 +59,46 @@ export default function GoalsSection({ userId, firstName }: GoalsSectionProps) {
         <CardContent>
           <div className="flex items-center justify-center py-8">
             <div className="animate-pulse text-muted-foreground">Loading goals...</div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-medium flex items-center gap-2">
+            <Target className="h-5 w-5" />
+            Investment Goals
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-6">
+            <div className="text-red-600 mb-4">{error}</div>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setError(null);
+                setIsLoading(true);
+                // Retry the fetch
+                const fetchData = async () => {
+                  try {
+                    const data = await getPersonalizationData();
+                    setPersonalizationData(data);
+                  } catch (err) {
+                    console.error('Error fetching personalization data:', err);
+                    setError('Failed to load goals');
+                  } finally {
+                    setIsLoading(false);
+                  }
+                };
+                fetchData();
+              }}
+            >
+              Try Again
+            </Button>
           </div>
         </CardContent>
       </Card>

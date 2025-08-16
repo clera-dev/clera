@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AuthService } from '@/utils/api/auth-service';
 import { fetchTransferStatusFromBackend, evaluateTransferState } from '@/utils/services/transfer-status-service';
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // Parse the request body to get transfer ID and account ID
-    const { transferId, accountId } = await request.json();
+    // Parse query parameters for GET request
+    const { searchParams } = new URL(request.url);
+    const transferId = searchParams.get('transferId');
+    const accountId = searchParams.get('accountId');
     
     if (!transferId) {
       return NextResponse.json(
@@ -51,14 +53,18 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
+    // Handle authentication and authorization errors first
+    const authError = AuthService.handleAuthError(error);
+    if (authError.status !== 500) {
+      return NextResponse.json(
+        { error: authError.message, transferReady: false, transferFailed: true }, 
+        { status: authError.status }
+      );
+    }
+
     console.error('Error in transfer status poll API route:', error);
-    
     return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-        transferReady: false,
-        transferFailed: true
-      },
+      { error: 'Internal server error', transferReady: false, transferFailed: true },
       { status: 500 }
     );
   }

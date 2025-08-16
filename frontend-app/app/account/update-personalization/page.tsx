@@ -257,7 +257,7 @@ export default function UpdatePersonalizationPage() {
             onValueChange={([v]) => setTempTimelineIndex(v)}
             onValueCommit={([v]) => {
               const key = Object.keys(INVESTMENT_TIMELINE_DESCRIPTIONS)[v] as InvestmentTimeline;
-              setTempTimelineIndex(v);
+              setTempTimelineIndex(null); // Clear temp state to show final value
               updateForm({ investmentTimeline: key });
               setFieldErrors((prev) => ({ ...prev, investmentTimeline: "" }));
             }}
@@ -309,7 +309,7 @@ export default function UpdatePersonalizationPage() {
         <p className="text-sm text-muted-foreground">This is for information purposes only. I will never withdraw money from your account without your prior direction.</p>
         <div className="space-y-4">
           <Slider
-            value={[tempMonthlyValue !== null ? tempMonthlyValue : (typeof formData.monthlyInvestmentGoal === "number" && formData.monthlyInvestmentGoal > 0 ? formData.monthlyInvestmentGoal : 250)]}
+            value={[tempMonthlyValue !== null ? tempMonthlyValue : Math.min(1000, (typeof formData.monthlyInvestmentGoal === "number" && formData.monthlyInvestmentGoal > 0 ? formData.monthlyInvestmentGoal : 250))]}
             onValueChange={([val]) => setTempMonthlyValue(val)}
             onValueCommit={([val]) => {
               const snapped = (() => {
@@ -317,7 +317,7 @@ export default function UpdatePersonalizationPage() {
                 const rounded = Math.round(val / 25) * 25;
                 return Math.min(1000, Math.max(25, rounded));
               })();
-              setTempMonthlyValue(snapped);
+              setTempMonthlyValue(null); // Clear temp state to show final value
               updateForm({ monthlyInvestmentGoal: snapped });
             }}
             max={1000}

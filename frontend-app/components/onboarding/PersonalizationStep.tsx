@@ -92,7 +92,7 @@ export default function PersonalizationStep({
       else if (lower.includes('risk')) mappedErrors.riskTolerance = err;
       else if (lower.includes('timeline')) mappedErrors.investmentTimeline = err;
       else if (lower.includes('experience')) mappedErrors.experienceLevel = err;
-      // marketInterests is optional; ignore for blocking submit banner
+      else if (lower.includes('interest')) mappedErrors.marketInterests = err;
     }
     setErrors(mappedErrors);
 
@@ -112,8 +112,10 @@ export default function PersonalizationStep({
           ? missingKeys.map((k) => requiredOrder[k]).sort((a, b) => a - b)[0]
           : 0;
         setMobileValidation({ missingKeys, firstInvalidStep });
-        // Bring the banner into view
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Gently bring the banner into view after a brief delay to avoid interfering with touch events
+        setTimeout(() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 100);
       } else {
         // Desktop: keep prior behavior of focusing first invalid area
         if (mappedErrors.firstName) {
@@ -559,7 +561,8 @@ export default function PersonalizationStep({
                   k === 'investmentGoals' ? 'Goals' :
                   k === 'riskTolerance' ? 'Risk tolerance' :
                   k === 'investmentTimeline' ? 'Investment timeline' :
-                  k === 'experienceLevel' ? 'Experience level' : k
+                  k === 'experienceLevel' ? 'Experience level' :
+                  k === 'marketInterests' ? 'Market interests' : k
                 ))
                 .join(', ')}
             </p>
