@@ -115,6 +115,7 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
       pollCount++;
       
       if (pollCount >= maxPolls) {
+        clearInterval(pollInterval);
         onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
         return;
       }

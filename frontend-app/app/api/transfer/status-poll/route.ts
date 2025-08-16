@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthService } from '@/utils/api/auth-service';
-import { fetchTransferStatusFromBackend, evaluateTransferState } from '@/utils/services/transfer-status-service';
+import { fetchTransferStatusFromBackend } from '@/lib/server/transferStatusService';
+import { evaluateTransferState } from '@/lib/types/transfer';
 
 export async function GET(request: NextRequest) {
   try {

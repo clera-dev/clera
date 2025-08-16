@@ -66,6 +66,8 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
             setStatusMessage("Your transfer has been submitted and is being reviewed");
           } else if (data.status === 'PENDING_REVIEW') {
             setStatusMessage("Additional verification is being performed on your transfer");
+          } else if (data.status === 'QUEUED') {
+            setStatusMessage("Your transfer is queued for processing");
           } else {
             setStatusMessage("Processing your transfer");
           }
@@ -73,12 +75,12 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
         }
 
         if (data.transferReady) {
-          if (data.status === 'QUEUED') {
-            setStatusMessage("Success! Your transfer is queued for processing");
-          } else if (data.status === 'COMPLETED') {
+          if (data.status === 'COMPLETED') {
             setStatusMessage("Success! Your transfer has been completed");
+          } else if (data.status === 'SETTLED') {
+            setStatusMessage("Success! Your transfer has been settled");
           } else {
-            setStatusMessage("Success! Your transfer is processing");
+            setStatusMessage("Success! Your transfer is complete");
           }
           // Small delay to show success message
           setTimeout(() => onComplete(), 1500);

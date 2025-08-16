@@ -399,8 +399,8 @@ def create_personalized_supervisor_prompt(state, config: RunnableConfig = None):
     from langchain_core.messages import SystemMessage, AnyMessage
     from typing import List
     
-    # Import here to avoid circular imports
-    from clera_agents.graph import supervisor_clera_system_prompt
+    # Import from neutral location to avoid circular imports
+    from utils.prompts.supervisor_prompt import supervisor_clera_system_prompt
     
     # Build the personalized system prompt
     personalized_prompt = PersonalizationService.build_personalized_system_prompt(

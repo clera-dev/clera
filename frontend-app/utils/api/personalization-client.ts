@@ -39,6 +39,8 @@ async function extractErrorMessage(response: Response): Promise<string> {
 
 /**
  * Fetches the user's personalization data
+ * @returns PersonalizationData if exists, null if no data exists yet
+ * @throws Error if fetch fails or server returns error
  */
 export async function getPersonalizationData(): Promise<PersonalizationData | null> {
   try {
@@ -52,7 +54,7 @@ export async function getPersonalizationData(): Promise<PersonalizationData | nu
     if (!response.ok) {
       const errorMessage = await extractErrorMessage(response);
       console.error('Error fetching personalization data:', errorMessage);
-      return null;
+      throw new Error(`Failed to fetch personalization data: ${errorMessage}`);
     }
 
     const result: PersonalizationApiResponse = await response.json();
@@ -65,8 +67,12 @@ export async function getPersonalizationData(): Promise<PersonalizationData | nu
     return null;
 
   } catch (error) {
+    // Re-throw network errors and parsing errors so component can handle them
+    if (error instanceof Error) {
+      throw error;
+    }
     console.error('Error fetching personalization data:', error);
-    return null;
+    throw new Error('Network error occurred while fetching personalization data');
   }
 }
 

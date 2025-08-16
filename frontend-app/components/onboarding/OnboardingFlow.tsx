@@ -91,6 +91,10 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   const [accountCreated, setAccountCreated] = useState<boolean>(false);
   const [accountExists, setAccountExists] = useState<boolean>(false);
   const [createdAccountId, setCreatedAccountId] = useState<string | null>(null);
+  
+  // Track personalization step progress
+  const [personalizationStep, setPersonalizationStep] = useState(0);
+  const [personalizationTotalSteps, setPersonalizationTotalSteps] = useState(7);
   const [hasPersonalization, setHasPersonalization] = useState<boolean>(false);
   const [personalizationChecked, setPersonalizationChecked] = useState<boolean>(false);
 
@@ -331,6 +335,10 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
             data={personalizationData} 
             onUpdate={updatePersonalizationData} 
             onContinue={() => setCurrentStep("personalization_success")}
+            onProgressUpdate={(step, total) => {
+              setPersonalizationStep(step);
+              setPersonalizationTotalSteps(total);
+            }}
           />
         );
       case "personalization_success":
@@ -412,23 +420,25 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     
     // For other steps, calculate percentage based on step index
     const currentStepIndex = stepToIndex[currentStep];
-    // Adjust for personalization and welcome being excluded from progress
-    const adjustedIndex = currentStepIndex - 2; // Subtract personalization (0) and welcome (1)
+    // Adjust for welcome, personalization, and personalization_success being excluded from progress
+    const adjustedIndex = currentStepIndex - 3; // Subtract welcome (0), personalization (1), and personalization_success (2)
     return Math.round((adjustedIndex / totalSteps) * 100);
   };
 
   return (
     <div className="flex flex-col w-full">
       <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
-        {/* Progress bar - don't show for personalization, personalization_success, welcome, loading, or success pages */}
-        {currentStep !== "personalization" && currentStep !== "personalization_success" && currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success" && (
+        {/* Progress bar - show for personalization steps and KYC steps */}
+        {(currentStep === "personalization" || (currentStep !== "personalization_success" && currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success")) && (
           <div className="mb-6">
             <ProgressBar 
-              currentStep={stepToIndex[currentStep] - 2} // Adjust for personalization and welcome being excluded
-              totalSteps={totalSteps}
-              stepNames={ONBOARDING_STEPS
-                .filter(step => step !== "personalization" && step !== "welcome" && step !== "loading" && step !== "success")
-                .map(step => STEP_DISPLAY_NAMES[step])
+              currentStep={currentStep === "personalization" ? personalizationStep : stepToIndex[currentStep] - 3} // Use personalization progress or KYC progress
+              totalSteps={currentStep === "personalization" ? personalizationTotalSteps : totalSteps} // Use personalization total or KYC total
+              stepNames={currentStep === "personalization" 
+                ? ["Name", "Goals", "Risk", "Timeline", "Experience", "Monthly Goal", "Interests"] // Personalization step names
+                : ONBOARDING_STEPS
+                    .filter(step => step !== "personalization" && step !== "personalization_success" && step !== "welcome" && step !== "loading" && step !== "success")
+                    .map(step => STEP_DISPLAY_NAMES[step])
               }
               percentComplete={calculateProgress()}
             />

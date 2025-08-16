@@ -58,32 +58,9 @@ export const validatePersonalizationData = (
   };
 };
 
-// DB formatters
-export const formatPersonalizationForDatabase = (
-  data: PersonalizationData
-): Record<string, any> => {
-  return {
-    first_name: data.firstName.trim(),
-    investment_goals: data.investmentGoals,
-    risk_tolerance: data.riskTolerance,
-    investment_timeline: data.investmentTimeline,
-    experience_level: data.experienceLevel,
-    monthly_investment_goal: data.monthlyInvestmentGoal,
-    market_interests: data.marketInterests,
-  };
-};
-
-export const formatPersonalizationFromDatabase = (record: any): PersonalizationData => {
-  return {
-    firstName: record.first_name,
-    investmentGoals: record.investment_goals || [],
-    riskTolerance: record.risk_tolerance,
-    investmentTimeline: record.investment_timeline,
-    experienceLevel: record.experience_level,
-    monthlyInvestmentGoal: record.monthly_investment_goal,
-    marketInterests: record.market_interests || [],
-  };
-};
+// Note: Database formatting functions have been moved to server-side API routes
+// to maintain proper architectural boundaries and prevent client-side exposure
+// of database schema details.
 
 // Initial form data
 export const initialPersonalizationData: PersonalizationFormData = {

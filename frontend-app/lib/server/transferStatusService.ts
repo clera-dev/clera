@@ -1,12 +1,5 @@
 import 'server-only';
-
-export interface TransferStatusData {
-  status: string;
-  transfer_completed: boolean;
-  amount?: string | number;
-  created_at?: string;
-  updated_at?: string;
-}
+import { TransferStatusData } from '@/lib/types/transfer';
 
 function requireBackendConfig() {
   const backendUrl = process.env.BACKEND_API_URL;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Loader2 } from "lucide-react";
 
 interface LoadingCardProps {
@@ -19,6 +19,12 @@ export default function LoadingCard({
   showDots = true,
 }: LoadingCardProps) {
   const [dots, setDots] = useState("");
+  const onCompleteRef = useRef(onComplete);
+
+  // Keep the ref updated with the latest onComplete function
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   useEffect(() => {
     if (!showDots) return;
@@ -29,10 +35,12 @@ export default function LoadingCard({
   }, [showDots]);
 
   useEffect(() => {
-    if (!onComplete || !completeDelayMs) return;
-    const t = setTimeout(onComplete, completeDelayMs);
+    if (!onCompleteRef.current || !completeDelayMs) return;
+    const t = setTimeout(() => {
+      onCompleteRef.current?.();
+    }, completeDelayMs);
     return () => clearTimeout(t);
-  }, [onComplete, completeDelayMs]);
+  }, [completeDelayMs]); // Only depend on completeDelayMs, not onComplete
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">

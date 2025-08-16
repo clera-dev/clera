@@ -5,10 +5,37 @@ import {
   PersonalizationFormData
 } from '@/lib/types/personalization';
 import {
-  validatePersonalizationData,
-  formatPersonalizationForDatabase,
-  formatPersonalizationFromDatabase
+  validatePersonalizationData
 } from '@/utils/services/personalization-data';
+
+/**
+ * Server-only database formatting functions.
+ * These handle the conversion between frontend (camelCase) and database (snake_case) formats.
+ * Keeping these server-side maintains proper architectural boundaries.
+ */
+function formatPersonalizationForDatabase(data: PersonalizationData): Record<string, any> {
+  return {
+    first_name: data.firstName.trim(),
+    investment_goals: data.investmentGoals,
+    risk_tolerance: data.riskTolerance,
+    investment_timeline: data.investmentTimeline,
+    experience_level: data.experienceLevel,
+    monthly_investment_goal: data.monthlyInvestmentGoal,
+    market_interests: data.marketInterests,
+  };
+}
+
+function formatPersonalizationFromDatabase(record: any): PersonalizationData {
+  return {
+    firstName: record.first_name,
+    investmentGoals: record.investment_goals || [],
+    riskTolerance: record.risk_tolerance,
+    investmentTimeline: record.investment_timeline,
+    experienceLevel: record.experience_level,
+    monthlyInvestmentGoal: record.monthly_investment_goal,
+    marketInterests: record.market_interests || [],
+  };
+}
 
 /**
  * GET /api/personalization

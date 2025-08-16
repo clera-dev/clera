@@ -162,7 +162,8 @@ class PersonalizationService:
         if not name:
             return ""
         # Remove control characters, normalize Unicode, limit length
-        normalized = name.normalize('NFKC')
+        import unicodedata
+        normalized = unicodedata.normalize('NFKC', name)
         sanitized = ''.join(c for c in normalized if c.isprintable()).strip()
         return sanitized[:50]  # Match validation rules
     

@@ -165,7 +165,12 @@ export default function PersonalInfoStep({
             <Input
               id="firstName"
               value={data.firstName}
-              onChange={(e) => onUpdate({ firstName: e.target.value })}
+              onChange={(e) => {
+                // Sanitize input to prevent prompt injection: only allow letters, spaces, and hyphens
+                const raw = e.target.value;
+                const sanitized = raw.replace(/[^A-Za-z\s-]/g, '').replace(/\s+/g, ' ').substring(0, 50);
+                onUpdate({ firstName: sanitized });
+              }}
               className={`${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />
             {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
