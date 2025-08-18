@@ -166,10 +166,19 @@ export default function PersonalInfoStep({
               id="firstName"
               value={data.firstName}
               onChange={(e) => {
-                // Sanitize input to prevent prompt injection: only allow letters, spaces, and hyphens
-                const raw = e.target.value;
-                const sanitized = raw.replace(/[^A-Za-z\s-]/g, '').replace(/\s+/g, ' ').substring(0, 50);
-                onUpdate({ firstName: sanitized });
+                // Unicode-friendly sanitization without requiring RegExp Unicode flag
+                const raw = e.target.value.normalize('NFKC');
+                let out = '';
+                for (const ch of raw) {
+                  const lower = ch.toLowerCase();
+                  const upper = ch.toUpperCase();
+                  const isLetter = lower !== upper;
+                  if (isLetter || ch === ' ' || ch === '-' || ch === "'") {
+                    out += ch;
+                  }
+                }
+                out = out.replace(/\s+/g, ' ').substring(0, 50);
+                onUpdate({ firstName: out });
               }}
               className={`${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />

@@ -23,8 +23,8 @@ export interface TransferStateFlags {
  */
 export function evaluateTransferState(status: string | undefined): TransferStateFlags {
   const up = String(status || '').toUpperCase();
-  const transferReady = ['COMPLETED', 'SETTLED'].includes(up);
-  const transferFailed = ['FAILED', 'CANCELLED', 'REJECTED', 'RETURNED'].includes(up);
+  const transferReady = ['COMPLETED', 'SETTLED', 'COMPLETE', 'FILLED', 'APPROVED'].includes(up);
+  const transferFailed = ['FAILED', 'CANCELLED', 'CANCELED', 'REJECTED', 'RETURNED'].includes(up);
   return {
     transferReady,
     transferFailed,

@@ -124,6 +124,7 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
       pollCount++;
       
       if (pollCount >= maxPolls) {
+        clearInterval(pollInterval);
         onError("Transfer verification is taking longer than expected. Your transfer may still be processing successfully. Please check your account or contact support if you have concerns.");
         return;
       }

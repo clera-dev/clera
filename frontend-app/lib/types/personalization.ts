@@ -88,6 +88,8 @@ export interface PersonalizationFormData extends Partial<PersonalizationData> {
 export interface ValidationResult {
   isValid: boolean;
   errors: string[];
+  // Structured, field-keyed errors for robust UI mapping
+  fieldErrors?: Record<string, string>;
 }
 
 // Helper descriptions for UI display

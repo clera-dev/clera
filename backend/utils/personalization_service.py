@@ -400,11 +400,12 @@ def create_personalized_supervisor_prompt(state, config: RunnableConfig = None):
     from typing import List
     
     # Import from neutral location to avoid circular imports
-    from utils.prompts.supervisor_prompt import supervisor_clera_system_prompt
+    from utils.prompts.supervisor_prompt import get_supervisor_clera_system_prompt
     
-    # Build the personalized system prompt
+    # Build the personalized system prompt with fresh timestamp
+    base_prompt = get_supervisor_clera_system_prompt()
     personalized_prompt = PersonalizationService.build_personalized_system_prompt(
-        supervisor_clera_system_prompt, 
+        base_prompt, 
         config=config
     )
     

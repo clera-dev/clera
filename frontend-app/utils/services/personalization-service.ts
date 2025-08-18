@@ -89,7 +89,8 @@ export class PersonalizationService {
       }
       
       if (data.riskTolerance) {
-        summaryParts.push(`Risk: ${data.riskTolerance}`);
+        const riskDescription = RISK_TOLERANCE_DESCRIPTIONS[data.riskTolerance] ?? String(data.riskTolerance);
+        summaryParts.push(`Risk: ${riskDescription}`);
       }
       
       if (data.investmentTimeline) {

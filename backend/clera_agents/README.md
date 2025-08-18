@@ -78,7 +78,8 @@ async def transfer_to_portfolio_management_agent(state: State, config: RunnableC
 ```python
 # Adaptive prompting based on user interaction patterns
 def get_personalized_supervisor_prompt(user_profile: Dict) -> str:
-    base_prompt = supervisor_clera_system_prompt
+    from utils.prompts.supervisor_prompt import get_supervisor_clera_system_prompt
+    base_prompt = get_supervisor_clera_system_prompt()
     
     # Adapt based on user behavior
     if user_profile.get("prefers_detailed_analysis"):

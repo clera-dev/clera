@@ -57,13 +57,35 @@ export async function getPersonalizationData(): Promise<PersonalizationData | nu
       throw new Error(`Failed to fetch personalization data: ${errorMessage}`);
     }
 
-    const result: PersonalizationApiResponse = await response.json();
-    
+    // Ensure we only proceed with valid JSON and surface app-level errors
+    const contentType = response.headers.get('content-type') || '';
+    let result: PersonalizationApiResponse | null = null;
+
+    if (contentType.includes('application/json')) {
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error('Failed to parse personalization response JSON');
+      }
+    } else {
+      const bodyText = await response.text().catch(() => '');
+      throw new Error(bodyText || 'Unexpected response format while fetching personalization data');
+    }
+
+    if (!result) {
+      throw new Error('Empty response while fetching personalization data');
+    }
+
+    if (result.success === false) {
+      const message = result.error || result.message || 'Server reported an error fetching personalization data';
+      throw new Error(message);
+    }
+
     if (result.success && result.data) {
       return result.data;
     }
     
-    // No data exists yet (user hasn't completed personalization)
+    // success true but no data yet
     return null;
 
   } catch (error) {

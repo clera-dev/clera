@@ -23,12 +23,13 @@ export default function GoalsSection({ userId, firstName }: GoalsSectionProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch personalization data on component mount
+  // Fetch personalization data on mount and when userId changes
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
         setError(null); // Clear any previous errors
+        setPersonalizationData(null); // Clear stale data when user changes
         const data = await getPersonalizationData();
         setPersonalizationData(data);
         
@@ -41,7 +42,7 @@ export default function GoalsSection({ userId, firstName }: GoalsSectionProps) {
     };
 
     fetchData();
-  }, []);
+  }, [userId]);
 
   const goToUpdateAll = () => {
     window.location.href = '/account/update-personalization';

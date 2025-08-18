@@ -65,7 +65,7 @@ from clera_agents import trade_execution_agent as te_module
 
 # Import personalization service and supervisor prompt
 from utils.personalization_service import create_personalized_supervisor_prompt
-from utils.prompts.supervisor_prompt import supervisor_clera_system_prompt
+from utils.prompts.supervisor_prompt import get_supervisor_clera_system_prompt
 
 
 ###############################################################################

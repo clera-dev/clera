@@ -1,5 +1,6 @@
 // Main exports for personalization components
-export { default as PersonalizationStep } from '../PersonalizationStep';
+// Note: Avoid exporting parent components from this barrel to prevent
+// circular dependencies in the module graph.
 export { PersonalizationFormComplete } from './PersonalizationFormComplete';
 export { NavigationController } from './NavigationController';
 export { ValidationBanner } from './ValidationBanner';

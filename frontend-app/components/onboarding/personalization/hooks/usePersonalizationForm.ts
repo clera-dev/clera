@@ -29,19 +29,33 @@ export function usePersonalizationForm(): UsePersonalizationFormReturn {
 
   const validateFormData = useCallback((data: PersonalizationFormData): boolean => {
     const validation = validatePersonalizationData(data);
-    const mappedErrors: Record<string, string> = {};
-    
-    for (const err of validation.errors) {
-      const lower = err.toLowerCase();
-      if (lower.includes('first name')) mappedErrors.firstName = err;
-      else if (lower.includes('goal')) mappedErrors.investmentGoals = err;
-      else if (lower.includes('risk')) mappedErrors.riskTolerance = err;
-      else if (lower.includes('timeline')) mappedErrors.investmentTimeline = err;
-      else if (lower.includes('experience')) mappedErrors.experienceLevel = err;
-      else if (lower.includes('interest')) mappedErrors.marketInterests = err;
+
+    if (validation.fieldErrors && Object.keys(validation.fieldErrors).length > 0) {
+      setErrors(validation.fieldErrors);
+    } else {
+      // Fallback to string-based mapping to maintain backward compatibility
+      const mappedErrors: Record<string, string> = {};
+      for (const err of validation.errors) {
+        const lower = err.toLowerCase();
+        if (lower.includes('first name')) {
+          mappedErrors.firstName = err;
+        } else if (lower.includes('monthly investment goal')) {
+          mappedErrors.monthlyInvestmentGoal = err;
+        } else if (lower.includes('investment goal')) {
+          mappedErrors.investmentGoals = err;
+        } else if (lower.includes('risk')) {
+          mappedErrors.riskTolerance = err;
+        } else if (lower.includes('timeline')) {
+          mappedErrors.investmentTimeline = err;
+        } else if (lower.includes('experience')) {
+          mappedErrors.experienceLevel = err;
+        } else if (lower.includes('interest')) {
+          mappedErrors.marketInterests = err;
+        }
+      }
+      setErrors(mappedErrors);
     }
-    
-    setErrors(mappedErrors);
+
     return validation.isValid;
   }, []);
 
@@ -60,10 +74,7 @@ export function usePersonalizationForm(): UsePersonalizationFormReturn {
 
       // Submit to API
       await saveOrUpdatePersonalizationData(data);
-      
-      // Call success callback
       onSuccess();
-      
     } catch (error) {
       console.error('Error saving personalization data:', error);
       setSubmitError(

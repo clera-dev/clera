@@ -2,18 +2,43 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { 
   PersonalizationData,
-  PersonalizationFormData
+  PersonalizationFormData,
+  InvestmentGoal,
+  RiskTolerance,
+  InvestmentTimeline,
+  ExperienceLevel,
+  MarketInterest,
 } from '@/lib/types/personalization';
 import {
   validatePersonalizationData
 } from '@/utils/services/personalization-data';
 
 /**
+ * Strongly typed representation of the `user_personalization` table row (snake_case as in DB).
+ */
+interface UserPersonalizationRow {
+  id: string;
+  user_id: string;
+  first_name: string;
+  investment_goals: InvestmentGoal[];
+  risk_tolerance: RiskTolerance;
+  investment_timeline: InvestmentTimeline;
+  experience_level: ExperienceLevel;
+  monthly_investment_goal: number;
+  market_interests: MarketInterest[];
+  created_at: string;
+  updated_at: string;
+}
+
+type UserPersonalizationInsert = Omit<UserPersonalizationRow, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
+type UserPersonalizationUpdate = Partial<UserPersonalizationInsert> & { updated_at?: string };
+
+/**
  * Server-only database formatting functions.
  * These handle the conversion between frontend (camelCase) and database (snake_case) formats.
  * Keeping these server-side maintains proper architectural boundaries.
  */
-function formatPersonalizationForDatabase(data: PersonalizationData): Record<string, any> {
+function formatPersonalizationForDatabase(data: PersonalizationData): UserPersonalizationInsert {
   return {
     first_name: data.firstName.trim(),
     investment_goals: data.investmentGoals,
@@ -25,7 +50,7 @@ function formatPersonalizationForDatabase(data: PersonalizationData): Record<str
   };
 }
 
-function formatPersonalizationFromDatabase(record: any): PersonalizationData {
+function formatPersonalizationFromDatabase(record: UserPersonalizationRow): PersonalizationData {
   return {
     firstName: record.first_name,
     investmentGoals: record.investment_goals || [],
@@ -79,7 +104,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Convert database format to application format
-    const formattedData = formatPersonalizationFromDatabase(personalizationData);
+    const formattedData = formatPersonalizationFromDatabase(personalizationData as UserPersonalizationRow);
 
     return NextResponse.json({
       success: true,
@@ -158,7 +183,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert back to application format for response
-    const formattedData = formatPersonalizationFromDatabase(insertedData);
+    const formattedData = formatPersonalizationFromDatabase(insertedData as UserPersonalizationRow);
 
     return NextResponse.json({
       success: true,
@@ -239,7 +264,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Convert back to application format for response
-    const formattedData = formatPersonalizationFromDatabase(updatedData);
+    const formattedData = formatPersonalizationFromDatabase(updatedData as UserPersonalizationRow);
 
     return NextResponse.json({
       success: true,

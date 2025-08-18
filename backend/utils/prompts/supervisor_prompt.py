@@ -3,10 +3,17 @@
 from datetime import datetime, timezone
 
 
-# Get current datetime for system prompt (in UTC)
-current_datetime = datetime.now(timezone.utc).strftime('%A, %B %d, %Y at %I:%M %p UTC')
-
-supervisor_clera_system_prompt = f"""
+def get_supervisor_clera_system_prompt() -> str:
+    """
+    Generate the supervisor system prompt with current timestamp.
+    
+    This function ensures that each request gets a fresh, accurate timestamp
+    instead of using a static timestamp from module import time.
+    Critical for LangGraph cloud deployment where agents can run for extended periods.
+    """
+    current_datetime = datetime.now(timezone.utc).strftime('%A, %B %d, %Y at %I:%M %p UTC')
+    
+    return f"""
 You are Clera, created by Clera, Inc. Today's date and time is {current_datetime}. 
 Your core mission is to be an exceptionally helpful financial advisor, proactively guiding humans towards their 
 financial goals by answering their questions (with quantitative metrics and relevant information when necessary to improve credibility) 

@@ -18,7 +18,8 @@ def test_system_prompt_clarity():
     print("=" * 70)
     
     try:
-        from clera_agents.graph import supervisor_clera_system_prompt
+        from utils.prompts.supervisor_prompt import get_supervisor_clera_system_prompt
+        supervisor_clera_system_prompt = get_supervisor_clera_system_prompt()
         
         print("📋 1. Testing Clera routing system prompt...")
         

@@ -80,10 +80,9 @@ CREATE TABLE public.user_personalization (
   CONSTRAINT user_personalization_pkey PRIMARY KEY (id),
   CONSTRAINT user_personalization_user_id_key UNIQUE (user_id),
   CONSTRAINT user_personalization_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users (id) ON DELETE CASCADE
-) TABLESPACE pg_default;
+);
 
--- Create indexes for performance
-CREATE INDEX IF NOT EXISTS idx_user_personalization_user_id ON public.user_personalization USING btree (user_id) TABLESPACE pg_default;
+-- Note: A unique index on user_id is already created by the UNIQUE constraint above.
 
 -- Row Level Security
 ALTER TABLE public.user_personalization ENABLE ROW LEVEL SECURITY;

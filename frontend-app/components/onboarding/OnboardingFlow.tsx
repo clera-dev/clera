@@ -421,7 +421,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     // For other steps, calculate percentage based on step index
     const currentStepIndex = stepToIndex[currentStep];
     // Adjust for welcome, personalization, and personalization_success being excluded from progress
-    const adjustedIndex = currentStepIndex - 3; // Subtract welcome (0), personalization (1), and personalization_success (2)
+    const adjustedIndex = currentStepIndex - 2; // Subtract welcome (0) and personalization_success (2) to make contact show as step 1
     return Math.round((adjustedIndex / totalSteps) * 100);
   };
 
@@ -432,7 +432,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
         {(currentStep === "personalization" || (currentStep !== "personalization_success" && currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success")) && (
           <div className="mb-6">
             <ProgressBar 
-              currentStep={currentStep === "personalization" ? personalizationStep : stepToIndex[currentStep] - 3} // Use personalization progress or KYC progress
+              currentStep={currentStep === "personalization" ? (personalizationStep + 1) : (stepToIndex[currentStep] - 2)} // 1-based for display
               totalSteps={currentStep === "personalization" ? personalizationTotalSteps : totalSteps} // Use personalization total or KYC total
               stepNames={currentStep === "personalization" 
                 ? ["Name", "Goals", "Risk", "Timeline", "Experience", "Monthly Goal", "Interests"] // Personalization step names
@@ -440,7 +440,10 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
                     .filter(step => step !== "personalization" && step !== "personalization_success" && step !== "welcome" && step !== "loading" && step !== "success")
                     .map(step => STEP_DISPLAY_NAMES[step])
               }
-              percentComplete={calculateProgress()}
+              percentComplete={currentStep === "personalization" 
+                ? Math.round(((personalizationStep + 1) / personalizationTotalSteps) * 100)
+                : calculateProgress()
+              }
             />
           </div>
         )}

@@ -48,7 +48,11 @@ export default function UpdatePersonalizationPage() {
 
   const handleSubmit = async () => {
     try {
-      await saveOrUpdatePersonalizationData(formData);
+      const result = await saveOrUpdatePersonalizationData(formData);
+      if (!result.success) {
+        setError(result.error || 'Failed to save changes. Please try again.');
+        return;
+      }
       router.push('/dashboard?updated=personalization');
     } catch (error) {
       console.error('Error saving personalization data:', error);

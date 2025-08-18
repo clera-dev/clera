@@ -23,15 +23,26 @@ export function NameInputSection({
 }: NameInputSectionProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
-    
-    // Remove any digits immediately for real-time feedback
-    const sanitizedValue = newValue.replace(/\d/g, '');
-    
+
+    // Unicode-safe sanitization: allow letters (Unicode), spaces, apostrophes, and hyphens
+    // Avoid RegExp Unicode flag by using letter detection via case change
+    const normalized = newValue.normalize('NFKC');
+    let sanitizedValue = '';
+    for (const ch of normalized) {
+      const lower = ch.toLowerCase();
+      const upper = ch.toUpperCase();
+      const isLetter = lower !== upper;
+      if (isLetter || ch === ' ' || ch === '-' || ch === "'") {
+        sanitizedValue += ch;
+      }
+    }
+    sanitizedValue = sanitizedValue.replace(/\s+/g, ' ').substring(0, 50);
+
     // Clear error when user starts typing valid input
     if (onClearError && sanitizedValue !== value && sanitizedValue.length > 0) {
       onClearError();
     }
-    
+
     onChange(sanitizedValue);
   };
 
@@ -65,7 +76,7 @@ export function NameInputSection({
           <p className="mt-1 text-sm text-red-600">{error}</p>
         )}
         <p className="mt-1 text-xs text-gray-500">
-          Letters, spaces, and hyphens only
+          Letters (including accents), spaces, apostrophes, and hyphens only
         </p>
       </div>
     </div>

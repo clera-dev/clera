@@ -47,19 +47,53 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
           body: JSON.stringify({ accountId }),
         });
 
-        const data = await response.json();
+        // Safely parse JSON only when present
+        const contentType = response.headers.get('content-type') || '';
+        let data: any = null;
+        let nonJsonBody: string | null = null;
+
+        if (response.status !== 204) {
+          if (contentType.includes('application/json')) {
+            try {
+              data = await response.json();
+            } catch (e) {
+              // If JSON parsing fails, capture text for diagnostics on error paths
+              try {
+                nonJsonBody = await response.text();
+              } catch {
+                nonJsonBody = null;
+              }
+            }
+          } else if (!response.ok) {
+            // Non-JSON error body
+            try {
+              nonJsonBody = await response.text();
+            } catch {
+              nonJsonBody = null;
+            }
+          }
+        }
 
         if (!response.ok) {
           // Handle different error scenarios
           if (response.status === 404) {
             setStatusMessage("We're still processing your account. This may take a few moments");
           } else {
-            throw new Error(data.error || 'Failed to check account status');
+            const errorMessage = (data && (data.error || data.message))
+              || nonJsonBody
+              || response.statusText
+              || 'Failed to check account status';
+            throw new Error(errorMessage);
           }
           return false; // Continue polling
         }
 
         // Update status message based on account state
+        if (response.status === 204 || data == null) {
+          // No content or no JSON body – keep polling with a generic message
+          setStatusMessage("We're processing your account. Please wait");
+          return false;
+        }
         if (data.isPending) {
           if (data.status === 'APPROVAL_PENDING') {
             setStatusMessage("Your application is being reviewed. This usually takes just a few minutes");

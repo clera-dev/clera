@@ -344,7 +344,7 @@ class TestCreatePersonalizedSupervisorPrompt:
         with patch.object(PersonalizationService, 'get_user_personalization_context', return_value=mock_context):
             # Mock the import of supervisor_clera_system_prompt
             mock_base_prompt = "Base supervisor prompt"
-            with patch('utils.prompts.supervisor_prompt.supervisor_clera_system_prompt', mock_base_prompt):
+            with patch('utils.prompts.supervisor_prompt.get_supervisor_clera_system_prompt', return_value=mock_base_prompt):
                 # Call with state and config as LangGraph would
                 result = create_personalized_supervisor_prompt(mock_state, mock_config)
                 
@@ -370,7 +370,7 @@ class TestCreatePersonalizedSupervisorPrompt:
         # Test with None config (fallback scenario)
         # Mock the import
         mock_base_prompt = "Base supervisor prompt"
-        with patch('utils.prompts.supervisor_prompt.supervisor_clera_system_prompt', mock_base_prompt):
+        with patch('utils.prompts.supervisor_prompt.get_supervisor_clera_system_prompt', return_value=mock_base_prompt):
             # When config is None, should use get_config() internally and fallback gracefully
             with patch('utils.personalization_service.get_config', side_effect=Exception("No config")):
                 result = create_personalized_supervisor_prompt(mock_state, config=None)
