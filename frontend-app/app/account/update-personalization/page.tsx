@@ -28,7 +28,7 @@ export default function UpdatePersonalizationPage() {
             riskTolerance: existing.riskTolerance || undefined,
             investmentTimeline: existing.investmentTimeline || undefined,
             experienceLevel: existing.experienceLevel || undefined,
-            monthlyInvestmentGoal: existing.monthlyInvestmentGoal || 1,
+            monthlyInvestmentGoal: existing.monthlyInvestmentGoal ?? initialPersonalizationData.monthlyInvestmentGoal,
             marketInterests: existing.marketInterests || [],
           });
         }

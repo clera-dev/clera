@@ -38,15 +38,23 @@ type UserPersonalizationUpdate = Partial<UserPersonalizationInsert> & { updated_
  * These handle the conversion between frontend (camelCase) and database (snake_case) formats.
  * Keeping these server-side maintains proper architectural boundaries.
  */
-function formatPersonalizationForDatabase(data: PersonalizationData): UserPersonalizationInsert {
+function formatPersonalizationForDatabase(data: PersonalizationFormData): UserPersonalizationInsert {
+  // Provide a safe default for optional numeric field to avoid null inserts
+  // Align with frontend initial default (see initialPersonalizationData)
+  const monthlyGoalFallback = 250;
+  const monthlyGoal =
+    typeof data.monthlyInvestmentGoal === 'number' && !Number.isNaN(data.monthlyInvestmentGoal)
+      ? data.monthlyInvestmentGoal
+      : monthlyGoalFallback;
+
   return {
-    first_name: data.firstName.trim(),
-    investment_goals: data.investmentGoals,
-    risk_tolerance: data.riskTolerance,
-    investment_timeline: data.investmentTimeline,
-    experience_level: data.experienceLevel,
-    monthly_investment_goal: data.monthlyInvestmentGoal,
-    market_interests: data.marketInterests,
+    first_name: (data.firstName || '').trim(),
+    investment_goals: data.investmentGoals ?? [],
+    risk_tolerance: data.riskTolerance!,
+    investment_timeline: data.investmentTimeline!,
+    experience_level: data.experienceLevel!,
+    monthly_investment_goal: monthlyGoal,
+    market_interests: data.marketInterests ?? [],
   };
 }
 
@@ -153,7 +161,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert to database format
-    const dbData = formatPersonalizationForDatabase(requestData as PersonalizationData);
+    const dbData = formatPersonalizationForDatabase(requestData);
     
     // Insert into Supabase
     const { data: insertedData, error } = await supabase
@@ -233,7 +241,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Convert to database format
-    const dbData = formatPersonalizationForDatabase(requestData as PersonalizationData);
+    const dbData = formatPersonalizationForDatabase(requestData);
     
     // Update in Supabase
     const { data: updatedData, error } = await supabase

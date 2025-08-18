@@ -3,6 +3,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { PersonalizationFormData, InvestmentTimeline } from "@/lib/types/personalization";
+import { initialPersonalizationData } from "@/utils/services/personalization-data";
 import { cn } from "@/lib/utils";
 
 // Import hooks
@@ -204,7 +205,7 @@ export default function PersonalizationStep({
     />,
     <MonthlyGoalSliderSection
       key="monthly"
-      selectedGoal={data.monthlyInvestmentGoal || 1}
+      selectedGoal={data.monthlyInvestmentGoal ?? initialPersonalizationData.monthlyInvestmentGoal!}
       onChange={handleMonthlyGoalUpdate}
       tempValue={tempMonthlyValue}
       onSliderChange={handleMonthlyGoalChange}

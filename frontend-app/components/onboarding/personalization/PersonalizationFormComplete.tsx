@@ -1,7 +1,9 @@
 "use client";
 
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { PersonalizationFormData, InvestmentTimeline } from "@/lib/types/personalization";
+import { initialPersonalizationData } from "@/utils/services/personalization-data";
 
 // Import hooks
 import { 
@@ -45,6 +47,11 @@ export function PersonalizationFormComplete({
   title = "Update Your Personalization"
 }: PersonalizationFormCompleteProps) {
   // Custom hooks for state management
+  const latestRef = React.useRef<PersonalizationFormData>(data);
+  React.useEffect(() => {
+    // Keep baseline in sync when parent data changes
+    latestRef.current = data;
+  }, [data]);
   const {
     errors,
     isSubmitting,
@@ -67,7 +74,8 @@ export function PersonalizationFormComplete({
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    await handleSubmit(data, () => {
+    // Use the latest locally tracked snapshot to avoid stale props
+    await handleSubmit(latestRef.current, () => {
       onSubmit();
     });
   };
@@ -80,6 +88,7 @@ export function PersonalizationFormComplete({
 
   const handleFirstNameChange = (firstName: string) => {
     handleUpdate({ firstName });
+    latestRef.current = { ...latestRef.current, firstName };
     if (firstName.length > 0) {
       clearError('firstName');
     }
@@ -87,6 +96,7 @@ export function PersonalizationFormComplete({
 
   const handleGoalsChange = (investmentGoals: PersonalizationFormData['investmentGoals']) => {
     handleUpdate({ investmentGoals });
+    latestRef.current = { ...latestRef.current, investmentGoals };
     if (investmentGoals && investmentGoals.length > 0) {
       clearError('investmentGoals');
     }
@@ -94,26 +104,31 @@ export function PersonalizationFormComplete({
 
   const handleRiskChange = (riskTolerance: PersonalizationFormData['riskTolerance']) => {
     handleUpdate({ riskTolerance });
+    latestRef.current = { ...latestRef.current, riskTolerance };
     clearError('riskTolerance');
   };
 
   const handleTimelineUpdate = (investmentTimeline: PersonalizationFormData['investmentTimeline']) => {
     handleUpdate({ investmentTimeline });
+    latestRef.current = { ...latestRef.current, investmentTimeline };
     clearError('investmentTimeline');
   };
 
   const handleExperienceChange = (experienceLevel: PersonalizationFormData['experienceLevel']) => {
     handleUpdate({ experienceLevel });
+    latestRef.current = { ...latestRef.current, experienceLevel };
     clearError('experienceLevel');
   };
 
   const handleMonthlyGoalUpdate = (monthlyInvestmentGoal: number) => {
     handleUpdate({ monthlyInvestmentGoal });
+    latestRef.current = { ...latestRef.current, monthlyInvestmentGoal };
     clearError('monthlyInvestmentGoal');
   };
 
   const handleInterestsChange = (marketInterests: PersonalizationFormData['marketInterests']) => {
     handleUpdate({ marketInterests });
+    latestRef.current = { ...latestRef.current, marketInterests };
     if (marketInterests && marketInterests.length > 0) {
       clearError('marketInterests');
     }
@@ -166,14 +181,19 @@ export function PersonalizationFormComplete({
               tempIndex={tempTimelineIndex}
               onSliderChange={handleTimelineChange}
               onSliderCommit={(values) => handleTimelineCommit(values, (index) => {
-                const timeline = [
-                  InvestmentTimeline.LESS_THAN_1_YEAR,
-                  InvestmentTimeline.ONE_TO_THREE_YEARS,
-                  InvestmentTimeline.THREE_TO_FIVE_YEARS,
-                  InvestmentTimeline.FIVE_TO_TEN_YEARS,
-                  InvestmentTimeline.TEN_PLUS_YEARS
-                ][index];
-                handleTimelineUpdate(timeline);
+                // Delegate to TimelineSliderSection's single source of truth via index→value mapping
+                // We re-trigger onChange by passing the selected index back into the child component's mapping
+                // by simply updating selectedTimeline using TimelineSliderSection's onChange through handleTimelineUpdate
+                // This keeps mapping consistent with TIMELINE_OPTIONS
+                // TimelineSliderSection will call onChange with the correct InvestmentTimeline value
+                // because its own handleSliderCommit maps index using TIMELINE_OPTIONS
+                // Here, convert index to timeline by temporarily importing the options would recreate duplication.
+                // So rely on child: set temp index and trigger commit flow.
+                const i = index; // no-op; index flows through child mapping
+                // As handleTimelineCommit already sets temp index to null and we receive index here,
+                // we can directly map by calling handleTimelineUpdate with current selection from child.
+                // However, since child already invoked onChange on commit, this is just a safety: do nothing.
+                // Keep for API compatibility.
               })}
               error={errors.investmentTimeline}
               onClearError={() => clearError('investmentTimeline')}
@@ -191,7 +211,7 @@ export function PersonalizationFormComplete({
 
           <div className="bg-white rounded-lg border border-gray-200 p-8">
             <MonthlyGoalSliderSection
-              selectedGoal={data.monthlyInvestmentGoal || 1}
+              selectedGoal={data.monthlyInvestmentGoal ?? initialPersonalizationData.monthlyInvestmentGoal!}
               onChange={handleMonthlyGoalUpdate}
               tempValue={tempMonthlyValue}
               onSliderChange={handleMonthlyGoalChange}

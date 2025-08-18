@@ -67,7 +67,7 @@ CREATE TABLE public.user_personalization (
   experience_level TEXT NOT NULL CHECK (experience_level IN ('no_experience', 'some_familiarity', 'comfortable', 'professional')),
   
   -- Monthly Investment Goal
-  monthly_investment_goal INTEGER NOT NULL DEFAULT 1, -- in dollars
+  monthly_investment_goal INTEGER NOT NULL DEFAULT 250, -- in dollars
   
   -- Market Interests (multiple selection)
   market_interests TEXT[] NOT NULL DEFAULT '{}',

@@ -116,26 +116,41 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
       }
     };
 
-    // Start polling immediately
-    pollTransferStatus();
+    // Start polling and only create interval if needed
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let stopped = false;
 
-    // Set up polling interval
-    const pollInterval = setInterval(async () => {
-      pollCount++;
-      
-      if (pollCount >= maxPolls) {
-        clearInterval(pollInterval);
-        onError("Transfer verification is taking longer than expected. Your transfer may still be processing successfully. Please check your account or contact support if you have concerns.");
+    (async () => {
+      const shouldStop = await pollTransferStatus();
+      if (shouldStop) {
+        stopped = true;
         return;
       }
 
-      const shouldStop = await pollTransferStatus();
-      if (shouldStop) {
-        clearInterval(pollInterval);
-      }
-    }, 5000); // Poll every 5 seconds
+      pollInterval = setInterval(async () => {
+        if (stopped) return;
 
-    return () => clearInterval(pollInterval);
+        pollCount++;
+        
+        if (pollCount >= maxPolls) {
+          stopped = true;
+          if (pollInterval) clearInterval(pollInterval);
+          onError("Transfer verification is taking longer than expected. Your transfer may still be processing successfully. Please check your account or contact support if you have concerns.");
+          return;
+        }
+
+        const shouldStopInner = await pollTransferStatus();
+        if (shouldStopInner) {
+          stopped = true;
+          if (pollInterval) clearInterval(pollInterval);
+        }
+      }, 5000); // Poll every 5 seconds
+    })();
+
+    return () => {
+      stopped = true;
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [transferId, accountId, onComplete, onError]);
 
   return (

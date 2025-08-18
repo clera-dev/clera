@@ -32,6 +32,23 @@ export default function PersonalInfoStep({
 }: PersonalInfoStepProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Unicode-friendly name sanitization without relying on Unicode property escapes
+  // Strategy: normalize, strip control chars, digits, surrogate pairs (emojis), and disallowed punctuation
+  // Keep spaces, hyphens, apostrophes, and non-ASCII letters from caseless scripts (CJK, Arabic, etc.)
+  const sanitizeNameInput = (value: string): string => {
+    const raw = (value || '').normalize('NFKC');
+    let out = raw
+      // remove control characters
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      // remove surrogate pairs (emojis and most symbols outside BMP)
+      .replace(/[\uD800-\uDFFF]/g, '')
+      // remove digits
+      .replace(/[0-9]/g, '')
+      // remove common punctuation except space, hyphen, apostrophe
+      .replace(/["`^~_|<>\\{}\[\]@#$%&*=+:;.,!?]/g, '');
+    return out.replace(/\s+/g, ' ').trim().slice(0, 50);
+  };
+
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
@@ -165,21 +182,7 @@ export default function PersonalInfoStep({
             <Input
               id="firstName"
               value={data.firstName}
-              onChange={(e) => {
-                // Unicode-friendly sanitization without requiring RegExp Unicode flag
-                const raw = e.target.value.normalize('NFKC');
-                let out = '';
-                for (const ch of raw) {
-                  const lower = ch.toLowerCase();
-                  const upper = ch.toUpperCase();
-                  const isLetter = lower !== upper;
-                  if (isLetter || ch === ' ' || ch === '-' || ch === "'") {
-                    out += ch;
-                  }
-                }
-                out = out.replace(/\s+/g, ' ').substring(0, 50);
-                onUpdate({ firstName: out });
-              }}
+              onChange={(e) => onUpdate({ firstName: sanitizeNameInput(e.target.value) })}
               className={`${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />
             {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
@@ -190,7 +193,7 @@ export default function PersonalInfoStep({
             <Input
               id="middleName"
               value={data.middleName}
-              onChange={(e) => onUpdate({ middleName: e.target.value })}
+              onChange={(e) => onUpdate({ middleName: sanitizeNameInput(e.target.value) })}
               className="border-gray-300 rounded-md h-12 sm:h-11"
             />
           </div>
@@ -200,7 +203,7 @@ export default function PersonalInfoStep({
             <Input
               id="lastName"
               value={data.lastName}
-              onChange={(e) => onUpdate({ lastName: e.target.value })}
+              onChange={(e) => onUpdate({ lastName: sanitizeNameInput(e.target.value) })}
               className={`${errors.lastName ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />
             {errors.lastName && <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>}

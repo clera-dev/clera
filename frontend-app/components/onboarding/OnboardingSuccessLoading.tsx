@@ -36,6 +36,7 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
 
     let pollCount = 0;
     const maxPolls = 60; // 5 minutes max (60 * 5 seconds)
+    let successTimeout: ReturnType<typeof setTimeout> | null = null;
     
     const pollAccountStatus = async () => {
       try {
@@ -108,7 +109,10 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
         if (data.accountReady) {
           setStatusMessage("Success! Your account is ready");
           // Small delay to show success message
-          setTimeout(() => onComplete(), 1000);
+          if (successTimeout) {
+            clearTimeout(successTimeout);
+          }
+          successTimeout = setTimeout(() => onComplete(), 1000);
           return true; // Stop polling
         }
 
@@ -141,26 +145,35 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
       }
     };
 
-    // Start polling immediately
-    pollAccountStatus();
+    // Start polling immediately and only create interval if needed
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-    // Set up polling interval
-    const pollInterval = setInterval(async () => {
-      pollCount++;
-      
-      if (pollCount >= maxPolls) {
-        clearInterval(pollInterval);
-        onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
-        return;
+    (async () => {
+      const shouldStopInitial = await pollAccountStatus();
+      if (shouldStopInitial) {
+        return; // Do not start interval if we're already done
       }
 
-      const shouldStop = await pollAccountStatus();
-      if (shouldStop) {
-        clearInterval(pollInterval);
-      }
-    }, 5000); // Poll every 5 seconds
+      pollInterval = setInterval(async () => {
+        pollCount++;
+        
+        if (pollCount >= maxPolls) {
+          if (pollInterval) clearInterval(pollInterval);
+          onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
+          return;
+        }
 
-    return () => clearInterval(pollInterval);
+        const shouldStop = await pollAccountStatus();
+        if (shouldStop && pollInterval) {
+          clearInterval(pollInterval);
+        }
+      }, 5000); // Poll every 5 seconds
+    })();
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+      if (successTimeout) clearTimeout(successTimeout);
+    };
   }, [accountId, onComplete, onError]);
 
   return (

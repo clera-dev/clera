@@ -46,9 +46,21 @@ export function MonthlyGoalSliderSection({
     if (onClearError) {
       onClearError();
     }
-    
+
+    const [val] = values;
+    // Snap: $1 allowed, otherwise multiples of $25 between $25 and $1,000
+    const snapped = (() => {
+      if (val <= 1) return 1;
+      const rounded = Math.round(val / 25) * 25;
+      return Math.min(1000, Math.max(25, rounded));
+    })();
+
+    // Notify parent of the committed (snapped) value
+    onChange(snapped);
+
+    // Forward snapped value to optional commit handler
     if (onSliderCommit) {
-      onSliderCommit(values);
+      onSliderCommit([snapped]);
     }
   };
 

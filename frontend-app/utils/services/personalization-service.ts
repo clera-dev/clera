@@ -28,7 +28,7 @@ export class PersonalizationService {
       const normalized = name.normalize('NFKC');
       const withoutControls = normalized.replace(/[\u0000-\u001F\u007F]/g, '');
       // Allow letters (Latin incl. accents), spaces, hyphens, apostrophes only
-      const whitelisted = withoutControls.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ' -]/g, '');
+      const whitelisted = withoutControls.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ' \- ]/g, '');
       const collapsed = whitelisted.replace(/\s+/g, ' ').trim();
       // Enforce length guard consistent with validation rules
       return collapsed.slice(0, 50);
