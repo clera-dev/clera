@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 interface OnboardingSuccessLoadingProps {
+  accountId?: string;
   onComplete: () => void;
+  onError: (error: string) => void;
 }
 
-export default function OnboardingSuccessLoading({ onComplete }: OnboardingSuccessLoadingProps) {
+export default function OnboardingSuccessLoading({ accountId, onComplete, onError }: OnboardingSuccessLoadingProps) {
   const [dots, setDots] = useState("");
+  const [statusMessage, setStatusMessage] = useState("We're verifying some details and setting up your account");
 
   useEffect(() => {
     // Animate the loading dots
@@ -19,16 +22,180 @@ export default function OnboardingSuccessLoading({ onComplete }: OnboardingSucce
       });
     }, 500);
 
-    // Auto-complete after 3 seconds to simulate processing time
-    const timeout = setTimeout(() => {
-      onComplete();
-    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!accountId) {
+      // Fallback to 3 seconds if no account ID provided (shouldn't happen)
+      const timeout = setTimeout(() => {
+        onComplete();
+      }, 3000);
+      return () => clearTimeout(timeout);
+    }
+
+    let pollCount = 0;
+    const maxPolls = 60; // 5 minutes max (60 * 5 seconds)
+    let successTimeout: ReturnType<typeof setTimeout> | null = null;
+    let finished = false;
+    let nextTimeout: ReturnType<typeof setTimeout> | null = null;
+    
+    const pollAccountStatus = async () => {
+      try {
+        const response = await fetch('/api/account/status-poll', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ accountId }),
+        });
+
+        // Safely parse JSON only when present
+        const contentType = response.headers.get('content-type') || '';
+        let data: any = null;
+        let nonJsonBody: string | null = null;
+
+        if (response.status !== 204) {
+          if (contentType.includes('application/json')) {
+            try {
+              data = await response.json();
+            } catch (e) {
+              // If JSON parsing fails, capture text for diagnostics on error paths
+              try {
+                nonJsonBody = await response.text();
+              } catch {
+                nonJsonBody = null;
+              }
+            }
+          } else if (!response.ok) {
+            // Non-JSON error body
+            try {
+              nonJsonBody = await response.text();
+            } catch {
+              nonJsonBody = null;
+            }
+          }
+        }
+
+        if (!response.ok) {
+          // Handle different error scenarios
+          if (response.status === 404) {
+            setStatusMessage("We're still processing your account. This may take a few moments");
+          } else {
+            const errorMessage = (data && (data.error || data.message))
+              || nonJsonBody
+              || response.statusText
+              || 'Failed to check account status';
+            throw new Error(errorMessage);
+          }
+          return false; // Continue polling
+        }
+
+        // Update status message based on account state
+        if (response.status === 204 || data == null) {
+          // No content or no JSON body – keep polling with a generic message
+          setStatusMessage("We're processing your account. Please wait");
+          return false;
+        }
+        if (data.isPending) {
+          if (data.status === 'APPROVAL_PENDING') {
+            setStatusMessage("Your application is being reviewed. This usually takes just a few minutes");
+          } else if (data.status === 'AML_REVIEW') {
+            setStatusMessage("Additional security checks are being performed. This may take a bit longer");
+          } else {
+            setStatusMessage("We're verifying some details and setting up your account");
+          }
+          return false; // Continue polling
+        }
+
+        if (data.accountReady) {
+          // Handle both 'SUBMITTED' and 'AccountStatus.SUBMITTED' formats
+          const normalizedStatus = String(data.status || '').toUpperCase().replace('ACCOUNTSTATUS.', '');
+          if (normalizedStatus === 'SUBMITTED') {
+            setStatusMessage("Success! Your application has been submitted");
+          } else if (normalizedStatus === 'APPROVED') {
+            setStatusMessage("Success! Your account has been approved");
+          } else if (normalizedStatus === 'ACTIVE') {
+            setStatusMessage("Success! Your account is active");
+          } else {
+            setStatusMessage("Success! Your account is ready");
+          }
+          // Small delay to show success message
+          if (successTimeout) {
+            clearTimeout(successTimeout);
+          }
+          successTimeout = setTimeout(() => onComplete(), 1000);
+          return true; // Stop polling
+        }
+
+        if (data.accountFailed) {
+          const errorMsg = data.status === 'ACTION_REQUIRED' 
+            ? "Additional information is required to complete your account setup. Please review the requirements and contact support if needed."
+            : data.status === 'DISABLED'
+            ? "There was an issue with your account application. Please contact our support team for assistance."
+            : "There was an issue with your account setup. Please try again or contact support.";
+          
+          onError(errorMsg);
+          return true; // Stop polling
+        }
+
+        // Unknown status, continue polling but with generic message
+        setStatusMessage("We're processing your account. Please wait");
+        return false;
+
+      } catch (error) {
+        console.error('Error polling account status:', error);
+        
+        // On error, check if we should retry or give up
+        if (pollCount >= 5) { // After 5 failed attempts, give up
+          onError("We're experiencing technical difficulties. Please try refreshing the page or contact support if the issue persists.");
+          return true; // Stop polling
+        }
+        
+        setStatusMessage("Checking account status. Please wait");
+        return false; // Continue polling
+      }
+    };
+
+    // Start polling immediately, then schedule subsequent polls without overlap
+    (async () => {
+      const shouldStopInitial = await pollAccountStatus();
+      if (shouldStopInitial) {
+        finished = true;
+        return;
+      }
+
+      const scheduleNext = () => {
+        nextTimeout = setTimeout(async () => {
+          if (finished) return;
+          pollCount++;
+
+          if (pollCount >= maxPolls) {
+            finished = true;
+            onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
+            return;
+          }
+
+          const shouldStop = await pollAccountStatus();
+          if (shouldStop) {
+            finished = true;
+            return;
+          }
+
+          // Schedule the next iteration only after the previous finished
+          scheduleNext();
+        }, 5000); // Poll every 5 seconds
+      };
+
+      scheduleNext();
+    })();
 
     return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
+      finished = true;
+      if (nextTimeout) clearTimeout(nextTimeout);
+      if (successTimeout) clearTimeout(successTimeout);
     };
-  }, [onComplete]);
+  }, [accountId, onComplete, onError]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
@@ -46,7 +213,7 @@ export default function OnboardingSuccessLoading({ onComplete }: OnboardingSucce
             </h2>
             
             <p className="text-muted-foreground text-lg">
-              We're verifying some details and getting your account set up{dots}
+              {statusMessage}{dots}
             </p>
             
             <div className="mt-6 pt-6 border-t border-border/30">

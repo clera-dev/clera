@@ -32,6 +32,23 @@ export default function PersonalInfoStep({
 }: PersonalInfoStepProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Unicode-friendly name sanitization without relying on Unicode property escapes
+  // Strategy: normalize, strip control chars, digits, surrogate pairs (emojis), and disallowed punctuation
+  // Keep spaces, hyphens, apostrophes, and non-ASCII letters from caseless scripts (CJK, Arabic, etc.)
+  const sanitizeNameInput = (value: string): string => {
+    const raw = (value || '').normalize('NFKC');
+    let out = raw
+      // remove control characters
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      // remove surrogate pairs (emojis and most symbols outside BMP)
+      .replace(/[\uD800-\uDFFF]/g, '')
+      // remove digits
+      .replace(/[0-9]/g, '')
+      // remove common punctuation except space, hyphen, apostrophe
+      .replace(/["`^~_|<>\\{}\[\]@#$%&*=+:;.,!?]/g, '');
+    return out.replace(/\s+/g, ' ').trim().slice(0, 50);
+  };
+
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
@@ -153,8 +170,8 @@ export default function PersonalInfoStep({
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4 sm:p-8">
       <div className="mb-4 sm:mb-8">
-        <h2 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">Personal Information</h2>
-        <p className="text-muted-foreground text-sm sm:text-base">Next, we'll need some personal details, which will be securely stored for regulatory purposes.</p>
+        <h2 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 text-white">Personal Information</h2>
+        <p className="text-white text-sm sm:text-base">Next, we'll need some personal details, which will be securely stored for regulatory purposes.</p>
       </div>
       
       <div className="space-y-6 bg-card/50 p-4 sm:p-6 rounded-lg border border-border/30 shadow-sm">
@@ -165,7 +182,7 @@ export default function PersonalInfoStep({
             <Input
               id="firstName"
               value={data.firstName}
-              onChange={(e) => onUpdate({ firstName: e.target.value })}
+              onChange={(e) => onUpdate({ firstName: sanitizeNameInput(e.target.value) })}
               className={`${errors.firstName ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />
             {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
@@ -176,7 +193,7 @@ export default function PersonalInfoStep({
             <Input
               id="middleName"
               value={data.middleName}
-              onChange={(e) => onUpdate({ middleName: e.target.value })}
+              onChange={(e) => onUpdate({ middleName: sanitizeNameInput(e.target.value) })}
               className="border-gray-300 rounded-md h-12 sm:h-11"
             />
           </div>
@@ -186,7 +203,7 @@ export default function PersonalInfoStep({
             <Input
               id="lastName"
               value={data.lastName}
-              onChange={(e) => onUpdate({ lastName: e.target.value })}
+              onChange={(e) => onUpdate({ lastName: sanitizeNameInput(e.target.value) })}
               className={`${errors.lastName ? "border-red-500" : "border-gray-300"} rounded-md h-12 sm:h-11`}
             />
             {errors.lastName && <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>}
@@ -383,7 +400,7 @@ export default function PersonalInfoStep({
         </Button>
         <Button 
           type="submit" 
-          className="px-8 py-2 ml-auto bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg transition-all"
+          className="px-8 py-2 ml-auto"
         >
           Continue
         </Button>

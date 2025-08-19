@@ -24,9 +24,10 @@ const AuthButtons = () => (
  * ------------------------------------------------------------------------------------------------*/
 export default function Hero() {
   return (
-    <div className="min-h-screen w-full flex justify-center items-start pt-8 sm:pt-20">
-      <div className="w-full max-w-4xl mx-auto bg-gradient-to-br from-gray-900 via-gray-950 to-black text-gray-200 rounded-lg overflow-hidden">
-        <div className="container flex flex-col items-center justify-center w-full px-6 md:px-8 lg:px-10 py-8 gap-6 text-center">
+    //<div className="min-h-[calc(100vh-3.5rem)] sm:min-h-[calc(100vh-4rem)] w-full bg-gradient-to-br from-gray-900 via-gray-950 to-black text-gray-200 flex justify-center items-center">
+
+    <div className="min-h-[calc(100vh-3.5rem)] sm:min-h-[calc(100vh-4rem)] w-full bg-black flex justify-center items-center">
+      <div className="container flex flex-col items-center justify-center w-full max-w-4xl mx-auto px-6 md:px-8 lg:px-10 py-8 gap-6 text-center">
           {/* Main content - centered on all screen sizes */}
           <div className="w-full flex flex-col gap-6 items-center">
             <h1 className="text-4xl sm:text-6xl font-bold !leading-tight bg-gradient-to-r from-blue-400 via-blue-500 to-cyan-400 bg-clip-text text-transparent">
@@ -67,7 +68,6 @@ export default function Hero() {
           {/* Right column (mock‑up) -------------------------------------- */}
           {/* …unchanged code for dashboard preview… */}
         </div>
-      </div>
     </div>
   );
 }

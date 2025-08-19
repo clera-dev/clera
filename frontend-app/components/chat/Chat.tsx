@@ -28,6 +28,7 @@ import { ChatMessageList } from './ChatMessageList';
 import { useToolActivitiesHydration } from '@/hooks/useToolActivitiesHydration';
 import { useRunIdAssignment } from '@/hooks/useRunIdAssignment';
 
+
 // ChatSkeleton removed - status messages now provide proper feedback
 import SuggestedQuestions from './SuggestedQuestions';
 
@@ -260,7 +261,10 @@ export default function Chat({
     const trimmedInput = sourceContent.trim();
     if (!trimmedInput || isProcessing || isInterrupting) return false;
 
+    // Send clean user message - personalization context now handled by backend
     const contentToSend = trimmedInput;
+
+    // Optimistically clear input and render the message immediately
     setInput('');
 
     // Reset textarea height after sending
@@ -284,6 +288,7 @@ export default function Chat({
         setIsCreatingSession(true); // Start loading indicator for session creation
         //console.log("No current thread ID. Attempting to create new session...");
         try {
+            // Use the user input for the thread title
             const newTitle = formatChatTitle(contentToSend);
             // Pass accountId and userId correctly
             const newSession = await createChatSession(accountId, userId, newTitle);

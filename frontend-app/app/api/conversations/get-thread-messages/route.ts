@@ -99,6 +99,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert LangGraph messages to our frontend format
+    // NOTE: Personalization context removal is no longer needed since personalization
+    // is now handled via backend system prompts, not injected into user messages
+
     const formattedMessages = messages
       .filter(msg => {
         // Filter out tool calls and internal messages
@@ -132,9 +135,11 @@ export async function POST(request: NextRequest) {
           content = String(msg.content || '');
         }
 
+        const role = msg.type === 'human' ? 'user' : 'assistant';
+
         return {
-          role: msg.type === 'human' ? 'user' : 'assistant',
-          content: content
+          role,
+          content
         };
       });
     

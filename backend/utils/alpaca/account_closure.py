@@ -5,14 +5,11 @@ import time
 import logging
 import redis
 import json
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional
 from enum import Enum
 from datetime import datetime, timedelta
 
-from alpaca.broker import BrokerClient
-from alpaca.broker.requests import CreateACHTransferRequest
-from alpaca.broker.enums import TransferDirection
-from .create_account import get_broker_client
+# Note: Avoid unused top-level imports to keep linters clean
 
 logger = logging.getLogger("alpaca-account-closure")
 
@@ -477,7 +474,7 @@ class AccountClosureManager:
     
     def __init__(self, sandbox: bool = True):
         """Initialize the manager with required services."""
-        from alpaca.broker.client import BrokerClient
+        from alpaca.broker.client import BrokerClient  # noqa: F401
         
         self.sandbox = sandbox
         self._setup_broker_client()
@@ -1095,6 +1092,60 @@ class AccountClosureManager:
                 error_result["log_file"] = detailed_logger.get_log_summary()
             return error_result
 
+    def check_withdrawal_status(self, account_id: str, transfer_id: str) -> Dict[str, Any]:
+        """
+        Check the status of a specific ACH withdrawal transfer for the given account.
+        Returns a normalized payload expected by the frontend.
+        """
+        try:
+            transfers = self.broker_client.get_transfers_for_account(account_id)
+            if not transfers:
+                raise ValueError("Transfer not found")
+
+            matched = None
+            for t in transfers:
+                try:
+                    if str(getattr(t, 'id', '')) == str(transfer_id):
+                        matched = t
+                        break
+                except Exception:
+                    continue
+
+            if matched is None:
+                raise ValueError("Transfer not found")
+
+            # Normalize status and direction strings robustly to handle Enum instances or plain strings
+            raw_status = getattr(matched, 'status', '')
+            try:
+                status_str = str(getattr(raw_status, 'value', raw_status)).upper()
+            except Exception:
+                status_str = str(raw_status).upper()
+            amount_val = getattr(matched, 'amount', None)
+            # Normalize amount to string for consistency with create call
+            try:
+                amount_str = str(amount_val) if amount_val is not None else None
+            except Exception:
+                amount_str = None
+
+            response: Dict[str, Any] = {
+                "transfer_id": str(getattr(matched, 'id', transfer_id)),
+                "direction": str(getattr(getattr(matched, 'direction', 'OUTGOING'), 'value', getattr(matched, 'direction', 'OUTGOING'))),
+                "status": status_str,
+                "transfer_status": status_str,
+                # Consider both exact value and Enum string representations
+                "transfer_completed": ("SETTLED" in status_str) or ("COMPLETED" in status_str),
+                "amount": amount_str,
+                "created_at": getattr(matched, 'created_at', None),
+                "updated_at": getattr(matched, 'updated_at', None),
+            }
+
+            return response
+        except ValueError:
+            # Re-raise not-found to be handled by API layer as 404
+            raise
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
 # Convenience functions for easier use
 def check_account_closure_readiness(account_id: str, sandbox: bool = True) -> Dict[str, Any]:
     """Check if account is ready for closure."""
@@ -1313,10 +1364,10 @@ def initiate_account_closure(account_id: str, ach_relationship_id: str, sandbox:
                         detailed_logger.log_email_notification("INITIATION_EMAIL", user_email, email_sent)
                     
                     if email_sent:
-                        logger.info(f"Account closure initiation email sent to (redacted email)")
+                        logger.info("Account closure initiation email sent to (redacted email)")
                         result["email_notification_sent"] = True
                     else:
-                        logger.warning(f"Failed to send account closure initiation email to (redacted email)")
+                        logger.warning("Failed to send account closure initiation email to (redacted email)")
                         result["email_notification_sent"] = False
                 else:
                     if detailed_logger:

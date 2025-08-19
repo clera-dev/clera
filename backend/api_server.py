@@ -2746,7 +2746,9 @@ async def check_withdrawal_status_endpoint(
         result = manager.check_withdrawal_status(account_id, transfer_id)
         
         return result
-        
+    except ValueError as e:
+        # Manager signals not found via ValueError; surface as 404 without string matching
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error checking withdrawal status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error checking withdrawal status: {str(e)}")

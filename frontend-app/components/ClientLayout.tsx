@@ -166,7 +166,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             .from('user_onboarding')
             .select('status')
             .eq('user_id', user.id)
-            .single();
+            .maybeSingle();
           
           const status = onboardingData?.status;
           const completed = status === 'submitted' || status === 'approved';
@@ -271,7 +271,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             .from('user_onboarding')
             .select('status')
             .eq('user_id', user.id)
-            .single();
+            .maybeSingle();
           
           setUserClosureStatus(onboardingData?.status || null);
         }

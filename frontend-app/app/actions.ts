@@ -112,14 +112,16 @@ export const signUpAction = async (formData: FormData) => {
     }
     
     if (user) {
-      // Check onboarding status
-      const { data: onboardingData } = await supabase
+      // Check onboarding status with explicit null/error handling
+      const { data: onboardingData, error: onboardingError } = await supabase
         .from('user_onboarding')
         .select('status')
         .eq('user_id', user.id)
-        .single();
-      
-      const userStatus = onboardingData?.status;
+        .maybeSingle();
+      if (onboardingError && onboardingError.code !== 'PGRST116') {
+        console.warn('Onboarding status lookup error:', onboardingError);
+      }
+      const userStatus = onboardingData ? onboardingData.status : undefined;
       
       // ARCHITECTURAL FIX: Use centralized routing logic with proper server-side transfer lookup
       // This eliminates duplicate Supabase queries and maintains proper client/server separation
@@ -156,14 +158,16 @@ export const signInAction = async (formData: FormData) => {
   }
   
   if (user) {
-    // Check onboarding status
-    const { data: onboardingData } = await supabase
+    // Check onboarding status with explicit null/error handling
+    const { data: onboardingData, error: onboardingError } = await supabase
       .from('user_onboarding')
       .select('status')
       .eq('user_id', user.id)
-      .single();
-    
-    const userStatus = onboardingData?.status;
+      .maybeSingle();
+    if (onboardingError && onboardingError.code !== 'PGRST116') {
+      console.warn('Onboarding status lookup error:', onboardingError);
+    }
+    const userStatus = onboardingData ? onboardingData.status : undefined;
     
     // ARCHITECTURAL FIX: Use centralized routing logic with proper server-side transfer lookup
     // This eliminates duplicate Supabase queries and maintains proper client/server separation
@@ -336,7 +340,7 @@ export async function getOnboardingDataAction(userId: string) {
       .from('user_onboarding')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
     
     if (error) {
       // If no record exists, don't treat as an error

@@ -44,7 +44,7 @@ export default function ProtectedPageClient() {
           .from('profiles')
           .select('first_name, last_name')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
         setProfile(profileData);
 
         // Check funding status for completed onboarding users
