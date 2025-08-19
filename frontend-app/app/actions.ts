@@ -117,7 +117,7 @@ export const signUpAction = async (formData: FormData) => {
         .from('user_onboarding')
         .select('status')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
       
       const userStatus = onboardingData?.status;
       
@@ -161,7 +161,7 @@ export const signInAction = async (formData: FormData) => {
       .from('user_onboarding')
       .select('status')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
     
     const userStatus = onboardingData?.status;
     
@@ -336,7 +336,7 @@ export async function getOnboardingDataAction(userId: string) {
       .from('user_onboarding')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
     
     if (error) {
       // If no record exists, don't treat as an error

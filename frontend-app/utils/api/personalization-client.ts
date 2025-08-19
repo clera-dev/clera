@@ -1,4 +1,7 @@
-"use client";
+// Note: This module is intentionally server-safe (no browser-only APIs)
+// so it can be imported by both client and server code without forcing
+// client bundling. Calls rely on Next.js API routes and will inherit
+// cookies automatically only in client contexts.
 
 import { 
   PersonalizationData,
@@ -163,7 +166,10 @@ export async function updatePersonalizationData(
 
     if (!response.ok) {
       const errorMessage = await extractErrorMessage(response);
-      console.error('Error updating personalization data:', errorMessage);
+      // Only log as error if it's not a 404 (which is expected for new users)
+      if (response.status !== 404) {
+        console.error('Error updating personalization data:', errorMessage);
+      }
       return {
         success: false,
         error: errorMessage || 'Failed to update personalization data',
@@ -200,13 +206,31 @@ export async function updatePersonalizationData(
 export async function saveOrUpdatePersonalizationData(
   data: PersonalizationFormData
 ): Promise<{ success: boolean; data?: PersonalizationData; error?: string }> {
-  // First try to update (most common case)
-  const updateResult = await updatePersonalizationData(data);
-  
-  // If update fails because no data exists, try to create
-  if (!updateResult.success && updateResult.statusCode === 404) {
-    return await savePersonalizationData(data);
+  // First, check if data exists by trying to fetch it
+  try {
+    const existingData = await getPersonalizationData();
+    
+    if (existingData) {
+      // Data exists, try to update
+      console.log('Found existing personalization data, updating...');
+      return await updatePersonalizationData(data);
+    } else {
+      // No data exists, create new
+      console.log('No existing personalization data found, creating new...');
+      return await savePersonalizationData(data);
+    }
+  } catch (error) {
+    console.error('Error checking existing personalization data:', error);
+    
+    // Fallback to the original update-first logic
+    const updateResult = await updatePersonalizationData(data);
+    
+    // If update fails because no data exists, try to create
+    if (!updateResult.success && updateResult.statusCode === 404) {
+      console.log('Update failed with 404, trying to create...');
+      return await savePersonalizationData(data);
+    }
+    
+    return updateResult;
   }
-  
-  return updateResult;
 }

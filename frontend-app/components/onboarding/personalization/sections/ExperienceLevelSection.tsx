@@ -37,10 +37,10 @@ export function ExperienceLevelSection({
   return (
     <div className="space-y-4">
       <div className="text-center">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+        <h2 className="text-2xl font-semibold text-white mb-2">
           How familiar are you with investing and financial markets?
         </h2>
-        <p className="text-gray-600">
+        <p className="text-white">
           This helps me tailor my advice to your knowledge level
         </p>
       </div>
@@ -54,24 +54,24 @@ export function ExperienceLevelSection({
             <Card
               key={level}
               className={cn(
-                "cursor-pointer transition-all duration-200 hover:shadow-md",
-                isSelected && "ring-2 ring-primary border-primary",
-                error && !isSelected && "border-red-200"
+                "cursor-pointer transition-all duration-200 hover:shadow-md bg-black border-gray-600",
+                isSelected && "ring-2 ring-primary border-primary bg-black",
+                error && !isSelected && "border-red-400"
               )}
               onClick={() => handleLevelSelect(level)}
             >
               <CardContent className="p-6 relative">
                 <div className="text-center">
-                  <div className="font-medium text-gray-900 mb-2">
+                  <div className="font-bold text-white mb-2">
                     {description}
                   </div>
-                  <div className="text-sm text-gray-600 capitalize">
+                  <div className="text-sm text-gray-300 capitalize font-medium">
                     {level.replace('_', ' ')} level
                   </div>
                 </div>
                 {isSelected && (
                   <div className="absolute top-2 right-2">
-                    <Check className="h-5 w-5 text-primary" />
+                    <Check className="h-5 w-5 text-white" />
                   </div>
                 )}
               </CardContent>
@@ -81,7 +81,7 @@ export function ExperienceLevelSection({
       </div>
 
       {error && (
-        <div className="text-center">
+        <div className="text-center px-4 sm:px-0">
           <p className="text-sm text-red-600">{error}</p>
         </div>
       )}

@@ -57,13 +57,13 @@ export function MarketInterestsSection({
   return (
     <div className="space-y-4">
       <div className="text-center">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+        <h2 className="text-2xl font-semibold text-white mb-2">
           What kind of market news interests you?
         </h2>
-        <p className="text-gray-600 mb-1">
+        <p className="text-white mb-1">
           What kind of investments or industries are you interested in?
         </p>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-400">
           Select up to {maxSelections} ({selectedInterests.length}/{maxSelections} selected)
         </p>
       </div>
@@ -78,21 +78,21 @@ export function MarketInterestsSection({
             <Card
               key={interest}
               className={cn(
-                "transition-all duration-200",
+                "transition-all duration-200 bg-black border-gray-600",
                 canClick && "cursor-pointer hover:shadow-md",
                 !canClick && "opacity-50 cursor-not-allowed",
-                isSelected && "ring-2 ring-primary border-primary",
-                error && !isSelected && "border-red-200"
+                isSelected && "ring-2 ring-primary border-primary bg-black",
+                error && !isSelected && "border-red-400"
               )}
               onClick={canClick ? () => handleInterestToggle(interest) : undefined}
             >
               <CardContent className="p-4 text-center relative">
                 {isSelected && (
                   <div className="absolute top-2 right-2">
-                    <Check className="h-4 w-4 text-primary" />
+                    <Check className="h-4 w-4 text-white" />
                   </div>
                 )}
-                <div className="font-medium text-gray-900 text-sm">
+                <div className="font-bold text-white text-sm">
                   {description}
                 </div>
               </CardContent>
@@ -102,7 +102,7 @@ export function MarketInterestsSection({
       </div>
 
       {error && (
-        <div className="text-center">
+        <div className="text-center px-4 sm:px-0">
           <p className="text-sm text-red-600">{error}</p>
         </div>
       )}

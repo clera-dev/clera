@@ -40,17 +40,17 @@ export function GoalsSelectorSection({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+    <div className="space-y-6 px-2 sm:px-0">
+      <div className="text-center px-4 sm:px-0">
+        <h2 className="text-2xl font-semibold text-white mb-3">
           What investing goals can I help you achieve?
         </h2>
-        <p className="text-gray-600">
+        <p className="text-white text-base">
           Select all that apply - you can choose multiple goals
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-4 sm:px-0">
         {Object.entries(INVESTMENT_GOAL_DESCRIPTIONS).map(([key, description]) => {
           const goal = key as InvestmentGoal;
           const isSelected = selectedGoals.includes(goal);
@@ -59,19 +59,19 @@ export function GoalsSelectorSection({
             <Card
               key={goal}
               className={cn(
-                "cursor-pointer transition-all duration-200 hover:shadow-md",
-                isSelected && "ring-2 ring-primary border-primary",
-                error && !isSelected && "border-red-200"
+                "cursor-pointer transition-all duration-200 hover:shadow-md bg-black border-gray-600",
+                isSelected && "ring-2 ring-primary border-primary bg-black",
+                error && !isSelected && "border-red-400"
               )}
               onClick={() => handleGoalToggle(goal)}
             >
               <CardContent className="p-4 text-center relative">
                 {isSelected && (
                   <div className="absolute top-2 right-2">
-                    <Check className="h-5 w-5 text-primary" />
+                    <Check className="h-5 w-5 text-white" />
                   </div>
                 )}
-                <div className="font-medium text-gray-900 mb-1">
+                <div className="font-bold text-white">
                   {description}
                 </div>
               </CardContent>
@@ -81,7 +81,7 @@ export function GoalsSelectorSection({
       </div>
 
       {error && (
-        <div className="text-center">
+        <div className="text-center px-4 sm:px-0">
           <p className="text-sm text-red-600">{error}</p>
         </div>
       )}

@@ -4,6 +4,17 @@ import {
   ValidationResult,
 } from "@/lib/types/personalization";
 
+// Pre-compile heavy regexes at module scope to avoid re-allocation per validation call
+let UNICODE_LETTER_REGEX: RegExp | null = null;
+try {
+  UNICODE_LETTER_REGEX = new RegExp("\\\\p{L}", "u");
+} catch {
+  UNICODE_LETTER_REGEX = null;
+}
+
+// Broad fallback covering major scripts when Unicode property escapes are unavailable
+const FALLBACK_LETTER_REGEX = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u0531-\u058F\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F\u0E00-\u0E7F\u0F00-\u0FFF\u1000-\u109F\u10A0-\u10FF\u1100-\u11FF\u1200-\u137F\u13A0-\u13FF\u1400-\u167F\u1680-\u169F\u16A0-\u16FF\u1780-\u17FF\u18A9\u1900-\u194F\u1950-\u197F\u1A00-\u1A1F\u1B00-\u1B7F\u1C00-\u1C4F\u1C50-\u1C7F\u1CD0-\u1CFF\u1E00-\u1EFF\u2C00-\u2C5F\u2D00-\u2D2F\u2D30-\u2D7F\u2D80-\u2DDF\u2E80-\u2EFF\u3040-\u309F\u30A0-\u30FF\u3130-\u318F\u31F0-\u31FF\u3400-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]/;
+
 // Validation
 export const validatePersonalizationData = (
   data: PersonalizationFormData
@@ -11,23 +22,10 @@ export const validatePersonalizationData = (
   const errors: string[] = [];
   const fieldErrors: Record<string, string> = {};
 
-  // Robust Unicode letter detection: prefer Unicode property escapes when available,
-  // otherwise fall back to broad script ranges covering major alphabets and CJK.
-  const unicodeLetterRegex: RegExp | null = (() => {
-    try {
-      // \\p{L} matches any kind of letter from any language
-      return new RegExp('\\\p{L}', 'u');
-    } catch {
-      return null;
-    }
-  })();
-
-  const fallbackLetterRegex = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u0531-\u058F\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F\u0E00-\u0E7F\u0F00-\u0FFF\u1000-\u109F\u10A0-\u10FF\u1100-\u11FF\u1200-\u137F\u13A0-\u13FF\u1400-\u167F\u1680-\u169F\u16A0-\u16FF\u1780-\u17FF\u18A9\u1900-\u194F\u1950-\u197F\u1A00-\u1A1F\u1B00-\u1B7F\u1C00-\u1C4F\u1C50-\u1C7F\u1CD0-\u1CFF\u1E00-\u1EFF\u2C00-\u2C5F\u2D00-\u2D2F\u2D30-\u2D7F\u2D80-\u2DDF\u2E80-\u2EFF\u3040-\u309F\u30A0-\u30FF\u3130-\u318F\u31F0-\u31FF\u3400-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]/;
-
   const isUnicodeLetter = (ch: string): boolean => {
     if (!ch) return false;
-    if (unicodeLetterRegex) return unicodeLetterRegex.test(ch);
-    return fallbackLetterRegex.test(ch);
+    if (UNICODE_LETTER_REGEX) return UNICODE_LETTER_REGEX.test(ch);
+    return FALLBACK_LETTER_REGEX.test(ch);
   };
 
   const isAllowedNameChar = (ch: string): boolean => {

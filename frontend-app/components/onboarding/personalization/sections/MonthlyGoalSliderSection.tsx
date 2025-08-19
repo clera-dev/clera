@@ -67,10 +67,10 @@ export function MonthlyGoalSliderSection({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+        <h2 className="text-2xl font-semibold text-white mb-2">
           Do you have a goal for how much you want to invest on a monthly basis?
         </h2>
-        <p className="text-gray-600">
+        <p className="text-white">
           This is for information purposes only. Clera will never withdraw money from your account without your prior direction.
         </p>
       </div>

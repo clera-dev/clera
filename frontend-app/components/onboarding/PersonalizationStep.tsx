@@ -36,8 +36,6 @@ interface PersonalizationStepProps {
   onProgressUpdate?: (currentStep: number, totalSteps: number) => void;
 }
 
-const TOTAL_STEPS = 7;
-
 /**
  * Refactored PersonalizationStep component following SOLID principles
  * Shows ONE QUESTION AT A TIME for both mobile and desktop (unified experience)
@@ -58,6 +56,7 @@ export default function PersonalizationStep({
   onBack,
   onProgressUpdate
 }: PersonalizationStepProps) {
+  const formRef = React.useRef<HTMLFormElement>(null);
   // Custom hooks for state management
   const {
     errors,
@@ -69,22 +68,6 @@ export default function PersonalizationStep({
   } = usePersonalizationForm();
 
   const {
-    isMobile,
-    currentStep,
-    validationBanner,
-    goToStep,
-    goToNextStep,
-    goToPreviousStep,
-    showValidationBanner,
-    clearValidationBanner,
-  } = useStepNavigation(TOTAL_STEPS);
-
-  // Notify parent about progress updates
-  React.useEffect(() => {
-    onProgressUpdate?.(currentStep, TOTAL_STEPS);
-  }, [currentStep, onProgressUpdate]);
-
-  const {
     tempTimelineIndex,
     tempMonthlyValue,
     handleTimelineChange,
@@ -92,20 +75,6 @@ export default function PersonalizationStep({
     handleMonthlyGoalChange,
     handleMonthlyGoalCommit,
   } = useSliderState();
-
-  // Form submission handler
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    await handleSubmit(data, () => {
-      onContinue();
-    });
-
-    // Show validation banner if there are errors
-    if (Object.keys(errors).length > 0) {
-      showValidationBanner(errors, TOTAL_STEPS);
-    }
-  };
 
   // Update handlers with error clearing
   const handleUpdate = (updates: Partial<PersonalizationFormData>) => {
@@ -224,38 +193,75 @@ export default function PersonalizationStep({
     />,
   ];
 
+  const TOTAL_STEPS = sections.length;
+
+  const {
+    isMobile,
+    currentStep,
+    validationBanner,
+    goToStep,
+    goToNextStep,
+    goToPreviousStep,
+    showValidationBanner,
+    clearValidationBanner,
+  } = useStepNavigation(TOTAL_STEPS);
+
+  // Notify parent about progress updates
+  React.useEffect(() => {
+    onProgressUpdate?.(currentStep, TOTAL_STEPS);
+  }, [currentStep, onProgressUpdate, TOTAL_STEPS]);
+
+  // Form submission handler
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    await handleSubmit(data, () => {
+      onContinue();
+    });
+
+    // Show validation banner if there are errors
+    if (Object.keys(errors).length > 0) {
+      showValidationBanner(errors, TOTAL_STEPS);
+    }
+  };
+
   return (
-    <form onSubmit={handleFormSubmit} className="space-y-8">
-      {/* Validation banner (both mobile and desktop) */}
-      {validationBanner && (
-        <ValidationBanner
-          missingFields={validationBanner.missingKeys}
-          onDismiss={clearValidationBanner}
-        />
-      )}
+    <div className="flex flex-col min-h-[calc(100vh-200px)]">
+      <form ref={formRef} onSubmit={handleFormSubmit} className="flex flex-col flex-1 px-4 sm:px-8 py-4 sm:py-6">
+        {/* Validation banner (both mobile and desktop) */}
+        {validationBanner && (
+          <ValidationBanner
+            missingFields={validationBanner.missingKeys}
+            onDismiss={clearValidationBanner}
+          />
+        )}
 
-      {/* Content area - ONE SECTION AT A TIME (both mobile and desktop) */}
-      <div className="min-h-[500px]">
-        {sections[currentStep]}
-      </div>
-
-      {/* Navigation - UNIFIED (both mobile and desktop) */}
-      <NavigationController
-        currentStep={currentStep}
-        totalSteps={TOTAL_STEPS}
-        onNext={goToNextStep}
-        onPrevious={goToPreviousStep}
-        onComplete={() => handleFormSubmit(new Event('submit') as any)}
-        isSubmitting={isSubmitting}
-        className="mt-8"
-      />
-
-      {/* Error display */}
-      {submitError && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-          <p className="text-red-600 text-sm font-medium">Error: {submitError}</p>
+        {/* Content area - ONE SECTION AT A TIME (both mobile and desktop) */}
+        <div className="flex-1 flex items-center justify-center py-4">
+          <div className="w-full max-w-lg">
+            {sections[currentStep]}
+          </div>
         </div>
-      )}
-    </form>
+
+        {/* Navigation - UNIFIED (both mobile and desktop) - Always visible */}
+        <div className="mt-auto pt-6">
+          <NavigationController
+            currentStep={currentStep}
+            totalSteps={TOTAL_STEPS}
+            onNext={goToNextStep}
+            onPrevious={goToPreviousStep}
+            onComplete={() => formRef.current?.requestSubmit()}
+            isSubmitting={isSubmitting}
+          />
+        </div>
+
+        {/* Error display */}
+        {submitError && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md mx-4 sm:mx-0">
+            <p className="text-red-600 text-sm font-medium">Error: {submitError}</p>
+          </div>
+        )}
+      </form>
+    </div>
   );
 }

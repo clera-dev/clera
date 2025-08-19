@@ -44,8 +44,11 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
           },
           body: JSON.stringify({ accountId }),
+          cache: 'no-store'
         });
 
         // Safely parse JSON only when present
@@ -92,9 +95,12 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
         // Update status message based on account state
         if (response.status === 204 || data == null) {
           // No content or no JSON body – keep polling with a generic message
+          console.log('[OnboardingSuccessLoading] No data received, continuing to poll');
           setStatusMessage("We're processing your account. Please wait");
           return false;
         }
+        
+        console.log('[OnboardingSuccessLoading] Polling response data:', data);
         if (data.isPending) {
           if (data.status === 'APPROVAL_PENDING') {
             setStatusMessage("Your application is being reviewed. This usually takes just a few minutes");
@@ -107,6 +113,7 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
         }
 
         if (data.accountReady) {
+          console.log('[OnboardingSuccessLoading] Account ready detected:', data);
           setStatusMessage("Success! Your account is ready");
           // Small delay to show success message
           if (successTimeout) {

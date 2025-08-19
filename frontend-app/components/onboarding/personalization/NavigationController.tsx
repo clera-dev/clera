@@ -41,14 +41,14 @@ export function NavigationController({
   };
 
   return (
-    <div className={cn("flex items-center justify-between gap-4", className)}>
+    <div className={cn("flex items-center justify-between gap-4 px-4 sm:px-0", className)}>
       {/* Back button */}
       <Button
         type="button"
         variant="outline"
         onClick={onPrevious}
         disabled={isFirstStep || isSubmitting}
-        className="flex items-center gap-2"
+        className="flex items-center gap-2 min-w-[80px]"
       >
         <ChevronLeft className="h-4 w-4" />
         Back
@@ -56,7 +56,7 @@ export function NavigationController({
 
       {/* Step indicator */}
       <div className="flex-1 text-center">
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-gray-400">
           {currentStep + 1} of {totalSteps}
         </span>
       </div>
@@ -67,7 +67,7 @@ export function NavigationController({
         onClick={handleNext}
         disabled={isSubmitting || !canProceed}
         className={cn(
-          "flex items-center gap-2",
+          "flex items-center gap-2 min-w-[100px]",
           isLastStep && "bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg"
         )}
       >

@@ -18,10 +18,10 @@ export default function WelcomePage({ onContinue, firstName }: WelcomePageProps)
             </h1>
           </div>
           
-          <p className="text-lg sm:text-xl text-muted-foreground">
+          <p className="text-lg sm:text-xl text-white">
             {firstName 
               ? "I'm your personal investment advisor here to help you with anything investment related. But before we start with that, let's get your account set up."
-              : "I’m here to help you with anything investment related. But before we start with that, let’s get your account set up."
+              : "I'm here to help you with anything investment related. But before we start with that, let's get your account set up."
             }
           </p>
           

@@ -70,10 +70,10 @@ export function TimelineSliderSection({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+        <h2 className="text-2xl font-semibold text-white mb-2">
           How long do you plan to be investing for?
         </h2>
-        <p className="text-gray-600">
+        <p className="text-white">
           Your investment timeline helps determine the right strategy
         </p>
       </div>
