@@ -18,6 +18,22 @@ interface PersonalizationApiResponse {
 }
 
 /**
+ * Builds an absolute URL for API calls that works on both client and server.
+ * - Client: uses window.location.origin to preserve cookies automatically
+ * - Server: uses environment variables to construct the origin
+ */
+function buildAbsoluteUrl(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${normalizedPath}`;
+  }
+  const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || null;
+  const base = vercelUrl || appUrl || 'http://localhost:3000';
+  return `${base}${normalizedPath}`;
+}
+
+/**
  * Safely extracts an error message from a Response without assuming JSON.
  * Consumes the body only on error paths.
  */
@@ -47,7 +63,7 @@ async function extractErrorMessage(response: Response): Promise<string> {
  */
 export async function getPersonalizationData(): Promise<PersonalizationData | null> {
   try {
-    const response = await fetch('/api/personalization', {
+    const response = await fetch(buildAbsoluteUrl('/api/personalization'), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -108,7 +124,7 @@ export async function savePersonalizationData(
   data: PersonalizationFormData
 ): Promise<{ success: boolean; data?: PersonalizationData; error?: string; statusCode?: number }> {
   try {
-    const response = await fetch('/api/personalization', {
+    const response = await fetch(buildAbsoluteUrl('/api/personalization'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -156,7 +172,7 @@ export async function updatePersonalizationData(
   data: PersonalizationFormData
 ): Promise<{ success: boolean; data?: PersonalizationData; error?: string; statusCode?: number }> {
   try {
-    const response = await fetch('/api/personalization', {
+    const response = await fetch(buildAbsoluteUrl('/api/personalization'), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

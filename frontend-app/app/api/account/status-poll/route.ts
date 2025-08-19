@@ -3,8 +3,17 @@ import { AuthService } from '@/utils/api/auth-service';
 
 export async function POST(request: NextRequest) {
   try {
-    // Parse the request body to get account ID
-    const { accountId } = await request.json();
+    // Parse the request body to get account ID (return 400 on invalid JSON)
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid JSON body' },
+        { status: 400 }
+      );
+    }
+    const { accountId } = body || {};
     
     if (!accountId) {
       return NextResponse.json(
@@ -54,12 +63,13 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     
     // Determine if account is ready based on status
-    // Account creation success states: APPROVED, ACTIVE
+    // Account creation success states: SUBMITTED (KYC submitted), APPROVED, ACTIVE
     // Pending states: APPROVAL_PENDING, AML_REVIEW  
     // Failed states: ACTION_REQUIRED, DISABLED, etc.
     const status = data.status || '';
-    const normalizedStatus = String(status).toUpperCase();
-    const accountReady = ['APPROVED', 'ACTIVE'].includes(normalizedStatus);
+    // Handle both 'SUBMITTED' and 'AccountStatus.SUBMITTED' formats
+    const normalizedStatus = String(status).toUpperCase().replace('ACCOUNTSTATUS.', '');
+    const accountReady = ['SUBMITTED', 'APPROVED', 'ACTIVE'].includes(normalizedStatus);
     const accountFailed = ['ACTION_REQUIRED', 'DISABLED', 'REJECTED'].includes(normalizedStatus);
     
     return NextResponse.json({

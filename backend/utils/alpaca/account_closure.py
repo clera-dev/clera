@@ -1114,7 +1114,12 @@ class AccountClosureManager:
             if matched is None:
                 raise ValueError("Transfer not found")
 
-            status_str = str(getattr(matched, 'status', '')).upper()
+            # Normalize status and direction strings robustly to handle Enum instances or plain strings
+            raw_status = getattr(matched, 'status', '')
+            try:
+                status_str = str(getattr(raw_status, 'value', raw_status)).upper()
+            except Exception:
+                status_str = str(raw_status).upper()
             amount_val = getattr(matched, 'amount', None)
             # Normalize amount to string for consistency with create call
             try:
@@ -1124,10 +1129,11 @@ class AccountClosureManager:
 
             response: Dict[str, Any] = {
                 "transfer_id": str(getattr(matched, 'id', transfer_id)),
-                "direction": str(getattr(matched, 'direction', 'OUTGOING')),
+                "direction": str(getattr(getattr(matched, 'direction', 'OUTGOING'), 'value', getattr(matched, 'direction', 'OUTGOING'))),
                 "status": status_str,
                 "transfer_status": status_str,
-                "transfer_completed": status_str in ("SETTLED", "COMPLETED"),
+                # Consider both exact value and Enum string representations
+                "transfer_completed": ("SETTLED" in status_str) or ("COMPLETED" in status_str),
                 "amount": amount_str,
                 "created_at": getattr(matched, 'created_at', None),
                 "updated_at": getattr(matched, 'updated_at', None),

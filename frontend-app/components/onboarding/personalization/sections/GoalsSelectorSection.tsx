@@ -65,7 +65,7 @@ export function GoalsSelectorSection({
               )}
               onClick={() => handleGoalToggle(goal)}
             >
-              <CardContent className="p-4 text-center relative">
+              <CardContent className="p-4 text-center relative flex items-center justify-center min-h-[88px]">
                 {isSelected && (
                   <div className="absolute top-2 right-2">
                     <Check className="h-5 w-5 text-white" />

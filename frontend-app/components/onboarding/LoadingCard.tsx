@@ -35,10 +35,12 @@ export default function LoadingCard({
   }, [showDots]);
 
   useEffect(() => {
-    if (!onCompleteRef.current || !completeDelayMs) return;
+    if (!onCompleteRef.current) return;
+    // Treat 0 as immediate completion
+    const delay = Math.max(0, Number(completeDelayMs ?? 0));
     const t = setTimeout(() => {
       onCompleteRef.current?.();
-    }, completeDelayMs);
+    }, delay);
     return () => clearTimeout(t);
   }, [completeDelayMs]); // Only depend on completeDelayMs, not onComplete
 

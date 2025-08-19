@@ -21,6 +21,13 @@ export function useSliderState(): UseSliderStateReturn {
   const [tempTimelineIndex, setTempTimelineIndex] = useState<number | null>(null);
   const [tempMonthlyValue, setTempMonthlyValue] = useState<number | null>(null);
 
+  // Single source of truth for monthly goal snapping logic
+  const snapMonthly = useCallback((raw: number): number => {
+    if (raw <= 1) return 1;
+    // Snap to nearest multiple of $25
+    return Math.round(raw / 25) * 25;
+  }, []);
+
   const handleTimelineChange = useCallback((values: number[]) => {
     setTempTimelineIndex(values[0]);
   }, []);
@@ -34,27 +41,18 @@ export function useSliderState(): UseSliderStateReturn {
   }, []);
 
   const handleMonthlyGoalChange = useCallback((values: number[]) => {
-    // Snap to $1 then multiples of $25
-    let snappedValue = values[0];
-    if (snappedValue > 1) {
-      snappedValue = Math.round((snappedValue - 1) / 25) * 25 + 1;
-    }
-    setTempMonthlyValue(snappedValue);
-  }, []);
+    setTempMonthlyValue(snapMonthly(values[0]));
+  }, [snapMonthly]);
 
   const handleMonthlyGoalCommit = useCallback((
     values: number[],
     onUpdate: (value: number) => void
   ) => {
-    // Apply same snapping logic on commit
-    let snappedValue = values[0];
-    if (snappedValue > 1) {
-      snappedValue = Math.round((snappedValue - 1) / 25) * 25 + 1;
-    }
-    
-    onUpdate(snappedValue);
+    // Prefer the already-snapped temp value to avoid drift
+    const snapped = tempMonthlyValue != null ? tempMonthlyValue : snapMonthly(values[0]);
+    onUpdate(snapped);
     setTempMonthlyValue(null);
-  }, []);
+  }, [tempMonthlyValue, snapMonthly]);
 
   return {
     tempTimelineIndex,

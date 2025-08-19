@@ -38,22 +38,26 @@ export function TimelineSliderSection({
   error, 
   onClearError 
 }: TimelineSliderSectionProps) {
-  const currentIndex = selectedTimeline 
+  const unsafeIndex = selectedTimeline
     ? TIMELINE_OPTIONS.indexOf(selectedTimeline)
     : 0;
+  const currentIndex = unsafeIndex >= 0 ? unsafeIndex : 0;
+  const clampedTempIndex = typeof tempIndex === 'number'
+    ? Math.min(TIMELINE_OPTIONS.length - 1, Math.max(0, tempIndex))
+    : null;
   
-  const displayIndex = tempIndex ?? currentIndex;
+  const displayIndex = clampedTempIndex ?? currentIndex;
   const displayTimeline = TIMELINE_OPTIONS[displayIndex];
   const displayText = displayTimeline ? INVESTMENT_TIMELINE_DESCRIPTIONS[displayTimeline] : 'Select timeline';
 
   const handleSliderChange = (values: number[]) => {
-    if (onSliderChange) {
-      onSliderChange(values);
-    }
+    const idx = Math.min(TIMELINE_OPTIONS.length - 1, Math.max(0, (values && values[0] != null ? values[0] : 0)));
+    if (onSliderChange) onSliderChange([idx]);
   };
 
   const handleSliderCommit = (values: number[]) => {
-    const newTimeline = TIMELINE_OPTIONS[values[0]];
+    const idx = Math.min(TIMELINE_OPTIONS.length - 1, Math.max(0, (values && values[0] != null ? values[0] : 0)));
+    const newTimeline = TIMELINE_OPTIONS[idx];
     
     // Clear error when user makes a selection
     if (onClearError) {
@@ -62,9 +66,7 @@ export function TimelineSliderSection({
     
     onChange(newTimeline);
     
-    if (onSliderCommit) {
-      onSliderCommit(values);
-    }
+    if (onSliderCommit) onSliderCommit([idx]);
   };
 
   return (

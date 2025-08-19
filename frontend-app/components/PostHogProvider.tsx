@@ -44,6 +44,15 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
           capture_pageleave: true, // Enable pageleave capture
           capture_exceptions: true, // This enables capturing exceptions using Error Tracking, set to false if you don't want this
           enable_heatmaps: true,
+          // Reduce noisy console/rrweb capture during sensitive auth/onboarding flows
+          session_recording: {
+            enabled: true,
+            // Avoid rrweb console capture that can trigger regex overflow in some environments
+            // PostHog forwards this to rrweb; unknown keys are ignored safely if unsupported
+            captureConsoleLog: false as any,
+            recordCrossOriginIframes: false,
+            captureCanvas: false,
+          } as any,
           debug: process.env.NODE_ENV === "development",
         });
         setIsInitialized(true);

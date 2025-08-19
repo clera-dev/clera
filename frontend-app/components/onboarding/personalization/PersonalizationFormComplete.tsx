@@ -29,6 +29,7 @@ interface PersonalizationFormCompleteProps {
   onCancel?: () => void;
   submitButtonText?: string;
   title?: string;
+  disableSubmit?: boolean;
 }
 
 /**
@@ -44,7 +45,8 @@ export function PersonalizationFormComplete({
   onSubmit,
   onCancel,
   submitButtonText = "Save Changes",
-  title = "Update Your Personalization"
+  title = "Update Your Personalization",
+  disableSubmit = false,
 }: PersonalizationFormCompleteProps) {
   // Custom hooks for state management
   const latestRef = React.useRef<PersonalizationFormData>(data);
@@ -135,11 +137,11 @@ export function PersonalizationFormComplete({
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl mx-auto text-white">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">{title}</h1>
-        <p className="text-gray-600">
+        <h1 className="text-3xl font-bold mb-2">{title}</h1>
+        <p className="text-gray-300">
           Update your preferences to get more personalized investment advice from Clera.
         </p>
       </div>
@@ -147,7 +149,7 @@ export function PersonalizationFormComplete({
       <form onSubmit={handleFormSubmit} className="space-y-12">
         {/* All sections displayed vertically */}
         <div className="space-y-12">
-          <div className="bg-white rounded-lg border border-gray-200 p-8">
+          <div className="bg-card border border-border/30 rounded-lg p-8">
             <NameInputSection
               value={data.firstName || ''}
               onChange={handleFirstNameChange}
@@ -156,7 +158,7 @@ export function PersonalizationFormComplete({
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-8">
+          <div className="bg-card border border-border/30 rounded-lg p-8">
             <GoalsSelectorSection
               selectedGoals={data.investmentGoals || []}
               onChange={handleGoalsChange}
@@ -165,7 +167,7 @@ export function PersonalizationFormComplete({
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-8">
+          <div className="bg-card border border-border/30 rounded-lg p-8">
             <RiskToleranceSection
               selectedRisk={data.riskTolerance || ''}
               onChange={handleRiskChange}
@@ -174,7 +176,7 @@ export function PersonalizationFormComplete({
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-8">
+          <div className="bg-card border border-border/30 rounded-lg p-8">
             <TimelineSliderSection
               selectedTimeline={data.investmentTimeline || ''}
               onChange={handleTimelineUpdate}
@@ -200,7 +202,7 @@ export function PersonalizationFormComplete({
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-8">
+          <div className="bg-card border border-border/30 rounded-lg p-8">
             <ExperienceLevelSection
               selectedLevel={data.experienceLevel || ''}
               onChange={handleExperienceChange}
@@ -209,7 +211,7 @@ export function PersonalizationFormComplete({
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-8">
+          <div className="bg-card border border-border/30 rounded-lg p-8">
             <MonthlyGoalSliderSection
               selectedGoal={data.monthlyInvestmentGoal ?? initialPersonalizationData.monthlyInvestmentGoal!}
               onChange={handleMonthlyGoalUpdate}
@@ -223,7 +225,7 @@ export function PersonalizationFormComplete({
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-8">
+          <div className="bg-black border border-border/30 rounded-lg p-8">
             <MarketInterestsSection
               selectedInterests={data.marketInterests || []}
               onChange={handleInterestsChange}
@@ -234,7 +236,7 @@ export function PersonalizationFormComplete({
         </div>
 
         {/* Actions */}
-        <div className="flex justify-between items-center pt-8 border-t border-gray-200">
+        <div className="flex justify-between items-center pt-8 border-t border-border/30">
           {onCancel && (
             <Button 
               type="button" 
@@ -248,7 +250,7 @@ export function PersonalizationFormComplete({
           
           <Button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || disableSubmit}
             className="bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg ml-auto"
           >
             {isSubmitting ? 'Saving...' : submitButtonText}

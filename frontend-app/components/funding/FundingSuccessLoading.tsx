@@ -9,9 +9,10 @@ interface FundingSuccessLoadingProps {
   amount: string;
   onComplete: () => void;
   onError: (error: string) => void;
+  externalStatusMessage?: string;
 }
 
-export default function FundingSuccessLoading({ transferId, accountId, amount, onComplete, onError }: FundingSuccessLoadingProps) {
+export default function FundingSuccessLoading({ transferId, accountId, amount, onComplete, onError, externalStatusMessage }: FundingSuccessLoadingProps) {
   const [dots, setDots] = useState("");
   const [statusMessage, setStatusMessage] = useState("Processing your transfer");
 
@@ -75,9 +76,15 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
         }
 
         if (data.transferReady) {
-          if (data.status === 'COMPLETED') {
+          // Handle both 'QUEUED' and 'TransferStatus.QUEUED' formats
+          const normalizedStatus = String(data.status || '').toUpperCase().replace('TRANSFERSTATUS.', '');
+          if (normalizedStatus === 'QUEUED') {
+            setStatusMessage("Success! Your transfer has been queued for processing");
+          } else if (normalizedStatus === 'SUBMITTED') {
+            setStatusMessage("Success! Your transfer has been submitted");
+          } else if (normalizedStatus === 'COMPLETED') {
             setStatusMessage("Success! Your transfer has been completed");
-          } else if (data.status === 'SETTLED') {
+          } else if (normalizedStatus === 'SETTLED') {
             setStatusMessage("Success! Your transfer has been settled");
           } else {
             setStatusMessage("Success! Your transfer is complete");
@@ -181,7 +188,7 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
             </div>
             
             <p className="text-muted-foreground text-lg">
-              {statusMessage}{dots}
+              {externalStatusMessage || statusMessage}{dots}
             </p>
             
             <div className="mt-6 pt-6 border-t border-border/30">

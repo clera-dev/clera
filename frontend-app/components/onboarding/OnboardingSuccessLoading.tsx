@@ -37,6 +37,8 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
     let pollCount = 0;
     const maxPolls = 60; // 5 minutes max (60 * 5 seconds)
     let successTimeout: ReturnType<typeof setTimeout> | null = null;
+    let finished = false;
+    let nextTimeout: ReturnType<typeof setTimeout> | null = null;
     
     const pollAccountStatus = async () => {
       try {
@@ -44,11 +46,8 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
           },
           body: JSON.stringify({ accountId }),
-          cache: 'no-store'
         });
 
         // Safely parse JSON only when present
@@ -95,12 +94,9 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
         // Update status message based on account state
         if (response.status === 204 || data == null) {
           // No content or no JSON body – keep polling with a generic message
-          console.log('[OnboardingSuccessLoading] No data received, continuing to poll');
           setStatusMessage("We're processing your account. Please wait");
           return false;
         }
-        
-        console.log('[OnboardingSuccessLoading] Polling response data:', data);
         if (data.isPending) {
           if (data.status === 'APPROVAL_PENDING') {
             setStatusMessage("Your application is being reviewed. This usually takes just a few minutes");
@@ -113,8 +109,17 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
         }
 
         if (data.accountReady) {
-          console.log('[OnboardingSuccessLoading] Account ready detected:', data);
-          setStatusMessage("Success! Your account is ready");
+          // Handle both 'SUBMITTED' and 'AccountStatus.SUBMITTED' formats
+          const normalizedStatus = String(data.status || '').toUpperCase().replace('ACCOUNTSTATUS.', '');
+          if (normalizedStatus === 'SUBMITTED') {
+            setStatusMessage("Success! Your application has been submitted");
+          } else if (normalizedStatus === 'APPROVED') {
+            setStatusMessage("Success! Your account has been approved");
+          } else if (normalizedStatus === 'ACTIVE') {
+            setStatusMessage("Success! Your account is active");
+          } else {
+            setStatusMessage("Success! Your account is ready");
+          }
           // Small delay to show success message
           if (successTimeout) {
             clearTimeout(successTimeout);
@@ -152,33 +157,42 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
       }
     };
 
-    // Start polling immediately and only create interval if needed
-    let pollInterval: ReturnType<typeof setInterval> | null = null;
-
+    // Start polling immediately, then schedule subsequent polls without overlap
     (async () => {
       const shouldStopInitial = await pollAccountStatus();
       if (shouldStopInitial) {
-        return; // Do not start interval if we're already done
+        finished = true;
+        return;
       }
 
-      pollInterval = setInterval(async () => {
-        pollCount++;
-        
-        if (pollCount >= maxPolls) {
-          if (pollInterval) clearInterval(pollInterval);
-          onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
-          return;
-        }
+      const scheduleNext = () => {
+        nextTimeout = setTimeout(async () => {
+          if (finished) return;
+          pollCount++;
 
-        const shouldStop = await pollAccountStatus();
-        if (shouldStop && pollInterval) {
-          clearInterval(pollInterval);
-        }
-      }, 5000); // Poll every 5 seconds
+          if (pollCount >= maxPolls) {
+            finished = true;
+            onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
+            return;
+          }
+
+          const shouldStop = await pollAccountStatus();
+          if (shouldStop) {
+            finished = true;
+            return;
+          }
+
+          // Schedule the next iteration only after the previous finished
+          scheduleNext();
+        }, 5000); // Poll every 5 seconds
+      };
+
+      scheduleNext();
     })();
 
     return () => {
-      if (pollInterval) clearInterval(pollInterval);
+      finished = true;
+      if (nextTimeout) clearTimeout(nextTimeout);
       if (successTimeout) clearTimeout(successTimeout);
     };
   }, [accountId, onComplete, onError]);

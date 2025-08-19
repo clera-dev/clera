@@ -20,10 +20,14 @@ export interface TransferStateFlags {
 /**
  * Evaluates transfer status and returns appropriate state flags
  * This is pure client-side logic that doesn't need backend secrets
+ * 
+ * SUCCESS STATES: QUEUED (transfer queued), SUBMITTED (transfer submitted), 
+ *                 COMPLETED, SETTLED, COMPLETE, FILLED, APPROVED
  */
 export function evaluateTransferState(status: string | undefined): TransferStateFlags {
-  const up = String(status || '').toUpperCase();
-  const transferReady = ['COMPLETED', 'SETTLED', 'COMPLETE', 'FILLED', 'APPROVED'].includes(up);
+  // Handle both 'QUEUED' and 'TransferStatus.QUEUED' formats
+  const up = String(status || '').toUpperCase().replace('TRANSFERSTATUS.', '');
+  const transferReady = ['QUEUED', 'SUBMITTED', 'COMPLETED', 'SETTLED', 'COMPLETE', 'FILLED', 'APPROVED'].includes(up);
   const transferFailed = ['FAILED', 'CANCELLED', 'CANCELED', 'REJECTED', 'RETURNED'].includes(up);
   return {
     transferReady,

@@ -32,6 +32,7 @@ export default function TransferForm({
   const [transferCompleted, setTransferCompleted] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
   const [transferId, setTransferId] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState("Processing your transfer");
   
   const isValidAmount = () => {
     const numAmount = parseFloat(amount);
@@ -169,12 +170,17 @@ export default function TransferForm({
 
   const handleLoadingComplete = () => {
     // Transfer polling completed successfully
-    setShowLoading(false);
     if (onTransferComplete) {
+      // If we have a completion handler, call it (for modal/component usage)
+      setShowLoading(false);
       onTransferComplete(amount);
     } else {
-      // Default behavior: show local success page
-      setTransferCompleted(true);
+      // For main onboarding flow: keep loading and redirect to /invest
+      // This prevents the user from seeing the transfer form again and clicking twice
+      setStatusMessage("Transfer successful! Redirecting to investing...");
+      setTimeout(() => {
+        router.push('/invest');
+      }, 1500); // Brief delay to show success message
     }
   };
 
@@ -194,6 +200,7 @@ export default function TransferForm({
         amount={amount}
         onComplete={handleLoadingComplete} 
         onError={handleLoadingError}
+        externalStatusMessage={statusMessage}
       />
     );
   }

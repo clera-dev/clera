@@ -85,7 +85,7 @@ export default function DashboardPage() {
           .from('profiles')
           .select('first_name, last_name')
           .eq('id', user.id)
-          .maybeSingle();
+          .single();
 
         if (profileError) {
           console.error("Error fetching profile:", profileError);

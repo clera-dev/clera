@@ -46,11 +46,11 @@ export function NameInputSection({
     <div className="space-y-6 px-2 sm:px-0">
       <div className="text-center px-4 sm:px-0">
         <h2 className="text-2xl font-semibold text-white mb-3">
-          What is your name?
+        First things first - what should I call you?
         </h2>
-        <p className="text-white text-base">
+        {/*<p className="text-white text-base">
           Let's start with something simple - what should I call you?
-        </p>
+        </p>*/}
       </div>
       
       <div className="max-w-md mx-auto px-4 sm:px-0">

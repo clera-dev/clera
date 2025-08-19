@@ -99,22 +99,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert LangGraph messages to our frontend format
-    // Helper to strip personalization context from stored human messages
-    const stripPersonalizationContext = (text: string): string => {
-      try {
-        if (!text) return text;
-        const pcMarker = 'PERSONALIZATION CONTEXT:';
-        const umMarker = 'User Message:';
-        const pcIndex = text.indexOf(pcMarker);
-        const umIndex = text.indexOf(umMarker);
-        if (pcIndex !== -1 && umIndex !== -1 && umIndex > pcIndex) {
-          return text.substring(umIndex + umMarker.length).trim();
-        }
-        return text;
-      } catch {
-        return text;
-      }
-    };
+    // NOTE: Personalization context removal is no longer needed since personalization
+    // is now handled via backend system prompts, not injected into user messages
 
     const formattedMessages = messages
       .filter(msg => {
@@ -150,11 +136,10 @@ export async function POST(request: NextRequest) {
         }
 
         const role = msg.type === 'human' ? 'user' : 'assistant';
-        const normalizedContent = role === 'user' ? stripPersonalizationContext(content) : content;
 
         return {
           role,
-          content: normalizedContent
+          content
         };
       });
     

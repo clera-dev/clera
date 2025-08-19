@@ -86,7 +86,7 @@ export function MarketInterestsSection({
               )}
               onClick={canClick ? () => handleInterestToggle(interest) : undefined}
             >
-              <CardContent className="p-4 text-center relative">
+              <CardContent className="p-4 text-center relative flex items-center justify-center min-h-[72px]">
                 {isSelected && (
                   <div className="absolute top-2 right-2">
                     <Check className="h-4 w-4 text-white" />
