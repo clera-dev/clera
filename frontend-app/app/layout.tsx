@@ -23,8 +23,8 @@ const defaultUrl = process.env.VERCEL_URL
 
 export const metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Clera - AI-Powered Financial Advisor",
-  description: "Personalized financial advice and portfolio management",
+  title: "Clera - AI-Powered Investment Advisor",
+  description: "Personalized investment advice and portfolio management",
 };
 
 export default function RootLayout({
