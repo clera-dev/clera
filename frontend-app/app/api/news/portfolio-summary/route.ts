@@ -311,7 +311,7 @@ async function fetchUserPersonalization(userId: string, supabase: any): Promise<
         riskTolerance: personalizationData.risk_tolerance,
         investmentTimeline: personalizationData.investment_timeline,
         experienceLevel: personalizationData.experience_level,
-        monthlyInvestmentGoal: personalizationData.monthly_investment_goal || 250,
+        monthlyInvestmentGoal: personalizationData.monthly_investment_goal ?? 250,
         marketInterests: personalizationData.market_interests || [],
       };
     }

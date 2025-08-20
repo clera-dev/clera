@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { createServerClient } from "@supabase/ssr";
 import { 
   getRouteConfig, 
@@ -210,13 +211,37 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    // Check if the route is public (no auth needed)
-    if (publicPaths.some(publicPath => path.startsWith(publicPath))) {
-          return response;
+    // Centralized auth for cron endpoints
+    if (path.startsWith('/api/cron/')) {
+      const providedHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+      const cronSecret = process.env.CRON_SECRET;
+      if (!cronSecret) {
+        return new NextResponse(
+          JSON.stringify({ error: 'Cron misconfigured: missing secret' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      const expectedHeader = `Bearer ${cronSecret}`;
+      const isValid = (() => {
+        if (!providedHeader || providedHeader.length !== expectedHeader.length) return false;
+        try {
+          return timingSafeEqual(Buffer.from(providedHeader, 'utf8'), Buffer.from(expectedHeader, 'utf8'));
+        } catch {
+          return false;
+        }
+      })();
+      if (!isValid) {
+        return new NextResponse(
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // Authorized cron request: allow through without user/session checks
+      return response;
     }
 
-    // Explicitly allow cron endpoints to bypass user auth (they are secured by CRON_SECRET inside the handlers)
-    if (path.startsWith('/api/cron/')) {
+    // Check if the route is public (no auth needed)
+    if (publicPaths.some(publicPath => path.startsWith(publicPath))) {
       return response;
     }
 

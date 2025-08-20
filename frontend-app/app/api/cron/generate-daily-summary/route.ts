@@ -115,7 +115,9 @@ async function enrichArticleDetails(url: string): Promise<any | null> {
 
   // Safely parse and normalize URL (avoid exceptions on invalid strings)
   try {
-    const normalized = url && (url.startsWith('http://') || url.startsWith('https://')) ? url : `https://${url}`;
+    const raw = (url || '').trim();
+    const hasScheme = /^https?:\/\//i.test(raw);
+    const normalized = hasScheme ? raw : `https://${raw}`;
     const parsed = new URL(normalized);
     sourceName = parsed.hostname.replace(/^www\./, '');
     finalUrl = parsed.toString();
@@ -290,7 +292,7 @@ async function fetchUserPersonalization(userId: string, supabase: any): Promise<
         riskTolerance: personalizationData.risk_tolerance,
         investmentTimeline: personalizationData.investment_timeline,
         experienceLevel: personalizationData.experience_level,
-        monthlyInvestmentGoal: personalizationData.monthly_investment_goal || 250,
+        monthlyInvestmentGoal: personalizationData.monthly_investment_goal ?? 250,
         marketInterests: personalizationData.market_interests || [],
       };
     }

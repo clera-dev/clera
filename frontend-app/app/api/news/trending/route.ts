@@ -125,20 +125,36 @@ async function triggerCacheRefresh(): Promise<void> {
       // Continue with cache refresh even if Redis write fails
     }
     
-    // Determine the base URL for the API
-    // For Next.js App Router, we can use absolute URLs that will be resolved on the server
-    // Prefer explicit app URL. Avoid raw VERCEL_URL to prevent SSO interception on Vercel domains
-    let baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '';
-    if (!baseUrl) {
-      // Safe production fallback
+    // Determine a trusted base URL for the API
+    // Security: Use server-only APP_URL with hostname validation. No hard-coded production URLs.
+    const allowedHosts = new Set(['app.askclera.com', 'localhost', '127.0.0.1']);
+    let baseUrl: string;
+    
+    if (!process.env.APP_URL) {
       if (process.env.NODE_ENV === 'production') {
-        baseUrl = 'https://app.askclera.com';
-      } else {
-        baseUrl = 'http://localhost:3000';
+        console.error('APP_URL environment variable is required in production');
+        return;
       }
-    }
-    if (!baseUrl.startsWith('http')) {
-      baseUrl = `https://${baseUrl}`;
+      // Development fallback only
+      baseUrl = 'http://localhost:3000';
+    } else {
+      const configured = process.env.APP_URL.startsWith('http') ? process.env.APP_URL : `https://${process.env.APP_URL}`;
+      let parsedBase: URL;
+      try {
+        parsedBase = new URL(configured);
+      } catch {
+        console.error('Invalid APP_URL format');
+        return;
+      }
+      if (!allowedHosts.has(parsedBase.hostname)) {
+        console.error(`APP_URL hostname ${parsedBase.hostname} not in allowlist`);
+        return;
+      }
+      if (process.env.NODE_ENV === 'production' && parsedBase.protocol !== 'https:') {
+        console.error('APP_URL must use HTTPS in production');
+        return;
+      }
+      baseUrl = parsedBase.origin;
     }
     
     const cronUrl = `${baseUrl}/api/cron/update-trending-news`;
