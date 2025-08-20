@@ -34,7 +34,7 @@ export default function Hero() {
               Meet Clera.
             </h1>
             <h2 className="text-2xl sm:text-3xl font-semibold text-gray-300">
-              Your Personal AI Financial Advisor.
+              Your Personal AI Investment Advisor.
             </h2>
             <p className="text-lg text-gray-400 leading-relaxed max-w-xl">
               Get Wall Street‑level investment guidance and portfolio management,
