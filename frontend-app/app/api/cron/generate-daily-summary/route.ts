@@ -3,6 +3,8 @@ import { OpenAI } from 'openai';
 import { NextResponse } from 'next/server';
 import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
+import { NewsPersonalizationService } from '@/utils/services/news-personalization';
+import { PersonalizationData } from '@/lib/types/personalization';
 
 // Initialize Perplexity client
 const perplexity = new OpenAI({
@@ -104,12 +106,22 @@ function extractJsonContent(responseText: string): string | null {
 }
 
 async function enrichArticleDetails(url: string): Promise<any | null> {
-  let sourceName = new URL(url).hostname.replace(/^www\./, '');
+  let sourceName = 'unknown';
   let title = '';
   let snippet = '[Snippet Not Available]';
   let sentimentScore = 0;
   let finalUrl = url;
   let shouldDisplay = true;
+
+  // Safely parse and normalize URL (avoid exceptions on invalid strings)
+  try {
+    const normalized = url && (url.startsWith('http://') || url.startsWith('https://')) ? url : `https://${url}`;
+    const parsed = new URL(normalized);
+    sourceName = parsed.hostname.replace(/^www\./, '');
+    finalUrl = parsed.toString();
+  } catch (_) {
+    // Keep defaults; downstream logic will mark as not displayable if needed
+  }
 
   // Check if URL ends with .pdf
   if (url.toLowerCase().endsWith('.pdf')) {
@@ -249,6 +261,47 @@ async function enrichArticleDetails(url: string): Promise<any | null> {
   };
 }
 
+/**
+ * Fetches personalization data for a specific user using direct Supabase access
+ * This is needed in the cron context where we don't have Next.js API route access
+ */
+async function fetchUserPersonalization(userId: string, supabase: any): Promise<PersonalizationData | null> {
+  try {
+    const { data: personalizationData, error } = await supabase
+      .from('user_personalization')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No personalization data found - this is not an error
+        return null;
+      }
+      console.error(`CRON: Error fetching personalization for user ${userId}:`, error);
+      return null;
+    }
+
+    // Convert database format to application format
+    if (personalizationData) {
+      return {
+        firstName: personalizationData.first_name || '',
+        investmentGoals: personalizationData.investment_goals || [],
+        riskTolerance: personalizationData.risk_tolerance,
+        investmentTimeline: personalizationData.investment_timeline,
+        experienceLevel: personalizationData.experience_level,
+        monthlyInvestmentGoal: personalizationData.monthly_investment_goal || 250,
+        marketInterests: personalizationData.market_interests || [],
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`CRON: Error fetching personalization for user ${userId}:`, error);
+    return null;
+  }
+}
+
 export async function GET(request: Request) {
   // Basic authorization check
   const authHeader = request.headers.get('Authorization');
@@ -292,30 +345,34 @@ export async function GET(request: Request) {
     for (const user of users) {
       try {
         console.log(`CRON: Processing summary for user ${user.user_id} (sonar-pro, medium context)...`);
-        // Placeholder for fetching actual user portfolio and goals
-        // const { portfolioString, userGoals, financialLiteracy } = await fetchUserFinancialContext(user.id);
+        
+        // Fetch personalization data for this user
+        const personalizationData = await fetchUserPersonalization(user.user_id, supabase);
+        console.log(`CRON: Personalization data for user ${user.user_id}:`, personalizationData ? 'Found' : 'Not found');
+        
+        // Extract personalized values or use defaults
+        const userGoals = NewsPersonalizationService.getUserGoalsSummary(personalizationData);
+        const financialLiteracy = NewsPersonalizationService.getFinancialLiteracyLevel(personalizationData);
+        
+        // Placeholder for fetching actual user portfolio
         const userPortfolio = [ 
           { ticker: 'AAPL', shares: 20 }, { ticker: 'MSFT', shares: 10 }, { ticker: 'TSLA', shares: 5 },
         ];
-        const userGoals = 'Long-term growth, focus on tech sector';
-        const financialLiteracy = 'intermediate';
         const portfolioString = userPortfolio.map(p => `${p.ticker} (${p.shares} shares)`).join(', ');
         const currentDate = new Date().toISOString().split('T')[0];
 
-        const messages: any[] = [
-          {
-            role: 'system',
-            content: `You are a financial news analyst creating a daily market briefing for an investor.
+        // Build base system prompt
+        const baseSystemPrompt = `You are a financial news analyst creating a daily market briefing for an investor.
 
 Your goal is to write a clear, easy-to-read, logically connected summary in a bullet/section format that is easy to scan. Avoid choppy, headline-style fragments — each bullet must be a complete sentence that naturally connects to the next. Do NOT use speculative language or personal opinions. Do NOT use in-text citations like [1] or [Source A].
 
-The user's financial literacy is ${financialLiteracy} — match the language to this level. Focus on events that matter for the user’s portfolio or goals. Consult at least 4–6 recent, credible financial news sources (WSJ, Bloomberg, Reuters, Financial Times, etc.). Current date: ${currentDate}.
+The user's financial literacy is ${financialLiteracy} — match the language to this level. Focus on events that matter for the user's portfolio or goals. Consult at least 4–6 recent, credible financial news sources (WSJ, Bloomberg, Reuters, Financial Times, etc.). Current date: ${currentDate}.
 
 Output format rules (STRICT):
 - Return a single valid JSON object only. No extra text or markdown.
 - Populate exactly one string field: summary_text.
 - In summary_text, include a short headline (max 12 words), then two labeled sections with bullets, using these exact labels once:
-  Yesterday’s Market Recap:
+  Yesterday's Market Recap:
   What to Watch Today:
 - Under each label, include 3–4 bullets. Each bullet should be a complete sentence, 20–25 words max, with smooth transitions.
 - Do not repeat the labels inside bullets. Do not include any other headings.
@@ -324,8 +381,16 @@ If the portfolio string is empty or says "No positions found in portfolio.", pro
 
 JSON shape to return:
 {
-  "summary_text": "Headline\n\nYesterday’s Market Recap:\n• Bullet 1\n• Bullet 2\n• Bullet 3\n• Bullet 4\n\nWhat to Watch Today:\n• Bullet 1\n• Bullet 2\n• Bullet 3\n• Bullet 4"
-}`,
+  "summary_text": "Headline\n\nYesterday's Market Recap:\n• Bullet 1\n• Bullet 2\n• Bullet 3\n• Bullet 4\n\nWhat to Watch Today:\n• Bullet 1\n• Bullet 2\n• Bullet 3\n• Bullet 4"
+}`;
+
+        // Enhance the system prompt with personalization context
+        const enhancedSystemPrompt = NewsPersonalizationService.enhanceSystemPrompt(baseSystemPrompt, personalizationData);
+        
+        const messages: any[] = [
+          {
+            role: 'system',
+            content: enhancedSystemPrompt,
           },
           {
             role: 'user',

@@ -131,13 +131,16 @@ async function triggerCacheRefresh(): Promise<void> {
       // Continue with cache refresh even if Redis write fails
     }
     
-    // Make sure we have a proper base URL with http/https
-    let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+    // Prefer explicit app URL. Avoid raw VERCEL_URL to prevent SSO interception on Vercel domains
+    let baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '';
     if (!baseUrl) {
-      baseUrl = 'http://localhost:3000';
+      // Safe production fallback
+      if (process.env.NODE_ENV === 'production') {
+        baseUrl = 'https://app.askclera.com';
+      } else {
+        baseUrl = 'http://localhost:3000';
+      }
     }
-    
-    // Ensure the URL has a proper protocol
     if (!baseUrl.startsWith('http')) {
       baseUrl = `https://${baseUrl}`;
     }

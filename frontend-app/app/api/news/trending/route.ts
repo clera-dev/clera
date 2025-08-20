@@ -127,9 +127,19 @@ async function triggerCacheRefresh(): Promise<void> {
     
     // Determine the base URL for the API
     // For Next.js App Router, we can use absolute URLs that will be resolved on the server
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
-      : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    // Prefer explicit app URL. Avoid raw VERCEL_URL to prevent SSO interception on Vercel domains
+    let baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '';
+    if (!baseUrl) {
+      // Safe production fallback
+      if (process.env.NODE_ENV === 'production') {
+        baseUrl = 'https://app.askclera.com';
+      } else {
+        baseUrl = 'http://localhost:3000';
+      }
+    }
+    if (!baseUrl.startsWith('http')) {
+      baseUrl = `https://${baseUrl}`;
+    }
     
     const cronUrl = `${baseUrl}/api/cron/update-trending-news`;
     const cronSecret = process.env.CRON_SECRET;

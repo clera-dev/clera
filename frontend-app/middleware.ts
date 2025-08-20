@@ -215,6 +215,11 @@ export async function middleware(request: NextRequest) {
           return response;
     }
 
+    // Explicitly allow cron endpoints to bypass user auth (they are secured by CRON_SECRET inside the handlers)
+    if (path.startsWith('/api/cron/')) {
+      return response;
+    }
+
     // Handle auth pages (sign-in, sign-up, forgot-password)
     if (isAuthPage(path)) {
       if (user) {
