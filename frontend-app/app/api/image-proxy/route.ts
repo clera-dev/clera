@@ -69,31 +69,30 @@ const validateUrl = (url: URL, originalUrl: string): { isValid: boolean; error?:
 const ALLOWED_DOMAINS_STRING = process.env.IMAGE_PROXY_ALLOWED_DOMAINS || '';
 const ALLOWED_DOMAINS = ALLOWED_DOMAINS_STRING.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
 
-// Add default domains for development if the env var is not set.
-if (process.env.NODE_ENV === 'development' && ALLOWED_DOMAINS.length === 0) {
+// Provide a secure default allowlist if not explicitly configured, for both dev and prod.
+if (ALLOWED_DOMAINS.length === 0) {
   ALLOWED_DOMAINS.push(
-    'images.unsplash.com',
-    's.yimg.com',
-    'staticx-tuner.zacks.com',
-    'www.benzinga.com',
-    'g.foolcdn.com',
-    '*.alphavantage.co',
-    '*.zacks.com',
-    '*.benzinga.com',
-    // Financial news domains
+    // Core finance/news sources commonly used by our feeds
     'ml.globenewswire.com',
-    's3.cointelegraph.com',
     '*.globenewswire.com',
-    '*.cointelegraph.com',
+    'staticx-tuner.zacks.com',
+    '*.zacks.com',
+    'www.benzinga.com',
+    '*.benzinga.com',
+    'g.foolcdn.com',
+    '*.fool.com',
+    '*.motleyfool.com',
     '*.reuters.com',
     '*.bloomberg.com',
     '*.marketwatch.com',
     '*.cnbc.com',
+    's.yimg.com',
     '*.yahoo.com',
     '*.investing.com',
     '*.seekingalpha.com',
-    '*.fool.com',
-    '*.motleyfool.com'
+    '*.alphavantage.co',
+    // General safe image CDNs occasionally referenced
+    'images.unsplash.com'
   );
 }
 

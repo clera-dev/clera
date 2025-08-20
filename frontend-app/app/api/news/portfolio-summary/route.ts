@@ -6,6 +6,8 @@ import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
 import redisClient from '@/utils/redis';
 import { timingSafeEqual } from 'crypto';
+import { NewsPersonalizationService } from '@/utils/services/news-personalization';
+import { PersonalizationData } from '@/lib/types/personalization';
 
 const sentimentAnalyzer = new Sentiment();
 
@@ -154,12 +156,22 @@ function extractJsonContent(responseText: string): string | null {
 }
 
 async function enrichArticleDetails(url: string): Promise<any | null> {
-  let sourceName = new URL(url).hostname.replace(/^www\./, '');
+  let sourceName = 'unknown';
   let title = '';
   let snippet = '[Snippet Not Available]';
   let sentimentScore = 0;
   let finalUrl = url;
   let shouldDisplay = true;
+
+  // Safely parse and normalize URL (avoid exceptions on invalid strings)
+  try {
+    const normalized = url && (url.startsWith('http://') || url.startsWith('https://')) ? url : `https://${url}`;
+    const parsed = new URL(normalized);
+    sourceName = parsed.hostname.replace(/^www\./, '');
+    finalUrl = parsed.toString();
+  } catch (_) {
+    // Keep defaults; downstream logic will mark as not displayable if needed
+  }
 
   try {
     console.log(`enrichArticleDetails: Fetching preview for ${url} using link-preview-js`);
@@ -270,14 +282,61 @@ async function enrichArticleDetails(url: string): Promise<any | null> {
   };
 }
 
+/**
+ * Fetches personalization data for a specific user using direct Supabase access
+ * This is needed in server-side API routes where HTTP client calls don't inherit auth
+ */
+async function fetchUserPersonalization(userId: string, supabase: any): Promise<PersonalizationData | null> {
+  try {
+    const { data: personalizationData, error } = await supabase
+      .from('user_personalization')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No personalization data found - this is not an error
+        return null;
+      }
+      console.error(`Error fetching personalization for user ${userId}:`, error);
+      return null;
+    }
+
+    // Convert database format to application format
+    if (personalizationData) {
+      return {
+        firstName: personalizationData.first_name || '',
+        investmentGoals: personalizationData.investment_goals || [],
+        riskTolerance: personalizationData.risk_tolerance,
+        investmentTimeline: personalizationData.investment_timeline,
+        experienceLevel: personalizationData.experience_level,
+        monthlyInvestmentGoal: personalizationData.monthly_investment_goal ?? 250,
+        marketInterests: personalizationData.market_interests || [],
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Error fetching personalization for user ${userId}:`, error);
+    return null;
+  }
+}
+
 async function generateSummaryForUser(userId: string, supabase: any, requestUrl: URL) {
   const perplexity = new OpenAI({
     apiKey: process.env.PPLX_API_KEY,
     baseURL: 'https://api.perplexity.ai',
   });
   let portfolioString: string;
-  const userGoals = 'Long-term growth, focus on tech sector';
-  const financialLiteracy = 'intermediate';
+  
+  // Fetch personalization data using direct Supabase access
+  const personalizationData = await fetchUserPersonalization(userId, supabase);
+  console.log(`Fetched personalization data for user ${userId}:`, personalizationData ? 'Found' : 'Not found');
+  
+  // Extract personalized values or use defaults
+  const userGoals = NewsPersonalizationService.getUserGoalsSummary(personalizationData);
+  const financialLiteracy = NewsPersonalizationService.getFinancialLiteracyLevel(personalizationData);
 
   try {
     const { data: onboardingData, error: onboardingError } = await supabase
@@ -323,7 +382,7 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
     portfolioString = mockPortfolio.map((p: {ticker: string, shares: number}) => `${p.ticker} (${p.shares} shares)`).join(', ');
     console.log(`Using mock portfolio data for user ${userId} due to an unexpected error.`);
   }
-  return await callPerplexityAndSaveResult(userId, portfolioString, userGoals, financialLiteracy, perplexity, supabase);
+  return await callPerplexityAndSaveResult(userId, portfolioString, userGoals, financialLiteracy, personalizationData, perplexity, supabase);
 }
 
 async function callPerplexityAndSaveResult(
@@ -331,14 +390,14 @@ async function callPerplexityAndSaveResult(
   portfolioString: string, 
   userGoals: string, 
   financialLiteracy: string, 
+  personalizationData: PersonalizationData | null,
   perplexity: OpenAI,
   supabase: any
 ) {
   const currentDate = new Date().toISOString().split('T')[0];
-  const messages: any[] = [
-    {
-      role: 'system',
-      content: `You are a financial news analyst providing a concise, personalized daily briefing for an investor.
+  
+  // Build base system prompt
+  const baseSystemPrompt = `You are a financial news analyst providing a concise, personalized daily briefing for an investor.
 Your summary should be direct, objective, and strictly factual, based on verifiable recent news.
 Avoid speculative language or personal opinions. Do NOT use in-text citations like [1] or [Source A].
 The user's financial literacy is ${financialLiteracy}. Tailor the language complexity accordingly.
@@ -352,7 +411,15 @@ This JSON object must strictly follow this structure:
 {
   "summary_text": "string, exactly two paragraphs.\nParagraph 1: 2-3 sentences discussing yesterday's key market/world news relevant to the user's portfolio/goals. In this paragraph, aim to synthesize information from at least 2-3 distinct articles you consulted.\nParagraph 2: 2-3 sentences discussing what the user should look out for today relevant to their portfolio/goals. In this paragraph, also aim to synthesize information from at least 2-3 distinct articles (can be the same or different from Paragraph 1's sources).\nBoth paragraphs should reference specific companies or market-moving events if applicable. Max 150 words total for both paragraphs."
 }
-If the portfolio string indicates 'No positions found in portfolio.' or is empty, state that the summary cannot be personalized due to lack of portfolio data and provide a general market overview instead, still aiming for two paragraphs and citing any general market news sources used. You will provide cited URLs separately via the API's citation mechanism.`,
+If the portfolio string indicates 'No positions found in portfolio.' or is empty, state that the summary cannot be personalized due to lack of portfolio data and provide a general market overview instead, still aiming for two paragraphs and citing any general market news sources used. You will provide cited URLs separately via the API's citation mechanism.`;
+
+  // Enhance the system prompt with personalization context
+  const enhancedSystemPrompt = NewsPersonalizationService.enhanceSystemPrompt(baseSystemPrompt, personalizationData);
+  
+  const messages: any[] = [
+    {
+      role: 'system',
+      content: enhancedSystemPrompt,
     },
     {
       role: 'user',

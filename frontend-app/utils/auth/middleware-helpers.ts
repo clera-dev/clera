@@ -52,6 +52,9 @@ export const routeConfigs: Record<string, RouteConfig> = {
   
   // Image proxy route - require authentication to prevent bandwidth abuse
   "/api/image-proxy": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+
+  // Cron routes - secured via CRON_SECRET header, should not require user auth
+  "/api/cron": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "system" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {

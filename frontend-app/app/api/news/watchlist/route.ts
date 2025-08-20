@@ -131,15 +131,36 @@ async function triggerCacheRefresh(): Promise<void> {
       // Continue with cache refresh even if Redis write fails
     }
     
-    // Make sure we have a proper base URL with http/https
-    let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
-    if (!baseUrl) {
-      baseUrl = 'http://localhost:3000';
-    }
+    // Determine a trusted base URL for the API
+    // Security: Use server-only APP_URL with hostname validation. No hard-coded production URLs.
+    const allowedHosts = new Set(['app.askclera.com', 'localhost', '127.0.0.1']);
+    let baseUrl: string;
     
-    // Ensure the URL has a proper protocol
-    if (!baseUrl.startsWith('http')) {
-      baseUrl = `https://${baseUrl}`;
+    if (!process.env.APP_URL) {
+      if (process.env.NODE_ENV === 'production') {
+        console.error('APP_URL environment variable is required in production');
+        return;
+      }
+      // Development fallback only
+      baseUrl = 'http://localhost:3000';
+    } else {
+      const configured = process.env.APP_URL.startsWith('http') ? process.env.APP_URL : `https://${process.env.APP_URL}`;
+      let parsedBase: URL;
+      try {
+        parsedBase = new URL(configured);
+      } catch {
+        console.error('Invalid APP_URL format');
+        return;
+      }
+      if (!allowedHosts.has(parsedBase.hostname)) {
+        console.error(`APP_URL hostname ${parsedBase.hostname} not in allowlist`);
+        return;
+      }
+      if (process.env.NODE_ENV === 'production' && parsedBase.protocol !== 'https:') {
+        console.error('APP_URL must use HTTPS in production');
+        return;
+      }
+      baseUrl = parsedBase.origin;
     }
     
     const cronUrl = `${baseUrl}/api/cron/update-watchlist-news`;
