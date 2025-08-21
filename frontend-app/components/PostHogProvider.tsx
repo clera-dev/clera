@@ -50,18 +50,20 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
         }
         
         // Initialize PostHog only if not account closure
-        console.log('[PostHog] Initializing for regular user');
+        const isProd = process.env.NODE_ENV === 'production';
+        console.log('[PostHog] Initializing for regular user', { env: process.env.NODE_ENV });
         posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
           api_host: "/ingest",
           ui_host: "https://us.posthog.com",
           capture_pageview: false, // We capture pageviews manually
           capture_pageleave: true, // Enable pageleave capture
           // Reduce noise from dev refreshes and aborted requests being reported as exceptions
-          capture_exceptions: process.env.NODE_ENV === 'production',
-          enable_heatmaps: true,
+          capture_exceptions: isProd,
+          // rrweb-based features can interact poorly with DevTools in development; enable only in prod
+          enable_heatmaps: isProd,
           // Reduce noisy console/rrweb capture during sensitive auth/onboarding flows
           session_recording: {
-            enabled: true,
+            enabled: isProd,
             // Avoid rrweb console capture that can trigger regex overflow in some environments
             // PostHog forwards this to rrweb; unknown keys are ignored safely if unsupported
             captureConsoleLog: false as any,
