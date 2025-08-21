@@ -348,7 +348,7 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       .single();
     if (onboardingError || !onboardingData?.alpaca_account_id) {
       console.error(`Error fetching Alpaca account ID for user ${userId}:`, onboardingError || 'No account ID found');
-      portfolioString = 'No account information available.';
+      portfolioString = 'No positions found in portfolio.';
       console.log(`User has no Alpaca account information - using general market overview.`);
     } else {
       const alpacaAccountId = onboardingData.alpaca_account_id;
@@ -367,7 +367,7 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       if (!positionsResponse.ok) {
         const errorText = await positionsResponse.text();
         console.error(`Error fetching portfolio positions for user ${userId} (Account ID: ${alpacaAccountId}). Status: ${positionsResponse.status}. Response: ${errorText}`);
-        portfolioString = 'Portfolio data temporarily unavailable.';
+        portfolioString = 'No positions found in portfolio.';
         console.log(`Portfolio fetch failed for user - using general market overview.`);
       } else {
         const positionsData: Array<{ symbol: string; qty: string; [key: string]: any }> = await positionsResponse.json();
@@ -382,7 +382,7 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
     }
   } catch (error: any) {
     console.error(`Error fetching or processing portfolio data for user ${userId}:`, error);
-    portfolioString = 'Portfolio data unavailable due to system error.';
+    portfolioString = 'No positions found in portfolio.';
     console.log(`System error for user - using general market overview.`);
   }
   return await callPerplexityAndSaveResult(userId, portfolioString, userGoals, financialLiteracy, personalizationData, perplexity, supabase);

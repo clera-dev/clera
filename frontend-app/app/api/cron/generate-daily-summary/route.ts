@@ -364,7 +364,14 @@ export async function GET(request: Request) {
           if (!backendUrl) {
             throw new Error('BACKEND_API_URL not configured');
           }
-          const targetUrl = `${backendUrl}/api/portfolio/${user.alpaca_account_id}/positions`;
+          // SECURITY: Never concatenate user-controlled IDs directly into URLs
+          // Validate and encode the alpaca_account_id before use
+          const rawAccountId = String(user.alpaca_account_id || '').trim();
+          if (!/^[-a-zA-Z0-9_]+$/.test(rawAccountId)) {
+            throw new Error('Invalid alpaca_account_id format');
+          }
+          const safeAccountId = encodeURIComponent(rawAccountId);
+          const targetUrl = `${backendUrl}/api/portfolio/${safeAccountId}/positions`;
           const headers: Record<string, string> = { 'Accept': 'application/json' };
           if (backendApiKey) headers['x-api-key'] = backendApiKey;
           const resp = await fetch(targetUrl, { method: 'GET', headers, cache: 'no-store' });
