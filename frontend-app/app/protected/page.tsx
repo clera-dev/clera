@@ -170,10 +170,10 @@ export default function ProtectedPageClient() {
                   </svg>
                 </div>
                 <p className="text-lg text-muted-foreground mb-2">
-                  Your account is successfully set up.
+                  Your account has been processed.
                 </p>
                 <p className="text-base text-muted-foreground">
-                  Funding your account is the last step!
+                  Funding is the last step!
                 </p>
               </div>
             </div>

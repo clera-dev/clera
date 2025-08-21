@@ -309,9 +309,18 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const handleLoadingComplete = () => {
-    // After onboarding completion, route to /protected where funding flow is handled
-    // The /protected page will redirect to /invest after funding is complete
-    router.push('/protected');
+    // After onboarding completion, force refresh to reload with new status
+    // Since we're already on /protected, router.push won't refresh the data
+    console.log('[OnboardingFlow] handleLoadingComplete called, forcing page refresh');
+    
+    // Check if we're already on /protected
+    if (window.location.pathname === '/protected') {
+      console.log('[OnboardingFlow] Already on /protected, forcing refresh to update status');
+      window.location.reload();
+    } else {
+      console.log('[OnboardingFlow] Navigating to /protected');
+      router.push('/protected');
+    }
   };
 
   const handleLoadingError = (error: string) => {
@@ -430,7 +439,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
         {/* Progress bar - show for personalization steps and KYC steps */}
         {(currentStep === "personalization" || (currentStep !== "personalization_success" && currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success")) && (
-          <div className="mb-6">
+          <div className="mb-3 sm:mb-6">
             <ProgressBar 
               currentStep={currentStep === "personalization" ? (personalizationStep + 1) : (stepToIndex[currentStep] - 2)} // 1-based for display
               totalSteps={currentStep === "personalization" ? personalizationTotalSteps : totalSteps} // Use personalization total or KYC total

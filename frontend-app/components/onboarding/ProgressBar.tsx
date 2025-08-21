@@ -17,7 +17,7 @@ export default function ProgressBar({
     Math.round((currentStep / totalSteps) * 100);
   
   return (
-    <div className="w-full mb-4 sm:mb-8 px-4 sm:px-0 pt-4 sm:pt-0">
+    <div className="w-full mb-2 sm:mb-4 px-4 sm:px-0 pt-2 sm:pt-0">
       <div className="flex justify-between mb-2 text-sm font-medium">
         <span>Step {currentStep} of {totalSteps}</span>
         <span>{progress}%</span>

@@ -440,7 +440,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         )}
         
         {/* Main content area - adjusted to account for sidebar width and mobile nav */}
-        <main className={`flex-1 overflow-hidden relative ${shouldShowSidebar ? 'ml-0' : ''}`}>
+        <div className={`flex-1 overflow-hidden relative ${shouldShowSidebar ? 'ml-0' : ''}`}>
           <div 
             className={`h-full ${
               // Only add overflow-auto if we're not in side-by-side mode to prevent dual scrollbars
@@ -464,7 +464,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           
           {/* Only show footer on non-authenticated pages */}
           {!isAuthenticated && !isLoading && <FooterComponent />}
-        </main>
+        </div>
         
           {/* Actual sidebar component - improved positioning */}
         {shouldShowSidebar && (

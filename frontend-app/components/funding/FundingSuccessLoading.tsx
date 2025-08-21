@@ -89,8 +89,8 @@ export default function FundingSuccessLoading({ transferId, accountId, amount, o
           } else {
             setStatusMessage("Success! Your transfer is complete");
           }
-          // Small delay to show success message
-          setTimeout(() => onComplete(), 1500);
+          // Navigate immediately to prevent showing transfer form again
+          onComplete();
           return true; // Stop polling
         }
 
