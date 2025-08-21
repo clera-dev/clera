@@ -348,9 +348,8 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       .single();
     if (onboardingError || !onboardingData?.alpaca_account_id) {
       console.error(`Error fetching Alpaca account ID for user ${userId}:`, onboardingError || 'No account ID found');
-      const mockPortfolio = [{ ticker: 'SPY', shares: 10 }, { ticker: 'DJI', shares: 10 }];
-      portfolioString = mockPortfolio.map((p: {ticker: string, shares: number}) => `${p.ticker} (${p.shares} shares)`).join(', ');
-      console.log(`Using mock portfolio data for user ${userId} due to missing Alpaca Account ID.`);
+      portfolioString = 'No account information available.';
+      console.log(`User has no Alpaca account information - using general market overview.`);
     } else {
       const alpacaAccountId = onboardingData.alpaca_account_id;
       console.log(`Fetched Alpaca Account ID ${alpacaAccountId} for user ${userId}`);
@@ -368,27 +367,23 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       if (!positionsResponse.ok) {
         const errorText = await positionsResponse.text();
         console.error(`Error fetching portfolio positions for user ${userId} (Account ID: ${alpacaAccountId}). Status: ${positionsResponse.status}. Response: ${errorText}`);
-        const mockPortfolio = [{ ticker: 'SPY', shares: 10 }, { ticker: 'DJI', shares: 10 }];
-        portfolioString = mockPortfolio.map((p: {ticker: string, shares: number}) => `${p.ticker} (${p.shares} shares)`).join(', ');
-        console.log(`Using mock portfolio data for user ${userId} as positions fetch failed.`);
+        portfolioString = 'Portfolio data temporarily unavailable.';
+        console.log(`Portfolio fetch failed for user - using general market overview.`);
       } else {
         const positionsData: Array<{ symbol: string; qty: string; [key: string]: any }> = await positionsResponse.json();
         if (positionsData && positionsData.length > 0) {
           portfolioString = positionsData.map(p => `${p.symbol} (${p.qty} shares)`).join(', ');
            console.log(`Successfully fetched and processed portfolio for user ${userId}: ${portfolioString}`);
         } else {
-          // If user has no positions, fall back to market indices for a general but relevant summary
-          const mockPortfolio = [{ ticker: 'SPY', shares: 10 }, { ticker: 'DJI', shares: 10 }];
-          portfolioString = mockPortfolio.map((p: {ticker: string, shares: number}) => `${p.ticker} (${p.shares} shares)`).join(', ');
-          console.log(`No portfolio positions found for user ${userId} (Account ID: ${alpacaAccountId}). Using SPY/DJI fallback.`);
+          portfolioString = 'No positions found in portfolio.';
+          console.log(`No portfolio positions found for user - using general market overview.`);
         }
       }
     }
   } catch (error: any) {
     console.error(`Error fetching or processing portfolio data for user ${userId}:`, error);
-    const mockPortfolio = [{ ticker: 'SPY', shares: 10 }, { ticker: 'DJI', shares: 10 }];
-    portfolioString = mockPortfolio.map((p: {ticker: string, shares: number}) => `${p.ticker} (${p.shares} shares)`).join(', ');
-    console.log(`Using mock portfolio data for user ${userId} due to an unexpected error.`);
+    portfolioString = 'Portfolio data unavailable due to system error.';
+    console.log(`System error for user - using general market overview.`);
   }
   return await callPerplexityAndSaveResult(userId, portfolioString, userGoals, financialLiteracy, personalizationData, perplexity, supabase);
 }

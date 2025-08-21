@@ -382,9 +382,8 @@ export async function GET(request: Request) {
         }
 
         if (!portfolioString) {
-          // Fallback to major indices when user has no positions or fetch fails
-          const userPortfolio = [ { ticker: 'SPY', shares: 10 }, { ticker: 'DJI', shares: 10 } ];
-          portfolioString = userPortfolio.map(p => `${p.ticker} (${p.shares} shares)`).join(', ');
+          // Use sentinel value to trigger general market overview behavior in prompt
+          portfolioString = 'No positions found in portfolio.';
         }
         const currentDate = new Date().toISOString().split('T')[0];
 
