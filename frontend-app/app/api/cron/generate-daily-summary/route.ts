@@ -356,11 +356,36 @@ export async function GET(request: Request) {
         const userGoals = NewsPersonalizationService.getUserGoalsSummary(personalizationData);
         const financialLiteracy = NewsPersonalizationService.getFinancialLiteracyLevel(personalizationData);
         
-        // Placeholder for fetching actual user portfolio
-        const userPortfolio = [ 
-          { ticker: 'AAPL', shares: 20 }, { ticker: 'MSFT', shares: 10 }, { ticker: 'TSLA', shares: 5 },
-        ];
-        const portfolioString = userPortfolio.map(p => `${p.ticker} (${p.shares} shares)`).join(', ');
+        // Attempt to fetch actual positions for this user's Alpaca account from backend API
+        let portfolioString = '';
+        try {
+          const backendUrl = process.env.BACKEND_API_URL;
+          const backendApiKey = process.env.BACKEND_API_KEY;
+          if (!backendUrl) {
+            throw new Error('BACKEND_API_URL not configured');
+          }
+          const targetUrl = `${backendUrl}/api/portfolio/${user.alpaca_account_id}/positions`;
+          const headers: Record<string, string> = { 'Accept': 'application/json' };
+          if (backendApiKey) headers['x-api-key'] = backendApiKey;
+          const resp = await fetch(targetUrl, { method: 'GET', headers, cache: 'no-store' });
+          if (resp.ok) {
+            const positions: Array<{ symbol: string; qty: string }> = await resp.json();
+            if (positions && positions.length > 0) {
+              portfolioString = positions.map(p => `${p.symbol} (${p.qty} shares)`).join(', ');
+            }
+          } else {
+            const errText = await resp.text();
+            console.warn(`CRON: Positions fetch failed for user ${user.user_id} (${user.alpaca_account_id}). Status ${resp.status}. Resp: ${errText}`);
+          }
+        } catch (posErr: any) {
+          console.warn(`CRON: Error fetching positions from backend for user ${user.user_id}: ${posErr.message}`);
+        }
+
+        if (!portfolioString) {
+          // Fallback to major indices when user has no positions or fetch fails
+          const userPortfolio = [ { ticker: 'SPY', shares: 10 }, { ticker: 'DJI', shares: 10 } ];
+          portfolioString = userPortfolio.map(p => `${p.ticker} (${p.shares} shares)`).join(', ');
+        }
         const currentDate = new Date().toISOString().split('T')[0];
 
         // Build base system prompt
