@@ -171,8 +171,9 @@ export default function TransferForm({
   const handleLoadingComplete = () => {
     // Transfer polling completed successfully
     if (onTransferComplete) {
-      // Keep showing the loading screen while parent handles navigation
-      setStatusMessage("Transfer successful! Redirecting to your portfolio...");
+      // Keep loading visible and let the parent handle navigation
+      // Avoids flashing the transfer form on /protected before redirect
+      setStatusMessage("Transfer successful! Redirecting to app...");
       onTransferComplete(amount);
     } else {
       // For main onboarding flow: keep loading screen visible and navigate directly

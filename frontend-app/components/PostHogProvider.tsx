@@ -8,6 +8,20 @@ import { createClient } from "@/utils/supabase/client"
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   const [isAccountClosure, setIsAccountClosure] = useState(false);
+
+  // Suppress noisy AbortError rejections originating from aborted analytics requests
+  useEffect(() => {
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason: any = event.reason;
+      const message = String(reason?.message || '');
+      const name = String(reason?.name || '');
+      if (name === 'AbortError' || message.includes('signal is aborted')) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => window.removeEventListener('unhandledrejection', handleRejection);
+  }, []);
   const [isInitialized, setIsInitialized] = useState(false);
   
   useEffect(() => {
@@ -42,7 +56,8 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
           ui_host: "https://us.posthog.com",
           capture_pageview: false, // We capture pageviews manually
           capture_pageleave: true, // Enable pageleave capture
-          capture_exceptions: true, // This enables capturing exceptions using Error Tracking, set to false if you don't want this
+          // Reduce noise from dev refreshes and aborted requests being reported as exceptions
+          capture_exceptions: process.env.NODE_ENV === 'production',
           enable_heatmaps: true,
           // Reduce noisy console/rrweb capture during sensitive auth/onboarding flows
           session_recording: {

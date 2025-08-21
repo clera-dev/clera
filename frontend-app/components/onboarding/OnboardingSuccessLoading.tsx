@@ -165,11 +165,16 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
       }
     };
 
-    // Start polling and only create interval if needed
-    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    // Start polling without overlap using an async loop with backpressure
     let stopped = false;
+    let sleepTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const sleep = (ms: number) => new Promise<void>((resolve) => {
+      sleepTimer = setTimeout(resolve, ms);
+    });
 
     (async () => {
+      // Initial poll immediately
       const shouldStop = await pollAccountStatus();
       if (shouldStop || completed) {
         stopped = true;
@@ -177,36 +182,33 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
         return;
       }
 
-      pollInterval = setInterval(async () => {
-        if (stopped || completed) {
-          console.log('[OnboardingSuccessLoading] Interval blocked - stopped or completed');
-          return; // Stop if completed
-        }
+      // Subsequent polls every 5s, but never overlapping
+      const intervalMs = 5000;
+      while (!stopped && !completed) {
+        await sleep(intervalMs);
+        if (stopped || completed) break;
 
         pollCount++;
-        
         if (pollCount >= maxPolls) {
           stopped = true;
           completed = true;
-          if (pollInterval) clearInterval(pollInterval);
           onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
-          return;
+          break;
         }
 
         const shouldStopInner = await pollAccountStatus();
         if (shouldStopInner) {
-          console.log('[OnboardingSuccessLoading] Stopping polling interval');
           stopped = true;
           completed = true;
-          if (pollInterval) clearInterval(pollInterval);
+          break;
         }
-      }, 5000); // Poll every 5 seconds
+      }
     })();
 
     return () => {
       stopped = true;
       completed = true;
-      if (pollInterval) clearInterval(pollInterval);
+      if (sleepTimer) clearTimeout(sleepTimer);
     };
   }, [accountId, onComplete, onError]);
 
