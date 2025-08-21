@@ -329,8 +329,7 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
     baseURL: 'https://api.perplexity.ai',
   });
   let portfolioString: string;
-  // Prepare secure backend configuration
-  const backendConfig = getBackendConfig();
+  // Note: Do not fetch backend config here to avoid hard dependency when portfolio integration is disabled.
   
   // Fetch personalization data using direct Supabase access
   const personalizationData = await fetchUserPersonalization(userId, supabase);
@@ -357,14 +356,20 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.access_token || '';
       const secureHeaders = await createSecureBackendHeaders(accessToken);
-      const targetUrl = `${backendConfig.url}/api/portfolio/${alpacaAccountId}/positions`;
-      console.log(`Fetching portfolio positions securely from backend: ${targetUrl}`);
-      const positionsResponse = await fetch(targetUrl, {
+      // Resolve backend config lazily to avoid hard dependency when portfolio is disabled
+      let targetUrl: string | null = null;
+      try {
+        const backendConfig = getBackendConfig();
+        targetUrl = `${backendConfig.url}/api/portfolio/${alpacaAccountId}/positions`;
+      } catch (cfgErr) {
+        console.warn('Backend config not available; skipping positions fetch and using general market overview.');
+      }
+      const positionsResponse = targetUrl ? await fetch(targetUrl, {
         method: 'GET',
         headers: secureHeaders,
         cache: 'no-store'
-      });
-      if (!positionsResponse.ok) {
+      }) : new Response(null, { status: 204 });
+      if (!positionsResponse || !positionsResponse.ok) {
         const errorText = await positionsResponse.text();
         console.error(`Error fetching portfolio positions for user ${userId} (Account ID: ${alpacaAccountId}). Status: ${positionsResponse.status}. Response: ${errorText}`);
         portfolioString = 'No positions found in portfolio.';
