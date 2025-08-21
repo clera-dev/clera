@@ -171,16 +171,13 @@ export default function TransferForm({
   const handleLoadingComplete = () => {
     // Transfer polling completed successfully
     if (onTransferComplete) {
-      // If we have a completion handler, call it (for modal/component usage)
-      setShowLoading(false);
+      // Keep showing the loading screen while parent handles navigation
+      setStatusMessage("Transfer successful! Redirecting to your portfolio...");
       onTransferComplete(amount);
     } else {
-      // For main onboarding flow: keep loading and redirect to /invest
-      // This prevents the user from seeing the transfer form again and clicking twice
-      setStatusMessage("Transfer successful! Redirecting to investing...");
-      setTimeout(() => {
-        router.push('/invest');
-      }, 1500); // Brief delay to show success message
+      // For main onboarding flow: keep loading screen visible and navigate directly
+      setStatusMessage("Transfer successful! Redirecting to app...");
+      window.location.href = '/invest';
     }
   };
 
@@ -204,6 +201,8 @@ export default function TransferForm({
       />
     );
   }
+
+  
 
   // If transfer is completed, show the beautiful success page
   if (transferCompleted) {

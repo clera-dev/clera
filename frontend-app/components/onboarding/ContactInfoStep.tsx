@@ -59,7 +59,8 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4 sm:p-8">
+    <div className="onboarding-container">
+      <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4 sm:p-8">
       <div className="mb-4 sm:mb-8">
         <h2 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 text-white">Contact Information</h2>
         <p className="text-white text-sm sm:text-base">Please provide your contact details to start your account setup.</p>
@@ -206,6 +207,7 @@ export default function ContactInfoStep({ data, onUpdate, onContinue, userEmail 
         Continue
         </Button>
       </div>
-    </form>
+      </form>
+    </div>
   );
 } 

@@ -76,10 +76,10 @@ export default function BankConnectionsCard({
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="sm:max-w-md bg-card text-foreground border-border shadow-xl z-50">
               <DialogHeader className="pb-2 border-border">
-                <DialogTitle className="text-xl text-foreground">Add Funds</DialogTitle>
+                <DialogTitle className="text-lg sm:text-xl text-foreground">Add Funds</DialogTitle>
             </DialogHeader>
 
-              <div className="pt-2">
+              <div className="pt-1 sm:pt-2">
                 <ManualBankForm
                   alpacaAccountId={alpacaAccountId || ''}
                   userName={userName}

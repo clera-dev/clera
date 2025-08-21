@@ -226,8 +226,8 @@ export default function PersonalizationStep({
   };
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-200px)]">
-      <form ref={formRef} onSubmit={handleFormSubmit} className="flex flex-col flex-1 px-4 sm:px-8 py-4 sm:py-6">
+    <div className="flex flex-col onboarding-container">
+      <form ref={formRef} onSubmit={handleFormSubmit} className="flex flex-col flex-1 px-4 sm:px-8 py-3 sm:py-6">
         {/* Validation banner (both mobile and desktop) */}
         {validationBanner && (
           <ValidationBanner
@@ -237,14 +237,14 @@ export default function PersonalizationStep({
         )}
 
         {/* Content area - ONE SECTION AT A TIME (both mobile and desktop) */}
-        <div className="flex-1 flex items-center justify-center py-4">
+        <div className="flex-1 flex items-start justify-center py-2 sm:py-4 sm:items-center">
           <div className="w-full max-w-lg">
             {sections[currentStep]}
           </div>
         </div>
 
         {/* Navigation - UNIFIED (both mobile and desktop) - Always visible */}
-        <div className="mt-auto pt-6">
+        <div className="mt-auto pt-4 sm:pt-6">
           <NavigationController
             currentStep={currentStep}
             totalSteps={TOTAL_STEPS}

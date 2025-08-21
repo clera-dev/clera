@@ -25,6 +25,8 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
     return () => clearInterval(interval);
   }, []);
 
+
+
   useEffect(() => {
     if (!accountId) {
       // Fallback to 3 seconds if no account ID provided (shouldn't happen)
@@ -36,11 +38,13 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
 
     let pollCount = 0;
     const maxPolls = 60; // 5 minutes max (60 * 5 seconds)
-    let successTimeout: ReturnType<typeof setTimeout> | null = null;
-    let finished = false;
-    let nextTimeout: ReturnType<typeof setTimeout> | null = null;
+    let completed = false; // Flag to prevent multiple completions
     
     const pollAccountStatus = async () => {
+      if (completed) {
+        console.log('[OnboardingSuccessLoading] Polling blocked - already completed');
+        return true; // Stop if already completed
+      }
       try {
         const response = await fetch('/api/account/status-poll', {
           method: 'POST',
@@ -98,10 +102,16 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
           return false;
         }
         if (data.isPending) {
-          if (data.status === 'APPROVAL_PENDING') {
+          const normalizedPendingStatus = String(data.status || '').toUpperCase().replace('ACCOUNTSTATUS.', '');
+          
+          if (normalizedPendingStatus === 'APPROVAL_PENDING') {
             setStatusMessage("Your application is being reviewed. This usually takes just a few minutes");
-          } else if (data.status === 'AML_REVIEW') {
+          } else if (normalizedPendingStatus === 'AML_REVIEW') {
             setStatusMessage("Additional security checks are being performed. This may take a bit longer");
+          } else if (normalizedPendingStatus === 'ONBOARDING') {
+            setStatusMessage("We're setting up your account. Almost there!");
+          } else if (normalizedPendingStatus === 'REAPPROVAL_PENDING') {
+            setStatusMessage("Your application is under additional review");
           } else {
             setStatusMessage("We're verifying some details and setting up your account");
           }
@@ -109,31 +119,29 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
         }
 
         if (data.accountReady) {
-          // Handle both 'SUBMITTED' and 'AccountStatus.SUBMITTED' formats
-          const normalizedStatus = String(data.status || '').toUpperCase().replace('ACCOUNTSTATUS.', '');
-          if (normalizedStatus === 'SUBMITTED') {
-            setStatusMessage("Success! Your application has been submitted");
-          } else if (normalizedStatus === 'APPROVED') {
-            setStatusMessage("Success! Your account has been approved");
-          } else if (normalizedStatus === 'ACTIVE') {
-            setStatusMessage("Success! Your account is active");
-          } else {
-            setStatusMessage("Success! Your account is ready");
-          }
-          // Small delay to show success message
-          if (successTimeout) {
-            clearTimeout(successTimeout);
-          }
-          successTimeout = setTimeout(() => onComplete(), 1000);
+          // Account is ready - navigate immediately to /protected
+          // The /protected page will show the appropriate success content
+          console.log('[OnboardingSuccessLoading] Account ready detected, setting completed=true and calling onComplete()');
+          completed = true; // Set flag to prevent further polling
+          onComplete();
           return true; // Stop polling
         }
 
         if (data.accountFailed) {
-          const errorMsg = data.status === 'ACTION_REQUIRED' 
-            ? "Additional information is required to complete your account setup. Please review the requirements and contact support if needed."
-            : data.status === 'DISABLED'
-            ? "There was an issue with your account application. Please contact our support team for assistance."
-            : "There was an issue with your account setup. Please try again or contact support.";
+          const normalizedFailedStatus = String(data.status || '').toUpperCase().replace('ACCOUNTSTATUS.', '');
+          
+          let errorMsg: string;
+          if (normalizedFailedStatus === 'ACTION_REQUIRED') {
+            errorMsg = "Additional information is required to complete your account setup. Please review the requirements and contact support if needed.";
+          } else if (normalizedFailedStatus === 'DISABLED') {
+            errorMsg = "There was an issue with your account application. Please contact our support team for assistance.";
+          } else if (normalizedFailedStatus === 'REJECTED') {
+            errorMsg = "Your account application was not approved. Please contact our support team to understand the next steps.";
+          } else if (normalizedFailedStatus === 'SUBMISSION_FAILED') {
+            errorMsg = "There was a technical issue submitting your application. Please try again or contact support if the problem persists.";
+          } else {
+            errorMsg = "There was an issue with your account setup. Please try again or contact support.";
+          }
           
           onError(errorMsg);
           return true; // Stop polling
@@ -157,43 +165,48 @@ export default function OnboardingSuccessLoading({ accountId, onComplete, onErro
       }
     };
 
-    // Start polling immediately, then schedule subsequent polls without overlap
+    // Start polling and only create interval if needed
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let stopped = false;
+
     (async () => {
-      const shouldStopInitial = await pollAccountStatus();
-      if (shouldStopInitial) {
-        finished = true;
+      const shouldStop = await pollAccountStatus();
+      if (shouldStop || completed) {
+        stopped = true;
+        completed = true;
         return;
       }
 
-      const scheduleNext = () => {
-        nextTimeout = setTimeout(async () => {
-          if (finished) return;
-          pollCount++;
+      pollInterval = setInterval(async () => {
+        if (stopped || completed) {
+          console.log('[OnboardingSuccessLoading] Interval blocked - stopped or completed');
+          return; // Stop if completed
+        }
 
-          if (pollCount >= maxPolls) {
-            finished = true;
-            onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
-            return;
-          }
+        pollCount++;
+        
+        if (pollCount >= maxPolls) {
+          stopped = true;
+          completed = true;
+          if (pollInterval) clearInterval(pollInterval);
+          onError("Account verification is taking longer than expected. Please refresh the page or contact support if the issue persists.");
+          return;
+        }
 
-          const shouldStop = await pollAccountStatus();
-          if (shouldStop) {
-            finished = true;
-            return;
-          }
-
-          // Schedule the next iteration only after the previous finished
-          scheduleNext();
-        }, 5000); // Poll every 5 seconds
-      };
-
-      scheduleNext();
+        const shouldStopInner = await pollAccountStatus();
+        if (shouldStopInner) {
+          console.log('[OnboardingSuccessLoading] Stopping polling interval');
+          stopped = true;
+          completed = true;
+          if (pollInterval) clearInterval(pollInterval);
+        }
+      }, 5000); // Poll every 5 seconds
     })();
 
     return () => {
-      finished = true;
-      if (nextTimeout) clearTimeout(nextTimeout);
-      if (successTimeout) clearTimeout(successTimeout);
+      stopped = true;
+      completed = true;
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, [accountId, onComplete, onError]);
 

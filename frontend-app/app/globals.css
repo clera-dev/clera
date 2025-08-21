@@ -379,6 +379,42 @@ body > div:last-child:not([id]):not([class]) {
   }
 }
 
+/* Onboarding mobile viewport fixes */
+@media (max-width: 768px) {
+  /* Prevent input zoom on mobile by ensuring minimum 16px font size */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+  
+  /* Ensure onboarding content fits properly on mobile */
+  .onboarding-container {
+    min-height: calc(100vh - 3.5rem); /* 56px header */
+    min-height: calc(100dvh - 3.5rem);
+  }
+  
+  /* Optimize mobile onboarding spacing for better UX */
+  .onboarding-container .space-y-6 > * + * {
+    margin-top: 1rem; /* Reduce from 1.5rem to 1rem on mobile */
+  }
+  
+  .onboarding-container .mb-4 {
+    margin-bottom: 0.75rem; /* Reduce mobile margins */
+  }
+  
+  .onboarding-container .mb-8 {
+    margin-bottom: 1rem; /* Reduce mobile margins */
+  }
+  
+  .onboarding-container .p-4 {
+    padding: 0.75rem; /* Slightly reduce mobile padding */
+  }
+  
+  .onboarding-container .py-4 {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+}
+
 /* Prevent double scroll bars on mobile */
 @media (max-width: 768px) {
   body {

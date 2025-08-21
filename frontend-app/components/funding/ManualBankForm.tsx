@@ -328,24 +328,24 @@ export default function ManualBankForm({
           </Button>
         )}
         
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 bg-blue-50 dark:bg-blue-950/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Check className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+        <div className="text-center mb-5 sm:mb-6">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-50 dark:bg-blue-950/20 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+            <Check className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 dark:text-blue-400" />
           </div>
-          <h2 className="text-2xl font-bold mb-2 text-foreground">Bank Account Found</h2>
-          <p className="text-foreground/80 text-base leading-relaxed">
+          <h2 className="text-xl sm:text-2xl font-bold mb-2 text-foreground">Bank Account Found</h2>
+          <p className="text-foreground/80 text-sm sm:text-base leading-relaxed">
             Your account has an existing bank connection.
           </p>
         </div>
 
-        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 sm:p-4 mb-5 sm:mb-6">
           <div className="flex items-start gap-3">
             <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-blue-800 dark:text-blue-200 font-medium text-sm">
+              <p className="text-blue-800 dark:text-blue-200 font-medium text-xs sm:text-sm">
                 Connected Bank Account
               </p>
-              <p className="text-blue-700 dark:text-blue-300 text-sm mt-1">
+              <p className="text-blue-700 dark:text-blue-300 text-xs sm:text-sm mt-1">
                 {existingConnection.bank_account_type} account ending in {existingConnection.last_4}
               </p>
             </div>
@@ -386,31 +386,31 @@ export default function ManualBankForm({
           Back
         </Button>
         
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+        <div className="text-center mb-5 sm:mb-6">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-50 dark:bg-amber-950/20 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+            <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6 text-amber-600 dark:text-amber-400" />
           </div>
-          <h2 className="text-2xl font-bold mb-2 text-foreground">Replace Bank Account</h2>
-          <p className="text-foreground/80 text-base leading-relaxed">
+          <h2 className="text-xl sm:text-2xl font-bold mb-2 text-foreground">Replace Bank Account</h2>
+          <p className="text-foreground/80 text-sm sm:text-base leading-relaxed">
             Only one bank connection is allowed per account.
           </p>
         </div>
 
-        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 sm:p-4 mb-5 sm:mb-6">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-amber-800 dark:text-amber-200 font-medium text-sm">
+              <p className="text-amber-800 dark:text-amber-200 font-medium text-xs sm:text-sm">
                 Warning
               </p>
-              <p className="text-amber-700 dark:text-amber-300 text-sm mt-1">
+              <p className="text-amber-700 dark:text-amber-300 text-xs sm:text-sm mt-1">
                 By continuing, your existing bank connection will be removed. Then you will be able to connect a new account.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3 sticky bottom-0 bg-background/80 backdrop-blur-sm pt-3 pb-2 sm:pb-3 border-t border-border/30">
           <Button 
             onClick={handleAddNewAccount}
             className="w-full bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-medium h-12 rounded-lg transition-all duration-200 hover:shadow-lg shadow-amber-500/20 shadow-md"

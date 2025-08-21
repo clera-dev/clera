@@ -62,18 +62,21 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     
+    // Extract status from the backend response structure (data.data.status)
+    const status = data.data?.status || data.status || '';
+    
     // Determine if account is ready based on status
-    // Account creation success states: SUBMITTED (KYC submitted), APPROVED, ACTIVE
-    // Pending states: APPROVAL_PENDING, AML_REVIEW  
-    // Failed states: ACTION_REQUIRED, DISABLED, etc.
-    const status = data.status || '';
-    // Handle both 'SUBMITTED' and 'AccountStatus.SUBMITTED' formats
+    // Account creation success states: KYC_SUBMITTED (KYC submitted), SUBMITTED, APPROVED, ACTIVE
+    // Pending states: APPROVAL_PENDING, AML_REVIEW, ONBOARDING  
+    // Failed states: ACTION_REQUIRED, DISABLED, REJECTED, SUBMISSION_FAILED
+    // Handle both 'KYC_SUBMITTED' and 'AccountStatus.KYC_SUBMITTED' formats
     const normalizedStatus = String(status).toUpperCase().replace('ACCOUNTSTATUS.', '');
-    const accountReady = ['SUBMITTED', 'APPROVED', 'ACTIVE'].includes(normalizedStatus);
-    const accountFailed = ['ACTION_REQUIRED', 'DISABLED', 'REJECTED'].includes(normalizedStatus);
+    const accountReady = ['KYC_SUBMITTED', 'SUBMITTED', 'APPROVED', 'ACTIVE'].includes(normalizedStatus);
+    const accountFailed = ['ACTION_REQUIRED', 'DISABLED', 'REJECTED', 'SUBMISSION_FAILED'].includes(normalizedStatus);
     
     return NextResponse.json({
       ...data,
+      status: normalizedStatus, // Include normalized status for frontend components
       accountReady,
       accountFailed,
       isPending: !accountReady && !accountFailed
