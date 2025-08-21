@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
+import { getBackendConfig, createSecureBackendHeaders } from '@/utils/api/secure-backend-helpers';
 import { OpenAI } from 'openai';
 import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
@@ -329,9 +329,8 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
     baseURL: 'https://api.perplexity.ai',
   });
   let portfolioString: string;
-  // Forward auth cookies to internal API calls
-  const cookieStore = await cookies();
-  const cookieHeader = cookieStore.getAll().map(c => `${c.name}=${c.value}`).join('; ');
+  // Prepare secure backend configuration
+  const backendConfig = getBackendConfig();
   
   // Fetch personalization data using direct Supabase access
   const personalizationData = await fetchUserPersonalization(userId, supabase);
@@ -355,11 +354,15 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
     } else {
       const alpacaAccountId = onboardingData.alpaca_account_id;
       console.log(`Fetched Alpaca Account ID ${alpacaAccountId} for user ${userId}`);
-      const positionsApiUrl = new URL(`/api/portfolio/positions?accountId=${alpacaAccountId}`, requestUrl.origin);
-      console.log(`Fetching portfolio positions from: ${positionsApiUrl.toString()}`);
-      const positionsResponse = await fetch(positionsApiUrl.toString(), {
+      // INDUSTRY-GRADE: call backend directly with JWT + API key headers, no cookie forwarding
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token || '';
+      const secureHeaders = await createSecureBackendHeaders(accessToken);
+      const targetUrl = `${backendConfig.url}/api/portfolio/${alpacaAccountId}/positions`;
+      console.log(`Fetching portfolio positions securely from backend: ${targetUrl}`);
+      const positionsResponse = await fetch(targetUrl, {
         method: 'GET',
-        headers: { 'Accept': 'application/json', 'Cookie': cookieHeader },
+        headers: secureHeaders,
         cache: 'no-store'
       });
       if (!positionsResponse.ok) {
