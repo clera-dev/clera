@@ -356,11 +356,42 @@ export async function GET(request: Request) {
         const userGoals = NewsPersonalizationService.getUserGoalsSummary(personalizationData);
         const financialLiteracy = NewsPersonalizationService.getFinancialLiteracyLevel(personalizationData);
         
-        // Placeholder for fetching actual user portfolio
-        const userPortfolio = [ 
-          { ticker: 'AAPL', shares: 20 }, { ticker: 'MSFT', shares: 10 }, { ticker: 'TSLA', shares: 5 },
-        ];
-        const portfolioString = userPortfolio.map(p => `${p.ticker} (${p.shares} shares)`).join(', ');
+        // Attempt to fetch actual positions for this user's Alpaca account from backend API
+        let portfolioString = '';
+        try {
+          const backendUrl = process.env.BACKEND_API_URL;
+          const backendApiKey = process.env.BACKEND_API_KEY;
+          if (!backendUrl) {
+            throw new Error('BACKEND_API_URL not configured');
+          }
+          // SECURITY: Never concatenate user-controlled IDs directly into URLs
+          // Validate and encode the alpaca_account_id before use
+          const rawAccountId = String(user.alpaca_account_id || '').trim();
+          if (!/^[-a-zA-Z0-9_]+$/.test(rawAccountId)) {
+            throw new Error('Invalid alpaca_account_id format');
+          }
+          const safeAccountId = encodeURIComponent(rawAccountId);
+          const targetUrl = `${backendUrl}/api/portfolio/${safeAccountId}/positions`;
+          const headers: Record<string, string> = { 'Accept': 'application/json' };
+          if (backendApiKey) headers['x-api-key'] = backendApiKey;
+          const resp = await fetch(targetUrl, { method: 'GET', headers, cache: 'no-store' });
+          if (resp.ok) {
+            const positions: Array<{ symbol: string; qty: string }> = await resp.json();
+            if (positions && positions.length > 0) {
+              portfolioString = positions.map(p => `${p.symbol} (${p.qty} shares)`).join(', ');
+            }
+          } else {
+            const errText = await resp.text();
+            console.warn(`CRON: Positions fetch failed for user ${user.user_id} (${user.alpaca_account_id}). Status ${resp.status}. Resp: ${errText}`);
+          }
+        } catch (posErr: any) {
+          console.warn(`CRON: Error fetching positions from backend for user ${user.user_id}: ${posErr.message}`);
+        }
+
+        if (!portfolioString) {
+          // Use sentinel value to trigger general market overview behavior in prompt
+          portfolioString = 'No positions found in portfolio.';
+        }
         const currentDate = new Date().toISOString().split('T')[0];
 
         // Build base system prompt

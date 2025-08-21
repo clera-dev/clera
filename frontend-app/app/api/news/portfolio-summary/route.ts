@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
+import { getBackendConfig, createSecureBackendHeaders } from '@/utils/api/secure-backend-helpers';
 import { OpenAI } from 'openai';
 import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
@@ -329,6 +329,7 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
     baseURL: 'https://api.perplexity.ai',
   });
   let portfolioString: string;
+  // Note: Do not fetch backend config here to avoid hard dependency when portfolio integration is disabled.
   
   // Fetch personalization data using direct Supabase access
   const personalizationData = await fetchUserPersonalization(userId, supabase);
@@ -346,25 +347,33 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       .single();
     if (onboardingError || !onboardingData?.alpaca_account_id) {
       console.error(`Error fetching Alpaca account ID for user ${userId}:`, onboardingError || 'No account ID found');
-      const mockPortfolio = [{ ticker: 'AAPL', shares: 20 }, { ticker: 'MSFT', shares: 10 }, { ticker: 'TSLA', shares: 5 }];
-      portfolioString = mockPortfolio.map((p: {ticker: string, shares: number}) => `${p.ticker} (${p.shares} shares)`).join(', ');
-      console.log(`Using mock portfolio data for user ${userId} due to missing Alpaca Account ID.`);
+      portfolioString = 'No positions found in portfolio.';
+      console.log(`User has no Alpaca account information - using general market overview.`);
     } else {
       const alpacaAccountId = onboardingData.alpaca_account_id;
       console.log(`Fetched Alpaca Account ID ${alpacaAccountId} for user ${userId}`);
-      const positionsApiUrl = new URL(`/api/portfolio/positions?accountId=${alpacaAccountId}`, requestUrl.origin);
-      console.log(`Fetching portfolio positions from: ${positionsApiUrl.toString()}`);
-      const positionsResponse = await fetch(positionsApiUrl.toString(), {
+      // INDUSTRY-GRADE: call backend directly with JWT + API key headers, no cookie forwarding
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token || '';
+      const secureHeaders = await createSecureBackendHeaders(accessToken);
+      // Resolve backend config lazily to avoid hard dependency when portfolio is disabled
+      let targetUrl: string | null = null;
+      try {
+        const backendConfig = getBackendConfig();
+        targetUrl = `${backendConfig.url}/api/portfolio/${alpacaAccountId}/positions`;
+      } catch (cfgErr) {
+        console.warn('Backend config not available; skipping positions fetch and using general market overview.');
+      }
+      const positionsResponse = targetUrl ? await fetch(targetUrl, {
         method: 'GET',
-        headers: { 'Accept': 'application/json' },
+        headers: secureHeaders,
         cache: 'no-store'
-      });
-      if (!positionsResponse.ok) {
+      }) : new Response(null, { status: 204 });
+      if (!positionsResponse || !positionsResponse.ok) {
         const errorText = await positionsResponse.text();
         console.error(`Error fetching portfolio positions for user ${userId} (Account ID: ${alpacaAccountId}). Status: ${positionsResponse.status}. Response: ${errorText}`);
-        const mockPortfolio = [{ ticker: 'AAPL', shares: 20 }, { ticker: 'MSFT', shares: 10 }, { ticker: 'TSLA', shares: 5 }];
-        portfolioString = mockPortfolio.map((p: {ticker: string, shares: number}) => `${p.ticker} (${p.shares} shares)`).join(', ');
-        console.log(`Using mock portfolio data for user ${userId} as positions fetch failed.`);
+        portfolioString = 'No positions found in portfolio.';
+        console.log(`Portfolio fetch failed for user - using general market overview.`);
       } else {
         const positionsData: Array<{ symbol: string; qty: string; [key: string]: any }> = await positionsResponse.json();
         if (positionsData && positionsData.length > 0) {
@@ -372,15 +381,14 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
            console.log(`Successfully fetched and processed portfolio for user ${userId}: ${portfolioString}`);
         } else {
           portfolioString = 'No positions found in portfolio.';
-          console.log(`No portfolio positions found for user ${userId} (Account ID: ${alpacaAccountId}).`);
+          console.log(`No portfolio positions found for user - using general market overview.`);
         }
       }
     }
   } catch (error: any) {
     console.error(`Error fetching or processing portfolio data for user ${userId}:`, error);
-    const mockPortfolio = [{ ticker: 'AAPL', shares: 20 }, { ticker: 'MSFT', shares: 10 }, { ticker: 'TSLA', shares: 5 }];
-    portfolioString = mockPortfolio.map((p: {ticker: string, shares: number}) => `${p.ticker} (${p.shares} shares)`).join(', ');
-    console.log(`Using mock portfolio data for user ${userId} due to an unexpected error.`);
+    portfolioString = 'No positions found in portfolio.';
+    console.log(`System error for user - using general market overview.`);
   }
   return await callPerplexityAndSaveResult(userId, portfolioString, userGoals, financialLiteracy, personalizationData, perplexity, supabase);
 }
