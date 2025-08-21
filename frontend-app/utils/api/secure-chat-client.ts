@@ -30,6 +30,7 @@ export interface SecureChatClient {
   subscribe: (listener: () => void) => () => void;
   setLongProcessingCallback: (callback: () => void) => void; // ARCHITECTURE FIX: Proper separation of concerns
   clearLongProcessingCallback: () => void; // MEMORY LEAK FIX: Clear callback on unmount
+  setQuerySuccessCallback: (callback: (userId: string) => Promise<void>) => void; // NEW: Query success recording
   cleanup: () => void;
 }
 
@@ -55,8 +56,10 @@ export class SecureChatClientImpl implements SecureChatClient {
   private longProcessingTimer: NodeJS.Timeout | null = null; // Track long processing timer
   private gracePeriodTimer: NodeJS.Timeout | null = null; // MEMORY LEAK FIX: Track grace period timer
   private longProcessingCallback: (() => void) | null = null; // ARCHITECTURE FIX: Callback for UI layer
+  private querySuccessCallback: ((userId: string) => Promise<void>) | null = null; // NEW: Query success callback
   private lastThreadId: string | null = null; // Track thread for toolActivities lifecycle
   private currentQueryRunId: string | null = null; // Track current user query for tool grouping
+  private currentUserId: string | null = null; // Track current user for query recording
 
   constructor() {
     this.toolActivityManager = new ToolActivityManager();
@@ -339,6 +342,8 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   async startStream(threadId: string, input: any, userId: string, accountId: string): Promise<void> {
+    // Store userId for query recording on success
+    this.currentUserId = userId;
     // PRODUCTION FIX: Declare timeout variables outside try block for proper scoping
     let timeoutId: NodeJS.Timeout | undefined;
     let abortController: AbortController | undefined;
@@ -666,6 +671,18 @@ export class SecureChatClientImpl implements SecureChatClient {
         this.gracePeriodTimer = null;
       }
       
+      // NEW: Record successful query completion for limit tracking (interrupts are valid responses)
+      if (this.querySuccessCallback && this.currentUserId) {
+        try {
+          this.querySuccessCallback(this.currentUserId).catch(error => {
+            console.error('[SecureChatClient] Error recording query success (interrupt):', error);
+            // Don't throw - this shouldn't break the chat flow
+          });
+        } catch (error) {
+          console.error('[SecureChatClient] Error calling querySuccessCallback (interrupt):', error);
+        }
+      }
+      
       // console.log('[SecureChatClient] Marked interrupt as valid response - completed by chunk processing');
       
       this.setState({
@@ -817,6 +834,18 @@ export class SecureChatClientImpl implements SecureChatClient {
         this.streamCompletedSuccessfully = true;
         // Signal run completion for timeline Done rendering (only when we really start the final answer)
         this.markRunCompleted();
+        
+        // NEW: Record successful query completion for limit tracking
+        if (this.querySuccessCallback && this.currentUserId) {
+          try {
+            this.querySuccessCallback(this.currentUserId).catch(error => {
+              console.error('[SecureChatClient] Error recording query success:', error);
+              // Don't throw - this shouldn't break the chat flow
+            });
+          } catch (error) {
+            console.error('[SecureChatClient] Error calling querySuccessCallback:', error);
+          }
+        }
         
         // console.log('[SecureChatClient] Complete messages applied successfully - marked as completed by chunk processing');
         return;
@@ -1035,6 +1064,10 @@ export class SecureChatClientImpl implements SecureChatClient {
     this.longProcessingCallback = null;
   }
 
+  setQuerySuccessCallback(callback: (userId: string) => Promise<void>) {
+    this.querySuccessCallback = callback;
+  }
+
   cleanup() {
     if (this.eventSource) {
       this.eventSource.close();
@@ -1053,6 +1086,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     
     // MEMORY LEAK FIX: Clear callback to prevent setState on unmounted component
     this.longProcessingCallback = null;
+    this.querySuccessCallback = null;
     
     this.stateListeners.clear();
   }

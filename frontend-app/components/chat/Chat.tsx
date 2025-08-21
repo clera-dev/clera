@@ -22,11 +22,13 @@ import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import { InterruptConfirmation } from './InterruptConfirmation';
 import ModelProviderRetryPopup from './ModelProviderRetryPopup';
+import QueryLimitPopup from './QueryLimitPopup';
 import { createTimelineBuilder, TimelineBuilder } from '@/utils/services/TimelineBuilder';
 import { PerMessageToolDetails } from './PerMessageToolDetails';
 import { ChatMessageList } from './ChatMessageList';
 import { useToolActivitiesHydration } from '@/hooks/useToolActivitiesHydration';
 import { useRunIdAssignment } from '@/hooks/useRunIdAssignment';
+import { queryLimitService } from '@/utils/services/QueryLimitService';
 
 
 // ChatSkeleton removed - status messages now provide proper feedback
@@ -75,6 +77,10 @@ export default function Chat({
   // Mobile detection state
   const [isMobile, setIsMobile] = useState(false);
   
+  // Query limit state
+  const [showQueryLimitPopup, setShowQueryLimitPopup] = useState(false);
+  const [queryLimitNextReset, setQueryLimitNextReset] = useState<string>('');
+  
   // Memoize the first message flag reset callback to prevent unnecessary re-renders
   const onFirstMessageFlagReset = useCallback(() => setIsFirstMessageSent(false), []);
 
@@ -87,6 +93,32 @@ export default function Chat({
     onQuerySent,
     onFirstMessageFlagReset,
   });
+
+  // Set up query success callback for proper limit tracking
+  useEffect(() => {
+    const handleQuerySuccess = async (completedUserId: string) => {
+      // Record the query in the database after successful completion
+      try {
+        await queryLimitService.recordQuery(completedUserId);
+        console.log(`Query successfully recorded for user: ${completedUserId}`);
+        
+        // Call the parent's onQuerySent callback to update the UI state
+        if (onQuerySent) {
+          await onQuerySent();
+        }
+      } catch (error) {
+        console.error('Failed to record completed query:', error);
+        // Don't throw - this shouldn't break the chat flow
+      }
+    };
+
+    chatClient.setQuerySuccessCallback(handleQuerySuccess);
+
+    return () => {
+      // Clean up callback when component unmounts
+      chatClient.setQuerySuccessCallback(() => Promise.resolve());
+    };
+  }, [chatClient, onQuerySent]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -233,15 +265,7 @@ export default function Chat({
         // Callbacks for the first message submission
         onMessageSent?.();
         
-        // CRITICAL FIX: Properly await and handle onQuerySent promise to prevent unhandled rejections
-        if (onQuerySent) {
-          try {
-            await onQuerySent();
-          } catch (err) {
-            console.error("Error in onQuerySent for first message:", err);
-            // Don't throw - this is a non-critical callback that shouldn't break the chat flow
-          }
-        }
+        // NOTE: onQuerySent is now called via querySuccessCallback after successful completion
         
         setIsFirstMessageSent(true); // Mark as sent to prevent re-sending
       }).catch((error: any) => {
@@ -260,6 +284,24 @@ export default function Chat({
     const sourceContent = typeof contentOverride === 'string' ? contentOverride : input;
     const trimmedInput = sourceContent.trim();
     if (!trimmedInput || isProcessing || isInterrupting) return false;
+
+    // CRITICAL: Check daily query limit BEFORE processing any query
+    try {
+      const limitCheck = await queryLimitService.checkQueryLimit(userId);
+      if (!limitCheck.canProceed) {
+        // Show query limit popup with next reset time
+        setQueryLimitNextReset(limitCheck.nextResetTime);
+        setShowQueryLimitPopup(true);
+        console.log(`Query blocked: User ${userId} has reached daily limit (${limitCheck.currentCount}/${limitCheck.limit})`);
+        return false; // Don't process the query
+      }
+    } catch (error) {
+      console.error('Error checking query limit:', error);
+      // Fail-safe: if limit check fails, show popup to prevent potential abuse
+      setQueryLimitNextReset(queryLimitService.getNextResetTime());
+      setShowQueryLimitPopup(true);
+      return false;
+    }
 
     // Send clean user message - personalization context now handled by backend
     const contentToSend = trimmedInput;
@@ -351,15 +393,7 @@ export default function Chat({
             // Callbacks after successful submission initiation for subsequent messages
             onMessageSent?.();
             
-            // CRITICAL FIX: Properly await and handle onQuerySent promise to prevent unhandled rejections
-            if (onQuerySent) {
-              try {
-                await onQuerySent();
-              } catch (err) {
-                console.error("Error in onQuerySent for subsequent message:", err);
-                // Don't throw - this is a non-critical callback that shouldn't break the chat flow
-              }
-            }
+            // NOTE: onQuerySent is now called via querySuccessCallback after successful completion
 
         } catch (err) {
             console.error("Error submitting subsequent message:", err);
@@ -369,12 +403,30 @@ export default function Chat({
     }
     return true;
 
-  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession]); // Remove messageRetry.prepareForSend
+  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend]); // Add messageRetry.prepareForSend back to dependencies
 
   // Handle suggested question selection
   const handleSuggestedQuestion = useCallback(async (question: string) => {
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion || isProcessing || isInterrupting) return;
+
+    // CRITICAL: Check daily query limit BEFORE processing any query (same as handleSendMessage)
+    try {
+      const limitCheck = await queryLimitService.checkQueryLimit(userId);
+      if (!limitCheck.canProceed) {
+        // Show query limit popup with next reset time
+        setQueryLimitNextReset(limitCheck.nextResetTime);
+        setShowQueryLimitPopup(true);
+        console.log(`Suggested question blocked: User ${userId} has reached daily limit (${limitCheck.currentCount}/${limitCheck.limit})`);
+        return; // Don't process the query
+      }
+    } catch (error) {
+      console.error('Error checking query limit for suggested question:', error);
+      // Fail-safe: if limit check fails, show popup to prevent potential abuse
+      setQueryLimitNextReset(queryLimitService.getNextResetTime());
+      setShowQueryLimitPopup(true);
+      return;
+    }
 
     // Clear the input field immediately
     setInput('');
@@ -454,15 +506,7 @@ export default function Chat({
             // Callbacks after successful submission initiation
             onMessageSent?.();
             
-            // CRITICAL FIX: Properly await and handle onQuerySent promise to prevent unhandled rejections
-            if (onQuerySent) {
-              try {
-                await onQuerySent();
-              } catch (err) {
-                console.error("Error in onQuerySent for suggested question:", err);
-                // Don't throw - this is a non-critical callback that shouldn't break the chat flow
-              }
-            }
+            // NOTE: onQuerySent is now called via querySuccessCallback after successful completion
 
         } catch (err) {
             console.error("Error submitting suggested question:", err);
@@ -700,6 +744,17 @@ export default function Chat({
       
       {/* Input Area - Fixed at bottom */}
       <div className="flex-shrink-0 border-t bg-background">
+        {/* Query Limit Popup - Above input area */}
+        {showQueryLimitPopup && (
+          <div className="p-4 border-b border-gray-100">
+            <QueryLimitPopup
+              isVisible={showQueryLimitPopup}
+              nextResetTime={queryLimitNextReset}
+              onDismiss={() => setShowQueryLimitPopup(false)}
+            />
+          </div>
+        )}
+        
         {/* NEW: Model Provider Retry Popup - Above input area */}
         {shouldShowRetryPopup && (
           <div className="p-4 border-b border-gray-100">
