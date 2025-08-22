@@ -25,6 +25,7 @@ interface MainSidebarProps {
   setIsMobileSidebarOpen: (isOpen: boolean) => void;
   onToggleSideChat?: () => void;
   sideChatVisible?: boolean;
+  isChatFullscreen?: boolean;
 }
 
 // Time threshold for double click in milliseconds
@@ -34,7 +35,8 @@ export default function MainSidebar({
   isMobileSidebarOpen,
   setIsMobileSidebarOpen,
   onToggleSideChat,
-  sideChatVisible = false
+  sideChatVisible = false,
+  isChatFullscreen = false
 }: MainSidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -107,14 +109,16 @@ export default function MainSidebar({
         const currentTime = new Date().getTime();
         
         if (currentTime - lastClickTime < DOUBLE_CLICK_THRESHOLD) {
-          // Double click - navigate to chat page
-          if (isCollapsed) {
-            setIsNavigating(true);
+          // Double click - navigate to chat page only if not already on chat page and not in fullscreen
+          if (pathname !== '/chat' && !isChatFullscreen) {
+            if (isCollapsed) {
+              setIsNavigating(true);
+            }
+            router.push('/chat');
           }
-          router.push('/chat');
         } else {
-          // Single click - toggle side chat
-          if (onToggleSideChat) {
+          // Single click - toggle side chat only if not in fullscreen mode
+          if (onToggleSideChat && !isChatFullscreen) {
             onToggleSideChat();
           }
         }
@@ -249,16 +253,7 @@ export default function MainSidebar({
                     <ChevronLeft size={16} />
                   </Button>
                   
-                  {/* Mobile close button */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="lg:hidden"
-                    onClick={() => setIsMobileSidebarOpen(false)}
-                    aria-label="Close sidebar"
-                  >
-                    <X size={16} />
-                  </Button>
+
                 </div>
               )}
             </div>

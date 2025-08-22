@@ -38,6 +38,7 @@ interface ChatProps {
   onSessionCreated?: (sessionId: string) => void;
   isSidebarMode?: boolean;
   initialPrompt?: string;
+  showCloseButton?: boolean;
 }
 
 export default function Chat({ 
@@ -53,6 +54,7 @@ export default function Chat({
   onSessionCreated,
   isSidebarMode = false,
   initialPrompt,
+  showCloseButton = true,
 }: ChatProps) {
   // Use our secure chat client instead of direct LangGraph SDK
   const chatClient = useSecureChat();
@@ -586,7 +588,8 @@ export default function Chat({
 
   return (
     <div className="flex flex-col h-full">
-      {!isFullscreen && !isSidebarMode && (
+      {/* Header - Shows based on mode and configuration */}
+      {(!isFullscreen && !isSidebarMode) && (
         <div className="flex-shrink-0 flex items-center justify-between p-2 border-b">
           <div className="flex items-center space-x-2">
             <CleraAvatar />
@@ -601,16 +604,31 @@ export default function Chat({
             >
               <RefreshCcw size={18} className={isProcessing ? "animate-spin" : ""} />
             </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={onClose}
-              aria-label="Close chat"
-            >
-              <XIcon size={18} />
-            </Button>
+            {showCloseButton && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={onClose}
+                aria-label="Close chat"
+              >
+                <XIcon size={18} />
+              </Button>
+            )}
           </div>
         </div>
+      )}
+
+      {/* Close button for fullscreen and sidebar modes - positioned absolutely */}
+      {(isFullscreen || isSidebarMode) && showCloseButton && (
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={onClose}
+          aria-label="Close chat"
+          className="absolute top-2 right-2 z-10 bg-background/80 hover:bg-background"
+        >
+          <XIcon size={18} />
+        </Button>
       )}
       
       {/* Messages Container - Native scroll like Vercel */}
