@@ -84,8 +84,8 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350, o
   };
 
   const handleDoubleClick = () => {
-    // Only navigate to chat page if not already on chat page
-    if (pathname !== '/chat') {
+    // Only navigate to chat page if not already on chat page and not in fullscreen
+    if (pathname !== '/chat' && !isFullscreen) {
       router.push('/chat');
     }
   };

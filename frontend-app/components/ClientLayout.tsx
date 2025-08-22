@@ -243,7 +243,13 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
   const toggleSideChat = () => {
     if (sideChatEnabledPaths.includes(pathname || '')) {
-      setIsSideChatOpen(!isSideChatOpen);
+      setIsSideChatOpen(prev => {
+        // Reset fullscreen state when closing chat to prevent architectural inconsistency
+        if (prev) {
+          setIsChatFullscreen(false);
+        }
+        return !prev;
+      });
     }
   };
 
