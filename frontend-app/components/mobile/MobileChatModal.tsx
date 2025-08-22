@@ -8,6 +8,8 @@ import MobileChatHistory from '@/components/mobile/MobileChatHistory';
 import { createClient } from '@/utils/supabase/client';
 import { cn, getAlpacaAccountId } from '@/lib/utils';
 import { useMobileNavHeight } from '@/hooks/useMobileNavHeight';
+import { queryLimitService } from '@/utils/services/QueryLimitService';
+import { DAILY_QUERY_LIMIT } from '@/lib/constants';
 
 interface MobileChatModalProps {
   isOpen: boolean;
@@ -32,6 +34,10 @@ export default function MobileChatModal({
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [initialPrompt, setInitialPrompt] = useState<string | null>(null);
+  
+  // Query limit state
+  const [queryCount, setQueryCount] = useState<number>(0);
+  const [isLimitReached, setIsLimitReached] = useState<boolean>(false);
 
   // Listen for Clera Assist prompts regardless of modal open state
   useEffect(() => {
@@ -83,6 +89,19 @@ export default function MobileChatModal({
 
         setUserId(user.id);
 
+        // Fetch initial query count for the user
+        try {
+          const count = await queryLimitService.getCurrentQueryCount(user.id);
+          setQueryCount(count);
+          setIsLimitReached(count >= DAILY_QUERY_LIMIT);
+          console.log(`MobileChatModal: Initial query count: ${count}, Limit reached: ${count >= DAILY_QUERY_LIMIT}`);
+        } catch (error) {
+          console.error("Failed to fetch query count:", error);
+          // Don't fail the entire initialization for query count issues
+          setQueryCount(0);
+          setIsLimitReached(false);
+        }
+
         // Get Alpaca Account ID using the same method as SideBySideLayout
         const fetchedAccountId = await getAlpacaAccountId();
         if (!fetchedAccountId) {
@@ -131,6 +150,16 @@ export default function MobileChatModal({
     if (initialPrompt) {
       setInitialPrompt(null);
     }
+  };
+
+  // Function to handle recording a query and updating the count
+  const handleQuerySent = async () => {
+    if (!userId) return;
+    setQueryCount(prevCount => {
+      const updated = prevCount + 1;
+      setIsLimitReached(updated >= DAILY_QUERY_LIMIT);
+      return updated;
+    });
   };
 
   // Prevent body scroll when modal is open
@@ -222,8 +251,8 @@ export default function MobileChatModal({
               isFullscreen={true}
               sessionId={currentSessionId || undefined}
               initialMessages={initialMessages}
-              onQuerySent={async () => {}}
-              isLimitReached={false}
+              onQuerySent={handleQuerySent}
+              isLimitReached={isLimitReached}
               onSessionCreated={handleSessionCreated}
               onMessageSent={handleMessageSent}
               isSidebarMode={false}

@@ -6,7 +6,7 @@ import { PlusIcon, Clock, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Chat from '@/components/chat/Chat';
 import { Message } from '@/utils/api/chat-client';
-import { getUserDailyQueryCount, recordUserQuery } from '@/utils/api/chat-client';
+import { getUserDailyQueryCount } from '@/utils/api/chat-client';
 import { DAILY_QUERY_LIMIT } from '@/lib/constants';
 import ChatSidebar from '@/components/chat/history/ChatSidebar';
 
@@ -19,7 +19,6 @@ interface SidebarChatProps {
 
 export default function SidebarChat({ accountId, userId, onClose, width = 350 }: SidebarChatProps) {
   const [queryCount, setQueryCount] = useState<number>(0);
-  const [isLimitReached, setIsLimitReached] = useState<boolean>(false);
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -32,7 +31,6 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
         try {
           const count = await getUserDailyQueryCount(userId);
           setQueryCount(count);
-          setIsLimitReached(count >= DAILY_QUERY_LIMIT);
         } catch (error) {
           console.error("Failed to fetch query count:", error);
         }
@@ -44,15 +42,9 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
 
   const handleQuerySent = async () => {
     if (!userId) return;
-    
-    try {
-      await recordUserQuery(userId);
-      const newCount = queryCount + 1;
-      setQueryCount(newCount);
-      setIsLimitReached(newCount >= DAILY_QUERY_LIMIT);
-    } catch (error) {
-      console.error("Failed to record user query:", error);
-    }
+    // Recording is handled centrally in Chat via querySuccessCallback.
+    // Here we only update UI state atomically.
+    setQueryCount(prev => prev + 1);
   };
 
   const handleNewChat = () => {
@@ -124,7 +116,7 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
           sessionId={currentSessionId}
           initialMessages={initialMessages}
           onQuerySent={handleQuerySent}
-          isLimitReached={isLimitReached}
+          isLimitReached={queryCount >= DAILY_QUERY_LIMIT}
           onSessionCreated={handleSessionCreated}
           isSidebarMode={true}
         />
