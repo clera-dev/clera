@@ -21,6 +21,9 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/info": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/account-closure": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  
+  // Funding page (replaces modal flow)
+  "/account/add-funds": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
 
   // API routes
   "/api/broker/account-summary": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },

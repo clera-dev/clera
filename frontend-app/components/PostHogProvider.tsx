@@ -52,6 +52,11 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
         // Initialize PostHog only if not account closure
         const isProd = process.env.NODE_ENV === 'production';
         console.log('[PostHog] Initializing for regular user', { env: process.env.NODE_ENV });
+        // Avoid duplicate init during Fast Refresh / re-mounts
+        if ((posthog as any).__loaded) {
+          setIsInitialized(true)
+          return
+        }
         posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
           api_host: "/ingest",
           ui_host: "https://us.posthog.com",
@@ -64,13 +69,13 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
           // Reduce noisy console/rrweb capture during sensitive auth/onboarding flows
           session_recording: {
             enabled: isProd,
-            // Avoid rrweb console capture that can trigger regex overflow in some environments
-            // PostHog forwards this to rrweb; unknown keys are ignored safely if unsupported
-            captureConsoleLog: false as any,
+            // Disable rrweb console recording to prevent recursive logging loops with DevTools
+            recordConsole: false as any,
             recordCrossOriginIframes: false,
             captureCanvas: false,
           } as any,
-          debug: process.env.NODE_ENV === "development",
+          // Never enable debug logs in the browser to avoid console recursion with rrweb/DevTools
+          debug: false,
         });
         setIsInitialized(true);
       } catch (error) {

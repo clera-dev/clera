@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { DollarSign } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-// Component that redirects to dashboard with Add Funds dialog
+// Component that redirects to dedicated Add Funds page
 interface AddFundsButtonProps {
   accountId: string | null;
 }
@@ -14,8 +14,7 @@ const AddFundsButton: React.FC<AddFundsButtonProps> = ({ accountId }) => {
     const router = useRouter();
 
     const handleAddFunds = () => {
-        // Redirect to dashboard with parameter to auto-open Add Funds dialog
-        router.push('/dashboard?openAddFunds=true');
+        router.push('/account/add-funds');
     };
 
     // Disable button if account info is missing

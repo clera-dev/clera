@@ -305,7 +305,7 @@ export default function ManualBankForm({
   // Loading step
   if (formStep === 'checking') {
     return (
-      <div className="w-full max-w-md mx-auto text-center">
+      <div className="w-full max-w-lg mx-auto text-center">
         <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
         <p className="text-foreground/80">Checking your banking information...</p>
       </div>
@@ -315,13 +315,13 @@ export default function ManualBankForm({
   // Existing connection found step
   if (formStep === 'existing-found' && existingConnection) {
   return (
-    <div className="w-full max-w-md mx-auto">
+    <div className="w-full max-w-lg mx-auto">
       {onBack && (
         <Button
           type="button"
           variant="ghost"
           onClick={onBack}
-            className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
+            className="mb-4 p-2 hover:bg-accent transition-colors text-foreground sm:hidden"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
@@ -375,12 +375,12 @@ export default function ManualBankForm({
   // Replace warning step
   if (formStep === 'replace-warning') {
     return (
-      <div className="w-full max-w-md mx-auto">
+      <div className="w-full max-w-lg mx-auto">
         <Button
           type="button"
           variant="ghost"
           onClick={handleBackToExisting}
-          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
+          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground sm:hidden"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back
@@ -432,13 +432,13 @@ export default function ManualBankForm({
 
   // New connection form step
   return (
-    <div className="w-full max-w-md mx-auto">
+    <div className="w-full max-w-lg mx-auto">
       {(onBack || formStep !== 'new-connection') && (
         <Button
           type="button"
           variant="ghost"
           onClick={onBack || handleBackToExisting}
-          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
+          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground sm:hidden"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back
