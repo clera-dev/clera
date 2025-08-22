@@ -160,10 +160,12 @@ export default function MobileChatModal({
     }
     try {
       await queryLimitService.recordQuery(userId);
-      const newCount = queryCount + 1;
-      setQueryCount(newCount);
-      setIsLimitReached(newCount >= DAILY_QUERY_LIMIT);
-      console.log(`MobileChatModal: Query recorded. New count: ${newCount}, Limit reached: ${newCount >= DAILY_QUERY_LIMIT}`);
+      setQueryCount(prevCount => {
+        const updated = prevCount + 1;
+        setIsLimitReached(updated >= DAILY_QUERY_LIMIT);
+        console.log(`MobileChatModal: Query recorded. New count: ${updated}, Limit reached: ${updated >= DAILY_QUERY_LIMIT}`);
+        return updated;
+      });
     } catch (error) {
       console.error("MobileChatModal: Failed to record user query:", error);
       // Don't throw - this shouldn't break the chat flow

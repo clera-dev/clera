@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/client';
 import { DAILY_QUERY_LIMIT } from '@/lib/constants';
+import { getNextMidnightInTimezoneUTC } from '@/lib/timezone';
 
 /**
  * Service for managing daily query limits with real-time checking.
@@ -81,25 +82,13 @@ export class QueryLimitService {
 
   /**
    * Calculates the next reset time for daily query limits.
-   * Assumes queries reset at midnight PST (as indicated by the RPC function).
+   * Resets at midnight Pacific Time (America/Los_Angeles), DST-aware.
    * 
    * @returns string - The next reset time in UTC format
    */
   getNextResetTime(): string {
-    // Get current time in PST
-    const now = new Date();
-    const pstOffset = -8; // PST is UTC-8 (not accounting for DST for simplicity)
-    const pstTime = new Date(now.getTime() + (pstOffset * 60 * 60 * 1000));
-    
-    // Calculate next midnight PST
-    const nextMidnightPST = new Date(pstTime);
-    nextMidnightPST.setDate(nextMidnightPST.getDate() + 1);
-    nextMidnightPST.setHours(0, 0, 0, 0);
-    
-    // Convert back to UTC for display
-    const nextResetUTC = new Date(nextMidnightPST.getTime() - (pstOffset * 60 * 60 * 1000));
-    
-    // Format as readable UTC time
+    const PACIFIC_TZ = 'America/Los_Angeles';
+    const nextResetUTC = getNextMidnightInTimezoneUTC(PACIFIC_TZ);
     return nextResetUTC.toISOString().replace('T', ' ').substring(0, 19);
   }
 

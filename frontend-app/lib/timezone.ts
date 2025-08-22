@@ -442,6 +442,73 @@ export function logTimezoneDebugInfo(date: Date, label: string = 'Date'): void {
   }
 }
 
+/**
+ * Get the next midnight (start of next day) for a given timezone as a UTC Date.
+ * Robust to DST transitions by detecting the exact 00:00:00 in the target timezone.
+ */
+export function getNextMidnightInTimezoneUTC(timezone: string): Date {
+  const now = new Date();
+  try {
+    // Start slightly in the future to avoid returning "now" if exactly at midnight
+    const start = new Date(now.getTime() + 60 * 1000);
+
+    const hourFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false
+    });
+
+    const minuteFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      minute: '2-digit'
+    });
+
+    const secondFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      second: '2-digit'
+    });
+
+    // 1) Coarse search by hour up to 48 hours ahead
+    let withinMidnightHour: Date | null = null;
+    for (let h = 0; h <= 48; h++) {
+      const candidate = new Date(start.getTime() + h * 60 * 60 * 1000);
+      const hourInTz = parseInt(hourFormatter.format(candidate));
+      if (hourInTz === 0 || hourInTz === 24) {
+        withinMidnightHour = candidate;
+        break;
+      }
+    }
+
+    // 2) Refine search minute-by-minute within a 2-hour window around the detected hour
+    if (withinMidnightHour) {
+      const windowStart = new Date(withinMidnightHour.getTime() - 60 * 60 * 1000);
+      for (let m = 0; m <= 120; m++) {
+        const candidate = new Date(windowStart.getTime() + m * 60 * 1000);
+        const hourInTz = parseInt(hourFormatter.format(candidate));
+        if (hourInTz === 0 || hourInTz === 24) {
+          const minuteInTz = parseInt(minuteFormatter.format(candidate));
+          const secondInTz = parseInt(secondFormatter.format(candidate));
+          if (minuteInTz === 0 && secondInTz === 0) {
+            return candidate; // This UTC Date corresponds to 00:00:00 in target timezone
+          }
+        }
+      }
+    }
+
+    // Fallback: next UTC midnight (less precise for target TZ, but safe)
+    const fallback = new Date();
+    fallback.setUTCDate(fallback.getUTCDate() + 1);
+    fallback.setUTCHours(0, 0, 0, 0);
+    return fallback;
+  } catch (error) {
+    console.warn(`Failed to compute next midnight for ${timezone}, falling back to UTC midnight`, error);
+    const fallback = new Date();
+    fallback.setUTCDate(fallback.getUTCDate() + 1);
+    fallback.setUTCHours(0, 0, 0, 0);
+    return fallback;
+  }
+}
+
 export default {
   getUserTimezone,
   getTimezoneAbbreviation,
@@ -456,5 +523,6 @@ export default {
   getEasternTimeOffset,
   createEasternDate,
   parseFMPEasternTimestamp,
+  getNextMidnightInTimezoneUTC,
   MARKET_TIMEZONES,
 }; 

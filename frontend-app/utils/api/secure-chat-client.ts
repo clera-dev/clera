@@ -59,7 +59,7 @@ export class SecureChatClientImpl implements SecureChatClient {
   private querySuccessCallback: ((userId: string) => Promise<void>) | null = null; // NEW: Query success callback
   private lastThreadId: string | null = null; // Track thread for toolActivities lifecycle
   private currentQueryRunId: string | null = null; // Track current user query for tool grouping
-  private currentUserId: string | null = null; // Track current user for query recording
+  
 
   constructor() {
     this.toolActivityManager = new ToolActivityManager();
@@ -304,7 +304,7 @@ export class SecureChatClientImpl implements SecureChatClient {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                this.handleStreamChunk(data);
+                this.handleStreamChunk(data, { userId: user.id });
               } catch (err) {
                 console.error('[SecureChatClient] Error parsing SSE chunk:', err);
               }
@@ -342,8 +342,8 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   async startStream(threadId: string, input: any, userId: string, accountId: string): Promise<void> {
-    // Store userId for query recording on success
-    this.currentUserId = userId;
+    // Create immutable per-stream context to avoid relying on mutable instance state
+    const streamContext = { userId };
     // PRODUCTION FIX: Declare timeout variables outside try block for proper scoping
     let timeoutId: NodeJS.Timeout | undefined;
     let abortController: AbortController | undefined;
@@ -492,7 +492,7 @@ export class SecureChatClientImpl implements SecureChatClient {
               // });
               
               // CRITICAL FIX: Actually call handleStreamChunk to process the chunk!
-              this.handleStreamChunk(data);
+              this.handleStreamChunk(data, streamContext);
             } catch (e) {
               console.error('[SecureChatClient] Error parsing stream chunk:', e, 'Line:', line);
             }
@@ -609,7 +609,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     }
   }
 
-  private handleStreamChunk(chunk: any) {
+  private handleStreamChunk(chunk: any, context?: { userId: string }) {
     // console.log('[SecureChatClient] handleStreamChunk called with:', {
     //   type: chunk.type,
     //   hasData: !!chunk.data,
@@ -672,9 +672,9 @@ export class SecureChatClientImpl implements SecureChatClient {
       }
       
       // NEW: Record successful query completion for limit tracking (interrupts are valid responses)
-      if (this.querySuccessCallback && this.currentUserId) {
+      if (this.querySuccessCallback && context?.userId) {
         try {
-          this.querySuccessCallback(this.currentUserId).catch(error => {
+          this.querySuccessCallback(context.userId).catch(error => {
             console.error('[SecureChatClient] Error recording query success (interrupt):', error);
             // Don't throw - this shouldn't break the chat flow
           });
@@ -836,9 +836,9 @@ export class SecureChatClientImpl implements SecureChatClient {
         this.markRunCompleted();
         
         // NEW: Record successful query completion for limit tracking
-        if (this.querySuccessCallback && this.currentUserId) {
+        if (this.querySuccessCallback && context?.userId) {
           try {
-            this.querySuccessCallback(this.currentUserId).catch(error => {
+            this.querySuccessCallback(context.userId).catch(error => {
               console.error('[SecureChatClient] Error recording query success:', error);
               // Don't throw - this shouldn't break the chat flow
             });
