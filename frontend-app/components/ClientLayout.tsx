@@ -248,7 +248,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   };
 
   const toggleChatFullscreen = () => {
-    setIsChatFullscreen(!isChatFullscreen);
+    setIsChatFullscreen(prev => !prev);
   };
 
   // Don't show sidebar during onboarding, if not funded, or if account is closing/closed

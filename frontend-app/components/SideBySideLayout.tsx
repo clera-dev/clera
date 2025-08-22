@@ -66,8 +66,8 @@ export default function SideBySideLayout({
         <div 
           className="absolute top-0 bottom-0 left-0 overflow-y-auto overflow-x-hidden transition-all duration-300"
           style={{ 
-            width: isChatOpen ? "50%" : "100%",
-            right: isChatOpen ? "50%" : 0
+            width: isChatOpen ? `calc(100% - ${typeof chatWidth === 'number' ? chatWidth + 'px' : chatWidth})` : "100%",
+            right: isChatOpen ? (typeof chatWidth === 'number' ? chatWidth + 'px' : chatWidth) : 0
           }}
         >
           {children}
@@ -82,8 +82,8 @@ export default function SideBySideLayout({
             top: isChatFullscreen ? 0 : '64px', // Full height when fullscreen, below header when sidebar
             bottom: 0,
             right: 0,
-            width: isChatFullscreen ? "100%" : "50%",
-            left: isChatFullscreen ? 0 : "50%"
+            width: isChatFullscreen ? "100%" : (typeof chatWidth === 'number' ? chatWidth + 'px' : chatWidth),
+            left: isChatFullscreen ? 0 : `calc(100% - ${typeof chatWidth === 'number' ? chatWidth + 'px' : chatWidth})`
           }}
         >
           <SidebarChat 
