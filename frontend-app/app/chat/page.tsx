@@ -275,7 +275,7 @@ export default function ChatPage() {
         <Chat 
           accountId={accountId} 
           userId={userId}
-          onClose={() => {}} 
+          onClose={() => router.back()} 
           isFullscreen={true} 
           sessionId={currentSessionId}
           initialMessages={initialMessages}

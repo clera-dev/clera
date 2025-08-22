@@ -242,9 +242,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
   const toggleSideChat = () => {
     if (sideChatEnabledPaths.includes(pathname || '')) {
-      setIsSideChatOpen(!isSideChatOpen);
+      setIsSideChatOpen(prev => !prev);
     }
   };
+
+
 
   // Don't show sidebar during onboarding, if not funded, or if account is closing/closed
   const isOnboardingPage = pathname === '/protected' && !hasCompletedOnboarding;

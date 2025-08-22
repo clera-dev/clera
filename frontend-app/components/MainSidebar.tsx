@@ -107,11 +107,13 @@ export default function MainSidebar({
         const currentTime = new Date().getTime();
         
         if (currentTime - lastClickTime < DOUBLE_CLICK_THRESHOLD) {
-          // Double click - navigate to chat page
-          if (isCollapsed) {
-            setIsNavigating(true);
+          // Double click - navigate to chat page only if not already on chat page
+          if (pathname !== '/chat') {
+            if (isCollapsed) {
+              setIsNavigating(true);
+            }
+            router.push('/chat');
           }
-          router.push('/chat');
         } else {
           // Single click - toggle side chat
           if (onToggleSideChat) {
@@ -249,16 +251,7 @@ export default function MainSidebar({
                     <ChevronLeft size={16} />
                   </Button>
                   
-                  {/* Mobile close button */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="lg:hidden"
-                    onClick={() => setIsMobileSidebarOpen(false)}
-                    aria-label="Close sidebar"
-                  >
-                    <X size={16} />
-                  </Button>
+
                 </div>
               )}
             </div>

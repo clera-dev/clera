@@ -257,6 +257,7 @@ export default function MobileChatModal({
               onMessageSent={handleMessageSent}
               isSidebarMode={false}
               initialPrompt={initialPrompt || undefined}
+              showCloseButton={false}
             />
           ) : error ? (
             <div className="flex items-center justify-center h-full px-4">

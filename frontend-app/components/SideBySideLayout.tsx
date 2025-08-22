@@ -21,6 +21,18 @@ export default function SideBySideLayout({
   const [accountId, setAccountId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isChatFullscreen, setIsChatFullscreen] = useState(false);
+
+  // Reset fullscreen state whenever chat closes
+  useEffect(() => {
+    if (!isChatOpen && isChatFullscreen) {
+      setIsChatFullscreen(false);
+    }
+  }, [isChatOpen, isChatFullscreen]);
+
+  const toggleChatFullscreen = () => {
+    setIsChatFullscreen(prev => !prev);
+  };
 
   useEffect(() => {
     const initializeUserData = async () => {
@@ -57,28 +69,38 @@ export default function SideBySideLayout({
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      {/* Content container - takes full width when chat is closed, 50% when open */}
-      <div 
-        className="absolute top-0 bottom-0 left-0 overflow-y-auto overflow-x-hidden transition-all duration-300"
-        style={{ 
-          width: isChatOpen ? "50%" : "100%",
-          right: isChatOpen ? "50%" : 0
-        }}
-      >
-        {children}
-      </div>
+      {/* Content container - hidden when chat is fullscreen, 50% when chat open, full when chat closed */}
+      {!isChatFullscreen && (
+        <div 
+          className="absolute top-0 bottom-0 left-0 overflow-y-auto overflow-x-hidden transition-all duration-300"
+          style={{ 
+            width: isChatOpen ? `calc(100% - ${typeof chatWidth === 'number' ? chatWidth + 'px' : chatWidth})` : "100%",
+            right: isChatOpen ? (typeof chatWidth === 'number' ? chatWidth + 'px' : chatWidth) : 0
+          }}
+        >
+          {children}
+        </div>
+      )}
       
-      {/* Chat container - only shown when chat is open, positioned below main header */}
+      {/* Chat container - positioned based on fullscreen state */}
       {isChatOpen && !isLoading && accountId && userId && (
         <div 
-          className="absolute top-16 bottom-0 right-0 overflow-hidden z-10"
-          style={{ width: "50%" }}
+          className="absolute overflow-hidden z-10 transition-all duration-300"
+          style={{ 
+            top: isChatFullscreen ? 0 : '64px', // Full height when fullscreen, below header when sidebar
+            bottom: 0,
+            right: 0,
+            width: isChatFullscreen ? "100%" : (typeof chatWidth === 'number' ? chatWidth + 'px' : chatWidth),
+            left: isChatFullscreen ? 0 : `calc(100% - ${typeof chatWidth === 'number' ? chatWidth + 'px' : chatWidth})`
+          }}
         >
           <SidebarChat 
             accountId={accountId}
             userId={userId}
             onClose={onCloseSideChat}
-            width="100%" 
+            width="100%"
+            onToggleFullscreen={toggleChatFullscreen}
+            isFullscreen={isChatFullscreen}
           />
         </div>
       )}

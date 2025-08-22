@@ -25,6 +25,6 @@ module.exports = {
     customExportConditions: ['node', 'node-addons']
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(next|@next|react|@react|@testing-library|react-markdown|remark-.*|rehype-.*|unified|vfile|bail|is-plain-obj|trough|unist-.*|mdast-.*)/)'
+    'node_modules/(?!(next|@next|react|@react|@testing-library|react-markdown|remark-.*|rehype-.*|unified|vfile|bail|is-plain-obj|trough|unist-.*|mdast-.*|devlop|micromark.*|character-entities.*|decode-named-character-reference|hast-.*)/)'
   ],
 };
