@@ -25,7 +25,6 @@ interface MainSidebarProps {
   setIsMobileSidebarOpen: (isOpen: boolean) => void;
   onToggleSideChat?: () => void;
   sideChatVisible?: boolean;
-  isChatFullscreen?: boolean;
 }
 
 // Time threshold for double click in milliseconds
@@ -35,8 +34,7 @@ export default function MainSidebar({
   isMobileSidebarOpen,
   setIsMobileSidebarOpen,
   onToggleSideChat,
-  sideChatVisible = false,
-  isChatFullscreen = false
+  sideChatVisible = false
 }: MainSidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -109,16 +107,16 @@ export default function MainSidebar({
         const currentTime = new Date().getTime();
         
         if (currentTime - lastClickTime < DOUBLE_CLICK_THRESHOLD) {
-          // Double click - navigate to chat page only if not already on chat page and not in fullscreen
-          if (pathname !== '/chat' && !isChatFullscreen) {
+          // Double click - navigate to chat page only if not already on chat page
+          if (pathname !== '/chat') {
             if (isCollapsed) {
               setIsNavigating(true);
             }
             router.push('/chat');
           }
         } else {
-          // Single click - toggle side chat only if not in fullscreen mode
-          if (onToggleSideChat && !isChatFullscreen) {
+          // Single click - toggle side chat
+          if (onToggleSideChat) {
             onToggleSideChat();
           }
         }

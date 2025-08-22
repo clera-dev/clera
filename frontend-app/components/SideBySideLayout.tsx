@@ -10,21 +10,29 @@ interface SideBySideLayoutProps {
   isChatOpen: boolean;
   onCloseSideChat: () => void;
   chatWidth?: number | string;
-  isChatFullscreen?: boolean;
-  onToggleChatFullscreen?: () => void;
 }
 
 export default function SideBySideLayout({ 
   children, 
   isChatOpen, 
   onCloseSideChat,
-  chatWidth = "50%", // Default to 50% width
-  isChatFullscreen = false,
-  onToggleChatFullscreen
+  chatWidth = "50%" // Default to 50% width
 }: SideBySideLayoutProps) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isChatFullscreen, setIsChatFullscreen] = useState(false);
+
+  // Reset fullscreen state whenever chat closes
+  useEffect(() => {
+    if (!isChatOpen && isChatFullscreen) {
+      setIsChatFullscreen(false);
+    }
+  }, [isChatOpen, isChatFullscreen]);
+
+  const toggleChatFullscreen = () => {
+    setIsChatFullscreen(prev => !prev);
+  };
 
   useEffect(() => {
     const initializeUserData = async () => {
@@ -91,7 +99,7 @@ export default function SideBySideLayout({
             userId={userId}
             onClose={onCloseSideChat}
             width="100%"
-            onToggleFullscreen={onToggleChatFullscreen}
+            onToggleFullscreen={toggleChatFullscreen}
             isFullscreen={isChatFullscreen}
           />
         </div>

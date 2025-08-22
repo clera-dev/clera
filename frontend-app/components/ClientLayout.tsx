@@ -41,7 +41,6 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const { paddingBottom } = useDynamicBottomSpacing();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSideChatOpen, setIsSideChatOpen] = useState(false);
-  const [isChatFullscreen, setIsChatFullscreen] = useState(false);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [currentMobilePage, setCurrentMobilePage] = useState<string>('');
   const pathname = usePathname();
@@ -243,19 +242,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
   const toggleSideChat = () => {
     if (sideChatEnabledPaths.includes(pathname || '')) {
-      setIsSideChatOpen(prev => {
-        // Reset fullscreen state when closing chat to prevent architectural inconsistency
-        if (prev) {
-          setIsChatFullscreen(false);
-        }
-        return !prev;
-      });
+      setIsSideChatOpen(prev => !prev);
     }
   };
 
-  const toggleChatFullscreen = () => {
-    setIsChatFullscreen(prev => !prev);
-  };
+
 
   // Don't show sidebar during onboarding, if not funded, or if account is closing/closed
   const isOnboardingPage = pathname === '/protected' && !hasCompletedOnboarding;
@@ -464,12 +455,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             {canShowSideChat ? (
               <SideBySideLayout 
                 isChatOpen={isSideChatOpen} 
-                onCloseSideChat={() => {
-                  setIsSideChatOpen(false);
-                  setIsChatFullscreen(false); // Reset fullscreen state when closing chat
-                }}
-                isChatFullscreen={isChatFullscreen}
-                onToggleChatFullscreen={toggleChatFullscreen}
+                onCloseSideChat={() => setIsSideChatOpen(false)}
               >
                 {children}
               </SideBySideLayout>
@@ -494,7 +480,6 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
               setIsMobileSidebarOpen={setIsMobileSidebarOpen}
               onToggleSideChat={canShowSideChat ? toggleSideChat : undefined}
               sideChatVisible={isSideChatOpen}
-              isChatFullscreen={isChatFullscreen}
             />
               
               {/* Mobile close handle - attached to sidebar, sticks out to the right */}
