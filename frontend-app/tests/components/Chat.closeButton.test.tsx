@@ -16,6 +16,7 @@ jest.mock('@/utils/api/secure-chat-client', () => ({
     clearErrorOnChatLoad: jest.fn(),
     handleInterrupt: jest.fn(),
     setLongProcessingCallback: jest.fn(),
+    clearLongProcessingCallback: jest.fn(),
   }),
 }));
 
