@@ -10,7 +10,7 @@ export class QueryLimitService {
   private supabase = createClient();
   private static readonly PENDING_KEY = 'clera_pending_query_records_v1';
   private isFlushing = false;
-  private flushListenersInitialized = false;
+  private static flushListenersInitialized = false;
 
   private getPendingRecords(): PendingQueryRecord[] {
     if (typeof window === 'undefined') return [];
@@ -35,8 +35,8 @@ export class QueryLimitService {
   }
 
   private ensureFlushListeners(): void {
-    if (typeof window === 'undefined' || this.flushListenersInitialized) return;
-    this.flushListenersInitialized = true;
+    if (typeof window === 'undefined' || QueryLimitService.flushListenersInitialized) return;
+    QueryLimitService.flushListenersInitialized = true;
     const flush = () => {
       this.flushPendingRecords().catch(() => {/* noop */});
     };

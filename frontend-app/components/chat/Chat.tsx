@@ -28,6 +28,7 @@ import { PerMessageToolDetails } from './PerMessageToolDetails';
 import { ChatMessageList } from './ChatMessageList';
 import { useToolActivitiesHydration } from '@/hooks/useToolActivitiesHydration';
 import { useRunIdAssignment } from '@/hooks/useRunIdAssignment';
+import { useQueryLimit } from '@/hooks/useQueryLimit';
 import { queryLimitService } from '@/utils/services/QueryLimitService';
 
 
@@ -77,9 +78,8 @@ export default function Chat({
   // Mobile detection state
   const [isMobile, setIsMobile] = useState(false);
   
-  // Query limit state
-  const [showQueryLimitPopup, setShowQueryLimitPopup] = useState(false);
-  const [queryLimitNextReset, setQueryLimitNextReset] = useState<string>('');
+  // Query limit management
+  const queryLimit = useQueryLimit(userId);
   
   // Memoize the first message flag reset callback to prevent unnecessary re-renders
   const onFirstMessageFlagReset = useCallback(() => setIsFirstMessageSent(false), []);
@@ -290,21 +290,9 @@ export default function Chat({
     if (!trimmedInput || isProcessing || isInterrupting) return false;
 
     // CRITICAL: Check daily query limit BEFORE processing any query
-    try {
-      const limitCheck = await queryLimitService.checkQueryLimit(userId);
-      if (!limitCheck.canProceed) {
-        // Show query limit popup with next reset time
-        setQueryLimitNextReset(limitCheck.nextResetTime);
-        setShowQueryLimitPopup(true);
-        console.log(`Query blocked: User ${userId} has reached daily limit (${limitCheck.currentCount}/${limitCheck.limit})`);
-        return false; // Don't process the query
-      }
-    } catch (error) {
-      console.error('Error checking query limit:', error);
-      // Fail-safe: if limit check fails, show popup to prevent potential abuse
-      setQueryLimitNextReset(queryLimitService.getNextResetTime());
-      setShowQueryLimitPopup(true);
-      return false;
+    const canProceed = await queryLimit.checkCanProceed();
+    if (!canProceed) {
+      return false; // Query blocked by limit
     }
 
     // Send clean user message - personalization context now handled by backend
@@ -407,29 +395,17 @@ export default function Chat({
     }
     return true;
 
-  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend]); // Add messageRetry.prepareForSend back to dependencies
+  }, [input, isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, messageRetry.prepareForSend, queryLimit]); // Add queryLimit to dependencies
 
   // Handle suggested question selection
   const handleSuggestedQuestion = useCallback(async (question: string) => {
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion || isProcessing || isInterrupting) return;
 
-    // CRITICAL: Check daily query limit BEFORE processing any query (same as handleSendMessage)
-    try {
-      const limitCheck = await queryLimitService.checkQueryLimit(userId);
-      if (!limitCheck.canProceed) {
-        // Show query limit popup with next reset time
-        setQueryLimitNextReset(limitCheck.nextResetTime);
-        setShowQueryLimitPopup(true);
-        console.log(`Suggested question blocked: User ${userId} has reached daily limit (${limitCheck.currentCount}/${limitCheck.limit})`);
-        return; // Don't process the query
-      }
-    } catch (error) {
-      console.error('Error checking query limit for suggested question:', error);
-      // Fail-safe: if limit check fails, show popup to prevent potential abuse
-      setQueryLimitNextReset(queryLimitService.getNextResetTime());
-      setShowQueryLimitPopup(true);
-      return;
+    // CRITICAL: Check daily query limit BEFORE processing any query
+    const canProceed = await queryLimit.checkCanProceed();
+    if (!canProceed) {
+      return; // Query blocked by limit
     }
 
     // Clear the input field immediately
@@ -517,7 +493,7 @@ export default function Chat({
             // Keep retry state for potential retry (don't clear lastFailedMessage)
         }
     }
-  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession]); // Remove messageRetry.prepareForSend
+  }, [isProcessing, isInterrupting, chatClient, userId, accountId, currentThreadId, onSessionCreated, onMessageSent, onQuerySent, formatChatTitle, createChatSession, setPendingFirstMessage, setCurrentThreadId, setIsCreatingSession, queryLimit]); // Add queryLimit to dependencies
 
   // Auto-adjust textarea height
   useEffect(() => {
@@ -749,12 +725,12 @@ export default function Chat({
       {/* Input Area - Fixed at bottom */}
       <div className="flex-shrink-0 border-t bg-background">
         {/* Query Limit Popup - Above input area */}
-        {showQueryLimitPopup && (
+        {queryLimit.showLimitPopup && (
           <div className="p-4 border-b border-gray-100">
             <QueryLimitPopup
-              isVisible={showQueryLimitPopup}
-              nextResetTime={queryLimitNextReset}
-              onDismiss={() => setShowQueryLimitPopup(false)}
+              isVisible={queryLimit.showLimitPopup}
+              nextResetTime={queryLimit.nextResetTime}
+              onDismiss={queryLimit.dismissPopup}
             />
           </div>
         )}
