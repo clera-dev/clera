@@ -539,7 +539,21 @@ export class SecureChatClientImpl implements SecureChatClient {
         
         if (hasValidResponse) {
           this.setState({ isLoading: false });
-          // console.log('[SecureChatClient] FALLBACK completion - valid response detected');
+          
+          // CRITICAL SECURITY FIX: Record query for token streaming responses
+          // This prevents bypass of daily query limits when responses come via message_token
+          if (this.querySuccessCallback && streamContext.userId) {
+            try {
+              this.querySuccessCallback(streamContext.userId).catch(error => {
+                console.error('[SecureChatClient] Error recording query success (fallback):', error);
+                // Don't throw - this shouldn't break the chat flow
+              });
+            } catch (error) {
+              console.error('[SecureChatClient] Error calling querySuccessCallback (fallback):', error);
+            }
+          }
+          
+          // console.log('[SecureChatClient] FALLBACK completion - valid response detected and query recorded');
         } else {
           // PRODUCTION FIX: More graceful handling when stream completed without content
           // This commonly happens when agent is still processing - response may arrive later via DB sync

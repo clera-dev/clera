@@ -8,6 +8,43 @@ import { getNextMidnightInTimezoneUTC } from '@/lib/timezone';
  */
 export class QueryLimitService {
   private supabase = createClient();
+  private static readonly PENDING_KEY = 'clera_pending_query_records_v1';
+  private isFlushing = false;
+  private flushListenersInitialized = false;
+
+  private getPendingRecords(): PendingQueryRecord[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(QueryLimitService.PENDING_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as PendingQueryRecord[];
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  private setPendingRecords(records: PendingQueryRecord[]): void {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(QueryLimitService.PENDING_KEY, JSON.stringify(records));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  private ensureFlushListeners(): void {
+    if (typeof window === 'undefined' || this.flushListenersInitialized) return;
+    this.flushListenersInitialized = true;
+    const flush = () => {
+      this.flushPendingRecords().catch(() => {/* noop */});
+    };
+    window.addEventListener('online', flush);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') flush();
+    });
+  }
 
   /**
    * Checks if a user has reached their daily query limit.
@@ -78,6 +115,59 @@ export class QueryLimitService {
     }
 
     console.log(`QueryLimitService: Recorded query for user ${userId}`);
+  }
+
+  /**
+   * Reliable recording with offline queue and retry.
+   * Never throws: enqueues on failure and best-effort flushes in background.
+   */
+  async recordQueryReliable(userId: string): Promise<boolean> {
+    this.ensureFlushListeners();
+    try {
+      await this.recordQuery(userId);
+      // Also attempt to flush any previously queued records
+      this.flushPendingRecords().catch(() => {/* background */});
+      return true;
+    } catch (error) {
+      // Enqueue for later flush (offline/transient failure)
+      const pending = this.getPendingRecords();
+      pending.push({ userId, timestamp: new Date().toISOString(), attempts: 0 });
+      this.setPendingRecords(pending);
+      // Try background flush soon (e.g., network blip)
+      setTimeout(() => this.flushPendingRecords().catch(() => {/* background */}), 3000);
+      return false;
+    }
+  }
+
+  /**
+   * Flush any pending query records. Best-effort with basic retry capping.
+   */
+  async flushPendingRecords(forUserId?: string): Promise<void> {
+    if (this.isFlushing) return;
+    const pending = this.getPendingRecords();
+    if (pending.length === 0) return;
+    this.isFlushing = true;
+    try {
+      const stillPending: PendingQueryRecord[] = [];
+      for (const rec of pending) {
+        if (forUserId && rec.userId !== forUserId) {
+          stillPending.push(rec);
+          continue;
+        }
+        try {
+          await this.recordQuery(rec.userId);
+        } catch {
+          const attempts = (rec.attempts || 0) + 1;
+          // Keep for up to 10 attempts to avoid infinite retries
+          if (attempts < 10) {
+            stillPending.push({ ...rec, attempts });
+          }
+        }
+      }
+      this.setPendingRecords(stillPending);
+    } finally {
+      this.isFlushing = false;
+    }
   }
 
   /**
@@ -154,3 +244,9 @@ export interface QueryLimitCheckResult {
  * Provides a single point of access while maintaining testability.
  */
 export const queryLimitService = new QueryLimitService();
+
+interface PendingQueryRecord {
+  userId: string;
+  timestamp: string; // ISO
+  attempts: number;
+}

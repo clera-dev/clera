@@ -99,15 +99,19 @@ export default function Chat({
     const handleQuerySuccess = async (completedUserId: string) => {
       // Record the query in the database after successful completion
       try {
-        await queryLimitService.recordQuery(completedUserId);
-        console.log(`Query successfully recorded for user: ${completedUserId}`);
+        const ok = await queryLimitService.recordQueryReliable(completedUserId);
+        if (!ok) {
+          console.warn(`Query recording deferred for user: ${completedUserId} (offline or transient error)`);
+        } else {
+          console.log(`Query successfully recorded for user: ${completedUserId}`);
+        }
         
         // Call the parent's onQuerySent callback to update the UI state
         if (onQuerySent) {
           await onQuerySent();
         }
       } catch (error) {
-        console.error('Failed to record completed query:', error);
+        console.error('Failed to record completed query (unexpected):', error);
         // Don't throw - this shouldn't break the chat flow
       }
     };

@@ -44,15 +44,13 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350 }:
 
   const handleQuerySent = async () => {
     if (!userId) return;
-    
-    try {
-      await recordUserQuery(userId);
-      const newCount = queryCount + 1;
-      setQueryCount(newCount);
-      setIsLimitReached(newCount >= DAILY_QUERY_LIMIT);
-    } catch (error) {
-      console.error("Failed to record user query:", error);
-    }
+    // Recording is handled centrally in Chat via querySuccessCallback.
+    // Here we only update UI state atomically.
+    setQueryCount(prev => {
+      const updated = prev + 1;
+      setIsLimitReached(updated >= DAILY_QUERY_LIMIT);
+      return updated;
+    });
   };
 
   const handleNewChat = () => {
