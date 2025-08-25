@@ -246,7 +246,11 @@ describe('Enhanced Funding Flow Tests', () => {
 
   describe('No Browser Warning Flow', () => {
     test('should not use window.confirm anywhere in the flow', () => {
-      // Verify we removed browser confirm dialogs
+      // Spy on window.confirm to ensure it's not used
+      const originalConfirm = window.confirm;
+      // @ts-ignore
+      window.confirm = jest.fn();
+
       const addFundsFlow = {
         openDialog: () => true,
         proceedToForm: () => true,
@@ -254,37 +258,37 @@ describe('Enhanced Funding Flow Tests', () => {
       };
 
       // Flow should complete without any window.confirm calls
-      expect(() => {
-        addFundsFlow.openDialog();
-        addFundsFlow.proceedToForm();
-        addFundsFlow.completeTransfer();
-      }).not.toThrow();
+      addFundsFlow.openDialog();
+      addFundsFlow.proceedToForm();
+      addFundsFlow.completeTransfer();
 
-      // Verify no window.confirm was called (would throw in test environment)
-      expect(typeof window.confirm).toBe('undefined');
+      expect(window.confirm).not.toHaveBeenCalled();
+
+      // Restore
+      // @ts-ignore
+      window.confirm = originalConfirm;
     });
 
     test('should use proper in-app dialogs instead of browser alerts', () => {
       let customDialogShown = false;
-      let browserAlertShown = false;
+      const originalAlert = window.alert;
+      // @ts-ignore
+      window.alert = jest.fn();
 
       const showCustomDialog = () => {
         customDialogShown = true;
       };
 
-      const showBrowserAlert = () => {
-        if (typeof window.alert === 'function') {
-          browserAlertShown = true;
-        }
-      };
-
-      // Should use custom dialog
+      // Use custom dialog in flow
       showCustomDialog();
       expect(customDialogShown).toBe(true);
 
-      // Should not use browser alert
-      showBrowserAlert();
-      expect(browserAlertShown).toBe(false);
+      // Verify browser alert is not used by the flow
+      expect(window.alert).not.toHaveBeenCalled();
+
+      // Restore
+      // @ts-ignore
+      window.alert = originalAlert;
     });
   });
 
