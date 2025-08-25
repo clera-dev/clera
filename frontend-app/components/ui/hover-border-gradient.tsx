@@ -55,6 +55,7 @@ export function HoverBorderGradient({
 
   return (
     <Tag
+      type={Tag === 'button' ? 'button' : undefined}
       onMouseEnter={() => {
         setHovered(true);
       }}
@@ -91,7 +92,7 @@ export function HoverBorderGradient({
         }}
         transition={{ ease: "linear", duration: duration ?? 1 }}
       />
-      <div className="bg-black absolute z-1 flex-none inset-[2px] rounded-[10px]" />
+      <div className="bg-black absolute z-[1] flex-none inset-[2px] rounded-[10px]" />
     </Tag>
   );
 }

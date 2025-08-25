@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { PersonalizationData } from '@/lib/types/personalization';
+import { getPersonalizationData } from '@/utils/api/personalization-client';
 
 interface PersonalizationState {
   personalization: PersonalizationData | null;
@@ -19,36 +20,31 @@ export function usePersonalizationData(): PersonalizationState {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchPersonalization = async () => {
       try {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch('/api/personalization');
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch personalization: ${response.status}`);
-        }
-
-        const result = await response.json();
-        
-        // Handle the case where no personalization data exists (new user)
-        if (result.success && result.data) {
-          setPersonalization(result.data);
-        } else {
-          setPersonalization(null);
-        }
-        
+        const data = await getPersonalizationData();
+        if (!isMounted) return;
+        setPersonalization(data);
       } catch (err) {
         console.error('Error fetching personalization:', err);
+        if (!isMounted) return;
         setError(err instanceof Error ? err.message : 'Failed to fetch personalization data');
         setPersonalization(null);
       } finally {
+        if (!isMounted) return;
         setIsLoading(false);
       }
     };
 
     fetchPersonalization();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return { personalization, isLoading, error };
