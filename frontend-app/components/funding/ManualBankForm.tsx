@@ -321,7 +321,7 @@ export default function ManualBankForm({
           type="button"
           variant="ghost"
           onClick={onBack}
-            className="mb-4 p-2 hover:bg-accent transition-colors text-foreground sm:hidden"
+            className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
@@ -380,7 +380,7 @@ export default function ManualBankForm({
           type="button"
           variant="ghost"
           onClick={handleBackToExisting}
-          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground sm:hidden"
+          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back
@@ -438,7 +438,7 @@ export default function ManualBankForm({
           type="button"
           variant="ghost"
           onClick={onBack || handleBackToExisting}
-          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground sm:hidden"
+          className="mb-4 p-2 hover:bg-accent transition-colors text-foreground"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back

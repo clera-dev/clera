@@ -108,25 +108,25 @@ export default function AddFundsPage() {
     );
   }
 
+  const displayError = error ?? (
+    !alpacaAccountId ? "Missing account information. Please return to the dashboard and try again." : null
+  );
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 h-[100dvh] overflow-y-auto overscroll-contain sm:h-auto sm:overflow-visible">
-      {error && (
+      {displayError ? (
         <Alert className="mb-6" variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{displayError}</AlertDescription>
         </Alert>
-      )}
-
-      {alpacaAccountId ? (
-        <ManualBankForm
-          alpacaAccountId={alpacaAccountId}
-          userName={userName}
-          onTransferComplete={handleFundingComplete}
-          onBack={() => router.push('/dashboard')}
-        />
       ) : (
-        <Alert className="mb-6" variant="destructive">
-          <AlertDescription>Missing account information. Please return to the dashboard and try again.</AlertDescription>
-        </Alert>
+        alpacaAccountId ? (
+          <ManualBankForm
+            alpacaAccountId={alpacaAccountId}
+            userName={userName}
+            onTransferComplete={handleFundingComplete}
+            onBack={() => router.push('/dashboard')}
+          />
+        ) : null
       )}
 
       <TransferSuccessDialog

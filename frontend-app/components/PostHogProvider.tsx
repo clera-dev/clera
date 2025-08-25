@@ -6,6 +6,9 @@ import { Suspense, useEffect, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { createClient } from "@/utils/supabase/client"
 
+// Module-scoped guard to avoid repeated SDK initialization without relying on SDK internals
+let hasInitializedPosthog = false
+
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   const [isAccountClosure, setIsAccountClosure] = useState(false);
 
@@ -52,8 +55,8 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
         // Initialize PostHog only if not account closure
         const isProd = process.env.NODE_ENV === 'production';
         console.log('[PostHog] Initializing for regular user', { env: process.env.NODE_ENV });
-        // Avoid duplicate init during Fast Refresh / re-mounts
-        if ((posthog as any).__loaded) {
+        // Avoid duplicate init during Fast Refresh / re-mounts using our own guard
+        if (hasInitializedPosthog) {
           setIsInitialized(true)
           return
         }
@@ -71,12 +74,13 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
             enabled: isProd,
             // Disable rrweb console recording to prevent recursive logging loops with DevTools
             recordConsole: false as any,
-            recordCrossOriginIframes: false,
+            maskAllInputs: true,
             captureCanvas: false,
           } as any,
           // Never enable debug logs in the browser to avoid console recursion with rrweb/DevTools
           debug: false,
         });
+        hasInitializedPosthog = true
         setIsInitialized(true);
       } catch (error) {
         console.error('[PostHog] Error checking account status:', error);
