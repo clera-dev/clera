@@ -8,6 +8,7 @@ import redisClient from '@/utils/redis';
 import { timingSafeEqual } from 'crypto';
 import { NewsPersonalizationService } from '@/utils/services/news-personalization';
 import { PersonalizationData } from '@/lib/types/personalization';
+import { fetchUserPersonalization } from '@/lib/server/personalization-service';
 
 const sentimentAnalyzer = new Sentiment();
 
@@ -280,47 +281,6 @@ async function enrichArticleDetails(url: string): Promise<any | null> {
     shouldDisplay,
     used_for_paragraph: null 
   };
-}
-
-/**
- * Fetches personalization data for a specific user using direct Supabase access
- * This is needed in server-side API routes where HTTP client calls don't inherit auth
- */
-async function fetchUserPersonalization(userId: string, supabase: any): Promise<PersonalizationData | null> {
-  try {
-    const { data: personalizationData, error } = await supabase
-      .from('user_personalization')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No personalization data found - this is not an error
-        return null;
-      }
-      console.error(`Error fetching personalization for user ${userId}:`, error);
-      return null;
-    }
-
-    // Convert database format to application format
-    if (personalizationData) {
-      return {
-        firstName: personalizationData.first_name || '',
-        investmentGoals: personalizationData.investment_goals || [],
-        riskTolerance: personalizationData.risk_tolerance,
-        investmentTimeline: personalizationData.investment_timeline,
-        experienceLevel: personalizationData.experience_level,
-        monthlyInvestmentGoal: personalizationData.monthly_investment_goal ?? 250,
-        marketInterests: personalizationData.market_interests || [],
-      };
-    }
-
-    return null;
-  } catch (error) {
-    console.error(`Error fetching personalization for user ${userId}:`, error);
-    return null;
-  }
 }
 
 async function generateSummaryForUser(userId: string, supabase: any, requestUrl: URL) {
