@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { createClient } from '@/utils/supabase/server';
+import { PersonalizationData } from '@/lib/types/personalization';
+import { NewsPersonalizationService } from '@/utils/services/news-personalization';
+import { fetchUserPersonalization } from '@/lib/server/personalization-service';
 
 // Types for the structured response from Perplexity
 interface InvestmentTheme {
@@ -114,11 +118,14 @@ Today's date is ${current_date}. You MUST use the most recent and current inform
 ## User Context
 You will receive detailed information about a client including:
 - Current portfolio holdings and allocations
-- Investment goals and time horizon
-- Risk tolerance and preferences
-- Personal interests and values
-- Financial situation and objectives
-- Financial literacy level
+- Investment goals (retirement, house, big purchase, extra income, pay off debt, for fun, inheritance, travel)
+- Risk tolerance (conservative, moderate, aggressive) 
+- Investment timeline (less than 1 year, 1-3 years, 3-5 years, 5-10 years, 10+ years)
+- Experience level (no experience, some familiarity, comfortable, professional)
+- Monthly investment budget and capacity
+- Market interests (technology, healthcare, financials, etc.)
+- Personal information and financial situation
+- Financial literacy level for appropriate communication
 
 ## Your Mission
 Conduct exhaustive research across hundreds of financial sources and generate a comprehensive investment analysis report containing exactly two deliverables:
@@ -331,6 +338,21 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { userProfile, force = false } = body;
 
+    // Authenticate user and fetch personalization data
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error('User not authenticated in POST /api/investment/research:', authError);
+      return NextResponse.json({ error: 'User not authenticated' }, { status: 401 });
+    }
+
+    console.log(`User ${user.id} authenticated. Generating investment research.`);
+
+    // Fetch personalization data for this user
+    const personalizationData = await fetchUserPersonalization(user.id, supabase);
+    console.log(`Fetched personalization data for user ${user.id}:`, personalizationData ? 'Found' : 'Not found');
+
     // Check if we have cached data and force is not requested
     const cachedData = readCachedData();
     if (cachedData && !force) {
@@ -363,6 +385,15 @@ export async function POST(request: NextRequest) {
 
     console.log("Generating NEW investment research (this will cost money)...");
     console.log("Force regeneration:", force);
+    
+    // Extract personalized values or use defaults
+    const userGoals = NewsPersonalizationService.getUserGoalsSummary(personalizationData);
+    const financialLiteracy = NewsPersonalizationService.getFinancialLiteracyLevel(personalizationData);
+    
+    // Build personalization context sections
+    const personalizationContext = personalizationData 
+      ? NewsPersonalizationService.formatPersonalizationContext(personalizationData).join('\n') 
+      : 'No specific personalization data available - use general best practices.';
     
     // Prepare the user context message
     const userMessage = `Please analyze my investment profile and provide personalized recommendations:
@@ -399,7 +430,14 @@ ${userProfile.interests || 'Not specified'}
 **Key Issues to Address:**
 ${userProfile.keyIssues || 'Not specified'}
 
-Based on this profile, please provide investment themes and stock recommendations that address my specific situation while maintaining an appropriate risk-return profile for my goals and timeline.`;
+**User Personalization Data:**
+${personalizationContext}
+
+**Communication Level:**
+- Financial literacy level: ${financialLiteracy}
+- Investment goals summary: ${userGoals}
+
+Based on this comprehensive profile, please provide investment themes and stock recommendations that address my specific situation, personalization preferences, and goals while maintaining an appropriate risk-return profile for my timeline and experience level.`;
 
     // Prepare Perplexity API request
     const perplexityPayload = {
