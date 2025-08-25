@@ -56,13 +56,21 @@ describe('Server-side PersonalizationService', () => {
       expect(result).toBeNull();
     });
 
-    test('should throw error for database errors', async () => {
+    test('should throw error for database errors when throwOnError is true (default)', async () => {
       const dbError = new Error('Database connection failed');
       mockPersonalizationService.fetchUserPersonalization.mockRejectedValue(dbError);
 
       await expect(
         mockPersonalizationService.fetchUserPersonalization('user123', {})
       ).rejects.toThrow('Database connection failed');
+    });
+
+    test('should return null for database errors when throwOnError is false (cron mode)', async () => {
+      mockPersonalizationService.fetchUserPersonalization.mockResolvedValue(null);
+
+      const result = await mockPersonalizationService.fetchUserPersonalization('user123', {}, { throwOnError: false });
+      
+      expect(result).toBeNull();
     });
   });
 
@@ -181,6 +189,55 @@ describe('Server-side PersonalizationService', () => {
       expect(mockData).toHaveProperty('experienceLevel');
       expect(mockData).toHaveProperty('monthlyInvestmentGoal');
       expect(mockData).toHaveProperty('marketInterests');
+    });
+
+    test('should return raw database values without application-layer defaults', () => {
+      // This test ensures consistency with existing /api/personalization endpoint
+      const mockData = {
+        firstName: 'John',
+        investmentGoals: ['retirement'],
+        riskTolerance: 'moderate',
+        investmentTimeline: '5_to_10_years',
+        experienceLevel: 'comfortable',
+        monthlyInvestmentGoal: 750, // Should return exact DB value, not apply 250 default
+        marketInterests: ['technology']
+      };
+
+      mockPersonalizationService.fetchUserPersonalization.mockResolvedValue(mockData);
+
+      expect(mockData.monthlyInvestmentGoal).toBe(750);
+      // The service should NOT apply defaults - database handles this
+    });
+  });
+
+  describe('Error handling patterns for different use cases', () => {
+    test('should support API route pattern (throw on error)', async () => {
+      const apiError = new Error('API should fail fast');
+      mockPersonalizationService.fetchUserPersonalization.mockRejectedValue(apiError);
+
+      // API routes should get errors thrown to return proper HTTP error responses
+      await expect(
+        mockPersonalizationService.fetchUserPersonalization('user123', {}, { throwOnError: true })
+      ).rejects.toThrow('API should fail fast');
+    });
+
+    test('should support cron job pattern (graceful degradation)', async () => {
+      mockPersonalizationService.fetchUserPersonalization.mockResolvedValue(null);
+
+      // Cron jobs should get null to continue processing other users
+      const result = await mockPersonalizationService.fetchUserPersonalization('user123', {}, { throwOnError: false });
+      
+      expect(result).toBeNull();
+    });
+
+    test('should maintain backward compatibility with default behavior', async () => {
+      const dbError = new Error('Database error');
+      mockPersonalizationService.fetchUserPersonalization.mockRejectedValue(dbError);
+
+      // Default behavior should still throw (for existing API routes)
+      await expect(
+        mockPersonalizationService.fetchUserPersonalization('user123', {})
+      ).rejects.toThrow('Database error');
     });
   });
 

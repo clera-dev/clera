@@ -308,8 +308,8 @@ export async function GET(request: Request) {
       try {
         console.log(`CRON: Processing summary for user ${user.user_id} (sonar-pro, medium context)...`);
         
-        // Fetch personalization data for this user
-        const personalizationData = await fetchUserPersonalization(user.user_id, supabase);
+        // Fetch personalization data for this user with graceful error handling
+        const personalizationData = await fetchUserPersonalization(user.user_id, supabase, { throwOnError: false });
         console.log(`CRON: Personalization data for user ${user.user_id}:`, personalizationData ? 'Found' : 'Not found');
         
         // Extract personalized values or use defaults

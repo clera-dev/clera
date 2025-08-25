@@ -14,13 +14,16 @@ import { PersonalizationData } from '@/lib/types/personalization';
  * 
  * @param userId - The Supabase user ID to fetch personalization data for
  * @param supabase - Authenticated Supabase client instance
+ * @param options - Configuration options for error handling behavior
  * @returns PersonalizationData if found, null if no data exists
- * @throws Error for database errors (caller should handle appropriately)
+ * @throws Error for database errors when throwOnError is true (default behavior for API routes)
  */
 export async function fetchUserPersonalization(
   userId: string, 
-  supabase: any
+  supabase: any,
+  options: { throwOnError?: boolean } = {}
 ): Promise<PersonalizationData | null> {
+  const { throwOnError = true } = options;
   if (!userId) {
     console.warn('Empty userId provided to fetchUserPersonalization');
     return null;
@@ -46,7 +49,14 @@ export async function fetchUserPersonalization(
       
       // Log actual errors for debugging
       console.error(`Database error fetching personalization for user ${userId}:`, error);
-      throw new Error(`Failed to fetch personalization data: ${error.message}`);
+      
+      if (throwOnError) {
+        throw new Error(`Failed to fetch personalization data: ${error.message}`);
+      } else {
+        // Graceful degradation for cron jobs - return null and continue processing
+        console.warn(`Gracefully handling personalization fetch error for user ${userId}, continuing with defaults`);
+        return null;
+      }
     }
 
     // Convert database format to application format
@@ -57,13 +67,19 @@ export async function fetchUserPersonalization(
     return null;
     
   } catch (error) {
-    // Re-throw database errors for proper error handling by caller
-    if (error instanceof Error) {
-      throw error;
-    }
-    
     console.error(`Unexpected error fetching personalization for user ${userId}:`, error);
-    throw new Error('Unexpected error occurred while fetching personalization data');
+    
+    if (throwOnError) {
+      // Re-throw database errors for proper error handling by caller (API routes)
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Unexpected error occurred while fetching personalization data');
+    } else {
+      // Graceful degradation for cron jobs - return null and continue processing
+      console.warn(`Gracefully handling unexpected personalization error for user ${userId}, continuing with defaults`);
+      return null;
+    }
   }
 }
 
@@ -80,7 +96,7 @@ function formatPersonalizationFromDatabase(record: any): PersonalizationData {
     riskTolerance: record.risk_tolerance,
     investmentTimeline: record.investment_timeline,
     experienceLevel: record.experience_level,
-    monthlyInvestmentGoal: record.monthly_investment_goal ?? 250,
+    monthlyInvestmentGoal: record.monthly_investment_goal, // Database handles default with DEFAULT 250
     marketInterests: record.market_interests || [],
   };
 }
@@ -90,14 +106,16 @@ function formatPersonalizationFromDatabase(record: any): PersonalizationData {
  * 
  * @param userId - The Supabase user ID to check
  * @param supabase - Authenticated Supabase client instance
+ * @param options - Configuration options for error handling behavior
  * @returns boolean indicating if personalization data exists
  */
 export async function hasUserPersonalization(
   userId: string,
-  supabase: any
+  supabase: any,
+  options: { throwOnError?: boolean } = {}
 ): Promise<boolean> {
   try {
-    const data = await fetchUserPersonalization(userId, supabase);
+    const data = await fetchUserPersonalization(userId, supabase, options);
     return data !== null;
   } catch (error) {
     console.error(`Error checking personalization existence for user ${userId}:`, error);
