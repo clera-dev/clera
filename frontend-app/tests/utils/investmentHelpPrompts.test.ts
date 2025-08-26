@@ -18,9 +18,9 @@ describe('Investment Help Prompts', () => {
   describe('generatePersonalizedPrompt', () => {
     it('should generate direct, strategic prompt for new users', () => {
       const prompt = generatePersonalizedPrompt('John', 'conservative');
-      expect(prompt).toContain('new to investing');
-      expect(prompt).toContain('first time');
       expect(prompt).toContain('how to get started');
+      expect(prompt).toContain('first investment');
+      expect(prompt).toContain('opportunities');
     });
 
     it('should be consistent regardless of risk tolerance (Clera knows this)', () => {
@@ -81,8 +81,9 @@ describe('Investment Help Prompts', () => {
       };
       
       const prompt = generateContextualPrompt(context);
-      expect(prompt).toContain('still learning');
-      expect(prompt).toContain('keep it simple');
+      expect(prompt).toContain('add to my existing portfolio');
+      expect(prompt).not.toContain('still learning');
+      expect(prompt).not.toContain('keep it simple');
     });
 
     it('should generate general investment guidance for new investors', () => {
@@ -93,9 +94,9 @@ describe('Investment Help Prompts', () => {
       };
       
       const prompt = generateContextualPrompt(context);
-      expect(prompt).toContain('looking at investment options');
-      expect(prompt).toContain('first time');
+      expect(prompt).toContain('I want to invest');
       expect(prompt).toContain('how to get started');
+      expect(prompt).toContain('recommend');
       // No longer includes risk tolerance since Clera already knows it
     });
   });
@@ -116,7 +117,7 @@ describe('Investment Help Prompts', () => {
     it('should fallback to contextual prompt for unknown scenario', () => {
       const context: PromptContext = { firstName: 'Alice' };
       const prompt = generateScenarioPrompt('unknown_scenario', context);
-      expect(prompt).toContain('looking at investment options');
+      expect(prompt).toContain('how to get started');
     });
   });
 
@@ -136,7 +137,7 @@ describe('Investment Help Prompts', () => {
     it('should fallback to contextual prompt for unknown timeline', () => {
       const context: PromptContext = { firstName: 'Bob' };
       const prompt = generateTimelinePrompt('unknown_timeline', context);
-      expect(prompt).toContain('looking at investment options');
+      expect(prompt).toContain('how to get started');
     });
   });
 
@@ -156,8 +157,9 @@ describe('Investment Help Prompts', () => {
 
     it('should generate first-time visitor prompt', () => {
       const prompt = generateActionBasedPrompt('first_time_visitor');
-      expect(prompt).toContain('new to this platform');
-      expect(prompt).toContain('overwhelmed');
+      expect(prompt).toContain('first investment');
+      expect(prompt).toContain('get started');
+      expect(prompt).toContain('investment opportunities');
     });
   });
 
@@ -214,8 +216,8 @@ describe('Investment Help Prompts', () => {
       };
 
       const prompt = generateContextualPrompt(context);
-      expect(prompt).toContain('looking at investment options');
-      expect(prompt).toContain('first time');
+      expect(prompt).toContain('I want to invest');
+      expect(prompt).toContain('how to get started');
       // No longer includes risk tolerance since Clera already knows it
     });
 

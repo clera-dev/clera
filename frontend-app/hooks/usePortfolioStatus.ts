@@ -59,15 +59,19 @@ export function usePortfolioStatus(accountId: string | null): PortfolioStatusSta
         data = await response.json();
 
         // Normalize positions shape: API may return an array or an object with `positions`
-        const positions: any[] = Array.isArray(data)
-          ? data
-          : Array.isArray((data as any)?.positions)
-            ? (data as any).positions
-            : [];
+        let positions: any[] | undefined;
+        let knownShape = false;
+        if (Array.isArray(data)) {
+          positions = data as any[];
+          knownShape = true;
+        } else if (Array.isArray((data as any)?.positions)) {
+          positions = (data as any).positions as any[];
+          knownShape = true;
+        }
 
         // If we couldn't determine shape, treat as unknown instead of misclassifying
         if (!isMounted) return;
-        if (!Array.isArray(positions)) {
+        if (!knownShape || !Array.isArray(positions)) {
           setIsEmpty(null);
           return;
         }
@@ -76,7 +80,7 @@ export function usePortfolioStatus(accountId: string | null): PortfolioStatusSta
         const hasNonCashPosition = positions.some((pos: any) => {
           const symbol = String(pos?.symbol || pos?.asset_symbol || '').toUpperCase();
           const marketValue = Number(pos?.market_value ?? pos?.marketValue ?? pos?.current_market_value ?? 0);
-          const isCash = symbol === 'USD' || symbol === '$CASH';
+          const isCash = symbol === 'USD' || symbol === '$CASH' || symbol === 'CASH';
           return !isCash && marketValue > 0;
         });
 

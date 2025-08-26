@@ -68,10 +68,10 @@ export function HoverBorderGradient({
 
   return (
     <Tag
-      {...restProps}
-      type={Tag === 'button' ? 'button' : undefined}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      type={Tag === 'button' ? 'button' : undefined}
+      {...restProps}
       className={cn(
         "relative flex rounded-xl border border-slate-800 content-center bg-black/90 hover:bg-black transition duration-500 items-center flex-col flex-nowrap gap-10 h-min justify-center overflow-visible p-px decoration-clone w-fit",
         containerClassName

@@ -38,11 +38,7 @@ export function generateContextualPrompt(context: PromptContext): string {
   
   // Portfolio optimization for existing investors
   if (hasPositions) {
-    const experienceNote = experienceLevel === 'no_experience' || experienceLevel === 'some_familiarity' 
-      ? "I'm still learning, so please keep it simple. "
-      : "";
-    
-    return `${experienceNote}I want to add to my existing portfolio. Can you suggest some investments that would complement what I already own?`;
+    return `I want to add to my existing portfolio. Can you suggest some investments that would complement what I already own?`;
   }
   
   // General investment guidance
@@ -107,7 +103,7 @@ export function generateActionBasedPrompt(action: string, symbol?: string): stri
       ? `I've been looking at research for ${symbol}. Can you help me understand how to interpret this information and decide if I should invest?`
       : 'I\'ve been reading investment research but I\'m not sure how to use it to make decisions. Can you guide me through the process?',
     
-    first_time_visitor: 'I\'m new to this platform and feeling a bit overwhelmed by all the investment options. Can you help me understand how to get started with research and finding good investment opportunities?'
+    first_time_visitor: 'I want you to help me with my first investment. Can you help me understand how to get started with research and finding good investment opportunities?'
   });
 
   if (Object.prototype.hasOwnProperty.call(actionPrompts, action)) {
