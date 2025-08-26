@@ -129,12 +129,18 @@ export function getFallbackPrompt(): string {
  */
 export function sanitizePromptContext(context: Partial<PromptContext>): PromptContext {
   return {
-    firstName: context.firstName?.trim() || undefined,
+    firstName:
+      typeof context.firstName === 'string' && context.firstName.trim()
+        ? context.firstName.trim()
+        : undefined,
     riskTolerance: context.riskTolerance || undefined,
     investmentGoals: Array.isArray(context.investmentGoals) ? context.investmentGoals : undefined,
     hasPositions: typeof context.hasPositions === 'boolean' ? context.hasPositions : undefined,
     portfolioValue: Number.isFinite(context.portfolioValue as number) ? (context.portfolioValue as number) : undefined,
-    currentSymbol: context.currentSymbol?.trim()?.toUpperCase() || undefined,
+    currentSymbol:
+      typeof context.currentSymbol === 'string' && context.currentSymbol.trim()
+        ? context.currentSymbol.trim().toUpperCase()
+        : undefined,
     experienceLevel: context.experienceLevel || undefined,
   };
 }

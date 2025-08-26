@@ -52,16 +52,6 @@ export function usePortfolioStatus(accountId: string | null): PortfolioStatusSta
           throw fetchError;
         }
         
-        // 404 is normal for new users with no positions - treat as empty portfolio
-        if (response.status === 404) {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Portfolio positions not found (new user) - treating as empty portfolio');
-          }
-          if (!isMounted) return;
-          setIsEmpty(true);
-          return;
-        }
-        
         if (!response.ok) {
           throw new Error(`Failed to fetch portfolio: ${response.status}`);
         }

@@ -53,18 +53,29 @@ export function HoverBorderGradient({
     }
   }, [hovered, duration, clockwise]);
 
+  // Merge external and internal mouse handlers to avoid accidental override
+  const { onMouseEnter: onMouseEnterProp, onMouseLeave: onMouseLeaveProp, ...restProps } = props as React.HTMLAttributes<HTMLElement>;
+
+  const handleMouseEnter: React.MouseEventHandler<HTMLElement> = (event) => {
+    setHovered(true);
+    onMouseEnterProp?.(event);
+  };
+
+  const handleMouseLeave: React.MouseEventHandler<HTMLElement> = (event) => {
+    setHovered(false);
+    onMouseLeaveProp?.(event);
+  };
+
   return (
     <Tag
+      {...restProps}
       type={Tag === 'button' ? 'button' : undefined}
-      onMouseEnter={() => {
-        setHovered(true);
-      }}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={cn(
         "relative flex rounded-xl border border-slate-800 content-center bg-black/90 hover:bg-black transition duration-500 items-center flex-col flex-nowrap gap-10 h-min justify-center overflow-visible p-px decoration-clone w-fit",
         containerClassName
       )}
-      {...props}
     >
       <div
         className={cn(
