@@ -77,6 +77,8 @@ export async function POST(
         body: JSON.stringify({
           symbols: validatedSymbols
         }),
+        // Forward client aborts to the backend request so it actually cancels
+        signal: request.signal,
       });
 
       if (response.ok) {

@@ -25,6 +25,7 @@ export function usePortfolioStatus(accountId: string | null): PortfolioStatusSta
       if (isMounted) {
         setIsLoading(false);
         setIsEmpty(null);
+        setError(null); // Clear any stale errors when accountId is missing
       }
       return () => {
         isMounted = false;
@@ -81,7 +82,7 @@ export function usePortfolioStatus(accountId: string | null): PortfolioStatusSta
           const symbol = String(pos?.symbol || pos?.asset_symbol || '').toUpperCase();
           const marketValue = Number(pos?.market_value ?? pos?.marketValue ?? pos?.current_market_value ?? 0);
           const isCash = symbol === 'USD' || symbol === '$CASH' || symbol === 'CASH';
-          return !isCash && marketValue > 0;
+          return !isCash && Math.abs(marketValue) > 0;
         });
 
         setIsEmpty(positions.length === 0 ? true : !hasNonCashPosition);

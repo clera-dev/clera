@@ -5,23 +5,29 @@ import { cn } from "@/lib/utils";
 
 type Direction = "TOP" | "LEFT" | "BOTTOM" | "RIGHT";
 
-export function HoverBorderGradient({
+// Polymorphic props pattern so attributes match the chosen `as` Tag
+type HoverBorderGradientOwnProps<E extends React.ElementType> = {
+  as?: E;
+  containerClassName?: string;
+  className?: string;
+  duration?: number;
+  clockwise?: boolean;
+  children?: React.ReactNode;
+};
+
+type HoverBorderGradientProps<E extends React.ElementType> = HoverBorderGradientOwnProps<E> &
+  Omit<React.ComponentPropsWithoutRef<E>, "as" | "className" | "children">;
+
+export function HoverBorderGradient<E extends React.ElementType = "button">({
   children,
   containerClassName,
   className,
-  as: Tag = "button",
+  as,
   duration = 1,
   clockwise = true,
   ...props
-}: React.PropsWithChildren<
-  {
-    as?: React.ElementType;
-    containerClassName?: string;
-    className?: string;
-    duration?: number;
-    clockwise?: boolean;
-  } & React.HTMLAttributes<HTMLElement>
->) {
+}: HoverBorderGradientProps<E>) {
+  const Tag = (as || "button") as E;
   const [hovered, setHovered] = useState<boolean>(false);
   const [direction, setDirection] = useState<Direction>("TOP");
 
@@ -46,15 +52,21 @@ export function HoverBorderGradient({
 
   useEffect(() => {
     if (!hovered) {
+      const safeDurationMs = Number.isFinite(duration) ? duration * 1000 : 1000;
+      const intervalMs = Math.max(100, Math.floor(safeDurationMs));
       const interval = setInterval(() => {
         setDirection((prevState) => rotateDirection(prevState));
-      }, duration * 1000);
+      }, intervalMs);
       return () => clearInterval(interval);
     }
   }, [hovered, duration, clockwise]);
 
   // Merge external and internal mouse handlers to avoid accidental override
-  const { onMouseEnter: onMouseEnterProp, onMouseLeave: onMouseLeaveProp, ...restProps } = props as React.HTMLAttributes<HTMLElement>;
+  const {
+    onMouseEnter: onMouseEnterProp,
+    onMouseLeave: onMouseLeaveProp,
+    ...restProps
+  } = props as React.ComponentPropsWithoutRef<E>;
 
   const handleMouseEnter: React.MouseEventHandler<HTMLElement> = (event) => {
     setHovered(true);
@@ -66,17 +78,22 @@ export function HoverBorderGradient({
     onMouseLeaveProp?.(event);
   };
 
+  // Build final props to preserve consumer overrides and avoid type issues across polymorphic tags
+  const tagProps: any = {
+    ...restProps,
+    onMouseEnter: handleMouseEnter,
+    onMouseLeave: handleMouseLeave,
+    className: cn(
+      "relative flex rounded-xl border border-slate-800 content-center bg-black/90 hover:bg-black transition duration-500 items-center flex-col flex-nowrap gap-10 h-min justify-center overflow-visible p-px decoration-clone w-fit",
+      containerClassName
+    ),
+  };
+  if ((Tag as unknown as string) === "button" && (restProps as any)?.type == null) {
+    tagProps.type = "button";
+  }
+
   return (
-    <Tag
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      type={Tag === 'button' ? 'button' : undefined}
-      {...restProps}
-      className={cn(
-        "relative flex rounded-xl border border-slate-800 content-center bg-black/90 hover:bg-black transition duration-500 items-center flex-col flex-nowrap gap-10 h-min justify-center overflow-visible p-px decoration-clone w-fit",
-        containerClassName
-      )}
-    >
+    <Tag {...tagProps}>
       <div
         className={cn(
           "w-auto text-white z-10 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 px-6 py-2.5 rounded-[inherit] font-medium transition-all duration-200",
