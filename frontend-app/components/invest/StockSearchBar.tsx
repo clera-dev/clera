@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog"
 import { CompanyLogo } from "@/components/ui/CompanyLogo"
 import { useCompanyProfiles } from "@/hooks/useCompanyProfile"
+import { ResearchMethodModal } from "@/components/invest/ResearchMethodModal"
 
 // Define Asset type
 interface Asset {
@@ -42,6 +43,7 @@ interface StockSearchBarProps {
 
 export default function StockSearchBar({ onStockSelect, accountId, watchlistSymbols, onWatchlistChange, onOptimisticAdd, externalOpen, onExternalOpenChange, showTriggerButton = true }: StockSearchBarProps) {
   const [internalOpen, setInternalOpen] = useState(false)
+  const [researchMethodOpen, setResearchMethodOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("") 
   const [allAssets, setAllAssets] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -198,13 +200,17 @@ export default function StockSearchBar({ onStockSelect, accountId, watchlistSymb
     onStockSelect(selectedSymbol);
   };
 
+  const handleManualResearch = () => {
+    setOpen(true);
+  };
+
   return (
     <div className="relative w-full">
       {/* Trigger Button - only show if showTriggerButton is true */}
       {showTriggerButton && (
         <Button
           variant="outline"
-          onClick={() => setOpen(true)}
+          onClick={() => setResearchMethodOpen(true)}
           disabled={isLoading}
           className="relative w-full justify-start border-slate-300 bg-white text-slate-800 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 h-12 px-4 py-2 shadow-sm rounded-lg"
         >
@@ -308,6 +314,13 @@ export default function StockSearchBar({ onStockSelect, accountId, watchlistSymb
           </Command>
         </DialogContent>
       </Dialog>
+
+      {/* Research Method Modal */}
+      <ResearchMethodModal
+        isOpen={researchMethodOpen}
+        onClose={() => setResearchMethodOpen(false)}
+        onManualSearch={handleManualResearch}
+      />
     </div>
   )
 } 

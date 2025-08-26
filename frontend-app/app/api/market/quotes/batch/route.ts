@@ -25,9 +25,18 @@ export async function POST(
       return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
     }
 
-    // 2. Parse request body to get symbols
-    const body = await request.json();
-    const { symbols } = body;
+    // 2. Parse request body to get symbols (handle aborted/invalid JSON gracefully)
+    let symbols: string[] | undefined;
+    try {
+      const body = await request.json();
+      symbols = body?.symbols;
+    } catch (err: any) {
+      const message = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
+      if (err?.name === 'AbortError' || message.includes('aborted')) {
+        return NextResponse.json({ error: 'Request aborted by client' }, { status: 499 });
+      }
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
 
     if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
       return NextResponse.json({ error: 'Symbols array is required' }, { status: 400 });
@@ -68,6 +77,8 @@ export async function POST(
         body: JSON.stringify({
           symbols: validatedSymbols
         }),
+        // Forward client aborts to the backend request so it actually cancels
+        signal: request.signal,
       });
 
       if (response.ok) {
@@ -85,7 +96,11 @@ export async function POST(
           error: 'Failed to fetch quotes from backend service.' 
         }, { status: 502 });
       }
-    } catch (error) {
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+      if (error?.name === 'AbortError' || message.includes('aborted')) {
+        return NextResponse.json({ error: 'Request aborted by client' }, { status: 499 });
+      }
       console.error('Error calling backend batch endpoint:', error);
       return NextResponse.json({ 
         error: 'Failed to communicate with backend service.' 
@@ -93,7 +108,11 @@ export async function POST(
     }
 
   } catch (error: any) {
-    console.error(`[API Route Error] ${error.message}`, { path: request.nextUrl.pathname });
+    const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+    if (error?.name === 'AbortError' || message.includes('aborted')) {
+      return NextResponse.json({ error: 'Request aborted by client' }, { status: 499 });
+    }
+    console.error(`[API Route Error] ${error?.message || 'Unknown error'}`, { path: request.nextUrl.pathname });
     return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 } 

@@ -800,7 +800,7 @@ class BatchQuoteRequest(BaseModel):
 
 
 @app.post("/api/market/quotes/batch")
-async def get_stock_quotes_batch(request: BatchQuoteRequest):
+async def get_stock_quotes_batch(request: BatchQuoteRequest, api_key: str = Depends(verify_api_key)):
     """Get stock quotes for multiple symbols in a single batch request."""
     try:
         symbols = [symbol.upper().strip() for symbol in request.symbols]
