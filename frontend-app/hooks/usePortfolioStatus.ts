@@ -43,7 +43,7 @@ export function usePortfolioStatus(accountId: string | null): PortfolioStatusSta
 
         try {
           response = await fetch(
-            `/api/portfolio/${encodeURIComponent(accountId)}/positions`,
+            `/api/portfolio/positions?accountId=${encodeURIComponent(accountId)}`,
             { signal: abortController.signal }
           );
         } catch (fetchError) {

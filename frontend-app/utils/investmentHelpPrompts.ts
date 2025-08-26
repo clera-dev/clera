@@ -133,7 +133,7 @@ export function sanitizePromptContext(context: Partial<PromptContext>): PromptCo
     riskTolerance: context.riskTolerance || undefined,
     investmentGoals: Array.isArray(context.investmentGoals) ? context.investmentGoals : undefined,
     hasPositions: typeof context.hasPositions === 'boolean' ? context.hasPositions : undefined,
-    portfolioValue: typeof context.portfolioValue === 'number' ? context.portfolioValue : undefined,
+    portfolioValue: Number.isFinite(context.portfolioValue as number) ? (context.portfolioValue as number) : undefined,
     currentSymbol: context.currentSymbol?.trim()?.toUpperCase() || undefined,
     experienceLevel: context.experienceLevel || undefined,
   };

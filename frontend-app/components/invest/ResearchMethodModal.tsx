@@ -37,9 +37,16 @@ export function ResearchMethodModal({ isOpen, onClose, onManualSearch }: Researc
 
   const handleCleraResearch = () => {
     // Generate intelligent prompt for research assistance
+    // Derive hasPositions explicitly to avoid null coercion
+    const derivedHasPositions = portfolioIsEmpty === false
+      ? true
+      : portfolioIsEmpty === true
+        ? false
+        : undefined;
+
     const context = sanitizePromptContext({
       firstName: personalization?.firstName,
-      hasPositions: !portfolioIsEmpty,
+      hasPositions: derivedHasPositions,
       riskTolerance: personalization?.riskTolerance,
       investmentGoals: personalization?.investmentGoals,
       experienceLevel: personalization?.experienceLevel,
