@@ -259,7 +259,7 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false, 
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
           <TrendingUp className="text-yellow-500 h-5 w-5" />
-          <h2 className="text-xl font-semibold">Your Personalized Investment Ideas</h2>
+          <h2 className="text-xl font-semibold">Personalized Investment Themes</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -336,7 +336,7 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false, 
         {/* Investment Ideas Section */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-xl font-semibold">Your Personalized Investment Ideas</h2>
+            <h2 className="text-xl font-semibold">Personalized Investment Themes</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {researchData.investment_themes.map((theme, index) => (
@@ -538,7 +538,7 @@ export default function InvestmentResearch({ onStockSelect, isChatOpen = false, 
         {/* Investment Ideas Section */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-xl font-semibold">Your Personalized Investment Ideas</h2>
+            <h2 className="text-xl font-semibold">Personalized Investment Themes</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {investmentIdeas.map((idea, index) => (

@@ -1,3 +1,4 @@
+// NOTE: This file is no longer used. It is kept here for reference.
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';

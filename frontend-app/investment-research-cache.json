@@ -2,136 +2,130 @@
   "data": {
     "investment_themes": [
       {
-        "title": "AI Infrastructure Revolution",
-        "summary": "Capitalize on the accelerating adoption of artificial intelligence across industries through companies building foundational AI technologies.",
-        "report": "The AI infrastructure theme represents a generational investment opportunity driven by the convergence of accelerated computing, cloud adoption, and enterprise AI deployment. Current market analysis indicates the global AI chip market alone is projected to grow at a 38% CAGR through 2030, with NVIDIA commanding over 80% market share in AI accelerators. This growth is fueled by massive cloud hyperscaler capex ($200B+ annually) targeting AI infrastructure and the proliferation of large language models across industries. For a young investor with high risk tolerance, this theme provides leveraged exposure to technological megatrends while diversifying away from consumer hardware. The timing is particularly opportune given recent 30% pullbacks in leading AI stocks from January 2025 peaks, creating attractive entry points. With your 30-year horizon, this positions you at the forefront of the $15 trillion AI productivity wave just beginning to transform global economies.",
+        "title": "AI Infrastructure Buildout",
+        "summary": "The multi-year AI infrastructure cycle is driving unprecedented investment in computing hardware, networking, and data centers across cloud providers, enterprises, and national security applications.",
+        "report": "The AI Infrastructure Buildout represents one of the most compelling multi-year investment themes with global data center capital expenditures projected to exceed $350 billion annually by 2027 as enterprises aggressively embrace generative AI and governments establish sovereign AI initiatives. This theme encompasses three tightly integrated subsectors: semiconductor manufacturers providing the computational power (NVIDIA, AMD), networking companies enabling high-speed data transfer between processors (Arista Networks), and cloud infrastructure providers scaling their capacity to support AI workloads (Amazon Web Services, Microsoft Azure). Unlike previous technology cycles, the AI infrastructure buildout is characterized by significantly higher capital intensity, with AI-optimized data centers requiring 4-8x more power per square foot than traditional facilities and demanding specialized networking equipment with lower latency. Current catalysts driving acceleration include regulatory tailwinds as governments worldwide allocate funding for sovereign AI initiatives, technical breakthroughs enabling more efficient model training, and enterprise software vendors embedding AI capabilities across their product suites. The market's recognition of AI as a multi-decade growth opportunity rather than a short-term trend is evident in how infrastructure providers are commanding premium valuations while maintaining high growth rates - NVIDIA's data center revenue alone is projected to reach $150 billion annually by 2027. For investors with an aggressive risk profile targeting retirement, this theme offers remarkable capital appreciation potential as infrastructure demand continues to outstrip supply through 2026, with semiconductor equipment makers and specialized data center operators poised for particularly outsized gains as the industry scales to meet exponentially growing computational requirements. The theme aligns perfectly with technology interests while providing exposure to accelerated cash flow generation from companies at the front lines of this technological transformation[2][9][14].",
         "relevant_tickers": [
           "NVDA",
-          "AVGO",
-          "TSM"
-        ]
+          "AMD",
+          "ANET",
+          "AVGO"
+        ],
+        "theme_category": "Technology"
       },
       {
-        "title": "Cybersecurity Dominance",
-        "summary": "Target companies leading the essential defense against escalating cyber threats in our increasingly digital world.",
-        "report": "Cybersecurity has transitioned from IT cost center to strategic business imperative, with global cybercrime damages projected to reach $13.8 trillion annually by 2028. The sector exhibits remarkable resilience with enterprise security budgets growing at 14% CAGR despite macroeconomic uncertainties. Current market dynamics favor platform consolidation where players like CrowdStrike and Palo Alto Networks capture market share through integrated threat prevention clouds. For your portfolio, this theme provides critical diversification into a non-cyclical growth sector with recession-resistant characteristics. The technological arms race against AI-powered cyber threats ensures sustained 20%+ revenue growth for category leaders through 2030. With your $10,000 annual investment capacity, dollar-cost averaging into cybersecurity leaders capitalizes on the sector's 35% valuation discount from 2024 peaks while maintaining alignment with your technology focus.",
+        "title": "E-commerce Logistics Revolution",
+        "summary": "Rapidly evolving delivery expectations are driving massive investment in last-mile automation, intelligent routing, and warehouse robotics to meet consumer demands for faster, cheaper, more sustainable shipping.",
+        "report": "The E-commerce Logistics Revolution has evolved beyond simple delivery fulfillment into a complex technological arms race as retailers and logistics providers implement artificial intelligence, robotics, and alternative delivery networks to solve the 'last mile' problem that accounts for approximately 53% of total delivery costs. With the global logistics market projected to reach $20.1 trillion by 2033, growing at a 7.3% CAGR, investors are focusing on companies leveraging technology to drive meaningful efficiency gains in a sector historically characterized by thin margins. Key catalysts powering this theme include sustained growth in e-commerce penetration (projected to reach 28% of retail sales globally by 2027 from 21% in 2024), increasing consumer expectations for same-day or even same-hour delivery, and regulatory pressures driving adoption of electric and autonomous delivery vehicles. The most compelling opportunities exist among established logistics leaders successfully integrating automation like UPS's 'Post-Hub' initiative deploying AI-powered sortation systems that have reduced package handling costs by 18%, and disruptive innovators in last-mile robotics like the autonomous delivery vehicle partnerships between FedEx and Serve Robotics. Unlike pure-play e-commerce retailers vulnerable to changing consumer trends, logistics providers benefit from steady contractual revenue streams while capturing a larger share of the e-commerce value chain as fulfillment complexity increases. For aggressive retirement investors, this theme offers exposure to the structural shift toward digital commerce while maintaining more stable cash flows than online retailers, with leading companies demonstrating ability to compound revenues at 10-15% annually through both market share gains and value-added service offerings. The convergence of e-commerce growth, labor constraints, and technological advancement creates a powerful investment thesis that should drive outperformance relative to broader markets for the next decade, particularly as logistics providers increasingly monetize their data assets to offer predictive inventory management and dynamic pricing capabilities that further entrench their strategic importance in the retail ecosystem[9][15][16].",
         "relevant_tickers": [
-          "CRWD",
-          "PANW",
-          "ZS"
-        ]
+          "UPS",
+          "FDX",
+          "AMZN",
+          "MELI"
+        ],
+        "theme_category": "Trade"
       },
       {
-        "title": "Biotech Innovation Wave",
-        "summary": "Invest in breakthrough therapeutic platforms addressing multi-billion dollar unmet medical needs.",
-        "report": "Biotechnology offers asymmetric return potential perfectly suited for young investors with long time horizons. The convergence of AI-driven drug discovery, mRNA technology, and genetic medicine has accelerated therapeutic development cycles while reducing clinical trial risks. Current valuation disconnects present unusual opportunities - the NASDAQ Biotechnology Index trades at just 4.2x sales versus 10-year average of 6.5x despite record FDA drug approvals. Key catalysts include the obesity drug market expanding to $150B+ by 2030 and Alzheimer's treatments demonstrating unprecedented efficacy. For your portfolio, biotech provides essential diversification from technology sector volatility while maintaining aggressive growth characteristics. The 30-year horizon allows full capture of drug commercialization curves, with companies like Vertex Pharmaceuticals expected to grow earnings 25% annually through 2030.",
+        "title": "Consumer Innovation Nexus",
+        "summary": "Traditional consumer staples companies are establishing data-driven direct relationships with consumers, creating new growth vectors while maintaining defensive characteristics during economic uncertainty.",
+        "report": "The Consumer Innovation Nexus represents the transformative convergence between traditional consumer staples companies and digital technology, creating hybrid business models that combine the defensive characteristics of essential products with the growth potential of digital platforms. Companies like Philip Morris International have successfully leveraged first-party consumer data from digital engagement platforms to create personalized experiences that boost customer retention and wallet share, with PM reporting 88% of IQOS users repurchasing within 30 days compared to traditional cigarette customers' 65% repeat rate. This theme is powered by several catalysts including accelerating e-commerce adoption in consumer staples (now 22% of sales for leading CPG companies versus 14% pre-pandemic), advanced analytics enabling hyper-personalized marketing that increases marketing ROI by 3-5x, and direct-to-consumer channels capturing higher margins than traditional retail distribution. Unlike pure technology plays, consumer innovation leaders benefit from inelastic demand for their core products during economic downturns while simultaneously capturing growth from digital transformation initiatives. The most compelling opportunities exist among companies with strong brand equity successfully implementing closed-loop data ecosystems that generate proprietary consumer insights while building recurring revenue streams - Procter & Gamble's Opte Precision Skincare system, for example, combines hardware, consumables, and data services to create a platform generating repeat purchases while gathering valuable skin health data. For aggressive retirement investors, this theme offers reduced volatility compared to pure technology stocks while providing double-digit growth potential from digital initiatives, creating an optimal risk-reward profile for long-term portfolio construction. Critically, companies executing well in this space demonstrate improving return on invested capital as digital initiatives scale, with leading players achieving ROIC above 20% compared to industry averages of 12-15%, creating a powerful compounding mechanism that should drive substantial shareholder value creation over the next decade[3][6][8].",
         "relevant_tickers": [
-          "VRTX",
-          "BNTX",
-          "LLY"
-        ]
+          "PM",
+          "PG",
+          "MO",
+          "COST"
+        ],
+        "theme_category": "Consumer_Staples"
       },
       {
-        "title": "Emerging Markets Ascendancy",
-        "summary": "Capture hypergrowth in developing economies leading the global technology adoption curve.",
-        "report": "Emerging markets represent the next frontier for aggressive growth investors, with countries like India and Vietnam growing tech spending at 18% CAGR - triple developed market rates. Structural advantages include younger demographics, faster 5G deployment, and government digitalization initiatives. The MSCI Emerging Markets Index trades at just 12x forward earnings versus 20x for S&P 500, creating valuation arbitrage despite superior growth projections. For your concentrated US portfolio, this theme provides essential geographic diversification and currency hedging benefits. Current allocations are particularly timely given ASEAN manufacturing relocation trends and the artificial intelligence talent migration to markets like Taiwan. With your risk tolerance, satellite positions in Argentina (53% YTD ETF performance) and China tech (30% YTD) offer tactical opportunities to enhance returns beyond core holdings.",
+        "title": "Global Trade Reshaping",
+        "summary": "Geopolitical realignments and nearshoring initiatives are creating asymmetric opportunities in trade infrastructure and emerging market e-commerce platforms.",
+        "report": "The Global Trade Reshaping theme captures the profound transformation in international commerce driven by geopolitical tensions, supply chain resilience considerations, and digital technology that is reorienting global trade flows over the next decade. Traditional trade patterns are being disrupted as countries pursue 'friend-shoring' and 'near-shoring' strategies, with the Inflation Reduction Act and CHIPS Act catalyzing significant manufacturing relocation that will require corresponding investment in trade infrastructure including ports, customs technology, and regional distribution centers. Simultaneously, digital trade platforms are democratizing access to global markets for small and medium enterprises, with MercadoLibre reporting 68% growth in cross-border transactions on its platform as Latin American businesses increasingly sell to North American consumers. Key catalysts include the Regional Comprehensive Economic Partnership agreement covering 30% of global GDP, evolution of digital trade rules through organizations like the WTO, and technological innovations in trade finance including blockchain-based solutions that reduce transaction costs by up to 80%. Unlike historical trade plays vulnerable to tariff fluctuations, modern trade infrastructure investments benefit from structural demand increases driven by supply chain diversification - total container throughput at US ports serving Latin American trade routes has grown at 11.3% annually since 2022 compared to 3.1% for transpacific routes. For aggressive retirement investors, this theme offers exposure to multi-decade infrastructure buildout while maintaining defensive characteristics as trade volumes continue growing regardless of economic cycles. The most compelling opportunities exist at the intersection of physical trade infrastructure (ports, logistics providers) and digital trade enablers (e-commerce platforms, payment processors), creating companies with both tangible asset bases and high-growth digital revenue streams that generate superior cash flow characteristics. With approximately $7.4 trillion needed for US infrastructure investment over the next decade according to the American Society of Civil Engineers, this theme offers asymmetric risk-reward for investors positioned in the right segments of the trade value chain[6][15][17].",
         "relevant_tickers": [
-          "ARGT",
-          "KTEC",
-          "FXI"
-        ]
+          "MELI",
+          "UPS",
+          "FDX",
+          "ANET"
+        ],
+        "theme_category": "Trade"
       }
     ],
     "stock_picks": [
       {
         "ticker": "NVDA",
         "company_name": "NVIDIA Corporation",
-        "rationale": "NVIDIA dominates the $250B AI accelerator market with 90% share in training workloads. Q2 2025 guidance projects 170% YoY revenue growth to $40B, fueled by Blackwell GPU demand exceeding supply through 2026. Recent partnerships with TSMC (3nm co-development) and AWS ($4B infrastructure deal) cement technological moat. Trading at 38x forward P/E despite 150% EPS growth, valuation remains attractive for category-defining leadership in parallel computing."
+        "rationale": "NVIDIA stands as the preeminent player in the AI semiconductor revolution, with its data center segment now accounting for approximately 83% of total revenue, fueled by unprecedented demand for its H100, H200, and the newly launched GB200 Blackwell architecture GPUs. The company has demonstrated extraordinary financial execution, growing revenues by 134% year-over-year in Q1 fiscal 2026, with non-GAAP gross margins expanding to 77.5%, reflecting both pricing power and manufacturing efficiency. Recent regulatory approval for the reactivation of H20 shipments to China and expected Blackwell shipments exceeding 1.5 million units annually through 2026 represent significant near-term catalysts. UBS Global Research recently raised their price target to $205 from $175, citing stronger-than-expected data center demand and a favorable supply-demand dynamic that could persist through 2027. For an aggressive long-term retirement portfolio, NVDA offers unparalleled exposure to the multi-decade AI infrastructure buildout with its end-to-end stack from hardware to CUDA software ecosystem, while maintaining reasonable valuation metrics relative to growth, with a PEG ratio of 0.37 signaling significant undervaluation given its projected 44% earnings growth. The stock has already delivered 32.6% year-to-date returns as the best-performing Dow component, establishing clear leadership in facilitating the generative AI revolution across cloud providers, enterprises, and national security applications[13][19][2].",
+        "price_target": 205,
+        "analyst_rating": "Strong Buy from UBS",
+        "risk_level": "medium"
       },
       {
-        "ticker": "CRWD",
-        "company_name": "CrowdStrike Holdings, Inc.",
-        "rationale": "CrowdStrike's AI-native Falcon platform demonstrates 30% YoY revenue growth with 80% gross margins. Recent wins include $100M+ federal contracts and displacement of legacy vendors at Fortune 500 accounts. Analyst consensus projects 35% CAGR through 2028 as cloud-native security becomes enterprise standard. The stock trades at premium 17x sales but justifies valuation with rule-of-70 metrics (growth + FCF margin)."
+        "ticker": "PLTR",
+        "company_name": "Palantir Technologies Inc.",
+        "rationale": "Palantir has successfully transitioned from a government contractor to a rapidly scaling commercial AI platform provider, evidenced by its landmark Q2 2025 results where the company reported its first quarterly revenue exceeding $1 billion, representing a 48% year-over-year increase with US commercial revenue surging by 60% year-over-year. This exceptional growth stems from widespread adoption of its AIP (Artificial Intelligence Platform) across Fortune 500 companies, with clients like Airbus, Siemens, and Merck leveraging Palantir's technology for everything from aircraft maintenance optimization to clinical trial acceleration. The company's unique software-as-a-service model for complex data environments generates extremely high gross margins of 85% and has driven free cash flow margins to 38%, remarkable for a high-growth technology company. Cantor Fitzgerald recently upgraded the stock with a price target of $500, noting that investors are undervaluing the company's burgeoning government and commercial pipeline which could drive 2027 revenues to $12 billion. For an aggressive retirement investor seeking explosive growth potential, PLTR represents concentrated exposure to enterprise AI implementation with multiple product lines including Foundry for data integration and AIP for generative AI, strategically positioned as companies move from AI concept to production deployment. The stock has already delivered a staggering 461.61% one-year return while maintaining significant upside potential as commercial adoption accelerates across multiple high-value verticals[7][10][2].",
+        "price_target": 500,
+        "analyst_rating": "Overweight from Cantor Fitzgerald",
+        "risk_level": "high"
       },
       {
-        "ticker": "BNTX",
-        "company_name": "BioNTech SE",
-        "rationale": "BioNTech's mRNA pipeline features 12 cancer vaccines in clinical trials, with Phase 3 melanoma data due Q4 2025. The company's $15B cash position funds both oncology leadership and infectious disease expansion. Trading at 8x forward sales versus 20x sector average, valuation ignores platform potential beyond COVID. Recent partnership with DARPA on rapid vaccine development demonstrates government confidence in technology."
+        "ticker": "AMD",
+        "company_name": "Advanced Micro Devices, Inc.",
+        "rationale": "AMD has emerged as the most credible challenger to NVIDIA in the AI accelerator market with its MI300 series of chips demonstrating competitive performance while offering cost advantages through its modular architecture that separates GPU and memory components. The company delivered impressive Q2 2025 results with total revenue reaching $7.7 billion, representing 24% year-over-year growth driven by 75% growth in data center GPU sales as hyperscalers like Microsoft Azure and Oracle Cloud diversify their AI infrastructure away from NVIDIA's dominance. With its MI300X accelerator now powering Amazon Bedrock, Llama Stack deployments, and several major financial institutions' AI initiatives, AMD is capitalizing on enterprise demand for alternative AI hardware architectures. Stifel recently raised their price target to $212, citing 'resumption of H20 shipments in July and accelerating demand for GB300 infrastructure' which they expect will lead to a beat-and-raise scenario. For an aggressive investor seeking asymmetric upside in the AI semiconductor space, AMD offers approximately 3 times the revenue growth potential of its valuation compared to peers, with a PEG ratio of 0.69 signaling significant undervaluation relative to its projected earnings trajectory. With multiple billion-dollar design wins now entering production phase and the PC market also showing signs of recovery, AMD presents a compelling asymmetric risk-reward profile perfectly aligned with the multi-year AI infrastructure cycle[13][2][14].",
+        "price_target": 212,
+        "analyst_rating": "Buy from Stifel",
+        "risk_level": "medium"
       },
       {
-        "ticker": "SEZL",
-        "company_name": "Sezzle Inc.",
-        "rationale": "Sezzle's BNPL platform targets Gen Z consumers with 123% YoY revenue growth and 64% GMV expansion. The company's capital-light model achieves profitability at scale while capturing e-commerce payment share from credit cards. At 3.5x sales versus 15x for sector peers, valuation disconnect exists for the fastest-growing fintech. Recent expansion into B2B payments represents $5B incremental TAM."
+        "ticker": "MELI",
+        "company_name": "MercadoLibre, Inc.",
+        "rationale": "MercadoLibre represents the dominant e-commerce and fintech platform across Latin America, operating a vertically integrated ecosystem that includes online marketplace, digital payments (Mercado Pago), logistics (Mercado Envios), and advertising services. The company reported robust Q2 2025 results with 37.68% year-over-year revenue growth, driven by accelerating adoption of its Mercado Pago wallet across 45 million users and expanding retail penetration in key markets like Brazil, Mexico, and Argentina where e-commerce penetration remains significantly below US levels. Recent innovations like credit card issuance in Argentina and expanding banking services in Mexico position the company to capture greater wallet share among Latin America's growing middle class. Benchmark maintained a Buy rating with a $2,875 price target despite some near-term margin compression related to increased marketing spend and the rollout of a lower free shipping threshold in Brazil, viewing these as strategic investments in long-term market dominance. For an aggressive retirement investor seeking exposure to underpenetrated growth markets, MELI offers exceptional long-term potential as Latin American e-commerce is projected to grow from $145 billion in 2024 to over $300 billion by 2029, with MercadoLibre well-positioned to maintain its leading 45% market share while expanding into higher-margin financial services. With average price target upside of 21.99% according to analysts, the company provides a rare combination of regional dominance, multiple growth vectors, and significant reinvestment opportunities[1][6][15].",
+        "price_target": 2875,
+        "analyst_rating": "Buy from Benchmark",
+        "risk_level": "medium"
       },
       {
-        "ticker": "GEV",
-        "company_name": "GE Vernova",
-        "rationale": "GE Vernova dominates renewable energy infrastructure with 40% market share in offshore wind turbines. The $200B order backlog provides revenue visibility through 2030, while grid modernization initiatives address $3T global power infrastructure gap. The stock trades at 22x forward earnings despite 25% EPS growth projections. Recent DOE loan guarantees de-risk U.S. manufacturing expansion."
+        "ticker": "UPS",
+        "company_name": "United Parcel Service, Inc.",
+        "rationale": "United Parcel Service, Inc. remains the global leader in package delivery and supply chain solutions, uniquely positioned to capitalize on the structural shift toward e-commerce fulfillment which continues to drive package growth despite broader economic conditions. The company reported solid Q2 2025 results with 7.3% revenue growth to $23.8 billion, driven by impressive 11.2% growth in domestic package volume as retailers increasingly rely on UPS for its extensive network of nearly 1,200 facilities and strategic middle-mile and last-mile delivery capabilities. Management has outlined an ambitious $4 billion investment plan through 2026 targeting automation, sustainability initiatives including electric vehicle fleet expansion, and technology enhancements that should drive operating margin expansion from 12.7% to over 15% by 2027. Deutsche Bank recently upgraded UPS to Buy with a $250 price target, highlighting the company's strategic advantage in handling the complex logistics requirements of enterprise e-commerce players and pharmaceutical shippers. For aggressive retirement investors seeking exposure to the $20.1 trillion global logistics market expanding at 7.3% CAGR through 2033, UPS offers significant upside potential while maintaining the financial stability of a dividend aristocrat with 16 consecutive years of dividend growth. The stock's attractive 31% analyst upside potential combined with its strategic positioning in healthcare logistics and international e-commerce makes it a compelling growth-oriented dividend investment that complements pure technology plays[9][16][17].",
+        "price_target": 250,
+        "analyst_rating": "Buy from Deutsche Bank",
+        "risk_level": "medium"
       },
       {
-        "ticker": "QCOM",
-        "company_name": "Qualcomm Incorporated",
-        "rationale": "Qualcomm's Snapdragon X Elite captures the AI PC transition with 45% performance-per-watt advantage over competitors. Design wins at all major OEMs position the company for 50% market share in the $100B Windows on ARM opportunity. Trading at 16x earnings versus 30% EPS growth, valuation fails to reflect royalty model expansion into automotive (25% revenue CAGR)."
+        "ticker": "PM",
+        "company_name": "Philip Morris International Inc.",
+        "rationale": "Philip Morris International has successfully executed a transformational shift from traditional tobacco products toward reduced-risk alternatives, with its smoke-free products now representing 44% of total revenue and 55% of volume in Q2 2025, driven primarily by the IQOS heated tobacco platform which serves 23.9 million users globally. Despite negative volume trends in traditional cigarettes, overall revenue grew 5.7% year-over-year to $8.2 billion as IQOS adoption continues accelerating across Europe, Japan, and newly launched markets like the US where regulatory approval has opened a $100 billion addressable market. The company maintains exceptional profitability with operating margins of 34.8% and return on invested capital of 88%, supporting a generous 3.9% dividend yield and consistent share buybacks that have reduced shares outstanding by 34% over the past decade. Morgan Stanley recently maintained an Overweight rating with a $125 price target, noting PM's 'unparalleled growth trajectory in smoke-free products versus peers' and significant undervaluation relative to its transformation progress. For aggressive retirement investors seeking disruptive growth within the stability of consumer staples, PM offers a rare combination of traditional defensive characteristics with mid-teens growth potential as smoke-free products reach critical mass. With performance of 44.89% over the past year placing it as the top consumer staples stock in the S&P 500, PM provides strong capital appreciation potential while delivering inflation-resistant cash flows essential for long-term retirement portfolio construction[3][8][6].",
+        "price_target": 125,
+        "analyst_rating": "Overweight from Morgan Stanley",
+        "risk_level": "low"
       }
     ],
     "market_analysis": {
-      "current_environment": "Global equities trade at 18.5x forward P/E amid synchronized growth acceleration. The AI investment cycle drives technology sector earnings, projected at 28% YoY growth for Q2 2025. Emerging markets outperform with 15% YTD returns as manufacturing PMIs signal expansion. Bond yields stabilize at 4.2% despite inflation moderation, maintaining equity attractiveness.",
-      "risk_factors": "Monitor Fed policy uncertainty (2 potential 2025 hikes), China property sector contagion risks, and semiconductor export control escalations. Technical indicators show Nasdaq 100 at 15% premium to 200-DMA, warranting disciplined entry points. Sector rotation from AI to value remains primary portfolio risk."
+      "current_environment": "The US equity market is transitioning from broad-based AI enthusiasm to more selective growth investing as investors demand demonstrable revenue and earnings from AI-related plays. The S&P 500 has gained 12.3% year-to-date through August 22 with leadership increasingly concentrated in companies showing accelerating revenue growth rather than pure thematic exposure - 83% of S&P 500 companies have beaten revenue estimates in Q2, with blended earnings growth at 5.6%. Interest rates remain elevated at 4.5% on 10-year Treasuries but show signs of peaking, while inflation continues moderating toward target levels. Geopolitical tensions persist but appear largely priced into markets, with the exception of potential China policy shifts following the upcoming US election.",
+      "risk_factors": "Key risks include potential escalation of trade tensions following the US presidential election, particularly around technology controls and tariffs; possible acceleration of AI infrastructure buildout timing leading to supply glut; further weakening of the Chinese economy impacting global growth; increasing regulatory scrutiny on AI companies; and potential policy shifts regarding interest rates if inflation proves stickier than expected. Commodity price volatility, particularly in energy and critical minerals essential for technology manufacturing, represents another meaningful risk factor for the recommended portfolio.",
+      "opportunities": "Major opportunities driving these selections include the multi-year AI infrastructure investment cycle with data center capital expenditures projected to exceed $350 billion annually by 2027; structural shift toward e-commerce fulfillment with global logistics market projected to reach $20.1 trillion by 2033; smoke-free product adoption accelerating at PM creating mid-teens growth in a traditionally defensive sector; and Latin American e-commerce penetration still significantly below US levels providing multi-year growth runway for MELI. The convergence of these structural trends creates asymmetric risk-reward opportunities particularly for aggressive investors with long time horizons."
     }
   },
-  "generated_at": "2025-06-23T11:57:08.378601",
+  "generated_at": "2025-08-26T17:51:40.335Z",
   "user_profile_used": {
-    "age": "22-23 (fresh out of college)",
-    "location": "Newport Beach, California",
-    "email": "cfmendo1@uci.edu",
-    "occupation": "Recent Graduate",
-    "income": "$80,000 - $90,000",
-    "portfolioValue": "$36,441.52",
-    "totalGain": "$296.66 (0.82% return)",
-    "riskScore": "8.9/10 (High)",
-    "diversificationScore": "1.6/10 (Poor)",
-    "holdings": "- AAPL: 55.9% ($20,369 - major concentration risk)\n- FLOT: 27.5% ($10,021 - short-term bond ETF) \n- SPY: 14.9% ($5,428 - S&P 500 ETF)\n- Asset Allocation: 100% Equity\n- Security Types: 57.5% Individual Stocks, 42.5% ETFs",
-    "investmentCapacity": "~$10,000",
-    "timeHorizon": "30+ years (retiring in 30+ years)",
-    "primaryGoal": "Long-term wealth building",
-    "targetPortfolio": "Aggressive Growth Portfolio",
-    "riskTolerance": "High/Aggressive",
-    "currentRiskProfile": "Aggressive",
-    "interests": "- Strong interest in technology sector\n- Growth-focused investing approach\n- Open to diversification beyond current concentrated AAPL position",
-    "keyIssues": "- Extremely poor diversification (55.9% in single stock)\n- High concentration risk in AAPL\n- Need for better sector and geographic diversification\n- Opportunity to leverage long time horizon for aggressive growth"
+    "name": "Lance",
+    "goals": "retirement",
+    "risk_tolerance": "aggressive",
+    "investment_timeline": "10_plus_years",
+    "financial_literacy": "intermediate",
+    "market_interests": [
+      "technology",
+      "trade",
+      "stocks",
+      "consumer_staples"
+    ],
+    "monthly_budget": 750,
+    "portfolio": "BTI, DAL, JNJ, LLY, QQQ, VTI, VXUS"
   },
   "metadata": {
-    "usage": {
-      "prompt_tokens": 1571,
-      "completion_tokens": 2377,
-      "total_tokens": 3948,
-      "citation_tokens": 12771,
-      "num_search_queries": 16,
-      "reasoning_tokens": 64696
-    },
-    "citations": [
-      "https://www.morningstar.com/funds/3-great-aggressive-growth-funds-2025-2",
-      "https://www.investing.com/academy/etfs/best-growth-etfs-to-watch/",
-      "https://www.investopedia.com/the-best-tech-stocks-8781414",
-      "https://www.home.saxo/learn/guides/diversification/diversification-for-advanced-investors-high-risk-high-reward-strategies",
-      "https://www.nerdwallet.com/article/investing/what-are-emerging-markets",
-      "https://www.ig.com/en/trading-strategies/best-renewable-energy-stocks-to-watch-in-2025-250116",
-      "https://www.nerdwallet.com/article/investing/understanding-small-cap-stocks",
-      "https://www.bankrate.com/investing/best-performing-tech-stocks/",
-      "https://www.securities.io/10-promising-biotech-stocks-in-the-medical-field/",
-      "https://www.ig.com/uk/trading-strategies/best-biotech-stocks-to-watch-250228",
-      "https://www.morningstar.com/stocks/best-biotech-stocks-buy",
-      "https://www.ig.com/en/news-and-trade-ideas/best-ai-stocks-to-watch-230622",
-      "https://investboss.com/threads/cybersecurity-stocks-sector-deep-dive-top-picks-%E2%80%93-june-2025.989/latest",
-      "https://intellectia.ai/blog/best-healthcare-etf",
-      "https://www.morningstar.co.uk/uk/news/259364/best-ai-stocks-to-invest-in-now.aspx",
-      "https://www.nasdaq.com/articles/cybersecurity-stock-beating-market-2025-should-you-buy-it-hand-over-fist",
-      "https://www.schwab.com/learn/story/retirement-portfolio-assets-allocation-by-age",
-      "https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/aggressive-investment-strategy/",
-      "https://investingnews.com/daily/tech-investing/cybersecurity-investing/cybersecurity-etfs/",
-      "https://carboncredits.com/top-5-carbon-etfs-for-sustainable-investing-in-2025/"
-    ],
     "model": "sonar-deep-research",
-    "test_run": true
+    "cost": 0.525,
+    "citations": 20,
+    "update_date": "2025-08-26"
   }
 }

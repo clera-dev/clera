@@ -7,37 +7,56 @@ import { ExternalLink } from 'lucide-react';
 interface ResearchSourcesCardProps {
   citations: string[];
   isLoading?: boolean;
+  isNewUser?: boolean; // Show special loading state for new users
 }
 
-// Static fallback citations
-const STATIC_CITATIONS = [
-  "https://www.permanentportfoliofunds.com/aggressive-growth-portfolio.html",
-  "https://madisonfunds.com/funds/aggressive-allocation-fund/",
-  "https://www.cambridgeassociates.com/insight/concentrated-stock-portfolios-deborah-christie-sean-mclaughlin-and-chris-parker/",
-  "https://ncua.gov/regulation-supervision/letters-credit-unions-other-guidance/concentration-risk-0",
-  "https://www.ig.com/en/news-and-trade-ideas/best-ai-stocks-to-watch-230622",
-  "https://www.securities.io/10-promising-biotech-stocks-in-the-medical-field/",
-  "https://www.sganalytics.com/blog/best-green-energy-stocks-to-invest-and-buy-in/",
-  "https://www.nerdwallet.com/article/investing/what-are-emerging-markets",
-  "https://www.investopedia.com/managing-wealth/achieve-optimal-asset-allocation/",
-  "https://blog.massmutual.com/retiring-investing/investor-profile-aggressive",
-  "https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/aggressive-investment-strategy/",
-  "https://www.investopedia.com/terms/a/aggressiveinvestmentstrategy.asp",
-  "https://www.fidelity.com/learning-center/wealth-management-insights/diversify-concentrated-positions",
-  "https://www.schwab.wallst.com/schwab/Prospect/research/etfs/schwabETF/index.asp?type=holdings&symbol=IWO",
-  "https://www.schwab.wallst.com/schwab/Prospect/research/etfs/schwabETF/index.asp?type=holdings&symbol=SMH",
-  "https://intellectia.ai/blog/cloud-computing-stocks",
-  "https://www.ftportfolios.com/Retail/Etf/EtfHoldings.aspx?Ticker=CIBR",
-  "https://intellectia.ai/blog/best-5g-stocks",
-  "https://www.ftportfolios.com/retail/etf/ETFholdings.aspx?Ticker=QCLN",
-  "https://capex.com/en/academy/investing-in-ev-stocks"
-];
+// Production-grade: No static fallbacks - handle states properly
 
-export default function ResearchSourcesCard({ citations, isLoading = false }: ResearchSourcesCardProps) {
-  const displayCitations = citations.length > 0 ? citations : STATIC_CITATIONS;
+export default function ResearchSourcesCard({ citations, isLoading = false, isNewUser = false }: ResearchSourcesCardProps) {
+  
+  // New user loading state
+  if (isNewUser) {
+    return (
+      <Card className="h-fit">
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Research Sources</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Sources used to generate your personalized investment analysis
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8">
+          <div className="animate-spin h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+          <div className="text-center space-y-2">
+            <p className="text-sm font-medium text-foreground">Gathering Research Sources</p>
+            <p className="text-xs text-muted-foreground max-w-sm">
+              Collecting citation data from deep research analysis.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  if (displayCitations.length === 0) {
-    return null;
+  // Production-grade: Show proper empty state when no citations available
+  if (citations.length === 0) {
+    return (
+      <Card className="h-fit">
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Research Sources</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Sources used to generate your personalized investment analysis
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8">
+          <div className="text-center space-y-2">
+            <p className="text-sm font-medium text-foreground">No Sources to Display</p>
+            <p className="text-xs text-muted-foreground max-w-sm">
+              Research sources will appear here once your personalized analysis is generated.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -52,7 +71,7 @@ export default function ResearchSourcesCard({ citations, isLoading = false }: Re
         <div className="relative">
           <div className="max-h-80 overflow-y-auto border rounded-lg bg-gray-50 dark:bg-gray-900/50 p-4 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {displayCitations.map((citation, index) => (
+              {citations.map((citation, index) => (
                 <a
                   key={index}
                   href={citation}
@@ -64,7 +83,13 @@ export default function ResearchSourcesCard({ citations, isLoading = false }: Re
                     <ExternalLink className="h-4 w-4 flex-shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
                     <div className="min-w-0 flex-1">
                       <div className="font-medium truncate">
-                        {new URL(citation).hostname.replace(/^www\./, '')}
+                        {(() => {
+                          try {
+                            return new URL(citation).hostname.replace(/^www\./, '');
+                          } catch {
+                            return citation;
+                          }
+                        })()}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                         {citation.replace(/^https?:\/\//, '')}
@@ -74,10 +99,10 @@ export default function ResearchSourcesCard({ citations, isLoading = false }: Re
                 </a>
               ))}
             </div>
-            {displayCitations.length > 20 && (
+            {citations.length > 20 && (
               <div className="text-center mt-4 pt-4 border-t">
                 <p className="text-sm text-muted-foreground">
-                  Showing all {displayCitations.length} research sources
+                  Showing all {citations.length} research sources
                 </p>
               </div>
             )}

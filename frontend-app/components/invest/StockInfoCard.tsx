@@ -15,6 +15,8 @@ import { Terminal, Sparkles, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatNumber, cn } from "@/lib/utils";
 import { validateAndSanitizeExternalUrl } from "@/utils/security";
+import { WeeklyStockPick } from "@/lib/types/weekly-stock-picks";
+import { formatStockRationale } from "@/utils/textFormatting";
 import StockChart from "./StockChart";
 
 interface StockInfoCardProps {
@@ -79,16 +81,12 @@ interface PriceTargetSummary {
   publishers?: string; // Often a stringified JSON array
 }
 
-interface StockPick {
-  ticker: string;
-  company_name: string;
-  rationale: string;
-}
+// Using WeeklyStockPick type from the types file for consistency
 
 export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockInfoCardProps) {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [priceTarget, setPriceTarget] = useState<PriceTargetSummary | null>(null);
-  const [cleraRecommendation, setCleraRecommendation] = useState<StockPick | null>(null);
+  const [cleraRecommendation, setCleraRecommendation] = useState<WeeklyStockPick | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
@@ -104,7 +102,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
   // Load Clera's stock recommendations
   const loadCleraRecommendations = async () => {
     try {
-      const response = await fetch('/api/investment/research', {
+      const response = await fetch('/api/investment/weekly-picks', {
         method: 'GET',
       });
 
@@ -112,7 +110,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
         const result = await response.json();
         if (result.success && result.data?.stock_picks) {
           const recommendation = result.data.stock_picks.find(
-            (pick: StockPick) => pick.ticker.toUpperCase() === symbol.toUpperCase()
+            (pick: WeeklyStockPick) => pick.ticker.toUpperCase() === symbol.toUpperCase()
           );
           setCleraRecommendation(recommendation || null);
         }
@@ -369,17 +367,29 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
                 <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-bold text-sm sm:text-base">
-                  Clera's Stock Pick
+                  Clera's Rationale (Risk: {cleraRecommendation.risk_level})
                 </span>
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0 pb-3 px-3 lg:px-4">
-              <p className="text-xs sm:text-sm text-foreground leading-relaxed">
-                {isRationaleLong && !isRationaleExpanded 
-                  ? `${rationale!.substring(0, RATIONALE_LIMIT)}...` 
-                  : rationale
-                }
-              </p>
+              <div className="text-xs sm:text-sm text-foreground leading-relaxed">
+                {(() => {
+                  const formattedRationale = formatStockRationale(rationale || '');
+                  const displayText = isRationaleLong && !isRationaleExpanded 
+                    ? `${formattedRationale.substring(0, RATIONALE_LIMIT)}...` 
+                    : formattedRationale;
+                  
+                  // Render each bullet/line with spacing for readability
+                  const lines = displayText.split('\n').filter(l => l.trim().length > 0);
+                  return (
+                    <div className="space-y-2">
+                      {lines.map((line, idx) => (
+                        <p key={idx} className="whitespace-pre-line">{line}</p>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
               {isRationaleLong && (
                 <button 
                   onClick={toggleRationale} 

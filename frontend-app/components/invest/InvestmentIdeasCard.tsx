@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { RelevantStocks } from './RelevantStocks';
+import { formatInvestmentThemeReport, cleanInlineCitations } from '@/utils/textFormatting';
 
 interface InvestmentTheme {
   title: string;
@@ -23,54 +24,64 @@ interface InvestmentIdeasCardProps {
   onStockSelect: (symbol: string) => void;
   onThemeSelect?: () => void;
   isLoading?: boolean;
+  isNewUser?: boolean; // Show special loading state for new users
 }
 
-// Clean inline citations from text for cleaner reading
-const cleanInlineCitations = (text: string) => {
-  return text.replace(/\[\d+\]/g, '').replace(/\s{2,}/g, ' ').trim();
-};
+// Removed: cleanInlineCitations moved to utils/textFormatting.ts
 
-// Static fallback investment ideas
-const STATIC_INVESTMENT_IDEAS = [
-  {
-    title: "AI Infrastructure Revolution",
-    summary: "Capitalize on the accelerating adoption of artificial intelligence across industries through infrastructure companies enabling AI computing, data processing, and cloud services.",
-    report: "The AI infrastructure market is experiencing unprecedented growth as enterprises accelerate their digital transformation initiatives. Companies providing GPU computing, cloud infrastructure, and AI-optimized hardware are positioned to benefit from this multi-trillion dollar opportunity. Key areas include semiconductor companies developing AI chips, cloud service providers expanding AI capabilities, and software companies creating AI development platforms.",
-    relevant_tickers: ["NVDA", "AMD", "MSFT", "GOOGL", "AMZN"]
-  },
-  {
-    title: "Cybersecurity Dominance",
-    summary: "Target companies leading the essential defense against escalating cyber threats in our increasingly digital world, focusing on next-generation security solutions.",
-    report: "The cybersecurity market continues to expand as organizations face increasingly sophisticated threats. Companies offering cloud-native security, zero-trust architectures, and AI-powered threat detection are seeing strong demand. The shift to remote work and cloud infrastructure has created new attack vectors, driving investment in endpoint security, identity management, and security orchestration platforms.",
-    relevant_tickers: ["CRWD", "ZS", "OKTA", "PANW", "FTNT"]
-  },
-  {
-    title: "Biotech Innovation Wave",
-    summary: "Invest in breakthrough therapeutic platforms addressing multi-billion dollar unmet medical needs through innovative drug development and delivery systems.",
-    report: "The biotechnology sector is experiencing a renaissance driven by advances in gene therapy, immunotherapy, and precision medicine. Companies with innovative platforms for drug discovery and development are attracting significant investment. Areas of particular interest include mRNA technology, CAR-T cell therapy, and novel drug delivery systems that can address previously untreatable conditions.",
-    relevant_tickers: ["BNTX", "MRNA", "ILMN", "REGN", "GILD"]
-  },
-  {
-    title: "Emerging Markets Ascendancy",
-    summary: "Capture hypergrowth in developing economies leading the global technology adoption curve, focusing on fintech and digital transformation leaders.",
-    report: "Emerging markets are experiencing rapid digital transformation, with companies in fintech, e-commerce, and digital payments seeing explosive growth. These markets often leapfrog traditional infrastructure, creating opportunities for innovative business models. Key themes include mobile-first financial services, digital payment platforms, and technology companies serving the growing middle class in developing economies.",
-    relevant_tickers: ["SEZL", "PYPL", "SQ", "MELI", "SHOP"]
-  }
-];
+// Production-grade: No static fallbacks - handle states properly
 
-export default function InvestmentIdeasCard({ investmentThemes, onStockSelect, onThemeSelect, isLoading = false }: InvestmentIdeasCardProps) {
+export default function InvestmentIdeasCard({ investmentThemes, onStockSelect, onThemeSelect, isLoading = false, isNewUser = false }: InvestmentIdeasCardProps) {
   const [selectedTheme, setSelectedTheme] = useState<InvestmentTheme | null>(null);
-  const displayThemes = investmentThemes.length > 0 ? investmentThemes : STATIC_INVESTMENT_IDEAS;
+
+  // New user loading state
+  if (isNewUser) {
+    return (
+      <Card className="h-fit">
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Personalized Investment Themes</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8">
+          <div className="animate-spin h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+          <div className="text-center space-y-2">
+            <p className="text-sm font-medium text-foreground">Generating Your Investment Themes</p>
+            <p className="text-xs text-muted-foreground max-w-sm">
+              Creating personalized investment themes based on your preferences and market analysis.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Production-grade: If no themes and not a new user, something went wrong
+  if (investmentThemes.length === 0) {
+    return (
+      <Card className="h-fit">
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Personalized Investment Themes</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8">
+          <div className="text-center space-y-2">
+            <p className="text-sm font-medium text-foreground">Unable to Load Themes</p>
+            <p className="text-xs text-muted-foreground max-w-sm">
+              We're having trouble loading your investment themes. Please try refreshing the page.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <>
       <Card className="h-fit">
         <CardHeader>
-          <CardTitle className="text-xl font-semibold">Your Personalized Investment Ideas</CardTitle>
+          <CardTitle className="text-xl font-semibold">Personalized Investment Themes</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {displayThemes.map((theme, index) => (
+            {investmentThemes.map((theme, index) => (
               <Card 
                 key={index}
                 className="border hover:shadow-lg hover:scale-[1.02] transition-all duration-200 cursor-pointer overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 h-40 flex flex-col relative z-10"
@@ -136,7 +147,15 @@ export default function InvestmentIdeasCard({ investmentThemes, onStockSelect, o
               
               <div>
                 <h4 className="font-semibold mb-2 text-foreground">Report:</h4>
-                <p className="text-sm text-muted-foreground leading-relaxed break-words">{cleanInlineCitations(selectedTheme.report)}</p>
+                <div className="text-sm text-muted-foreground leading-relaxed break-words space-y-3">
+                  {formatInvestmentThemeReport(selectedTheme.report)
+                    .split('\n\n')
+                    .map((para, idx) => (
+                      <p key={idx} className="mb-3 whitespace-pre-line">
+                        {para}
+                      </p>
+                    ))}
+                </div>
               </div>
               
               {/* Note about sources being available below */}

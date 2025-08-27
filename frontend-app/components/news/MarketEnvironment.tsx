@@ -21,13 +21,13 @@ export default function MarketEnvironment({ className = "" }: MarketEnvironmentP
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  // Load market analysis from cached investment research
+  // Load market analysis from personalized weekly stock picks
   const loadMarketAnalysis = async () => {
     setIsLoading(true);
     setError(null);
     
     try {
-      const response = await fetch('/api/investment/research', {
+      const response = await fetch('/api/investment/weekly-picks', {
         method: 'GET',
       });
 
@@ -44,8 +44,16 @@ export default function MarketEnvironment({ className = "" }: MarketEnvironmentP
       if (result.success && result.data?.market_analysis) {
         setMarketAnalysis(result.data.market_analysis);
         setLastUpdated(new Date(result.metadata.generated_at).toLocaleString());
+      } else if (result.success && result.metadata?.fallback_reason === 'no_data_generated_yet') {
+        // New user - no data generated yet
+        setMarketAnalysis(null);
+        setError('Market analysis is being generated. Please check back soon.');
+      } else if (result.success && !result.data) {
+        // No data available (but not specifically a new user)
+        setMarketAnalysis(null);
+        setError('Market analysis not available. Please try again later.');
       } else {
-        throw new Error('Market analysis not found in data');
+        throw new Error(result.error || 'Market analysis not found in data');
       }
 
     } catch (err) {
@@ -85,16 +93,25 @@ export default function MarketEnvironment({ className = "" }: MarketEnvironmentP
   }
 
   if (error) {
+    // Show different styling for "being generated" vs actual errors
+    const isGenerating = error.includes('being generated');
+    const borderColor = isGenerating ? 'border-l-blue-500' : 'border-l-red-500';
+    const alertVariant = isGenerating ? 'default' : 'destructive';
+    
     return (
-      <Card className={`border-l-4 border-l-red-500 ${className}`}>
+      <Card className={`border-l-4 ${borderColor} ${className}`}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             Current Market Environment
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
+          <Alert variant={alertVariant as any}>
+            {isGenerating ? (
+              <Database className="h-4 w-4" />
+            ) : (
+              <AlertTriangle className="h-4 w-4" />
+            )}
             <AlertDescription>
               {error}
             </AlertDescription>

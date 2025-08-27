@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/update-watchlist-news",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/generate-weekly-stock-picks",
+      "schedule": "30 12 * * 1"
     }
   ],
   "headers": [
@@ -34,6 +38,15 @@
     },
     {
       "source": "/api/cron/update-watchlist-news",
+      "headers": [
+        {
+          "key": "Authorization",
+          "value": "Bearer ${CRON_SECRET}"
+        }
+      ]
+    },
+    {
+      "source": "/api/cron/generate-weekly-stock-picks",
       "headers": [
         {
           "key": "Authorization",
