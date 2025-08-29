@@ -279,9 +279,11 @@ const STOCK_PICKS_SCHEMA = {
 };
 
 // Generate stock picks for a single user (shared between cron and on-demand)
+// ARCHITECTURAL FIX: Inject Perplexity client to maintain server-only boundary
 export async function generateStockPicksForUser(
   userId: string, 
-  supabase: any
+  supabase: any,
+  perplexityClient: OpenAI
 ): Promise<WeeklyStockPicksInsert | null> {
   try {
     console.log(`🚀 Deep research has commenced for user ${userId}`);
@@ -365,23 +367,8 @@ Please conduct deep research and provide current, actionable investment recommen
     await updateUserStatus(userId, weekOf, 'sent_to_perplexity', supabase);
     console.log(`📡 Sending request to Perplexity Deep Research for user ${userId}...`);
     
-    // Make request to Perplexity API
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.PPLX_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(perplexityPayload)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Perplexity API Error for user ${userId}:`, errorText);
-      throw new Error(`Perplexity API error: ${response.status} - ${errorText}`);
-    }
-
-    const perplexityResponse: PerplexityStockPicksResponse = await response.json();
+    // Make request to Perplexity API using injected client
+    const perplexityResponse = await perplexityClient.chat.completions.create(perplexityPayload) as PerplexityStockPicksResponse;
     console.log(`✅ Received response from Perplexity for user ${userId}`);
     
     // Update status to indicate we're parsing the response

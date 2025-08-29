@@ -3,6 +3,7 @@
 Clera is a financial AI platform leveraging advanced language models and agent-based architecture to provide financial analysis, portfolio management, brokerage services, and conversational capabilities. This monorepo contains all the code pertaining to building Clera, simplifying CI/CD pipelines, testing, and onboarding.
 
 ## TL;DR
+### How to run servers
 Open 3 terminals (T1, T2, T3)
 In T1 run: 
 ```bash
@@ -39,6 +40,13 @@ If it crashes because there isn't enough room in docker, run:
 docker system prune -a --volumes -f
 ```
 And you can track their progress in AWS > Elastic Container Service.
+
+### How to get cursor to cook:
+
+Run this command and use the file as context in chatsto help cursor easily know context of your branch
+```bash
+git diff main > frontend-app/git-diff.md
+```
 
 ## Project Structure
 

@@ -54,7 +54,25 @@ export default function InvestmentIdeasCard({ investmentThemes, onStockSelect, o
     );
   }
 
-  // Production-grade: If no themes and not a new user, something went wrong
+  // Loading state - show skeleton while data is being fetched
+  if (isLoading) {
+    return (
+      <Card className="h-fit">
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Personalized Investment Themes</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-40 bg-muted animate-pulse rounded-lg" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Production-grade: If no themes and not loading, something went wrong
   if (investmentThemes.length === 0) {
     return (
       <Card className="h-fit">

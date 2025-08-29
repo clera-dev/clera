@@ -10,6 +10,9 @@ import { NewsPersonalizationService } from '@/utils/services/news-personalizatio
 import { PersonalizationData } from '@/lib/types/personalization';
 import { fetchUserPersonalization } from '@/lib/server/personalization-service';
 
+// Extend function execution time to avoid Vercel 15s timeout during first-time summary generation
+export const maxDuration = 60;
+
 const sentimentAnalyzer = new Sentiment();
 
 // Redis key constants for user generation locks

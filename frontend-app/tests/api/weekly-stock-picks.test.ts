@@ -171,7 +171,7 @@ describe('/api/investment/weekly-picks', () => {
       const request = new NextRequest('http://localhost:3000/api/investment/weekly-picks');
       const response = await GET(request);
       
-      expect(response.status).toBe(200); // API returns 200 with error in response body
+      expect(response.status).toBe(500); // API returns 500 for database errors
       
       const responseData: WeeklyStockPicksResponse = await response.json();
       expect(responseData.success).toBe(false);
@@ -320,7 +320,7 @@ describe('/api/investment/weekly-picks', () => {
       const request = new NextRequest('http://localhost:3000/api/investment/weekly-picks');
       const response = await GET(request);
       
-      expect(response.status).toBe(200); // API returns 200 with error in response body
+      expect(response.status).toBe(500); // API returns 500 for service errors
       
       const responseData: WeeklyStockPicksResponse = await response.json();
       expect(responseData.success).toBe(false);

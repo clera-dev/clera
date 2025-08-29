@@ -55,8 +55,8 @@ export function useWeeklyStockPicks(): UseWeeklyStockPicksReturn {
         setWeekOf(responseData.metadata?.week_of || null);
         setIsFallback(!!responseData.metadata?.fallback_reason);
         setIsNewUser(false);
-      } else if (responseData.metadata?.fallback_reason === 'no_data_generated_yet') {
-        // New user - no data generated yet
+      } else if (responseData.metadata?.fallback_reason === 'generation_in_progress') {
+        // New user or in-progress generation - no data generated yet
         setData(null);
         setLastGenerated(null);
         setWeekOf(responseData.metadata?.week_of || null);

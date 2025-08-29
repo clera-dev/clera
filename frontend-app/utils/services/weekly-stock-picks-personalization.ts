@@ -1,5 +1,9 @@
 import { 
   PersonalizationData,
+  RiskTolerance,
+  InvestmentTimeline,
+  ExperienceLevel,
+  MarketInterest,
   INVESTMENT_GOAL_DESCRIPTIONS,
   RISK_TOLERANCE_DESCRIPTIONS,
   INVESTMENT_TIMELINE_DESCRIPTIONS,
@@ -45,17 +49,17 @@ export class WeeklyStockPicksPersonalizationService {
   /**
    * Get investment strategy guidance based on risk tolerance for stock picks
    */
-  private static getRiskBasedStockGuidance(riskLevel: string): string {
-    const guidanceMap: Record<string, string> = {
-      'conservative': (
+  private static getRiskBasedStockGuidance(riskLevel: RiskTolerance): string {
+    const guidanceMap: Record<RiskTolerance, string> = {
+      [RiskTolerance.CONSERVATIVE]: (
         "Focus on large-cap, dividend-paying stocks with strong balance sheets and stable earnings. " +
         "Emphasize blue-chip companies, utilities, and defensive sectors. Avoid speculative growth stocks."
       ),
-      'moderate': (
+      [RiskTolerance.MODERATE]: (
         "Recommend a balanced mix of growth and value stocks across different market caps. " +
         "Include some dividend stocks and growth companies with proven track records. Moderate risk exposure."
       ),
-      'aggressive': (
+      [RiskTolerance.AGGRESSIVE]: (
         "Focus on high-growth potential stocks, emerging markets, small-cap opportunities, and disruptive technologies. " +
         "Include momentum stocks and companies with significant upside potential despite higher volatility."
       )
@@ -66,25 +70,25 @@ export class WeeklyStockPicksPersonalizationService {
   /**
    * Get investment strategy based on timeline for stock picks
    */
-  private static getTimelineBasedStockGuidance(timeline: string): string {
-    const guidanceMap: Record<string, string> = {
-      'less_than_1_year': (
+  private static getTimelineBasedStockGuidance(timeline: InvestmentTimeline): string {
+    const guidanceMap: Record<InvestmentTimeline, string> = {
+      [InvestmentTimeline.LESS_THAN_1_YEAR]: (
         "Focus on stable, liquid large-cap stocks with minimal volatility. " +
         "Avoid high-growth speculative plays due to short timeline."
       ),
-      '1_to_3_years': (
+      [InvestmentTimeline.ONE_TO_THREE_YEARS]: (
         "Recommend quality stocks with moderate growth potential and reasonable valuations. " +
         "Balance between stability and growth for medium-term gains."
       ),
-      '3_to_5_years': (
+      [InvestmentTimeline.THREE_TO_FIVE_YEARS]: (
         "Include growth stocks with strong fundamentals and expansion plans. " +
         "Mix of established companies and emerging leaders in their sectors."
       ),
-      '5_to_10_years': (
+      [InvestmentTimeline.FIVE_TO_TEN_YEARS]: (
         "Focus on long-term growth opportunities, including innovative companies and disruptive technologies. " +
         "Higher risk tolerance allows for more aggressive growth picks."
       ),
-      '10_plus_years': (
+      [InvestmentTimeline.TEN_PLUS_YEARS]: (
         "Emphasize transformative companies and long-term megatrends. " +
         "Include emerging technologies, demographic shifts, and paradigm-changing businesses."
       )
@@ -95,21 +99,21 @@ export class WeeklyStockPicksPersonalizationService {
   /**
    * Get communication style guidance based on experience level
    */
-  private static getExperienceBasedCommunication(experienceLevel: string): string {
-    const guidanceMap: Record<string, string> = {
-      'no_experience': (
+  private static getExperienceBasedCommunication(experienceLevel: ExperienceLevel): string {
+    const guidanceMap: Record<ExperienceLevel, string> = {
+      [ExperienceLevel.NO_EXPERIENCE]: (
         "Use simple, clear explanations for stock recommendations. Explain why each stock is suitable " +
         "for beginners and include basic investment concepts in your rationale."
       ),
-      'some_familiarity': (
+      [ExperienceLevel.SOME_FAMILIARITY]: (
         "Provide clear explanations while building on basic investment knowledge. " +
         "Include some financial metrics but explain their significance."
       ),
-      'comfortable': (
+      [ExperienceLevel.COMFORTABLE]: (
         "Use standard investment terminology and discuss financial metrics, competitive positioning, " +
         "and market dynamics in your stock analysis."
       ),
-      'professional': (
+      [ExperienceLevel.PROFESSIONAL]: (
         "Use sophisticated financial analysis, discuss valuation models, competitive moats, " +
         "and detailed market dynamics. Include professional-level insights."
       )
@@ -120,23 +124,28 @@ export class WeeklyStockPicksPersonalizationService {
   /**
    * Get sector focus guidance based on market interests
    */
-  private static getSectorFocusGuidance(marketInterests: string[]): string {
+  static getSectorFocusGuidance(marketInterests: MarketInterest[]): string {
     if (!marketInterests || marketInterests.length === 0) {
       return "Provide diversified stock picks across multiple sectors.";
     }
     
-    const sectorMappings: Record<string, string> = {
-      'technology': 'software, semiconductors, cloud computing, AI, and cybersecurity',
-      'healthcare': 'pharmaceuticals, biotechnology, medical devices, and healthcare services',
-      'financials': 'banks, insurance, fintech, payment processors, and asset management',
-      'energy': 'renewable energy, oil & gas, utilities, and energy infrastructure',
-      'consumer_discretionary': 'retail, automotive, entertainment, and luxury goods',
-      'consumer_staples': 'food & beverage, household products, and personal care',
-      'industrials': 'aerospace, manufacturing, logistics, and industrial equipment',
-      'materials': 'mining, chemicals, construction materials, and commodity producers',
-      'real_estate': 'REITs, real estate development, and property management',
-      'communication_services': 'telecommunications, media, and social media platforms',
-      'utility': 'electric utilities, water utilities, and renewable energy infrastructure'
+    const sectorMappings: Record<MarketInterest, string> = {
+      [MarketInterest.GLOBAL_POLITICS]: 'global politics and international relations',
+      [MarketInterest.TRADE]: 'international trade and commerce',
+      [MarketInterest.STOCKS]: 'equity markets and stock trading',
+      [MarketInterest.BONDS]: 'fixed income and bond markets',
+      [MarketInterest.ECONOMY]: 'economic indicators and macroeconomics',
+      [MarketInterest.TECHNOLOGY]: 'software, semiconductors, cloud computing, AI, and cybersecurity',
+      [MarketInterest.HEALTHCARE]: 'pharmaceuticals, biotechnology, medical devices, and healthcare services',
+      [MarketInterest.FINANCIALS]: 'banks, insurance, fintech, payment processors, and asset management',
+      [MarketInterest.ENERGY]: 'renewable energy, oil & gas, utilities, and energy infrastructure',
+      [MarketInterest.CONSUMER_DISCRETIONARY]: 'retail, automotive, entertainment, and luxury goods',
+      [MarketInterest.CONSUMER_STAPLES]: 'food & beverage, household products, and personal care',
+      [MarketInterest.INDUSTRIALS]: 'aerospace, manufacturing, logistics, and industrial equipment',
+      [MarketInterest.MATERIALS]: 'mining, chemicals, construction materials, and commodity producers',
+      [MarketInterest.REAL_ESTATE]: 'REITs, real estate development, and property management',
+      [MarketInterest.COMMUNICATION_SERVICES]: 'telecommunications, media, and social media platforms',
+      [MarketInterest.UTILITY]: 'electric utilities, water utilities, and renewable energy infrastructure'
     };
     
     const focusAreas = marketInterests
@@ -251,9 +260,9 @@ CRITICAL: Use this personalization information to select stocks that specificall
   /**
    * Get user's risk tolerance for stock selection
    */
-  static getRiskToleranceLevel(data: PersonalizationData | null): string {
+  static getRiskToleranceLevel(data: PersonalizationData | null): RiskTolerance {
     if (!data || !data.riskTolerance) {
-      return 'moderate';
+      return RiskTolerance.MODERATE;
     }
     
     return data.riskTolerance;
@@ -262,9 +271,9 @@ CRITICAL: Use this personalization information to select stocks that specificall
   /**
    * Get user's investment timeline for stock selection strategy
    */
-  static getInvestmentTimeline(data: PersonalizationData | null): string {
+  static getInvestmentTimeline(data: PersonalizationData | null): InvestmentTimeline {
     if (!data || !data.investmentTimeline) {
-      return '5_to_10_years';
+      return InvestmentTimeline.FIVE_TO_TEN_YEARS;
     }
     
     return data.investmentTimeline;
@@ -273,7 +282,7 @@ CRITICAL: Use this personalization information to select stocks that specificall
   /**
    * Get user's sector interests for focused stock recommendations
    */
-  static getMarketInterestsFocus(data: PersonalizationData | null): string[] {
+  static getMarketInterestsFocus(data: PersonalizationData | null): MarketInterest[] {
     if (!data || !data.marketInterests || data.marketInterests.length === 0) {
       return [];
     }
@@ -284,16 +293,16 @@ CRITICAL: Use this personalization information to select stocks that specificall
   /**
    * Get appropriate financial communication level for stock explanations
    */
-  static getFinancialCommunicationLevel(data: PersonalizationData | null): string {
+  static getFinancialCommunicationLevel(data: PersonalizationData | null): 'beginner' | 'intermediate' | 'advanced' | 'expert' {
     if (!data || !data.experienceLevel) {
       return 'intermediate';
     }
     
-    const levelMap: Record<string, string> = {
-      'no_experience': 'beginner',
-      'some_familiarity': 'intermediate', 
-      'comfortable': 'advanced',
-      'professional': 'expert'
+    const levelMap: Record<ExperienceLevel, 'beginner' | 'intermediate' | 'advanced' | 'expert'> = {
+      [ExperienceLevel.NO_EXPERIENCE]: 'beginner',
+      [ExperienceLevel.SOME_FAMILIARITY]: 'intermediate', 
+      [ExperienceLevel.COMFORTABLE]: 'advanced',
+      [ExperienceLevel.PROFESSIONAL]: 'expert'
     };
     
     return levelMap[data.experienceLevel] || 'intermediate';

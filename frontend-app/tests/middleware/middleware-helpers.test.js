@@ -42,8 +42,8 @@ describe('Middleware Helper Functions', () => {
       expect(config.requiresOnboarding).toBe(true);
     });
 
-    test('should return null for investment API (not configured)', () => {
-      const config = getRouteConfig('/api/investment/research');
+    test('should return null for weekly picks API (not configured)', () => {
+      const config = getRouteConfig('/api/investment/weekly-picks');
       expect(config).toBeNull();
     });
 
@@ -143,9 +143,9 @@ describe('Critical Access Control Test Cases', () => {
     expect(portfolioConfig.requiresOnboarding).toBe(true);
   });
 
-  test('CRITICAL: research endpoints should not require onboarding', () => {
-    // Investment research should be available during onboarding
-    const researchConfig = getRouteConfig('/api/investment/research');
-    expect(researchConfig).toBeNull(); // Not configured
+  test('CRITICAL: weekly picks endpoints should not require onboarding', () => {
+    // Weekly stock picks should be available during onboarding
+    const weeklyPicksConfig = getRouteConfig('/api/investment/weekly-picks');
+    expect(weeklyPicksConfig).toBeNull(); // Not configured
   });
 }); 

@@ -33,13 +33,15 @@ export const formatTextWithLineBreaks = (text: string): string => {
 };
 
 // Split text into digestible bullet points (mobile-friendly)
+// Note: This function is only used when Perplexity output doesn't already have bullet formatting
 export const splitIntoReadableBullets = (text: string, maxBullets: number = 4): string[] => {
   const cleaned = cleanInlineCitations(text);
   
-  // If already has bullets, clean and return them
-  if (cleaned.includes('•') || cleaned.includes('*') || cleaned.includes('-')) {
+  // If already has bullets, preserve Perplexity's native formatting
+  // Use more specific patterns to avoid false positives from hyphens in normal text
+  if (cleaned.includes('•') || cleaned.includes('*') || /(?:^|\n)\s*-\s/.test(cleaned)) {
     return cleaned
-      .split(/[\n•\*-]+/)
+      .split(/(?:^|\n)\s*(?:[•*-]\s+)/)
       .map(bullet => bullet.trim())
       .filter(bullet => bullet.length > 10)
       .slice(0, maxBullets);
@@ -54,10 +56,10 @@ export const splitIntoReadableBullets = (text: string, maxBullets: number = 4): 
     // One sentence per bullet
     return sentences.slice(0, maxBullets).map(s => s.trim() + (s.trim().endsWith('.') ? '' : '.'));
   } else {
-    // Group sentences to fit maxBullets
+    // Group sentences to fit maxBullets (only when Perplexity doesn't provide bullet formatting)
     const sentencesPerBullet = Math.ceil(sentences.length / maxBullets);
     for (let i = 0; i < sentences.length && bullets.length < maxBullets; i += sentencesPerBullet) {
-      const bullet = sentences.slice(i, i + sentencesPerBullet).join('.').trim();
+      const bullet = sentences.slice(i, i + sentencesPerBullet).join('. ').trim(); // Proper spacing between sentences
       if (bullet) {
         bullets.push(bullet + (bullet.endsWith('.') ? '' : '.'));
       }

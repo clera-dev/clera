@@ -1,23 +1,41 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { generateStockPicksForUser } from '@/utils/services/weekly-stock-picks-generator';
-
-// Helper function to get Monday of the current week (for cron scheduling)
+import { OpenAI } from 'openai';
+// Helper function to get Monday of the current week in Pacific Time (DST-safe, locale-agnostic)
 function getMondayOfWeek(): string {
   const now = new Date();
-  
-  // Convert to Pacific Time
-  const pacificTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}));
-  
-  // Get the Monday of this week
-  const dayOfWeek = pacificTime.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday is 0, Monday is 1
-  
-  const monday = new Date(pacificTime);
-  monday.setDate(pacificTime.getDate() + mondayOffset);
-  monday.setHours(0, 0, 0, 0);
-  
-  return monday.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+
+  // Use Intl.DateTimeFormat with timeZone + formatToParts to get PT calendar parts reliably
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short'
+  });
+
+  const parts = dtf.formatToParts(now);
+  const part = (type: string) => parts.find(p => p.type === type)?.value || '';
+
+  const year = Number(part('year'));
+  const month = Number(part('month'));
+  const day = Number(part('day'));
+  const weekdayShort = part('weekday'); // e.g., 'Mon', 'Tue'
+
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const dayOfWeek = weekdayMap[weekdayShort] ?? 0;
+
+  // Offset to Monday (PT calendar). If Sunday (0), go back 6 days
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  // Construct a UTC date from PT calendar parts, then add offset in day units.
+  // Operating in UTC avoids DST-related wall-clock shifts.
+  const baseUtcMs = Date.UTC(year, month - 1, day);
+  const mondayUtc = new Date(baseUtcMs + mondayOffset * 86400000);
+
+  // Return ISO date (YYYY-MM-DD) of the PT Monday label
+  return mondayUtc.toISOString().split('T')[0];
 }
 
 export async function GET(request: Request) {
@@ -109,9 +127,15 @@ export async function GET(request: Request) {
 
           console.log(`✅ CRON: Generation slot claimed for user ${user.user_id}. Starting actual generation...`);
           
+          // Create Perplexity client (server-only) and inject into generator
+          const perplexityClient = new OpenAI({
+            apiKey: process.env.PPLX_API_KEY,
+            baseURL: 'https://api.perplexity.ai',
+          });
+          
           // Generate stock picks using the shared utility
           // Note: generateStockPicksForUser now handles UPSERT internally
-          const stockPicksRecord = await generateStockPicksForUser(user.user_id, supabase);
+          const stockPicksRecord = await generateStockPicksForUser(user.user_id, supabase, perplexityClient);
           
           if (!stockPicksRecord) {
             console.error(`CRON: Failed to generate stock picks for user ${user.user_id}`);

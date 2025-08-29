@@ -113,7 +113,13 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
             (pick: WeeklyStockPick) => pick.ticker.toUpperCase() === symbol.toUpperCase()
           );
           setCleraRecommendation(recommendation || null);
+        } else {
+          // Clear recommendation when API returns success: false or no data
+          setCleraRecommendation(null);
         }
+      } else {
+        // Clear recommendation when API returns non-OK status
+        setCleraRecommendation(null);
       }
     } catch (err) {
       console.log('No Clera recommendations available:', err);
@@ -213,6 +219,7 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
       setError(null);
       setProfile(null);
       setPriceTarget(null);
+      setCleraRecommendation(null); // Clear previous recommendation when symbol changes
       setIsDescriptionExpanded(false);
       setIsRationaleExpanded(false);
       

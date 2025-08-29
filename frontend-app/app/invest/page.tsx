@@ -45,29 +45,7 @@ interface BalanceData {
   currency: string;
 }
 
-interface InvestmentTheme {
-  title: string;
-  summary: string;
-  report: string;
-  relevant_tickers: string[];
-}
 
-interface StockPick {
-  ticker: string;
-  company_name: string;
-  rationale: string;
-}
-
-interface MarketAnalysis {
-  current_environment: string;
-  risk_factors: string;
-}
-
-interface InvestmentResearchData {
-  investment_themes: InvestmentTheme[];
-  stock_picks: StockPick[];
-  market_analysis: MarketAnalysis;
-}
 
 export default function InvestPage() {
   const { sideChatVisible } = useCleraAssist();
@@ -93,10 +71,7 @@ export default function InvestPage() {
     isNewUser: isNewUserForPicks
   } = useWeeklyStockPicks();
   
-  // Legacy research data for investment themes (keeping for now)
-  const [legacyResearchData, setLegacyResearchData] = useState<{ investment_themes: InvestmentTheme[] } | null>(null);
-  const [isLoadingLegacyResearch, setIsLoadingLegacyResearch] = useState(true);
-  const [citations, setCitations] = useState<string[]>([]);
+
   
   
   // Get sidebar collapse function
@@ -198,34 +173,7 @@ export default function InvestPage() {
     fetchBalance();
   }, [accountId, isLoadingAccountId]);
 
-  // Load legacy research data for investment themes only
-  useEffect(() => {
-    const loadLegacyResearchData = async () => {
-      setIsLoadingLegacyResearch(true);
-      
-      try {
-        const response = await fetch('/api/investment/research', {
-          method: 'GET',
-        });
 
-        if (response.ok) {
-          const data = await response.json();
-          
-          if (data.data && data.data.investment_themes) {
-            setLegacyResearchData({ investment_themes: data.data.investment_themes });
-            setCitations(data.metadata?.citations || []);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading legacy research data:', error);
-        // Silently fail - investment themes will use fallback data
-      } finally {
-        setIsLoadingLegacyResearch(false);
-      }
-    };
-
-    loadLegacyResearchData();
-  }, []);
 
   const handleStockSelect = (symbol: string) => {
     // Auto-collapse sidebar when stock dialog opens
@@ -405,12 +353,12 @@ export default function InvestPage() {
               isNewUser={isNewUserForPicks}
             />
             
-            {/* Investment Ideas - Third in stacked layout - Using legacy research data for now */}
+            {/* Investment Ideas - Third in stacked layout */}
             <InvestmentIdeasCard
-              investmentThemes={weeklyPicksData?.investment_themes || legacyResearchData?.investment_themes || []}
+              investmentThemes={weeklyPicksData?.investment_themes || []}
               onStockSelect={handleStockSelect}
               onThemeSelect={autoCollapseSidebar}
-              isLoading={isLoadingWeeklyPicks && isLoadingLegacyResearch}
+              isLoading={isLoadingWeeklyPicks}
               isNewUser={isNewUserForPicks}
             />
             
@@ -459,10 +407,10 @@ export default function InvestPage() {
                   : 'xl:col-span-2' // When chat is closed, take 2/3 of the xl grid
               }`}>
                 <InvestmentIdeasCard
-                  investmentThemes={weeklyPicksData?.investment_themes || legacyResearchData?.investment_themes || []}
+                  investmentThemes={weeklyPicksData?.investment_themes || []}
                   onStockSelect={handleStockSelect}
                   onThemeSelect={autoCollapseSidebar}
-                  isLoading={isLoadingWeeklyPicks && isLoadingLegacyResearch}
+                  isLoading={isLoadingWeeklyPicks}
                   isNewUser={isNewUserForPicks}
                 />
               </div>

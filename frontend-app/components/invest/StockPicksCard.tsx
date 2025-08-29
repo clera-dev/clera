@@ -81,6 +81,27 @@ export default function StockPicksCard({ stockPicks, onStockSelect, lastGenerate
     );
   }
 
+  // Loading state - show skeleton while data is being fetched
+  if (isLoading) {
+    return (
+      <Card className="h-full flex flex-col">
+        <CardHeader className="flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xl font-semibold">Stock Picks From Clera</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="flex-1">
+          {/* Mobile: 2 columns, 3 rows | Desktop: 3 columns, 2 rows */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 h-full">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="h-[140px] bg-muted animate-pulse rounded-lg" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Production-grade: If no stock picks and not a new user, something went wrong
   if (stockPicks.length === 0) {
     return (

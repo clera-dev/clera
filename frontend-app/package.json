@@ -58,6 +58,7 @@
     "react-use-websocket": "^4.13.0",
     "recharts": "^2.10.3",
     "sentiment": "^5.0.2",
+    "server-only": "^0.0.1",
     "sse.js": "^2.6.0"
   },
   "devDependencies": {

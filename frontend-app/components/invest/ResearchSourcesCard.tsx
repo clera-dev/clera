@@ -14,8 +14,8 @@ interface ResearchSourcesCardProps {
 
 export default function ResearchSourcesCard({ citations, isLoading = false, isNewUser = false }: ResearchSourcesCardProps) {
   
-  // New user loading state
-  if (isNewUser) {
+  // New user loading state - only show when no citations are available
+  if (isNewUser && citations.length === 0) {
     return (
       <Card className="h-fit">
         <CardHeader>

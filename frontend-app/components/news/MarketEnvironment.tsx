@@ -1,74 +1,19 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { TrendingUp, AlertTriangle, RefreshCw, Database } from 'lucide-react';
+import { TrendingUp, AlertTriangle, Database } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-
-interface MarketAnalysis {
-  current_environment: string;
-  risk_factors: string;
-}
+import { useWeeklyStockPicks } from '@/hooks/useWeeklyStockPicks';
 
 interface MarketEnvironmentProps {
   className?: string;
 }
 
 export default function MarketEnvironment({ className = "" }: MarketEnvironmentProps) {
-  const [marketAnalysis, setMarketAnalysis] = useState<MarketAnalysis | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-
-  // Load market analysis from personalized weekly stock picks
-  const loadMarketAnalysis = async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const response = await fetch('/api/investment/weekly-picks', {
-        method: 'GET',
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Market analysis data not available.');
-        }
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Request failed with status ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      if (result.success && result.data?.market_analysis) {
-        setMarketAnalysis(result.data.market_analysis);
-        setLastUpdated(new Date(result.metadata.generated_at).toLocaleString());
-      } else if (result.success && result.metadata?.fallback_reason === 'no_data_generated_yet') {
-        // New user - no data generated yet
-        setMarketAnalysis(null);
-        setError('Market analysis is being generated. Please check back soon.');
-      } else if (result.success && !result.data) {
-        // No data available (but not specifically a new user)
-        setMarketAnalysis(null);
-        setError('Market analysis not available. Please try again later.');
-      } else {
-        throw new Error(result.error || 'Market analysis not found in data');
-      }
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load market analysis';
-      console.error('Failed to load market analysis:', errorMessage);
-      setError(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Load data on component mount
-  useEffect(() => {
-    loadMarketAnalysis();
-  }, []);
+  // Use the existing abstraction instead of duplicating API logic
+  const { data, isLoading, error, isNewUser, isFallback, lastGenerated } = useWeeklyStockPicks();
 
   if (isLoading) {
     return (
@@ -92,26 +37,39 @@ export default function MarketEnvironment({ className = "" }: MarketEnvironmentP
     );
   }
 
-  if (error) {
-    // Show different styling for "being generated" vs actual errors
-    const isGenerating = error.includes('being generated');
-    const borderColor = isGenerating ? 'border-l-blue-500' : 'border-l-red-500';
-    const alertVariant = isGenerating ? 'default' : 'destructive';
-    
+  // Handle new user state (data being generated)
+  if (isNewUser) {
     return (
-      <Card className={`border-l-4 ${borderColor} ${className}`}>
+      <Card className={`border-l-4 border-l-blue-500 ${className}`}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             Current Market Environment
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Alert variant={alertVariant as any}>
-            {isGenerating ? (
-              <Database className="h-4 w-4" />
-            ) : (
-              <AlertTriangle className="h-4 w-4" />
-            )}
+          <Alert variant="default">
+            <Database className="h-4 w-4" />
+            <AlertDescription>
+              Market analysis is being generated. Please check back soon.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Handle actual errors
+  if (error) {
+    return (
+      <Card className={`border-l-4 border-l-red-500 ${className}`}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Current Market Environment
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
               {error}
             </AlertDescription>
@@ -121,6 +79,9 @@ export default function MarketEnvironment({ className = "" }: MarketEnvironmentP
     );
   }
 
+  // Extract market analysis from the data
+  const marketAnalysis = data?.market_analysis;
+  
   if (!marketAnalysis) {
     return null;
   }
@@ -153,6 +114,11 @@ export default function MarketEnvironment({ className = "" }: MarketEnvironmentP
             {marketAnalysis.risk_factors}
           </p>
         </div>
+        {lastGenerated && (
+          <div className="text-xs text-muted-foreground pt-2 border-t">
+            Last updated: {new Date(lastGenerated).toLocaleString()}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
