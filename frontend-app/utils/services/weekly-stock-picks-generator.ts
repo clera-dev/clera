@@ -3,24 +3,9 @@ import { WeeklyStockPicksPersonalizationService } from '@/utils/services/weekly-
 import { WeeklyStockPicksData, WeeklyStockPicksInsert, PerplexityStockPicksResponse } from '@/lib/types/weekly-stock-picks';
 import { fetchUserPersonalization } from '@/lib/server/personalization-service';
 import { fetchUserPortfolioString } from '@/utils/services/portfolio-fetcher';
+import { getPacificMondayOfWeek } from '@/lib/timezone';
 
-// Helper function to get the Monday of the current week in Pacific Time
-function getMondayOfWeek(): string {
-  const now = new Date();
-  
-  // Convert to Pacific Time
-  const pacificTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}));
-  
-  // Get the Monday of this week
-  const dayOfWeek = pacificTime.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday is 0, Monday is 1
-  
-  const monday = new Date(pacificTime);
-  monday.setDate(pacificTime.getDate() + mondayOffset);
-  monday.setHours(0, 0, 0, 0);
-  
-  return monday.toISOString().split('T')[0]; // Return YYYY-MM-DD format
-}
+// PT week computation centralized in lib/timezone.ts to avoid locale parsing issues
 
 // Helper function to update user processing status
 async function updateUserStatus(userId: string, weekOf: string, status: string, supabase: any): Promise<void> {
@@ -288,7 +273,7 @@ export async function generateStockPicksForUser(
   try {
     console.log(`🚀 Deep research has commenced for user ${userId}`);
     
-    const weekOf = getMondayOfWeek();
+    const weekOf = getPacificMondayOfWeek(new Date());
     
     // Note: Status should already be 'started' by the calling function
     // Update to 'processing' as we begin actual work
@@ -502,7 +487,7 @@ Please conduct deep research and provide current, actionable investment recommen
 
   } catch (error: any) {
     // Update status to error
-    const weekOf = getMondayOfWeek();
+    const weekOf = getPacificMondayOfWeek(new Date());
     await updateUserStatus(userId, weekOf, 'error', supabase);
     console.error(`❌ Failed to generate stock picks for user ${userId}:`, error.message);
     return null;

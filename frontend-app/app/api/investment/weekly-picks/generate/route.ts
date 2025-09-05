@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { claimWeeklyPicksSlot } from '@/utils/db/atomic-claim';
-import { generateStockPicksForUser } from '@/utils/services/weekly-stock-picks-generator';
-import { OpenAI } from 'openai';
+import { enqueueWeeklyPicksGeneration, getJobStatus } from '@/utils/jobs/weekly-picks-queue';
 
 // DST-safe Pacific Monday computation
 function getMondayOfWeek(): string {
@@ -58,16 +56,14 @@ export async function POST(request: NextRequest) {
 
     const weekOf = getMondayOfWeek();
 
-    // Use service-role client for generation ops
-    const { createClient: createServiceClient } = await import('@supabase/supabase-js');
-    const supabaseService = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // Atomic claim prevents duplicate costly runs
-    const claim = await claimWeeklyPicksSlot(supabaseService, user.id, weekOf, 'sonar-deep-research');
-    if (!claim.claimed) {
+    // SECURITY FIX: Use user-scoped Supabase client and proper job enqueueing
+    // instead of directly using service role key in user-facing endpoint.
+    // This maintains proper architectural boundaries and least-privilege access.
+    
+    // Check current job/generation status first
+    const jobStatus = await getJobStatus(supabase, user.id, weekOf);
+    
+    if (jobStatus.status === 'processing' || jobStatus.status === 'pending') {
       return NextResponse.json({
         success: true,
         data: null,
@@ -75,24 +71,71 @@ export async function POST(request: NextRequest) {
           generated_at: null,
           week_of: weekOf,
           cached: false,
-          fallback_reason: 'generation_in_progress'
+          fallback_reason: 'generation_in_progress',
+          job_status: jobStatus.status
         }
       });
     }
 
-    // Create Perplexity client (server-only) and inject into generator
-    const perplexityClient = new OpenAI({
-      apiKey: process.env.PPLX_API_KEY,
-      baseURL: 'https://api.perplexity.ai',
-    });
-
-    const record = await generateStockPicksForUser(user.id, supabaseService, perplexityClient);
-    if (!record) {
-      return NextResponse.json({ error: 'Generation failed' }, { status: 500 });
+    if (jobStatus.status === 'completed') {
+      return NextResponse.json({
+        success: true,
+        data: null,
+        metadata: {
+          generated_at: new Date().toISOString(),
+          week_of: weekOf,
+          cached: true,
+          fallback_reason: 'already_completed'
+        }
+      });
     }
 
-    return NextResponse.json({ success: true, week_of: record.week_of, generated_at: record.generated_at });
+    // Determine generation reason for job prioritization
+    let reason: 'new_user' | 'new_week' | 'error_recovery' | 'manual_trigger' = 'manual_trigger';
+    if (jobStatus.status === 'failed') {
+      reason = 'error_recovery';
+    } else if (jobStatus.status === 'not_found') {
+      // Check if this is a new user (no previous picks)
+      const { data: previousPicks } = await supabase
+        .from('user_weekly_stock_picks')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1);
+      
+      reason = previousPicks?.length ? 'new_week' : 'new_user';
+    }
+
+    // Enqueue generation job for background processing
+    // This delegates heavy work to background workers with proper service role access
+    const enqueueResult = await enqueueWeeklyPicksGeneration(
+      supabase, 
+      user.id, 
+      weekOf, 
+      reason, 
+      reason === 'new_user' ? 'high' : 'normal'
+    );
+
+    if (!enqueueResult.success) {
+      return NextResponse.json({ 
+        error: enqueueResult.reason || 'Failed to start generation' 
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: null,
+      metadata: {
+        generated_at: null,
+        week_of: weekOf,
+        cached: false,
+        fallback_reason: 'generation_queued',
+        job_id: enqueueResult.jobId,
+        generation_reason: reason
+      }
+    });
+
   } catch (e: any) {
+    console.error('Error in weekly picks generation endpoint:', e);
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
   }
 }

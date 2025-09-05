@@ -199,6 +199,7 @@ Before going live, ensure these security measures are in place:
    CRON_SECRET=your-secure-cron-secret
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
    FINANCIAL_MODELING_PREP_API_KEY=your-fmp-key
+   PPLX_API_KEY=your-api-key
    ```
 
 2. **Database Constraints**: Ensure unique constraint exists on `user_weekly_stock_picks(user_id, week_of)`
@@ -332,3 +333,12 @@ If you need to:
   - `app/api/investment/weekly-picks/generate/route.ts` - Creates and injects client
   - `app/api/cron/generate-weekly-stock-picks/route.ts` - Creates and injects client  
   - `app/api/investment/weekly-picks/route.ts` - Updates commented production logic
+
+### ✅ **Production Worker Crash Fixed** (2025-08-28)
+- **Issue**: `scripts/weekly-picks-worker.js` unconditionally required `dotenv` which is in devDependencies, causing production crashes
+- **Solution**: Made dotenv loading optional via try/catch:
+  - Worker gracefully falls back to system environment variables
+  - Prevents crashes in production/container environments
+  - Maintains development convenience with .env.local files
+- **Files Updated**:
+  - `scripts/weekly-picks-worker.js` - Added try/catch around dotenv loading

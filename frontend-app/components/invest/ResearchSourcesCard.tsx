@@ -37,7 +37,28 @@ export default function ResearchSourcesCard({ citations, isLoading = false, isNe
     );
   }
 
-  // Production-grade: Show proper empty state when no citations available
+  // Loading state - show skeleton while data is being fetched
+  if (isLoading) {
+    return (
+      <Card className="h-fit">
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Research Sources</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Sources used to generate your personalized investment analysis
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="h-16 bg-muted animate-pulse rounded-lg" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Production-grade: Show proper empty state when no citations available and not loading
   if (citations.length === 0) {
     return (
       <Card className="h-fit">

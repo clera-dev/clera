@@ -114,11 +114,6 @@ export default function MarketEnvironment({ className = "" }: MarketEnvironmentP
             {marketAnalysis.risk_factors}
           </p>
         </div>
-        {lastGenerated && (
-          <div className="text-xs text-muted-foreground pt-2 border-t">
-            Last updated: {new Date(lastGenerated).toLocaleString()}
-          </div>
-        )}
       </CardContent>
     </Card>
   );

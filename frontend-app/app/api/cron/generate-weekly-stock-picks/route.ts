@@ -95,7 +95,7 @@ export async function GET(request: Request) {
             .eq('week_of', weekOf)
             .limit(1);
           
-          if (existingPicks && existingPicks.length > 0) {
+            if (existingPicks && existingPicks.length > 0 && existingPicks[0].status === 'completed') {
             console.log(`CRON: Skipping user ${user.user_id} - already has picks for week ${weekOf} (status: ${existingPicks[0].status})`);
             return { success: true, skipped: true };
           }

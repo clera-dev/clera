@@ -16,6 +16,7 @@
  */
 
 import { WeeklyStockPicksData, WeeklyStockPick, WeeklyInvestmentTheme, WeeklyMarketAnalysis } from '@/lib/types/weekly-stock-picks';
+import { getPacificMondayOfWeek } from '@/lib/timezone';
 import staticFallbackData from '@/lib/data/static-weekly-picks-fallback.json';
 
 export interface StaticWeeklyPicksData extends WeeklyStockPicksData {
@@ -37,9 +38,8 @@ export async function loadStaticWeeklyPicks(): Promise<StaticWeeklyPicksData> {
   // Simulate a small delay to mimic database response time
   await new Promise(resolve => setTimeout(resolve, 100));
   
-  // Get current week for consistent week_of field
-  const currentDate = new Date();
-  const currentWeek = getWeekOf(currentDate);
+  // Get current week (Pacific Monday) for consistent week_of across the app
+  const currentWeek = getPacificMondayOfWeek(new Date());
 
   // Normalize and strongly type the static data so it matches our union types
   const normalizedStockPicks: WeeklyStockPick[] = (staticFallbackData.data.stock_picks || []).map((pick: any) => ({
@@ -68,24 +68,20 @@ export async function loadStaticWeeklyPicks(): Promise<StaticWeeklyPicksData> {
     investment_themes: normalizedThemes,
     market_analysis: normalizedMarket,
     citations: Array.isArray(staticFallbackData.data.citations) ? staticFallbackData.data.citations.map((c: any) => String(c)) : [],
-    generated_at: currentDate.toISOString(),
+    generated_at: new Date().toISOString(),
     week_of: currentWeek,
     model: 'static-fallback'
   };
 }
 
 /**
- * Gets the week_of string for a given date
+ * Gets the week_of string for a given date using DST-safe Pacific timezone
  * Format: YYYY-MM-DD (Monday of the week)
+ * 
+ * This matches the getMondayOfWeek() helper in the API route to ensure
+ * consistency across timezone boundaries and DST transitions.
  */
-function getWeekOf(date: Date): string {
-  const d = new Date(date);
-  // Get the Monday of this week
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
-  d.setDate(diff);
-  return d.toISOString().split('T')[0];
-}
+// PT helper centralized in lib/timezone.ts (getPacificMondayOfWeek)
 
 /**
  * Metadata about the static fallback system
@@ -93,7 +89,6 @@ function getWeekOf(date: Date): string {
 export const STATIC_FALLBACK_METADATA = {
   reason: 'cost_optimization',
   description: 'Using static data during cost optimization phase',
-  source_user_id: staticFallbackData._metadata.source_user_id,
   original_generation_date: staticFallbackData._metadata.original_generated_at,
   note: 'This is temporary - will be replaced with personalized data once enabled'
 };

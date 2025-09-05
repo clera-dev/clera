@@ -126,7 +126,7 @@ export async function processWeeklyPicksJobs(
 
         // Perform the actual generation
         // Create Perplexity client for job processing
-        const { OpenAI } = await import('openai');
+        const OpenAI = (await import('openai')).default;
         const perplexityClient = new OpenAI({
           apiKey: process.env.PPLX_API_KEY,
           baseURL: 'https://api.perplexity.ai',
