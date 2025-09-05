@@ -177,3 +177,4 @@ backend/email_previews/
 # Debug page
 frontend-app/app/debug/
 frontend-app/app/api/debug/
+frontend-app/tmp/

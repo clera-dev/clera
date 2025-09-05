@@ -56,7 +56,7 @@ describe('StockInfoCard - Security', () => {
 
   const setupMockResponses = () => {
     (fetch as jest.Mock)
-      // First call: /api/investment/research (Clera recommendations)
+      // First call: /api/investment/weekly-picks (Clera recommendations)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ success: true, data: { stock_picks: [] } })
@@ -102,7 +102,7 @@ describe('StockInfoCard - Security', () => {
     };
 
     (fetch as jest.Mock)
-      // First call: /api/investment/research (Clera recommendations)
+      // First call: /api/investment/weekly-picks (Clera recommendations)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ success: true, data: { stock_picks: [] } })
@@ -141,7 +141,7 @@ describe('StockInfoCard - Security', () => {
     };
 
     (fetch as jest.Mock)
-      // First call: /api/investment/research (Clera recommendations)
+      // First call: /api/investment/weekly-picks (Clera recommendations)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ success: true, data: { stock_picks: [] } })
@@ -179,7 +179,7 @@ describe('StockInfoCard - Security', () => {
     };
 
     (fetch as jest.Mock)
-      // First call: /api/investment/research (Clera recommendations)
+      // First call: /api/investment/weekly-picks (Clera recommendations)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ success: true, data: { stock_picks: [] } })
@@ -217,7 +217,7 @@ describe('StockInfoCard - Security', () => {
     };
 
     (fetch as jest.Mock)
-      // First call: /api/investment/research (Clera recommendations)
+      // First call: /api/investment/weekly-picks (Clera recommendations)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ success: true, data: { stock_picks: [] } })
@@ -255,7 +255,7 @@ describe('StockInfoCard - Security', () => {
     };
 
     (fetch as jest.Mock)
-      // First call: /api/investment/research (Clera recommendations)
+      // First call: /api/investment/weekly-picks (Clera recommendations)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ success: true, data: { stock_picks: [] } })

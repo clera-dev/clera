@@ -509,6 +509,32 @@ export function getNextMidnightInTimezoneUTC(timezone: string): Date {
   }
 }
 
+/**
+ * Get the Monday (YYYY-MM-DD) of the week for a given date in Pacific Time (America/Los_Angeles).
+ * DST-safe and consistent across environments; returns the ISO date string for Monday in PT.
+ */
+export function getPacificMondayOfWeek(date: Date = new Date()): string {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short'
+  });
+  const parts = dtf.formatToParts(date);
+  const part = (type: string) => parts.find(p => p.type === type)?.value || '';
+  const year = Number(part('year'));
+  const month = Number(part('month'));
+  const day = Number(part('day'));
+  const weekdayShort = part('weekday');
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const dayOfWeek = weekdayMap[weekdayShort] ?? 0;
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const baseUtcMs = Date.UTC(year, month - 1, day);
+  const mondayUtc = new Date(baseUtcMs + mondayOffset * 86400000);
+  return mondayUtc.toISOString().split('T')[0];
+}
+
 export default {
   getUserTimezone,
   getTimezoneAbbreviation,
@@ -524,5 +550,6 @@ export default {
   createEasternDate,
   parseFMPEasternTimestamp,
   getNextMidnightInTimezoneUTC,
+  getPacificMondayOfWeek,
   MARKET_TIMEZONES,
 }; 

@@ -126,12 +126,12 @@ describe('Middleware Behavior Integration Tests', () => {
 
   describe('Banking & Investment Scenarios', () => {
     
-    test('SCENARIO 5: User can research investments during onboarding', () => {
-      // Investment research should be available during onboarding
+    test('SCENARIO 5: User can access weekly stock picks during onboarding', () => {
+      // Weekly stock picks should be available during onboarding
       
       const isAuthenticated = true;
       const onboardingStatus = 'in_progress';
-      const path = '/api/investment/research';
+      const path = '/api/investment/weekly-picks';
       
       const routeConfig = getRouteConfig(path);
       const onboardingComplete = hasCompletedOnboarding(onboardingStatus);
@@ -147,7 +147,7 @@ describe('Middleware Behavior Integration Tests', () => {
         (!defaultConfig.requiresOnboarding || onboardingComplete);
       
       expect(shouldAllow).toBe(true);
-      console.log('✅ CORRECT: User can research investments during onboarding');
+      console.log('✅ CORRECT: User can access weekly stock picks during onboarding');
     });
 
     test('SCENARIO 6: User blocked from bank operations until onboarding complete', () => {
@@ -268,7 +268,7 @@ describe('Regression Tests - Original Bug Scenarios', () => {
       
       // These should NOT require completed onboarding
       { path: '/api/broker/create-account', shouldRequireOnboarding: false },
-      { path: '/api/investment/research', shouldRequireOnboarding: false, shouldBeNull: true },
+      { path: '/api/investment/weekly-picks', shouldRequireOnboarding: false, shouldBeNull: true },
       { path: '/api/companies/profiles/AAPL', shouldRequireOnboarding: false, shouldBeNull: true }
     ];
     

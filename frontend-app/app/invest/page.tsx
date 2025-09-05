@@ -16,6 +16,7 @@ import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
 import { useSidebarCollapse } from "@/components/ClientLayout";
 import { useCleraAssist } from "@/components/ui/clera-assist-provider";
+import { useWeeklyStockPicks } from "@/hooks/useWeeklyStockPicks";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, X } from "lucide-react";
@@ -44,29 +45,7 @@ interface BalanceData {
   currency: string;
 }
 
-interface InvestmentTheme {
-  title: string;
-  summary: string;
-  report: string;
-  relevant_tickers: string[];
-}
 
-interface StockPick {
-  ticker: string;
-  company_name: string;
-  rationale: string;
-}
-
-interface MarketAnalysis {
-  current_environment: string;
-  risk_factors: string;
-}
-
-interface InvestmentResearchData {
-  investment_themes: InvestmentTheme[];
-  stock_picks: StockPick[];
-  market_analysis: MarketAnalysis;
-}
 
 export default function InvestPage() {
   const { sideChatVisible } = useCleraAssist();
@@ -82,12 +61,17 @@ export default function InvestPage() {
   const [watchlistSymbols, setWatchlistSymbols] = useState<Set<string>>(new Set());
   const [watchlistVersion, setWatchlistVersion] = useState(0);
   
-  // Research data state
-  const [researchData, setResearchData] = useState<InvestmentResearchData | null>(null);
-  const [isLoadingResearch, setIsLoadingResearch] = useState(true);
-  const [researchError, setResearchError] = useState<string | null>(null);
-  const [lastGenerated, setLastGenerated] = useState<string | null>(null);
-  const [citations, setCitations] = useState<string[]>([]);
+  // Weekly stock picks data using the new hook
+  const { 
+    data: weeklyPicksData, 
+    isLoading: isLoadingWeeklyPicks, 
+    error: weeklyPicksError, 
+    lastGenerated: weeklyPicksLastGenerated,
+    isFallback: isUsingFallbackPicks,
+    isNewUser: isNewUserForPicks
+  } = useWeeklyStockPicks();
+  
+
   
   
   // Get sidebar collapse function
@@ -189,44 +173,7 @@ export default function InvestPage() {
     fetchBalance();
   }, [accountId, isLoadingAccountId]);
 
-  // Load cached research data
-  useEffect(() => {
-    const loadCachedResearchData = async () => {
-      setIsLoadingResearch(true);
-      setResearchError(null);
-      
-      try {
-        
-        const response = await fetch('/api/investment/research', {
-          method: 'GET',
-        });
 
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error('No cached data available. Using fallback content.');
-          }
-          const errorData = await response.json();
-          throw new Error(errorData.error || `Request failed with status ${response.status}`);
-        }
-
-        const data = await response.json();
-        
-        if (data.research_data) {
-          setResearchData(data.research_data);
-          setLastGenerated(data.generated_at ? new Date(data.generated_at).toLocaleDateString() : null);
-          setCitations(data.citations || []);
-        }
-      } catch (error) {
-        console.error('Error loading cached research data:', error);
-        setResearchError(error instanceof Error ? error.message : 'Failed to load research data');
-        // Don't set researchData to null here - let components handle fallback
-      } finally {
-        setIsLoadingResearch(false);
-      }
-    };
-
-    loadCachedResearchData();
-  }, []);
 
   const handleStockSelect = (symbol: string) => {
     // Auto-collapse sidebar when stock dialog opens
@@ -397,26 +344,29 @@ export default function InvestPage() {
               onOptimisticRemove={optimisticRemoveFromWatchlist}
             />
             
-            {/* Stock Picks - Second in stacked layout */}
+            {/* Stock Picks - Second in stacked layout - Now using personalized weekly picks */}
             <StockPicksCard
-              stockPicks={researchData?.stock_picks || []}
+              stockPicks={weeklyPicksData?.stock_picks || []}
               onStockSelect={handleStockSelect}
-              lastGenerated={lastGenerated}
-              isLoading={isLoadingResearch}
+              lastGenerated={weeklyPicksLastGenerated ? new Date(weeklyPicksLastGenerated).toLocaleDateString() : null}
+              isLoading={isLoadingWeeklyPicks}
+              isNewUser={isNewUserForPicks}
             />
             
             {/* Investment Ideas - Third in stacked layout */}
             <InvestmentIdeasCard
-              investmentThemes={researchData?.investment_themes || []}
+              investmentThemes={weeklyPicksData?.investment_themes || []}
               onStockSelect={handleStockSelect}
               onThemeSelect={autoCollapseSidebar}
-              isLoading={isLoadingResearch}
+              isLoading={isLoadingWeeklyPicks}
+              isNewUser={isNewUserForPicks}
             />
             
             {/* Research Sources - Fourth in stacked layout */}
             <ResearchSourcesCard
-              citations={citations}
-              isLoading={isLoadingResearch}
+              citations={weeklyPicksData?.citations || []}
+              isLoading={isLoadingWeeklyPicks}
+              isNewUser={isNewUserForPicks}
             />
           </div>
         ) : (
@@ -429,10 +379,11 @@ export default function InvestPage() {
                 : 'lg:grid-cols-2' // When chat is closed, use standard lg breakpoint
             }`}>
               <StockPicksCard
-                stockPicks={researchData?.stock_picks || []}
+                stockPicks={weeklyPicksData?.stock_picks || []}
                 onStockSelect={handleStockSelect}
-                lastGenerated={lastGenerated}
-                isLoading={isLoadingResearch}
+                lastGenerated={weeklyPicksLastGenerated ? new Date(weeklyPicksLastGenerated).toLocaleDateString() : null}
+                isLoading={isLoadingWeeklyPicks}
+                isNewUser={isNewUserForPicks}
               />
               <StockWatchlist 
                 accountId={accountId}
@@ -456,10 +407,11 @@ export default function InvestPage() {
                   : 'xl:col-span-2' // When chat is closed, take 2/3 of the xl grid
               }`}>
                 <InvestmentIdeasCard
-                  investmentThemes={researchData?.investment_themes || []}
+                  investmentThemes={weeklyPicksData?.investment_themes || []}
                   onStockSelect={handleStockSelect}
                   onThemeSelect={autoCollapseSidebar}
-                  isLoading={isLoadingResearch}
+                  isLoading={isLoadingWeeklyPicks}
+                  isNewUser={isNewUserForPicks}
                 />
               </div>
               <div className={`${
@@ -468,8 +420,9 @@ export default function InvestPage() {
                   : 'xl:col-span-1' // When chat is closed, take 1/3 of the xl grid
               }`}>
                 <ResearchSourcesCard
-                  citations={citations}
-                  isLoading={isLoadingResearch}
+                  citations={weeklyPicksData?.citations || []}
+                  isLoading={isLoadingWeeklyPicks}
+                  isNewUser={isNewUserForPicks}
                 />
               </div>
             </div>

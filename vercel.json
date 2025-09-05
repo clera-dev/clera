@@ -12,34 +12,5 @@
       "path": "/api/cron/update-watchlist-news",
       "schedule": "0 12 * * *"
     }
-  ],
-  "headers": [
-    {
-      "source": "/api/cron/update-trending-news",
-      "headers": [
-        {
-          "key": "Authorization",
-          "value": "Bearer ${CRON_SECRET}"
-        }
-      ]
-    },
-    {
-      "source": "/api/cron/generate-daily-summary",
-      "headers": [
-        {
-          "key": "Authorization",
-          "value": "Bearer ${CRON_SECRET}"
-        }
-      ]
-    },
-    {
-      "source": "/api/cron/update-watchlist-news",
-      "headers": [
-        {
-          "key": "Authorization",
-          "value": "Bearer ${CRON_SECRET}"
-        }
-      ]
-    }
   ]
 } 
