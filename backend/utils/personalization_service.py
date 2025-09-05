@@ -121,26 +121,53 @@ class PersonalizationService:
             return PersonalizationContext()
         
         try:
+            logger.info(f"=== DATABASE QUERY DEBUG for user_id: {user_id} ===")
+            
+            # Check environment variables
+            import os
+            supabase_url = os.environ.get('SUPABASE_URL')
+            supabase_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or os.environ.get('SUPABASE_ANON_KEY')
+            logger.info(f"SUPABASE_URL env var: {'***SET***' if supabase_url else 'NOT SET'}")
+            logger.info(f"SUPABASE key env var: {'***SET***' if supabase_key else 'NOT SET'}")
+            
             supabase = get_supabase_client()
+            logger.info(f"Supabase client obtained: {supabase is not None}")
             
             # Fetch from user_personalization table
+            logger.info(f"Executing query: SELECT * FROM user_personalization WHERE user_id = {user_id}")
             response = supabase.table('user_personalization')\
                 .select('*')\
                 .eq('user_id', user_id)\
                 .execute()
             
+            logger.info(f"Query result: {response}")
+            logger.info(f"Result data: {response.data}")
+            logger.info(f"Result count: {len(response.data) if response.data else 0}")
+            
             if not response.data or len(response.data) == 0:
-                logger.info(f"No personalization data found for user {user_id}")
+                logger.warning(f"❌ NO personalization data found for user {user_id}")
                 return PersonalizationContext()
             
             # Use the first record (should be unique by user_id)
             data = response.data[0]
-            return PersonalizationService._format_personalization_context(data)
+            logger.info(f"Raw personalization data: {data}")
+            
+            formatted_context = PersonalizationService._format_personalization_context(data)
+            logger.info(f"✅ Formatted personalization context: {formatted_context}")
+            logger.info(f"Context has_any_context(): {formatted_context.has_any_context()}")
+            
+            return formatted_context    
             
         except Exception as e:
-            logger.error(f"Error fetching personalization for user {user_id}: {e}")
-            # Re-raise for proper error handling by caller
-            raise
+            logger.error(f"❌ ERROR fetching personalization for user {user_id}: {e}")
+            logger.error(f"❌ CRITICAL: Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"❌ CRITICAL: Full traceback: {traceback.format_exc()}")
+            
+            # For debugging: Don't re-raise, return empty context
+            # This will help us see what's happening in LangGraph
+            logger.error(f"❌ RETURNING EMPTY CONTEXT DUE TO ERROR")
+            return PersonalizationContext()
     
     @staticmethod
     def _format_personalization_context(data: Dict[str, Any]) -> PersonalizationContext:
@@ -336,29 +363,46 @@ class PersonalizationService:
             str: Enhanced system prompt with personalization context
         """
         try:
+            # CRITICAL DEBUG: Log all config details
+            logger.info("=== PERSONALIZATION DEBUG START ===")
+            logger.info(f"Config received: {config}")
+            logger.info(f"Config type: {type(config)}")
+            
             # Extract user_id from LangGraph config
             if not config:
                 try:
                     config = get_config()
+                    logger.info(f"Retrieved config from get_config(): {config}")
                 except Exception as e:
-                    logger.debug(f"No LangGraph config available: {e}")
+                    logger.warning(f"No LangGraph config available via get_config(): {e}")
                     return base_prompt
             
             if not config or not isinstance(config.get('configurable'), dict):
-                logger.debug("No valid LangGraph config available for personalization")
+                logger.warning(f"No valid LangGraph config available for personalization. Config: {config}")
                 return base_prompt
             
-            user_id = config['configurable'].get('user_id')
+            configurable_data = config.get('configurable', {})
+            logger.info(f"Configurable data: {configurable_data}")
+            
+            user_id = configurable_data.get('user_id')
+            account_id = configurable_data.get('account_id')
+            
+            logger.info(f"Extracted user_id: {user_id}")
+            logger.info(f"Extracted account_id: {account_id}")
+            
             if not user_id:
-                logger.debug("No user_id in LangGraph config")
+                logger.warning("No user_id in LangGraph config - cannot personalize")
                 return base_prompt
             
             # Fetch personalization context
+            logger.info(f"Attempting to fetch personalization context for user_id: {user_id}")
             context = PersonalizationService.get_user_personalization_context(user_id)
+            logger.info(f"Retrieved personalization context: {context}")
             
             # If no personalization data, return base prompt
             if not context.has_any_context():
-                logger.debug(f"No personalization context available for user {user_id}")
+                logger.warning(f"No personalization context available for user {user_id}")
+                logger.info("=== PERSONALIZATION DEBUG END (NO CONTEXT) ===")
                 return base_prompt
             
             # Build enhanced prompt
@@ -372,11 +416,15 @@ USER PERSONALIZATION CONTEXT:
 
 Use this personalization information to tailor your responses, but don't explicitly mention that you have this context unless relevant to the conversation. Provide advice that aligns with their goals, risk tolerance, timeline, and experience level."""
             
-            logger.info(f"Enhanced system prompt with personalization for user {user_id}")
+            logger.info(f"✅ Successfully enhanced system prompt with personalization for user {user_id}")
+            logger.info(f"Personalization sections added: {len(personalization_sections)}")
+            logger.info("=== PERSONALIZATION DEBUG END (SUCCESS) ===")
             return enhanced_prompt
             
         except Exception as e:
-            logger.error(f"Error building personalized system prompt: {e}")
+            logger.error(f"❌ ERROR building personalized system prompt: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             # Graceful fallback - never break the system
             return base_prompt
 
@@ -399,26 +447,42 @@ def create_personalized_supervisor_prompt(state, config: RunnableConfig = None):
     from langchain_core.messages import SystemMessage, AnyMessage
     from typing import List
     
+    # CRITICAL DEBUG: Log function entry
+    logger.info("=== CREATE_PERSONALIZED_SUPERVISOR_PROMPT DEBUG START ===")
+    logger.info(f"Function called with state: {type(state)}")
+    logger.info(f"Function called with config: {config}")
+    
     # Import from neutral location to avoid circular imports
     from utils.prompts.supervisor_prompt import get_supervisor_clera_system_prompt
     
     # Build the personalized system prompt with fresh timestamp
     base_prompt = get_supervisor_clera_system_prompt()
+    logger.info(f"Base prompt length: {len(base_prompt)} characters")
+    
     personalized_prompt = PersonalizationService.build_personalized_system_prompt(
         base_prompt, 
         config=config
     )
+    
+    logger.info(f"Personalized prompt length: {len(personalized_prompt)} characters")
+    logger.info(f"Prompt enhanced: {len(personalized_prompt) > len(base_prompt)}")
     
     # Create the message list that LangGraph expects
     messages: List[AnyMessage] = []
     
     # Add the personalized system message
     messages.append(SystemMessage(content=personalized_prompt))
+    logger.info(f"Added system message with {len(personalized_prompt)} characters")
     
     # Add existing messages from state
     if hasattr(state, 'messages'):
         messages.extend(state.messages)
+        logger.info(f"Added {len(state.messages)} messages from state.messages")
     elif isinstance(state, dict) and 'messages' in state:
         messages.extend(state['messages'])
+        logger.info(f"Added {len(state['messages'])} messages from state dict")
+    
+    logger.info(f"Total messages in final prompt: {len(messages)}")
+    logger.info("=== CREATE_PERSONALIZED_SUPERVISOR_PROMPT DEBUG END ===")
     
     return messages

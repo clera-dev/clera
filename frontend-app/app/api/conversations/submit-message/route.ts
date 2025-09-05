@@ -56,7 +56,10 @@ export async function POST(request: NextRequest) {
       stream_mode: 'messages-tuple' as const
     };
 
-    console.log(`Submitting message.`);
+    console.log(`=== PERSONALIZATION DEBUG: Submitting message ===`);
+    console.log(`User ID being sent to LangGraph: ${user.id}`);
+    console.log(`Account ID being sent to LangGraph: ${account_id}`);
+    console.log(`Full runConfig:`, JSON.stringify(runConfig, null, 2));
 
     const run = await langGraphClient.runs.create(
       thread_id,
