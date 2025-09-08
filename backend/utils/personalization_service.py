@@ -130,15 +130,15 @@ class PersonalizationService:
                 .execute()
             
             if not response.data or len(response.data) == 0:
-                logger.info(f"No personalization data found for user {user_id}")
+                logger.info(f"No personalization data found for user.")
                 return PersonalizationContext()
             
             # Use the first record (should be unique by user_id)
             data = response.data[0]
-            return PersonalizationService._format_personalization_context(data)
+            return PersonalizationService._format_personalization_context(data)    
             
         except Exception as e:
-            logger.error(f"Error fetching personalization for user {user_id}: {e}")
+            logger.error(f"Error fetching personalization for user: {e}")
             # Re-raise for proper error handling by caller
             raise
     
@@ -358,7 +358,7 @@ class PersonalizationService:
             
             # If no personalization data, return base prompt
             if not context.has_any_context():
-                logger.debug(f"No personalization context available for user {user_id}")
+                logger.debug(f"No personalization context available for user")
                 return base_prompt
             
             # Build enhanced prompt
@@ -372,7 +372,7 @@ USER PERSONALIZATION CONTEXT:
 
 Use this personalization information to tailor your responses, but don't explicitly mention that you have this context unless relevant to the conversation. Provide advice that aligns with their goals, risk tolerance, timeline, and experience level."""
             
-            logger.info(f"Enhanced system prompt with personalization for user {user_id}")
+            logger.info(f"Enhanced system prompt with personalization for user")
             return enhanced_prompt
             
         except Exception as e:
