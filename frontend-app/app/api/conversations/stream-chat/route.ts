@@ -44,9 +44,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[StreamChat] Starting stream via LangGraphStreamingService for thread:', thread_id);
-    console.log('=== PERSONALIZATION DEBUG: Stream Chat ===');
-    console.log(`User ID being sent to LangGraph: ${user.id}`);
-    console.log(`Account ID being sent to LangGraph: ${account_id}`);
 
     // Validate or safely resolve run_id to avoid hijacking or overwriting existing runs
     const secureRandomUUID = (): string => {
