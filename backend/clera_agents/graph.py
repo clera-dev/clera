@@ -205,6 +205,12 @@ Provide institutional-quality research and analysis on securities, markets, and 
 - "[TICKER] valuation P/E ratio compared peers sector analysis"
 - "[TICKER] recent news catalysts developments Q4 2024"
 
+**Secondary Use**: Current market conditions, economic data, policy developments, etc.
+**Search Patterns**:
+- "ECB policy outlook 2025 interest rates latest"
+- "How will US inflation data impact markets"
+- "Current economist consensus regarding performance of US equity markets"
+
 ### **get_stock_price** - Current Market Data
 **Use for**: Current price, daily performance, market context
 **Always include**: Price level, daily change, 52-week context when available
