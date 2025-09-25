@@ -5,18 +5,10 @@ const redisClient = new Redis({
   host: process.env.REDIS_HOST || '127.0.0.1',
   port: parseInt(process.env.REDIS_PORT || '6379'),
   db: parseInt(process.env.REDIS_DB || '0'),
-  retryDelayOnFailover: 100,
-  maxRetriesPerRequest: 3,
   lazyConnect: true,
-  // Connection timeout
   connectTimeout: 10000,
-  // Command timeout
   commandTimeout: 5000,
-  // Retry configuration
-  retryDelayOnClusterDown: 300,
-  retryDelayOnFailover: 100,
   maxRetriesPerRequest: 3,
-  // Enable offline queue
   enableOfflineQueue: false,
 });
 

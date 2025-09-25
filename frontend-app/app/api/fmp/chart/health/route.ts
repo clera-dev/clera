@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import redisClient from '@/utils/redis';
+import redisClient from '@/utils/redis-aws';
 
 export async function GET() {
   const healthData = {
