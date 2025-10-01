@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import redisClient from '@/utils/redis';
+import redisClient from '@/utils/redis-aws';
 import { MarketDataValidationService } from '@/utils/services/MarketDataValidationService';
 
 // Helper function to build FMP API URL

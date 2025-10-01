@@ -31,7 +31,6 @@
     "@types/cheerio": "^0.22.35",
     "@types/dompurify": "^3.0.5",
     "@types/sentiment": "^5.0.4",
-    "@upstash/redis": "^1.34.9",
     "autoprefixer": "10.4.20",
     "cheerio": "^1.0.0",
     "class-variance-authority": "^0.7.0",

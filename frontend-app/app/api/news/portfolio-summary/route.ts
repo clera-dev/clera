@@ -4,7 +4,7 @@ import { getBackendConfig, createSecureBackendHeaders } from '@/utils/api/secure
 import { OpenAI } from 'openai';
 import Sentiment from 'sentiment';
 import { getLinkPreview, getPreviewFromContent } from 'link-preview-js';
-import redisClient from '@/utils/redis';
+import redisClient from '@/utils/redis-aws';
 import { timingSafeEqual } from 'crypto';
 import { NewsPersonalizationService } from '@/utils/services/news-personalization';
 import { PersonalizationData } from '@/lib/types/personalization';
@@ -28,10 +28,7 @@ function getUserLockKey(userId: string): string {
 async function acquireUserLock(userId: string): Promise<boolean> {
   const lockKey = getUserLockKey(userId);
   try {
-    const result = await redisClient.set(lockKey, Date.now().toString(), {
-      ex: USER_SUMMARY_LOCK_TTL,
-      nx: true
-    });
+    const result = await redisClient.set(lockKey, Date.now().toString(), 'EX', USER_SUMMARY_LOCK_TTL, 'NX');
     return result === 'OK';
   } catch (redisError) {
     console.warn(`Redis lock acquisition failed for user ${userId}:`, redisError);
