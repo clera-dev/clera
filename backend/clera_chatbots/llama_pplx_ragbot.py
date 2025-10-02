@@ -18,6 +18,7 @@ import uuid
 from langchain_groq import ChatGroq
 from langchain_perplexity import ChatPerplexity
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from perplexity import Perplexity
 
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -88,10 +89,7 @@ class FinancialRAGAgent:
         # Load environment variables
         load_dotenv()
 
-        self.perplexity_search = ChatPerplexity(
-            temperature=0.4,
-            model="sonar"
-        )
+        self.perplexity_client = Perplexity()
         self.llm = ChatGroq(
             groq_api_key=os.environ['GROQ_API_KEY'],
             model_name='llama-3.3-70b-versatile',
@@ -193,18 +191,26 @@ class FinancialRAGAgent:
             "Use a neutral, factual tone. Only provide the key points. Do not include lengthy explanations or personal opinions."
         )
         messages = [
-            SystemMessage(content=pplx_system_prompt),
-            HumanMessage(content=user_message.content)
+            {"role": "system", "content": pplx_system_prompt},
+            {"role": "user", "content": user_message.content}
         ]
 
-        # Invoke perplexity model
+        # Invoke perplexity model with streaming
         try:
             print("\n", "-" * 20, "Running perplexity search", "-"*20)
-            pplx_response = self.perplexity_search.invoke(messages)
+            stream = self.perplexity_client.chat.completions.create(messages=messages, model="sonar", stream=True)
+            answer_text = ""
+            
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    partial_text = chunk.choices[0].delta.content
+                    answer_text += partial_text
+            
+            pplx_response = AIMessage(content=answer_text)
             print(f"Successfuully ran perplexity search. Here is the output: \n{pplx_response}\n")
         except Exception as e:
             print("There was an error while running perplexity search: {e}")
-            pplx_response = "No real-time context available."
+            pplx_response = AIMessage(content="No real-time context available.")
         
         # Add output as context for chatbot node
         state["retrieved_context"].append(pplx_response.content)

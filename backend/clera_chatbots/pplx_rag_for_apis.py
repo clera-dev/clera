@@ -12,6 +12,7 @@ import uuid
 
 from langchain_perplexity import ChatPerplexity
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from perplexity import Perplexity
 from langchain_core.prompts import (
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate
@@ -82,7 +83,7 @@ class FinancialRAGAgent:
         # Load environment variables
         load_dotenv()
 
-        self.llm = ChatPerplexity(temperature=0.4, model="sonar")
+        self.pplx_client = Perplexity()
         self.initalize_vectorstore()
 
         graph_builder = StateGraph(State)
@@ -176,7 +177,23 @@ class FinancialRAGAgent:
         human_msgs = human_message_prompt.format_messages(input=user_message)
         state["messages"].extend(human_msgs)
 
-        response = self.llm.invoke(state["messages"])
+        # Convert state["messages"] (a list of SystemMessage/HumanMessage/AIMessage) to dict format
+        api_messages = []
+        for msg in state["messages"]:
+            role = "assistant" if isinstance(msg, AIMessage) else "user" if isinstance(msg, HumanMessage) else "system"
+            api_messages.append({"role": role, "content": msg.content})
+        
+        # Call Perplexity API with streaming
+        stream = self.pplx_client.chat.completions.create(messages=api_messages, model="sonar", stream=True)
+        answer = ""
+        
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                partial_text = chunk.choices[0].delta.content
+                answer += partial_text
+        
+        # Wrap answer as AIMessage and append
+        response = AIMessage(content=answer)
         state["messages"].append(response)
         return {"messages": state["messages"]}
 
