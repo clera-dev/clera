@@ -18,6 +18,8 @@ import pandas as pd
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 import numpy as np
+from perplexity import Perplexity
+
 
 # Make sure we load environment variables first
 load_dotenv(override=True)
@@ -80,6 +82,8 @@ deep_research_perplexity = ChatPerplexity(
     temperature=0.4
 )
 
+# Initialize Perplexity client for web search
+pplx_client = Perplexity() 
 @tool("web_search")
 def web_search(query: str) -> str:
     """Simple one-step search tool for financial information.
@@ -96,7 +100,7 @@ def web_search(query: str) -> str:
     current_year = datetime.now().year
 
     if is_in_depth_query:
-        research_prompt = f"""You are the world's BEST financial news analyst. 
+        research_prompt = (f"""You are the world's BEST financial news analyst. 
         The user has asked for DETAILED/IN-DEPTH research. 
         Provide a thorough, comprehensive analysis with actionable insights on the query below. 
         Focus on concrete facts, figures, sources, and causal relationships. 
@@ -107,22 +111,117 @@ def web_search(query: str) -> str:
         If referencing older data, clearly state the time period.
 
 Query: {query}
-"""
+""")
+        model_name = "sonar-pro"
     else:
-        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations. 
+        research_prompt = (f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
 
 IMPORTANT: Today's date is {current_date}. Current year is {current_year}. 
 Always prioritize recent information from {current_year} and clearly indicate time periods for any data you reference.
 
 Query: {query}
-"""
-
-    messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
+""")
+        model_name = "sonar"
+    messages = [
+        {"role": "system", "content": research_prompt},
+        {"role": "user", "content": query}
+    ]
+    #messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
     try:
-        # Use the standard perplexity model for efficiency unless deep research is needed?
-        # For now, standard model should handle prompt instructions.
-        response = chat_perplexity.invoke(messages)
-        return response.content
+        # Call Perplexity Chat Completions API
+        response = pplx_client.chat.completions.create(messages=messages, model=model_name)
+        answer_text = response.choices[0].message.content  # The answer text
+        citations = getattr(response, "citations", None)   # List of source URLs (if present)
+
+        # If citations are available, embed them as Markdown footnote links [1](url)
+        if citations:
+            for idx, url in enumerate(citations, start=1):
+                # Replace bracketed number with markdown link
+                footnote = f"[{idx}]"
+                link = f"[{idx}]({url})"
+                answer_text = answer_text.replace(footnote, link)
+        return answer_text
+    except Exception as e:
+        return f"Error searching for information: {e}"
+
+
+@tool("web_search_streaming")
+def web_search_streaming(query: str, stream_callback=None) -> str:
+    """Streaming web search tool for financial information.
+    
+    Args:
+        query (str): The search query
+        stream_callback (callable): Optional callback function to handle streaming chunks
+        
+    Returns:
+        str: Complete search results
+    """
+    # Determine if in-depth research is requested
+    is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    current_year = datetime.now().year
+
+    if is_in_depth_query:
+        research_prompt = (f"""You are the world's BEST financial news analyst. 
+        The user has asked for DETAILED/IN-DEPTH research. 
+        Provide a thorough, comprehensive analysis with actionable insights on the query below. 
+        Focus on concrete facts, figures, sources, and causal relationships. 
+        Avoid generic advice. Use recent AND credible financial news sources. 
+        Today's date is {current_date}. Current year is {current_year}.
+        
+        CRITICAL: Always prioritize information from {current_year} and recent months. 
+        If referencing older data, clearly state the time period.
+
+Query: {query}
+""")
+        model_name = "sonar-pro"
+    else:
+        research_prompt = (f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
+
+IMPORTANT: Today's date is {current_date}. Current year is {current_year}. 
+Always prioritize recent information from {current_year} and clearly indicate time periods for any data you reference.
+
+Query: {query}
+""")
+        model_name = "sonar"
+    messages = [
+        {"role": "system", "content": research_prompt},
+        {"role": "user", "content": query}
+    ]
+    
+    try:
+        # Call Perplexity Chat Completions API with streaming
+        stream = pplx_client.chat.completions.create(messages=messages, model=model_name, stream=True)
+        
+        answer_text = ""
+        citations = None
+        
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                partial_text = chunk.choices[0].delta.content
+                answer_text += partial_text
+                
+                # Call the streaming callback if provided
+                if stream_callback:
+                    stream_callback(partial_text)
+        
+        # Get citations from the final response if available
+        try:
+            # Note: Citations might not be available in streaming mode
+            # We'll need to handle this based on Perplexity's streaming API behavior
+            pass
+        except:
+            pass
+
+        # If citations are available, embed them as Markdown footnote links [1](url)
+        if citations:
+            for idx, url in enumerate(citations, start=1):
+                # Replace bracketed number with markdown link
+                footnote = f"[{idx}]"
+                link = f"[{idx}]({url})"
+                answer_text = answer_text.replace(footnote, link)
+        
+        return answer_text
     except Exception as e:
         return f"Error searching for information: {e}"
 

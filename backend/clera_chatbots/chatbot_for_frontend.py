@@ -19,6 +19,7 @@ from langgraph.graph.message import add_messages
 
 from langchain_perplexity import ChatPerplexity
 from langchain_groq import ChatGroq
+from perplexity import Perplexity
 
 #from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -73,10 +74,7 @@ class FinancialRAGAgent:
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         # LLMs
-        self.perplexity_search = ChatPerplexity(
-            temperature=0.4,
-            model="sonar"
-        )
+        self.perplexity_client = Perplexity()
         self.llm = ChatGroq(
             groq_api_key=os.environ['GROQ_API_KEY'],
             model_name='llama-3.3-70b-versatile',
@@ -140,11 +138,20 @@ class FinancialRAGAgent:
             "Use a neutral, factual tone."
         )
         messages = [
-            SystemMessage(content=pplx_system_prompt),
-            HumanMessage(content=user_message.content)
+            {"role": "system", "content": pplx_system_prompt},
+            {"role": "user", "content": user_message.content}
         ]
         try:
-            pplx_response = self.perplexity_search.invoke(messages)
+            # Use streaming for real-time context
+            stream = self.perplexity_client.chat.completions.create(messages=messages, model="sonar", stream=True)
+            answer_text = ""
+            
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    partial_text = chunk.choices[0].delta.content
+                    answer_text += partial_text
+            
+            pplx_response = AIMessage(content=answer_text)
         except Exception as e:
             print(f"Error from Perplexity: {e}")
             pplx_response = AIMessage(content="No real-time context available.")

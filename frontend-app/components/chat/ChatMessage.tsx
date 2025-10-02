@@ -98,6 +98,15 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
               strong: ({children}) => <strong className="font-semibold">{children}</strong>,
               em: ({children}) => <em className="italic">{children}</em>,
               code: ({children}) => <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">{children}</code>,
+              // Citation links - render as clickable links that open in new tab
+              a: ({node, ...props}) => (
+                <a 
+                  {...props} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline decoration-dotted underline-offset-2 hover:decoration-solid transition-all duration-200"
+                />
+              ),
             }}
           >
             {message.content}
