@@ -7,8 +7,7 @@ Clera is a financial AI platform leveraging advanced language models and agent-b
 Open 3 terminals (T1, T2, T3)
 In T1 run: 
 ```bash
-cd backend && python -m venv venv && source venv/bin/activate &&
-&& pip install -r requirements.txt && python -m portfolio_realtime.websocket_server
+cd backend && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && python -m portfolio_realtime.websocket_server
 ```
 
 In T2 run: 
