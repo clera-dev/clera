@@ -359,19 +359,32 @@ export class LangGraphStreamingService {
       const nodeName = Object.keys(data)[0];
       const nodeData = data[nodeName];
       
+      // Extract citations from tool responses in updates
+      const citations = this.extractCitationsFromToolResponses(data);
+      
       // console.log('[LangGraphStreamingService] Node update:', nodeName);
       
       return {
         type: 'node_update',
         data: { nodeName, nodeData },
         nodeName: nodeName,
-        streamMode: 'updates'
+        streamMode: 'updates',
+        metadata: { citations }
       };
     }
     
     // 3. Handle messages (final responses) - CRITICAL PATH FOR STATUS BUBBLE FIX
     if (event === 'messages' && Array.isArray(data)) {
       // console.log('[LangGraphStreamingService] Processing messages event with', data.length, 'items');
+      
+      // Extract citations from all messages (including tool responses)
+      const allCitations: string[] = [];
+      data.forEach((item: any) => {
+        if (item && typeof item === 'object' && item.content) {
+          const citations = this.extractCitationsFromMessage(item);
+          allCitations.push(...citations);
+        }
+      });
       
       // Filter for AI messages from Clera
       const aiMessages = data.filter((item: any) => 
@@ -385,14 +398,25 @@ export class LangGraphStreamingService {
       if (aiMessages.length > 0) {
         // console.log('[LangGraphStreamingService] Found', aiMessages.length, 'AI messages from Clera');
         
+        // Clean up citation markers from the message content
+        const cleanedMessages = aiMessages.map((msg: any) => {
+          if (msg.content && typeof msg.content === 'string') {
+            // Remove citation markers from content
+            const cleanedContent = msg.content.replace(/<!-- CITATIONS: [^>]+ -->/g, '').trim();
+            return { ...msg, content: cleanedContent };
+          }
+          return msg;
+        });
+        
         // CRITICAL FIX: Use 'messages_complete' type to trigger status message removal in frontend
         return { 
           type: 'messages_complete',
-          data: aiMessages,
+          data: cleanedMessages,
           metadata: { 
             event, 
-            messageCount: aiMessages.length,
-            isCompleteResponse: true
+            messageCount: cleanedMessages.length,
+            isCompleteResponse: true,
+            citations: allCitations
           }
         };
       } else {
@@ -400,7 +424,7 @@ export class LangGraphStreamingService {
         return { 
           type: 'messages_metadata',
           data: data,
-          metadata: { event, messageCount: data.length }
+          metadata: { event, messageCount: data.length, citations: allCitations }
         };
       }
     }
@@ -445,6 +469,85 @@ export class LangGraphStreamingService {
     // 8. Fallback for other events
     // console.log('[LangGraphStreamingService] Unhandled event type:', event);
     return { type: 'metadata', data: data };
+  }
+
+  /**
+   * Extracts citations from a message by parsing special citation markers
+   * 
+   * @param message The message object to extract citations from
+   * @returns Array of citation URLs
+   */
+  private extractCitationsFromMessage(message: any): string[] {
+    if (!message || !message.content) return [];
+    
+    const content = message.content;
+    const citations: string[] = [];
+    
+    // Ensure content is a string
+    if (typeof content !== 'string') {
+      console.warn('[LangGraphStreamingService] Content is not a string:', typeof content, content);
+      return [];
+    }
+    
+    // First, try to extract citations from special markers (new approach)
+    const citationMarkerRegex = /<!-- CITATIONS: ([^>]+) -->/;
+    const markerMatch = content.match(citationMarkerRegex);
+    
+    if (markerMatch && markerMatch[1]) {
+      // Split by comma and clean up URLs
+      const citationUrls = markerMatch[1].split(',').map((url: string) => url.trim()).filter((url: string) => url);
+      citations.push(...citationUrls);
+    }
+    
+    // Fallback: Extract markdown links in the format [1](url), [2](url), etc.
+    if (citations.length === 0) {
+      const linkRegex = /\[(\d+)\]\(([^)]+)\)/g;
+      let match;
+      
+      while ((match = linkRegex.exec(content)) !== null) {
+        const url = match[2];
+        if (url && !citations.includes(url)) {
+          citations.push(url);
+        }
+      }
+    }
+    
+    return citations;
+  }
+
+  /**
+   * Extracts citations from tool responses in updates
+   * 
+   * @param data The data object from updates event
+   * @returns Array of citation URLs
+   */
+  private extractCitationsFromToolResponses(data: any): string[] {
+    const citations: string[] = [];
+    
+    if (!data || typeof data !== 'object') return citations;
+    
+    // Look through all node data for tool responses
+    Object.values(data).forEach((nodeData: any) => {
+      if (nodeData && typeof nodeData === 'object') {
+        // Check if this node has messages with tool responses
+        if (Array.isArray(nodeData.messages)) {
+          nodeData.messages.forEach((msg: any) => {
+            if (msg && typeof msg === 'object' && msg.content) {
+              const msgCitations = this.extractCitationsFromMessage(msg);
+              citations.push(...msgCitations);
+            }
+          });
+        }
+        
+        // Check if this node has tool results
+        if (nodeData.tool_result && typeof nodeData.tool_result === 'string') {
+          const toolCitations = this.extractCitationsFromMessage({ content: nodeData.tool_result });
+          citations.push(...toolCitations);
+        }
+      }
+    });
+    
+    return citations;
   }
 
   /**

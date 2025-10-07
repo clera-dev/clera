@@ -9,6 +9,7 @@ export type Message = {
   content: string;
   isStatus?: boolean; // For temporary status/progress messages
   runId?: string; // Anchor tool activities to a specific user query
+  citations?: string[]; // Citations for this specific message
 };
 
 export type ChatRequest = {

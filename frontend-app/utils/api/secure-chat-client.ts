@@ -32,6 +32,8 @@ export interface SecureChatClient {
   clearLongProcessingCallback: () => void; // MEMORY LEAK FIX: Clear callback on unmount
   setQuerySuccessCallback: (callback: (userId: string) => Promise<void>) => void; // NEW: Query success recording
   cleanup: () => void;
+  clearCitations: () => void; // NEW: Clear citations for new chat
+  getCurrentRunId: () => string | null; // NEW: Get current run ID for request tracking
 }
 
 // ToolActivity is defined centrally in '@/types/chat'.
@@ -59,6 +61,7 @@ export class SecureChatClientImpl implements SecureChatClient {
   private querySuccessCallback: ((userId: string) => Promise<void>) | null = null; // NEW: Query success callback
   private lastThreadId: string | null = null; // Track thread for toolActivities lifecycle
   private currentQueryRunId: string | null = null; // Track current user query for tool grouping
+  private currentRequestCitations: string[] = []; // Store citations for current request
   
 
   constructor() {
@@ -364,7 +367,8 @@ export class SecureChatClientImpl implements SecureChatClient {
         this.gracePeriodTimer = null;
       }
       
-      this.setState({ isLoading: true, error: null });
+      this.setState({ isLoading: true, error: null }); // Reset state for each new request
+      this.currentRequestCitations = []; // Clear current request citations
       
       // Status message is now added by the caller before startStream is called
       // This prevents timing issues with React batching
@@ -716,6 +720,14 @@ export class SecureChatClientImpl implements SecureChatClient {
       const nodeName = chunk.data.nodeName;
       // console.log(`[SecureChatClient] Node update for: ${nodeName}, hasReceivedRealContent: ${this.hasReceivedRealContent}`);
       
+      // Extract citations from node updates (tool responses)
+      const newCitations = chunk.metadata?.citations || [];
+      if (newCitations.length > 0) {
+        // Store citations temporarily for the current request
+        // They will be attached to the final assistant message when the response is complete
+        this.currentRequestCitations = newCitations;
+      }
+      
       // CRITICAL FIX: Only show status messages if we haven't received real content yet
       // This prevents status messages from overriding completed responses
       if (!this.hasReceivedRealContent) {
@@ -834,9 +846,27 @@ export class SecureChatClientImpl implements SecureChatClient {
         // Mark that we've received real content BEFORE state update
         this.hasReceivedRealContent = true;
         
+        // Extract citations from metadata if available
+        const newCitations = chunk.metadata?.citations || [];
+        
+        // Combine with any citations from tool responses during this request
+        const allCitations = Array.from(new Set([...this.currentRequestCitations, ...newCitations]));
+        
+        // Attach citations to the last assistant message
+        const messagesWithCitations = [...newMessages];
+        if (messagesWithCitations.length > 0 && allCitations.length > 0) {
+          const lastMessage = messagesWithCitations[messagesWithCitations.length - 1];
+          if (lastMessage.role === 'assistant') {
+            lastMessage.citations = allCitations;
+          }
+        }
+        
+        // Clear current request citations after attaching them
+        this.currentRequestCitations = [];
+        
         // Update state with all new messages, ensuring status messages are removed
         this.setState({ 
-          messages: [...nonStatusMessages, ...newMessages],
+          messages: [...nonStatusMessages, ...messagesWithCitations],
           isLoading: false // Mark as complete since we have the final response
         });
 
@@ -1080,6 +1110,14 @@ export class SecureChatClientImpl implements SecureChatClient {
 
   setQuerySuccessCallback(callback: (userId: string) => Promise<void>) {
     this.querySuccessCallback = callback;
+  }
+
+  clearCitations() {
+    this.currentRequestCitations = [];
+  }
+
+  getCurrentRunId() {
+    return this.currentQueryRunId;
   }
 
   cleanup() {

@@ -111,6 +111,7 @@ chat_perplexity = ChatPerplexity(
 # Define tools for each agent upfront
 financial_analyst_tools = [
     fa_module.web_search,
+    fa_module.web_search_streaming,
     fa_module.get_stock_price,
     fa_module.calculate_investment_performance
 ]
