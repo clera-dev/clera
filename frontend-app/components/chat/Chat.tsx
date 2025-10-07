@@ -26,6 +26,7 @@ import QueryLimitPopup from './QueryLimitPopup';
 import { createTimelineBuilder, TimelineBuilder } from '@/utils/services/TimelineBuilder';
 import { PerMessageToolDetails } from './PerMessageToolDetails';
 import { ChatMessageList } from './ChatMessageList';
+import SourcesTab from './SourcesTab';
 import { useToolActivitiesHydration } from '@/hooks/useToolActivitiesHydration';
 import { useRunIdAssignment } from '@/hooks/useRunIdAssignment';
 import { useQueryLimit } from '@/hooks/useQueryLimit';
@@ -75,6 +76,9 @@ export default function Chat({
   const [pendingFirstMessage, setPendingFirstMessage] = useState<string | null>(null);
   const [isFirstMessageSent, setIsFirstMessageSent] = useState(false); // New state to prevent duplicates
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [showSources, setShowSources] = useState(false);
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+  const [cachedCitations, setCachedCitations] = useState<string[]>([]); // Persisted citations cache
   const autoSubmissionTriggered = useRef(false); // Track if auto-submission has been triggered for this prompt
   
   // Mobile detection state
@@ -140,6 +144,101 @@ export default function Chat({
   const interruptMessage = interrupt?.value || null;
   const toolActivities = chatClient.state.toolActivities;
   
+  // Sources tab starts collapsed by default - user can manually toggle
+  
+  // Track current request ID for citation isolation
+  useEffect(() => {
+    const currentRunId = chatClient.getCurrentRunId();
+    if (currentRunId && currentRunId !== currentRequestId) {
+      setCurrentRequestId(currentRunId);
+      setShowSources(false); // Hide sources tab for new request
+    }
+  }, [chatClient, currentRequestId]);
+  
+  // Get citations from the current request or chat history
+  const getCurrentRequestCitations = () => {
+    const messages = chatClient.state.messages;
+    if (messages.length === 0) return [];
+    
+    // If we have a current request ID, only consider citations from that request
+    if (currentRequestId) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const message = messages[i];
+        if (
+          message.role === 'assistant' &&
+          message.runId === currentRequestId &&
+          message.citations &&
+          message.citations.length > 0
+        ) {
+          return message.citations;
+        }
+      }
+      // No citations found for the current request – do NOT fall back to previous ones
+      return [];
+    }
+    // No active request (e.g., viewing chat history) – fall back to last assistant message with citations
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (
+        message.role === 'assistant' &&
+        message.citations &&
+        message.citations.length > 0
+      ) {
+        return message.citations;
+      }
+    }
+    return [];
+  };
+
+  // Memo-ise citations to avoid unnecessary calculations
+  const currentCitations = getCurrentRequestCitations();
+
+  // Cache citations for up to 3 recent chats in localStorage
+  useEffect(() => {
+    if (currentThreadId && currentCitations.length > 0) {
+      try {
+        const raw = localStorage.getItem('clera_citation_cache');
+        const cache: Record<string, string[]> = raw ? JSON.parse(raw) : {};
+        cache[currentThreadId] = currentCitations;
+        const keys = Object.keys(cache);
+        if (keys.length > 3) {
+          // Evict oldest keys to keep cache size <= 3
+          const excess = keys.length - 3;
+          keys.slice(0, excess).forEach(k => delete cache[k]);
+        }
+        localStorage.setItem('clera_citation_cache', JSON.stringify(cache));
+      } catch (e) {
+        console.warn('Failed to persist citations cache:', e);
+      }
+    }
+  }, [currentThreadId, currentCitations]);
+
+  // Load cached citations when switching to a chat that may not have them in memory yet
+  useEffect(() => {
+    if (currentThreadId) {
+      try {
+        const raw = localStorage.getItem('clera_citation_cache');
+        const cache: Record<string, string[]> = raw ? JSON.parse(raw) : {};
+        const cached = cache[currentThreadId] || [];
+        setCachedCitations(cached);
+        if (cached.length > 0) {
+          setShowSources(true);
+        }
+      } catch {
+        setCachedCitations([]);
+      }
+    } else {
+      setCachedCitations([]);
+    }
+  }, [currentThreadId]);
+
+  // Automatically hide the Sources tab if there are no citations
+  useEffect(() => {
+    if (currentCitations.length === 0 && showSources) {
+      setShowSources(false);
+    }
+  }, [currentCitations, showSources]);
+  
   // Use retry popup state from the hook
   const shouldShowRetryPopup = messageRetry.shouldShowRetryPopup;
 
@@ -184,9 +283,18 @@ export default function Chat({
             return; // Keep existing messages (user input + status)
           }
           
-          chatClient.setMessages(threadMessages);
-          // PRODUCTION FIX: Clear any persistent errors when loading existing chat
-          chatClient.clearErrorOnChatLoad();
+        chatClient.setMessages(threadMessages);
+        // PRODUCTION FIX: Clear any persistent errors when loading existing chat
+        chatClient.clearErrorOnChatLoad();
+        // Clear current request ID when loading existing chat (no active request)
+        setCurrentRequestId(null);
+        // Show sources from the last assistant message in this chat if any
+        const hasCitations = threadMessages.some(msg => 
+          msg.role === 'assistant' && msg.citations && msg.citations.length > 0
+        );
+        if (hasCitations) {
+          setShowSources(true); // Auto-show sources for chat history with citations
+        }
         } catch (error) {
           console.error(`Failed to load messages for thread ${currentThreadId}:`, error);
           // Fall back to initial messages if thread loading fails
@@ -618,6 +726,9 @@ export default function Chat({
         setIsFirstMessageSent(false);
         autoSubmissionTriggered.current = false; // Reset auto-submission flag for new chat
         chatClient.setMessages([]); // Clear messages immediately
+        chatClient.clearCitations(); // Clear citations for new chat
+        setCurrentRequestId(null); // Clear current request ID for new chat
+        setShowSources(false); // Hide sources tab for new chat
         return; // Don't proceed with normal logic
       }
       
@@ -708,6 +819,13 @@ export default function Chat({
           isFullscreen={isFullscreen}
           isSidebarMode={isSidebarMode}
           timelineBuilder={timelineBuilder}
+        />
+        
+        {/* Sources Tab - ChatGPT style */}
+        <SourcesTab
+          citations={currentCitations.length > 0 ? currentCitations : cachedCitations}
+          isVisible={showSources}
+          onToggle={() => setShowSources(!showSources)}
         />
 
         
