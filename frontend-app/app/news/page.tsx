@@ -271,15 +271,16 @@ export default function NewsPage() {
         
         setUserId(user.id);
         
-        // Get Alpaca Account ID
+        // Get Alpaca Account ID (optional - only for brokerage mode)
         const fetchedAccountId = await getAlpacaAccountId();
-        if (!fetchedAccountId) {
-          console.error("Alpaca Account ID not found");
-          setAccountError("Alpaca account setup not complete. Some features may be limited.");
-          return;
+        if (fetchedAccountId) {
+          setAccountId(fetchedAccountId);
+        } else {
+          // In aggregation mode, user doesn't have an Alpaca account
+          // News features work fine with just user_id
+          console.log("No Alpaca account found - user in aggregation mode");
+          setAccountId(null);
         }
-        
-        setAccountId(fetchedAccountId);
       } catch (error) {
         console.error("Error fetching user or account data:", error);
         setAccountError("Failed to load user data. Please refresh the page.");

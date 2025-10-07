@@ -22,6 +22,7 @@ export default function ProtectedPageClient() {
   const [user, setUser] = useState<any>(null);
   const [fundingStep, setFundingStep] = useState<FundingStep>('welcome');
   const [hasFunding, setHasFunding] = useState<boolean>(false);
+  const [portfolioMode, setPortfolioMode] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -47,22 +48,56 @@ export default function ProtectedPageClient() {
           .maybeSingle();
         setProfile(profileData);
 
-        // Check funding status for completed onboarding users
-        const { data: transfers } = await supabase
-          .from('user_transfers')
-          .select('amount, status')
-          .eq('user_id', user.id)
-          .gte('amount', 1);
-        
-        const funded = !!(transfers && transfers.length > 0 && 
-          transfers.some((transfer: any) => 
-            transfer.status === 'QUEUED' ||
-            transfer.status === 'SUBMITTED' ||
-            transfer.status === 'COMPLETED' || 
-            transfer.status === 'SETTLED'
-          ));
-        
-        setHasFunding(funded);
+        // Fetch portfolio mode to determine if funding is required
+        try {
+          const modeResponse = await fetch('/api/portfolio/connection-status');
+          if (modeResponse.ok) {
+            const modeData = await modeResponse.json();
+            const mode = modeData.portfolio_mode || 'aggregation';
+            setPortfolioMode(mode);
+            
+            // In aggregation mode, skip funding check (no brokerage account)
+            if (mode === 'aggregation') {
+              console.log('Aggregation mode detected - skipping funding check');
+              setHasFunding(true); // Mark as "funded" so they skip to /invest
+            } else {
+              // Check funding status for brokerage/hybrid users
+              const { data: transfers } = await supabase
+                .from('user_transfers')
+                .select('amount, status')
+                .eq('user_id', user.id)
+                .gte('amount', 1);
+              
+              const funded = !!(transfers && transfers.length > 0 && 
+                transfers.some((transfer: any) => 
+                  transfer.status === 'QUEUED' ||
+                  transfer.status === 'SUBMITTED' ||
+                  transfer.status === 'COMPLETED' || 
+                  transfer.status === 'SETTLED'
+                ));
+              
+              setHasFunding(funded);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching portfolio mode:', error);
+          // Default to checking funding
+          const { data: transfers } = await supabase
+            .from('user_transfers')
+            .select('amount, status')
+            .eq('user_id', user.id)
+            .gte('amount', 1);
+          
+          const funded = !!(transfers && transfers.length > 0 && 
+            transfers.some((transfer: any) => 
+              transfer.status === 'QUEUED' ||
+              transfer.status === 'SUBMITTED' ||
+              transfer.status === 'COMPLETED' || 
+              transfer.status === 'SETTLED'
+            ));
+          
+          setHasFunding(funded);
+        }
       }
       
       setLoading(false);

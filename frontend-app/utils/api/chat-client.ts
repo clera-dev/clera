@@ -138,18 +138,14 @@ export function groupChatsByDate(chats: ChatSession[]): {
  */
 export function startChatStream(
   userInput: string, 
-  accountId: string, 
+  accountId: string | undefined, 
   userId?: string, 
   threadId?: string 
 ): EventSource {
-  if (!accountId) {
-    throw new Error("Account ID is required to start chat stream");
-  }
-  
   // Construct the payload for the backend stream endpoint
   const payload = {
       user_input: userInput,
-      account_id: accountId,
+      account_id: accountId || null, // Can be null for aggregation-only users
       user_id: userId, // Pass userId obtained from Supabase/localStorage
       session_id: threadId // Pass existing thread/session ID if available
   };
@@ -164,14 +160,12 @@ export function startChatStream(
   
   // Simplest approach for now: Use query params for critical IDs, fetch handles body.
   // NOTE: This might hit URL length limits if userInput is huge. Refactor might be needed.
-  const queryParams = new URLSearchParams({
-      user_input: userInput,
-      account_id: accountId,
-      // Add userId if available
-      ...(userId && { user_id: userId }),
-      // Add threadId if available
-      ...(threadId && { session_id: threadId })
-  }).toString();
+  const qp = new URLSearchParams();
+  qp.set('user_input', userInput);
+  if (accountId) qp.set('account_id', accountId);
+  if (userId) qp.set('user_id', userId);
+  if (threadId) qp.set('session_id', threadId);
+  const queryParams = qp.toString();
 
   // Correct endpoint
   const url = `/api/chat/stream`; 
@@ -276,7 +270,7 @@ export async function updateChatSessionTitle(sessionId: string, title: string): 
  * Creates a new chat session (thread) via API route
  */
 export async function createChatSession(
-  accountId: string,
+  accountId: string | undefined,
   userId: string,
   title: string = "New Conversation"
 ): Promise<{ id: string } | null> {
@@ -284,13 +278,9 @@ export async function createChatSession(
     console.error('Cannot create chat session: User ID is required.');
     return null;
   }
-  if (!accountId) {
-    console.error('Cannot create chat session: Account ID is required.');
-    return null;
-  }
 
   try {
-    console.log(`Creating new chat session with title: ${title}, userId: ${userId}, accountId: ${accountId}`);
+    console.log(`Creating new chat session with title: ${title}, userId: ${userId}, accountId: ${accountId || 'none (aggregation mode)'}`);
     
     const response = await fetch('/api/conversations/create-session', {
       method: 'POST',
@@ -298,7 +288,7 @@ export async function createChatSession(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        account_id: accountId,
+        account_id: accountId || null,
         user_id: userId,
         title: title,
       }),

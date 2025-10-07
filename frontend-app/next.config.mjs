@@ -6,6 +6,9 @@ const nextConfig = {
   // Exclude API routes from static optimization
   trailingSlash: false,
   
+  // Explicitly set the monorepo root for output file tracing to silence workspace root warning
+  outputFileTracingRoot: '/Users/cristian_mendoza/Desktop/clera',
+  
   // Use the environment variable for the backend URL, with a fallback for development
   async rewrites() {
     const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';

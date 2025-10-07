@@ -36,7 +36,7 @@ import { queryLimitService } from '@/utils/services/QueryLimitService';
 import SuggestedQuestions from './SuggestedQuestions';
 
 interface ChatProps {
-  accountId: string;
+  accountId?: string; // Optional - only needed for brokerage mode
   userId: string;
   onClose: () => void;
   isFullscreen?: boolean;

@@ -126,7 +126,8 @@ export function useWatchlistData({
           return {
             ...item,
             currentPrice: currentPrice ?? item.currentPrice,
-            isLoading: false
+            // Only clear loading if we got a price, otherwise preserve state
+            isLoading: currentPrice !== undefined ? false : item.isLoading
           };
         } catch (err) {
           console.warn(`Failed to get quote for ${item.symbol}:`, err);
@@ -136,7 +137,8 @@ export function useWatchlistData({
           
           return {
             ...item,
-            isLoading: false
+            // Keep existing data on error - don't clear loading unnecessarily
+            isLoading: item.isLoading
           };
         }
       })
@@ -151,6 +153,7 @@ export function useWatchlistData({
       result.status === 'fulfilled' ? result.value : items[index]
     );
     
+    // Always update with new price data for smooth transition
     setWatchlistData(priceEnhancedItems);
     
     // Clear progress after a brief delay to show completion
@@ -162,7 +165,7 @@ export function useWatchlistData({
   }, []);
 
   const fetchWatchlist = useCallback(async () => {
-    if (!accountId) return;
+    // Use user-based watchlist API (works for both aggregation and brokerage modes)
     
     // Cancel any existing request
     if (currentRequestRef.current) {
@@ -184,7 +187,7 @@ export function useWatchlistData({
     }
     
     try {
-      const response = await fetch(`/api/watchlist/${accountId}`, {
+      const response = await fetch(`/api/user/watchlist`, {
         signal: abortController.signal
       });
       
@@ -211,12 +214,20 @@ export function useWatchlistData({
         return {
           ...existingItem, // Preserve all existing data (prices, logos, etc.)
           symbol,
-          // Only show loading state for new items or during initial load
-          isLoading: !existingItem || isFirstLoad
+          // NEVER show loading state during background refresh - keeps UI stable
+          // Only show for completely new items that don't exist yet
+          isLoading: !existingItem && isFirstLoad
         };
       });
       
-      setWatchlistData(basicWatchlistItems);
+      // Only update the UI if it's first load OR if symbols changed (add/remove)
+      // This prevents unnecessary re-renders during background price updates
+      const symbolsChanged = basicWatchlistItems.length !== watchlistDataRef.current.length ||
+        basicWatchlistItems.some(item => !watchlistDataRef.current.find(existing => existing.symbol === item.symbol));
+      
+      if (isFirstLoad || symbolsChanged) {
+        setWatchlistData(basicWatchlistItems);
+      }
       setIsInitialLoading(false);
       
       // Only show progress for initial loads, not background refreshes
@@ -260,17 +271,23 @@ export function useWatchlistData({
               });
             }
             
-            const priceEnhancedItems = basicWatchlistItems.map(item => ({
-              ...item,
-              currentPrice: quotesMap.get(item.symbol.toUpperCase()) ?? item.currentPrice,
-              isLoading: false
-            }));
+            // Seamlessly update prices without changing loading state
+            const priceEnhancedItems = basicWatchlistItems.map(item => {
+              const newPrice = quotesMap.get(item.symbol.toUpperCase());
+              return {
+                ...item,
+                currentPrice: newPrice ?? item.currentPrice,
+                // Only mark as not loading if we got a new price, otherwise keep current state
+                isLoading: newPrice !== undefined ? false : item.isLoading
+              };
+            });
             
             // Final check before updating state
             if (requestId !== requestSequenceRef.current) {
               return; // Ignore stale response
             }
             
+            // Always update with new price data - smooth transition
             setWatchlistData(priceEnhancedItems);
             
             // Update progress to show all items loaded
@@ -318,10 +335,10 @@ export function useWatchlistData({
         currentRequestRef.current = null;
       }
     }
-  }, [accountId, handleIndividualQuoteFallback]);
+  }, [handleIndividualQuoteFallback]);
 
   const addToWatchlist = useCallback(async (symbol: string) => {
-    if (!accountId || isUpdatingWatchlist) return;
+    if (isUpdatingWatchlist) return;
 
     setIsUpdatingWatchlist(true);
     
@@ -330,7 +347,7 @@ export function useWatchlistData({
     }
 
     try {
-      const response = await fetch(`/api/watchlist/${accountId}/add`, {
+      const response = await fetch(`/api/user/watchlist/add`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -357,10 +374,10 @@ export function useWatchlistData({
     } finally {
       setIsUpdatingWatchlist(false);
     }
-  }, [accountId, isUpdatingWatchlist, onOptimisticAdd, onWatchlistChange, onOptimisticRemove]);
+  }, [isUpdatingWatchlist, onOptimisticAdd, onWatchlistChange, onOptimisticRemove]);
 
   const removeFromWatchlist = useCallback(async (symbol: string) => {
-    if (!accountId || isUpdatingWatchlist) return;
+    if (isUpdatingWatchlist) return;
 
     setIsUpdatingWatchlist(true);
     
@@ -369,7 +386,7 @@ export function useWatchlistData({
     }
 
     try {
-      const response = await fetch(`/api/watchlist/${accountId}/remove`, {
+      const response = await fetch(`/api/user/watchlist/remove`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -396,11 +413,11 @@ export function useWatchlistData({
     } finally {
       setIsUpdatingWatchlist(false);
     }
-  }, [accountId, isUpdatingWatchlist, onOptimisticRemove, onWatchlistChange, onOptimisticAdd]);
+  }, [isUpdatingWatchlist, onOptimisticRemove, onWatchlistChange, onOptimisticAdd]);
 
-  // Auto-fetch and polling logic
+  // Auto-fetch and polling logic (works for both aggregation and brokerage modes)
   useEffect(() => {
-    if (watchlistSymbols && accountId) {
+    if (watchlistSymbols) {
       // Only show initial loading for the very first load when we have no data
       const isFirstLoad = watchlistData.length === 0 && !hasAttemptedLoad;
       if (isFirstLoad) {
@@ -425,10 +442,8 @@ export function useWatchlistData({
           currentRequestRef.current.abort();
         }
       };
-    } else if (accountId && watchlistSymbols && watchlistData.length === 0) {
-      setIsInitialLoading(true);
     }
-  }, [accountId, watchlistSymbols, fetchWatchlist, isUpdatingWatchlist, hasAttemptedLoad]);
+  }, [watchlistSymbols, fetchWatchlist, isUpdatingWatchlist, hasAttemptedLoad]);
 
   return {
     // State

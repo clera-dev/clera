@@ -1,27 +1,42 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const account_id = searchParams.get('account_id');
-
-  if (!account_id) {
-    return NextResponse.json({ detail: 'account_id parameter is required' }, { status: 400 });
-  }
-
-  // Fetch from backend API
-  const backendUrl = process.env.BACKEND_API_URL;
-  const backendApiKey = process.env.BACKEND_API_KEY;
-
-  if (!backendUrl) {
-    console.error("Sector Allocation API Route Error: Backend URL not configured.");
-    return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
-  }
-
-  const targetUrl = `${backendUrl}/api/portfolio/sector-allocation?account_id=${account_id}`;
-  console.log(`Proxying sector allocation request to: ${targetUrl}`);
-
   try {
+    // Authenticate user first (following pattern from other routes)
+    const supabase = await createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      console.error('Sector Allocation API: User authentication failed:', userError);
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const account_id = searchParams.get('account_id');
+
+    if (!account_id) {
+      return NextResponse.json({ detail: 'account_id parameter is required' }, { status: 400 });
+    }
+
+      console.log(`Sector Allocation API: Getting allocation for account: ${account_id}, user: ${user.id}`);
+
+    // Fetch from backend API
+    const backendUrl = process.env.BACKEND_API_URL;
+    const backendApiKey = process.env.BACKEND_API_KEY;
+
+    if (!backendUrl) {
+      console.error("Sector Allocation API Route Error: Backend URL not configured.");
+      return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
+    }
+
+    // CRITICAL FIX: Pass user_id to backend for portfolio mode detection
+    const targetUrl = `${backendUrl}/api/portfolio/sector-allocation?account_id=${account_id}&user_id=${encodeURIComponent(user.id)}`;
+    console.log(`Proxying sector allocation request to: ${targetUrl}`);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };

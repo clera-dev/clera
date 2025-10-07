@@ -4,10 +4,11 @@ import { type AuthUser } from '@supabase/supabase-js';
 
 /**
  * Authentication context for conversation endpoints
+ * accountId is optional to support aggregation-only (Plaid) users
  */
 export interface ConversationAuthContext {
   user: AuthUser;
-  accountId: string;
+  accountId: string | null;
   supabase: any;
 }
 
@@ -34,26 +35,18 @@ export class ConversationAuthService {
   /**
    * Authenticate user and authorize account access for conversation endpoints
    * 
+   * HYBRID MODE SUPPORT: Now supports both brokerage (Alpaca) and aggregation (Plaid) users
+   * - Brokerage users: accountId is required and validated against Alpaca account
+   * - Aggregation users: accountId can be null, authentication via user_id only
+   * 
    * @param request - The incoming request
-   * @param accountId - The account ID to authorize (from request body or params)
+   * @param accountId - The account ID to authorize (optional for aggregation-only users)
    * @returns Authentication result with context or error response
    */
   static async authenticateAndAuthorize(
     request: NextRequest,
-    accountId: string
+    accountId: string | null
   ): Promise<ConversationAuthResult> {
-    
-    // Validate account ID parameter
-    if (!accountId) {
-      return {
-        success: false,
-        error: NextResponse.json(
-          { error: 'Account ID is required' },
-          { status: 400 }
-        )
-      };
-    }
-
     try {
       // Create supabase server client for authentication
       const supabase = await createClient();
@@ -73,10 +66,10 @@ export class ConversationAuthService {
         };
       }
 
-      // Verify user owns this account
+      // Check user's onboarding status to determine mode
       const { data: onboardingData, error: onboardingError } = await supabase
         .from('user_onboarding')
-        .select('alpaca_account_id')
+        .select('alpaca_account_id, plaid_connection_completed_at')
         .eq('user_id', user.id)
         .single();
 
@@ -91,32 +84,50 @@ export class ConversationAuthService {
         };
       }
 
-      if (!onboardingData?.alpaca_account_id) {
-        return {
-          success: false,
-          error: NextResponse.json(
-            { error: 'Account not found for this user' },
-            { status: 404 }
-          )
-        };
-      }
+      const hasAlpaca = !!onboardingData?.alpaca_account_id;
+      const hasPlaid = !!onboardingData?.plaid_connection_completed_at;
 
-      if (onboardingData.alpaca_account_id !== accountId) {
-        return {
-          success: false,
-          error: NextResponse.json(
-            { error: 'Forbidden - Account access denied' },
-            { status: 403 }
-          )
-        };
+      // If accountId is provided, validate it matches the user's Alpaca account
+      if (accountId) {
+        if (!hasAlpaca) {
+          return {
+            success: false,
+            error: NextResponse.json(
+              { error: 'Brokerage account not found for this user' },
+              { status: 404 }
+            )
+          };
+        }
+
+        if (onboardingData.alpaca_account_id !== accountId) {
+          return {
+            success: false,
+            error: NextResponse.json(
+              { error: 'Forbidden - Account access denied' },
+              { status: 403 }
+            )
+          };
+        }
+      } else {
+        // No accountId provided - this is OK for aggregation-only users
+        if (!hasPlaid && !hasAlpaca) {
+          return {
+            success: false,
+            error: NextResponse.json(
+              { error: 'User has no connected accounts (Plaid or Alpaca)' },
+              { status: 404 }
+            )
+          };
+        }
       }
 
       // Return successful authentication context
+      // accountId will be the validated Alpaca ID or null for aggregation-only users
       return {
         success: true,
         context: {
           user,
-          accountId,
+          accountId: accountId || (hasAlpaca ? onboardingData.alpaca_account_id : null),
           supabase
         }
       };

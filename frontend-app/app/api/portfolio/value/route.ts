@@ -51,14 +51,15 @@ export async function GET(request: Request) {
     
     console.log(`Portfolio Value API: Ownership verified. User ${user.id} owns account ${accountId}`);
 
-    // Fetch portfolio data from backend API
+    // Fetch portfolio data from backend API with API key
     const backendUrl = process.env.BACKEND_API_URL;
-    const url = `${backendUrl}/api/portfolio/value?accountId=${accountId}`;
+    const url = `${backendUrl}/api/portfolio/value?accountId=${accountId}&user_id=${user.id}`;
     
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        'X-API-Key': process.env.BACKEND_API_KEY || '',
       },
       cache: 'no-store',
     });

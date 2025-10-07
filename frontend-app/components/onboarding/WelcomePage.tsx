@@ -25,26 +25,7 @@ export default function WelcomePage({ onContinue, firstName }: WelcomePageProps)
             }
           </p>
           
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 sm:gap-6 mt-4 sm:mt-8">
-            <div className="bg-card hover:bg-card/80 p-4 sm:p-6 rounded-lg shadow-md border border-border/30 transition-all">
-              <div className="text-primary text-lg sm:text-xl font-bold mb-1 sm:mb-2">Step 1</div>
-              <p className="text-sm sm:text-base">Personalize your experience</p>
-            </div>
-            <div className="bg-card hover:bg-card/80 p-4 sm:p-6 rounded-lg shadow-md border border-border/30 transition-all">
-              <div className="text-primary text-lg sm:text-xl font-bold mb-1 sm:mb-2">Step 2</div>
-              <p className="text-sm sm:text-base">Validate your legal information</p>
-            </div>
-            <div className="bg-card hover:bg-card/80 p-4 sm:p-6 rounded-lg shadow-md border border-border/30 transition-all">
-              <div className="text-primary text-lg sm:text-xl font-bold mb-1 sm:mb-2">Step 3</div>
-              <p className="text-sm sm:text-base">Connect your bank to fund your account</p>
-            </div>
-            <div className="bg-card hover:bg-card/80 p-4 sm:p-6 rounded-lg shadow-md border border-border/30 transition-all">
-              <div className="text-primary text-lg sm:text-xl font-bold mb-1 sm:mb-2">Step 4</div>
-              <p className="text-sm sm:text-base">Start investing!</p>
-            </div>
-          </div>
-          
-          <div className="pt-4 sm:pt-8">
+          <div className="pt-6 sm:pt-8">
             <Button 
               onClick={onContinue}
               className="px-8 sm:px-10 py-4 sm:py-6 text-base sm:text-lg rounded-full bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg transition-all"

@@ -18,34 +18,25 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const accountId = searchParams.get('accountId');
+    const filterAccount = searchParams.get('filter_account'); // Account filtering parameter
+    const userId = user.id;
 
-    if (!accountId) {
-      return NextResponse.json({ detail: 'Account ID is required' }, { status: 400 });
-    }
+    console.log(`Cash/Stock/Bond Allocation API: Request for user: ${userId}, accountId: ${accountId}, filter: ${filterAccount}`);
 
-    console.log(`Cash/Stock/Bond Allocation API: Getting allocation for account: ${accountId}, user: ${user.id}`);
-
-    // =================================================================
-    // CRITICAL SECURITY FIX: Verify account ownership before querying
-    // =================================================================
+    // Determine portfolio mode
+    const connectionResponse = await fetch(`${request.nextUrl.origin}/api/portfolio/connection-status`, {
+      headers: {
+        cookie: request.headers.get('cookie') || '',
+      },
+    });
     
-    // Verify that the authenticated user owns the accountId
-    const { data: onboardingData, error: onboardingError } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', user.id)
-      .eq('alpaca_account_id', accountId)
-      .single();
-    
-    if (onboardingError || !onboardingData) {
-      console.error(`Cash/Stock/Bond Allocation API: User ${user.id} does not own account ${accountId}`);
-      return NextResponse.json(
-        { error: 'Account not found or access denied' },
-        { status: 403 }
-      );
+    let portfolioMode = 'brokerage';
+    if (connectionResponse.ok) {
+      const connectionData = await connectionResponse.json();
+      portfolioMode = connectionData.portfolio_mode || 'brokerage';
     }
     
-    console.log(`Cash/Stock/Bond Allocation API: Ownership verified. User ${user.id} owns account ${accountId}`);
+    console.log(`Cash/Stock/Bond Allocation API: Portfolio mode for user ${userId}: ${portfolioMode}`);
 
     // --- Fetch from actual backend ---
     const backendUrl = process.env.BACKEND_API_URL;
@@ -56,7 +47,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
     }
 
-    const targetUrl = `${backendUrl}/api/portfolio/cash-stock-bond-allocation?account_id=${encodeURIComponent(accountId)}`;
+    // For aggregation mode, accountId can be null - backend uses user_id
+    // For brokerage mode, accountId is required and ownership is verified by backend
+    const filterParam = filterAccount ? `&filter_account=${encodeURIComponent(filterAccount)}` : '';
+    const targetUrl = `${backendUrl}/api/portfolio/cash-stock-bond-allocation?account_id=${encodeURIComponent(accountId || 'aggregated')}&user_id=${encodeURIComponent(userId)}${filterParam}`;
     console.log(`Proxying request to: ${targetUrl}`);
 
     // Prepare headers

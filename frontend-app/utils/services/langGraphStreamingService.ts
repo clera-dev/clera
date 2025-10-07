@@ -18,7 +18,7 @@ export interface StreamConfig {
   config: {
     configurable: {
       user_id: string;
-      account_id: string;
+      account_id: string | null;
     };
   };
 }
@@ -33,7 +33,7 @@ export interface LangGraphStreamingOptions {
   };
   onError?: (error: Error) => void;
   // Persistence callbacks (optional - set by API routes)
-  onRunStart?: (runId: string, threadId: string, userId: string, accountId: string) => Promise<void>;
+  onRunStart?: (runId: string, threadId: string, userId: string, accountId?: string) => Promise<void>;
   onToolStart?: (runId: string, toolKey: string, toolLabel: string, agent?: string) => Promise<void>;
   onToolComplete?: (runId: string, toolKey: string, status?: 'complete' | 'error') => Promise<void>;
   onRunFinalize?: (runId: string, status: 'complete' | 'error') => Promise<void>;
@@ -117,15 +117,13 @@ export class LangGraphStreamingService {
           //   }, options.runId);
           // } catch {}
 
-          // Start run persistence if callback provided (fire-and-forget)
-          if (options.onRunStart && options.runId && options.userId && options.accountId) {
+          // Start run persistence if callback provided (MUST AWAIT to ensure chat_runs exists before tool calls)
+          // Note: accountId can be null for aggregation-only users, so check it separately
+          if (options.onRunStart && options.runId && options.userId) {
             try {
-              const p = options.onRunStart(options.runId, options.threadId, options.userId, options.accountId);
-              Promise.resolve(p).catch((err) => {
-                console.error('[LangGraphStreamingService] Failed to persist run start:', err);
-              });
+              await options.onRunStart(options.runId, options.threadId, options.userId, options.accountId);
             } catch (err) {
-              console.error('[LangGraphStreamingService] Failed to invoke run start callback:', err);
+              console.error('[LangGraphStreamingService] Failed to persist run start:', err);
             }
           }
 
@@ -589,7 +587,7 @@ export class LangGraphStreamingService {
    */
   static createSecureConfig(
     userId: string, 
-    accountId: string, 
+    accountId: string | null, 
     additionalConfig: Record<string, any> = {}
   ) {
     return {

@@ -19,22 +19,17 @@ export async function POST(request: NextRequest) {
     }
     limit = Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, limit));
 
-    // Extract and validate account ID
+    // Extract account ID (optional for aggregation-only users)
     const accountId = ConversationAuthService.extractAccountId(body, 'portfolio_id');
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Portfolio ID is required' },
-        { status: 400 }
-      );
-    }
 
     // Use centralized authentication and authorization service
+    // accountId can be null for Plaid-only users
     const authResult = await ConversationAuthService.authenticateAndAuthorize(request, accountId);
     if (!authResult.success) {
       return authResult.error!;
     }
 
-    const { user } = authResult.context!;
+    const { user, accountId: validatedAccountId } = authResult.context!;
 
     // Validate required environment variables for LangGraph
     const langGraphApiUrl = process.env.LANGGRAPH_API_URL;
@@ -61,7 +56,7 @@ export async function POST(request: NextRequest) {
     const threads = await langGraphClient.threads.search({
       metadata: {
         user_id: user.id,
-        account_id: accountId
+        account_id: validatedAccountId // Can be null for aggregation-only users
       },
       limit: limit
     });
