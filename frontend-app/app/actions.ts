@@ -264,10 +264,23 @@ export async function saveOnboardingDataAction(
     accountId?: string;
     accountNumber?: string;
     accountStatus?: string;
-  }
+  },
+  completionType?: 'plaid' | 'brokerage' | null
 ) {
   try {
     const supabase = await createClient();
+    
+    // Prepare completion timestamp based on type
+    const now = new Date().toISOString();
+    const completionFields: any = {};
+    
+    if (completionType === 'plaid' && status === 'submitted') {
+      completionFields.plaid_connection_completed_at = now;
+      console.log('Setting plaid_connection_completed_at:', now);
+    } else if (completionType === 'brokerage' && status === 'submitted') {
+      completionFields.brokerage_account_completed_at = now;
+      console.log('Setting brokerage_account_completed_at:', now);
+    }
     
     // Check if record already exists for this user
     const { data: existingRecord } = await supabase
@@ -283,7 +296,8 @@ export async function saveOnboardingDataAction(
         .update({
           status,
           onboarding_data: onboardingData,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
+          ...completionFields,
           ...(alpacaData?.accountId && { alpaca_account_id: alpacaData.accountId }),
           ...(alpacaData?.accountNumber && { alpaca_account_number: alpacaData.accountNumber }),
           ...(alpacaData?.accountStatus && { alpaca_account_status: alpacaData.accountStatus }),
@@ -299,8 +313,9 @@ export async function saveOnboardingDataAction(
           user_id: userId,
           status,
           onboarding_data: onboardingData,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          created_at: now,
+          updated_at: now,
+          ...completionFields,
           ...(alpacaData?.accountId && { alpaca_account_id: alpacaData.accountId }),
           ...(alpacaData?.accountNumber && { alpaca_account_number: alpacaData.accountNumber }),
           ...(alpacaData?.accountStatus && { alpaca_account_status: alpacaData.accountStatus }),

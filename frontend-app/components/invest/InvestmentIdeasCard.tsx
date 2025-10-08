@@ -37,11 +37,11 @@ export default function InvestmentIdeasCard({ investmentThemes, onStockSelect, o
   // New user loading state
   if (isNewUser) {
     return (
-      <Card className="h-fit">
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Personalized Investment Themes</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8">
+        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8 flex-1">
           <div className="animate-spin h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
           <div className="text-center space-y-2">
             <p className="text-sm font-medium text-foreground">Generating Your Investment Themes</p>
@@ -57,11 +57,11 @@ export default function InvestmentIdeasCard({ investmentThemes, onStockSelect, o
   // Loading state - show skeleton while data is being fetched
   if (isLoading) {
     return (
-      <Card className="h-fit">
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Personalized Investment Themes</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="h-40 bg-muted animate-pulse rounded-lg" />
@@ -75,11 +75,11 @@ export default function InvestmentIdeasCard({ investmentThemes, onStockSelect, o
   // Production-grade: If no themes and not loading, something went wrong
   if (investmentThemes.length === 0) {
     return (
-      <Card className="h-fit">
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Personalized Investment Themes</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8">
+        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8 flex-1">
           <div className="text-center space-y-2">
             <p className="text-sm font-medium text-foreground">Unable to Load Themes</p>
             <p className="text-xs text-muted-foreground max-w-sm">
@@ -93,11 +93,11 @@ export default function InvestmentIdeasCard({ investmentThemes, onStockSelect, o
 
   return (
     <>
-      <Card className="h-fit">
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Personalized Investment Themes</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {investmentThemes.map((theme, index) => (
               <Card 

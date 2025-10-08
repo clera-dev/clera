@@ -113,10 +113,6 @@ const SectorAllocationPie: React.FC<SectorAllocationPieProps> = ({ accountId, in
   if (error) {
     return <p className="text-sm text-red-500 text-center p-4 h-[240px] flex items-center justify-center">Error: {error}</p>;
   }
-  
-  if (!accountId) {
-    return <p className="text-sm text-muted-foreground text-center p-4 h-[240px] flex items-center justify-center">Account ID not available.</p>;
-  }
 
   if (!allocationData || allocationData.sectors.length === 0) {
     return <p className="text-sm text-muted-foreground text-center p-4 h-[240px] flex items-center justify-center">No sector allocation data to display.</p>;

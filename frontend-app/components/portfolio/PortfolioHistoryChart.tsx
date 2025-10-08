@@ -196,9 +196,11 @@ const PortfolioHistoryChart: React.FC<PortfolioHistoryChartProps> = ({
   
   // Format with commas for large numbers
   const formatYAxis = (value: number) => {
-    if (value >= 1000000) return `$${(value/1000000).toFixed(0)}M`;
-    if (value >= 1000) return `$${(value/1000).toFixed(0)}k`;
-    return `$${value}`;
+    // Add precision for better Y-axis readability
+    if (value >= 1000000) return `$${(value/1000000).toFixed(2)}M`; // e.g., $1.25M
+    if (value >= 1000) return `$${(value/1000).toFixed(2)}k`; // e.g., $9.15k
+    if (value >= 100) return `$${value.toFixed(0)}`; // e.g., $150
+    return `$${value.toFixed(2)}`; // e.g., $9.50
   };
 
   // TODO: Display All-Time Performance above chart

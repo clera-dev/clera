@@ -240,12 +240,16 @@ async function fetchNewsForSector(sector: string, apiKey: string): Promise<Watch
 
 // Main cron job handler
 export async function GET(request: Request) {
-  // Basic authorization check
-  const authHeader = request.headers.get('Authorization');
-  const expectedHeader = `Bearer ${process.env.CRON_SECRET}`;
+  // Check for authorization - bypass in development for easier manual triggering
+  const isDevelopment = process.env.NODE_ENV === 'development';
   
-  if (!process.env.CRON_SECRET || authHeader !== expectedHeader) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isDevelopment) {
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+    const expectedHeader = `Bearer ${process.env.CRON_SECRET}`;
+    
+    if (!process.env.CRON_SECRET || authHeader !== expectedHeader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
   }
   
   try {

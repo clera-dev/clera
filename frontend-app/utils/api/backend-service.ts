@@ -192,8 +192,11 @@ export class BackendService {
    * @returns Portfolio analytics data
    */
   async getPortfolioAnalytics(accountId: string, userId: string, authToken?: string) {
+    const queryParams = new URLSearchParams();
+    queryParams.append('user_id', userId); // Add user_id for portfolio mode detection
+    
     return this.request({
-      endpoint: `/api/portfolio/${encodeURIComponent(accountId)}/analytics`,
+      endpoint: `/api/portfolio/${encodeURIComponent(accountId)}/analytics?${queryParams.toString()}`,
       method: 'GET',
       authToken
     });

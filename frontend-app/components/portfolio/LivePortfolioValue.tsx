@@ -8,6 +8,7 @@ import { createClient } from '@/utils/supabase/client'; // Import Supabase clien
 
 interface LivePortfolioValueProps {
     accountId: string;
+    portfolioMode?: string; // Add portfolio mode to determine connection type
 }
 
 interface TimerRefs {
@@ -20,18 +21,23 @@ const WEBSOCKET_URL_TEMPLATE = process.env.NODE_ENV === 'development'
   ? (process.env.NEXT_PUBLIC_WEBSOCKET_URL_DEV || 'ws://localhost:8001/ws/portfolio/{accountId}') // Template includes placeholder
   : (process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD || 'wss://ws.askclera.com/ws/portfolio/{accountId}'); // Template includes placeholder
 
-const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) => {
+const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, portfolioMode = 'brokerage' }) => {
     const [totalValue, setTotalValue] = useState<string>("$0.00");
     const [todayReturn, setTodayReturn] = useState<string>("+$0.00 (0.00%)");
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [isConnected, setIsConnected] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [connectionAttempts, setConnectionAttempts] = useState<number>(0);
-    const [useFallback, setUseFallback] = useState<boolean>(false);
+    const [useFallback, setUseFallback] = useState<boolean>(portfolioMode === 'aggregation');
     
     const timeoutRef = useRef<TimerRefs>({});
     const intervalRef = useRef<TimerRefs>({});
     const supabase = useMemo(() => createClient(), []); // Create supabase client instance once
+    
+    // For aggregation mode, always use fallback API (no real-time websockets)
+    const shouldUseWebSocket = useMemo(() => {
+        return portfolioMode === 'brokerage' || portfolioMode === 'hybrid';
+    }, [portfolioMode]);
 
     // Refs to hold the latest values of state for intervals/timeouts
     const socketRef = useRef<WebSocket | null>(socket);
@@ -263,13 +269,18 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         setIsLoading(true);
         setConnectionAttempts(0);
 
-        console.log("Running effect for accountId:", accountId, "Calculated websocketUrl:", websocketUrl);
+        console.log("Running effect for accountId:", accountId, "Portfolio mode:", portfolioMode, "Calculated websocketUrl:", websocketUrl);
 
-        if (websocketUrl && !useFallbackRef.current) {
-            console.log("Effect triggered: Valid URL found, attempting WebSocket connection", websocketUrl);
+        // Skip websockets for aggregation mode - use fallback API
+        if (portfolioMode === 'aggregation') {
+            console.log("Aggregation mode: Skipping WebSocket, using fallback API for portfolio value");
+            setUseFallback(true);
+            fetchPortfolioData();
+        } else if (websocketUrl && !useFallbackRef.current && shouldUseWebSocket) {
+            console.log("Brokerage/Hybrid mode: Attempting WebSocket connection", websocketUrl);
             connectWebSocket(websocketUrl); // Pass the generated base URL (token added inside connectWebSocket)
         } else {
-            console.log("Effect triggered: No valid WebSocket URL or already in fallback mode, using API fetch.", { accountId, websocketUrl, useFallback: useFallbackRef.current });
+            console.log("Effect triggered: No valid WebSocket URL or fallback mode active, using API fetch.", { accountId, websocketUrl, useFallback: useFallbackRef.current });
             setUseFallback(true); // Ensure fallback state is set
             fetchPortfolioData();
         }
@@ -287,6 +298,11 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         
         let lastReconnectCheckTime = Date.now();
         intervalRef.current.reconnectCheck = setInterval(() => {
+            // Skip reconnection attempts for aggregation mode
+            if (portfolioMode === 'aggregation' || !shouldUseWebSocket) {
+                return;
+            }
+            
             if (!useFallbackRef.current && !isConnectedRef.current) {
                  const socketObj = socketRef.current;
                  const socketPhysicallyNotConnected = !socketObj || 

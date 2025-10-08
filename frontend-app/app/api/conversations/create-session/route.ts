@@ -7,22 +7,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { account_id, title } = body;
 
-    // Extract and validate account ID
+    // Extract account ID (optional for aggregation-only users)
     const accountId = ConversationAuthService.extractAccountId(body, 'account_id');
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Account ID is required' },
-        { status: 400 }
-      );
-    }
 
     // Use centralized authentication and authorization service
+    // accountId can be null for Plaid-only users
     const authResult = await ConversationAuthService.authenticateAndAuthorize(request, accountId);
     if (!authResult.success) {
       return authResult.error!;
     }
 
-    const { user } = authResult.context!;
+    const { user, accountId: validatedAccountId } = authResult.context!;
 
     // Validate required environment variables for LangGraph
     const langGraphApiUrl = process.env.LANGGRAPH_API_URL;
@@ -48,13 +43,13 @@ export async function POST(request: NextRequest) {
     const thread = await langGraphClient.threads.create({
       metadata: {
         user_id: user.id, // Always use the authenticated user's ID
-        account_id: accountId,
+        account_id: validatedAccountId, // Can be null for aggregation-only users
         title: title || 'New Conversation',
       }
     });
     
     // Avoid logging sensitive account_id to protect user privacy
-    console.log(`Created thread for account.`);
+    console.log(`Created thread for user ${user.id.substring(0, 8)}...`);
     
     return NextResponse.json({ id: thread.thread_id });
   } catch (error: any) {

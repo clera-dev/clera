@@ -3,7 +3,7 @@ import { SecureChatClient } from '@/utils/api/secure-chat-client';
 
 interface UseToolActivitiesHydrationParams {
   currentThreadId: string | undefined;
-  accountId: string;
+  accountId: string | undefined;
   chatClient: SecureChatClient;
   onRunIdsLoaded?: (runIds: string[]) => void;
 }

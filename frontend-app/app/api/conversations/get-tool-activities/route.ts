@@ -11,12 +11,15 @@ export async function GET(request: NextRequest) {
     const parsedLimit = limitParam !== null ? Number(limitParam) : 25;
     const safeLimitFloat = Number.isNaN(parsedLimit) ? 25 : parsedLimit;
     const safeLimit = Math.trunc(safeLimitFloat);
-    if (!thread_id || !account_id) {
-      return NextResponse.json({ error: 'thread_id and account_id are required' }, { status: 400 });
+    
+    if (!thread_id) {
+      return NextResponse.json({ error: 'thread_id is required' }, { status: 400 });
     }
 
-    // Reuse centralized auth (validates JWT + account ownership)
-    const auth = await ConversationAuthService.authenticateAndAuthorize(request, account_id);
+    // Reuse centralized auth (validates JWT + account ownership if accountId provided)
+    // accountId can be null/undefined for aggregation-only users
+    const normalizedAccountId = account_id && account_id !== 'undefined' && account_id !== 'null' ? account_id : null;
+    const auth = await ConversationAuthService.authenticateAndAuthorize(request, normalizedAccountId);
     if (!auth.success) {
       const err = await auth.error!.json();
       return NextResponse.json({ error: err.error }, { status: auth.error!.status });

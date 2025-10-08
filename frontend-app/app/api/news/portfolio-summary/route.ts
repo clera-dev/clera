@@ -300,51 +300,99 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
   const financialLiteracy = NewsPersonalizationService.getFinancialLiteracyLevel(personalizationData);
 
   try {
-    const { data: onboardingData, error: onboardingError } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', userId)
-      .single();
-    if (onboardingError || !onboardingData?.alpaca_account_id) {
-      console.error(`Error fetching Alpaca account ID for user ${userId}:`, onboardingError || 'No account ID found');
-      portfolioString = 'No positions found in portfolio.';
-      console.log(`User has no Alpaca account information - using general market overview.`);
-    } else {
-      const alpacaAccountId = onboardingData.alpaca_account_id;
-      console.log(`Fetched Alpaca Account ID ${alpacaAccountId} for user ${userId}`);
-      // INDUSTRY-GRADE: call backend directly with JWT + API key headers, no cookie forwarding
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token || '';
-      const secureHeaders = await createSecureBackendHeaders(accessToken);
-      // Resolve backend config lazily to avoid hard dependency when portfolio is disabled
-      let targetUrl: string | null = null;
-      try {
-        const backendConfig = getBackendConfig();
-        targetUrl = `${backendConfig.url}/api/portfolio/${alpacaAccountId}/positions`;
-      } catch (cfgErr) {
-        console.warn('Backend config not available; skipping positions fetch and using general market overview.');
+    // PORTFOLIO MODE AWARE: Check for both Plaid (aggregation) and Alpaca (brokerage) holdings
+    let positions: Array<{ symbol: string; qty: string; [key: string]: any }> = [];
+    
+    // Strategy 1: Try Plaid aggregated holdings first (works for aggregation & hybrid modes)
+    try {
+      // ARCHITECTURE FIX: Remove .execute() - Supabase client doesn't have this method
+      // The query auto-executes when awaited
+      const { data: plaidHoldingsData, error: plaidError } = await supabase
+        .from('user_aggregated_holdings')
+        .select('symbol, total_quantity, security_type, security_name')
+        .eq('user_id', userId)
+        .neq('security_type', 'cash')  // Exclude cash
+        .neq('symbol', 'U S Dollar');  // Exclude USD
+      
+      if (plaidError) {
+        console.log(`Error fetching Plaid holdings for user ${userId}:`, plaidError);
+      } else if (plaidHoldingsData && plaidHoldingsData.length > 0) {
+        // Convert Plaid format to position format
+        positions = plaidHoldingsData.map((h: any) => ({
+          symbol: h.symbol,
+          qty: h.total_quantity.toString(),
+          name: h.security_name,
+          source: 'plaid'
+        }));
+        console.log(`✅ Found ${positions.length} Plaid holdings for user ${userId}`);
       }
-      const positionsResponse = targetUrl ? await fetch(targetUrl, {
-        method: 'GET',
-        headers: secureHeaders,
-        cache: 'no-store'
-      }) : new Response(null, { status: 204 });
-      if (!positionsResponse || !positionsResponse.ok) {
-        const errorText = await positionsResponse.text();
-        console.error(`Error fetching portfolio positions for user ${userId} (Account ID: ${alpacaAccountId}). Status: ${positionsResponse.status}. Response: ${errorText}`);
-        portfolioString = 'No positions found in portfolio.';
-        console.log(`Portfolio fetch failed for user - using general market overview.`);
-      } else {
-        const positionsData: Array<{ symbol: string; qty: string; [key: string]: any }> = await positionsResponse.json();
-        if (positionsData && positionsData.length > 0) {
-          portfolioString = positionsData.map(p => `${p.symbol} (${p.qty} shares)`).join(', ');
-           console.log(`Successfully fetched and processed portfolio for user ${userId}: ${portfolioString}`);
-        } else {
-          portfolioString = 'No positions found in portfolio.';
-          console.log(`No portfolio positions found for user - using general market overview.`);
+    } catch (plaidError) {
+      console.log(`Exception fetching Plaid holdings for user ${userId}:`, plaidError);
+    }
+    
+    // Strategy 2: Try Alpaca positions (works for brokerage & hybrid modes)
+    try {
+      const { data: onboardingData } = await supabase
+        .from('user_onboarding')
+        .select('alpaca_account_id')
+        .eq('user_id', userId)
+        .single();
+      
+      if (onboardingData?.alpaca_account_id) {
+        const alpacaAccountId = onboardingData.alpaca_account_id;
+        console.log(`Found Alpaca Account ID ${alpacaAccountId} for user ${userId}`);
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token || '';
+        const secureHeaders = await createSecureBackendHeaders(accessToken);
+        
+        try {
+          const backendConfig = getBackendConfig();
+          const targetUrl = `${backendConfig.url}/api/portfolio/${alpacaAccountId}/positions`;
+          
+          const positionsResponse = await fetch(targetUrl, {
+            method: 'GET',
+            headers: secureHeaders,
+            cache: 'no-store'
+          });
+          
+          if (positionsResponse.ok) {
+            const alpacaPositions = await positionsResponse.json();
+            if (alpacaPositions && alpacaPositions.length > 0) {
+              // Add Alpaca positions (avoid duplicates if symbol already exists from Plaid)
+              const existingSymbols = new Set(positions.map(p => p.symbol));
+              for (const p of alpacaPositions) {
+                if (!existingSymbols.has(p.symbol)) {
+                  positions.push({...p, source: 'alpaca'});
+                }
+              }
+              console.log(`✅ Added ${alpacaPositions.length} Alpaca positions (total now: ${positions.length})`);
+            }
+          }
+        } catch (backendError) {
+          console.log(`Could not fetch Alpaca positions:`, backendError);
         }
       }
+    } catch (alpacaError) {
+      console.log(`No Alpaca account found for user ${userId}:`, alpacaError);
     }
+    
+    // Build portfolio string from combined positions
+    if (positions.length > 0) {
+      // Limit to top 15 holdings to keep prompt concise
+      const topHoldings = positions.slice(0, 15);
+      portfolioString = topHoldings.map(p => `${p.symbol} (${parseFloat(p.qty).toFixed(2)} shares)`).join(', ');
+      
+      if (positions.length > 15) {
+        portfolioString += ` and ${positions.length - 15} other holdings`;
+      }
+      
+      console.log(`✅ Portfolio string for news summary (${positions.length} total holdings): ${portfolioString}`);
+    } else {
+      portfolioString = 'No positions found in portfolio.';
+      console.log(`No holdings found from Plaid or Alpaca - using general market overview.`);
+    }
+    
   } catch (error: any) {
     console.error(`Error fetching or processing portfolio data for user ${userId}:`, error);
     portfolioString = 'No positions found in portfolio.';

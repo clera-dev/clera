@@ -13,17 +13,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { thread_id, input, run_id } = body;
 
-    // Extract and validate account ID
+    // Extract account ID (optional for aggregation-only users)
     const account_id = ConversationAuthService.extractAccountId(body, 'account_id');
 
-    if (!thread_id || !input || !account_id) {
+    if (!thread_id || !input) {
       return NextResponse.json(
-        { error: 'Thread ID, input, and account ID are required' },
+        { error: 'Thread ID and input are required' },
         { status: 400 }
       );
     }
 
     // Use centralized authentication and authorization service
+    // account_id can be null for Plaid-only users
     const authResult = await ConversationAuthService.authenticateAndAuthorize(request, account_id);
     if (!authResult.success) {
       // Convert NextResponse to streaming error response
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
       return LangGraphStreamingService.createErrorStreamingResponse(errorData.error, status);
     }
 
-    const { user } = authResult.context!;
+    const { user, accountId: validatedAccountId } = authResult.context!;
 
     // Create streaming service instance
     const streamingService = LangGraphStreamingService.create();
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
       threadId: thread_id,
       streamConfig: {
         input: input,
-        config: LangGraphStreamingService.createSecureConfig(user.id, account_id)
+        config: LangGraphStreamingService.createSecureConfig(user.id, validatedAccountId)
       },
       onError: (error) => {
         console.error('[StreamChat] LangGraph streaming error:', error);
@@ -96,10 +97,10 @@ export async function POST(request: NextRequest) {
       // Provide persistence context
       runId: safeRunId,
       userId: user.id,
-      accountId: account_id,
+      accountId: validatedAccountId ?? undefined,
       // Persistence callbacks
       onRunStart: async (runId, threadId, userId, accountId) => {
-        await ToolEventStore.startRun({ runId, threadId, userId, accountId });
+        await ToolEventStore.startRun({ runId, threadId, userId, accountId: accountId || '' });
       },
       onToolStart: async (runId, toolKey, toolLabel, agent) => {
         await ToolEventStore.upsertToolStart({ runId, toolKey, toolLabel, agent });

@@ -12,10 +12,11 @@ export async function saveOnboardingData(
     accountId?: string;
     accountNumber?: string;
     accountStatus?: string;
-  }
+  },
+  completionType?: 'plaid' | 'brokerage' | null
 ) {
-  // Log alpacaData for debugging
-  console.log('Saving onboarding data with alpacaData:', alpacaData);
+  // Log data for debugging
+  console.log('Saving onboarding data:', { alpacaData, completionType });
   
   // Store Alpaca account ID in localStorage for immediate use
   if (alpacaData?.accountId) {
@@ -27,7 +28,7 @@ export async function saveOnboardingData(
     }
   }
   
-  return saveOnboardingDataAction(userId, onboardingData, status, alpacaData);
+  return saveOnboardingDataAction(userId, onboardingData, status, alpacaData, completionType);
 }
 
 // Client-side wrapper for getting onboarding data

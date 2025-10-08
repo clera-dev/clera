@@ -49,14 +49,16 @@ export default function SideBySideLayout({
         
         setUserId(user.id);
         
-        // Get Alpaca Account ID
+        // Get Alpaca Account ID (optional - only needed for brokerage mode)
         const fetchedAccountId = await getAlpacaAccountId();
-        if (!fetchedAccountId) {
-          console.error("Alpaca Account ID not found");
-          return;
+        if (fetchedAccountId) {
+          setAccountId(fetchedAccountId);
+        } else {
+          // In aggregation mode, user doesn't have an Alpaca account
+          // Set to null and continue - chat will still work for portfolio queries
+          console.log("No Alpaca account found - user in aggregation mode");
+          setAccountId(null);
         }
-        
-        setAccountId(fetchedAccountId);
       } catch (error) {
         console.error("Error initializing user data:", error);
       } finally {
@@ -83,7 +85,7 @@ export default function SideBySideLayout({
       )}
       
       {/* Chat container - positioned based on fullscreen state */}
-      {isChatOpen && !isLoading && accountId && userId && (
+      {isChatOpen && !isLoading && userId && (
         <div 
           className="absolute overflow-hidden z-10 transition-all duration-300"
           style={{ 
@@ -95,7 +97,7 @@ export default function SideBySideLayout({
           }}
         >
           <SidebarChat 
-            accountId={accountId}
+            accountId={accountId || undefined}
             userId={userId}
             onClose={onCloseSideChat}
             width="100%"

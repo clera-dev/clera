@@ -24,6 +24,8 @@ from portfolio_realtime.symbol_collector import SymbolCollector
 from portfolio_realtime.portfolio_calculator import PortfolioCalculator
 from portfolio_realtime.sector_data_collector import SectorDataCollector
 from utils.supabase.db_client import get_user_alpaca_account_id
+from utils.portfolio.websocket_auth_service import authorize_websocket_connection_safe
+from utils.portfolio.realtime_data_service import RealtimeDataService
 
 # Configure logging
 logging.basicConfig(
@@ -35,140 +37,80 @@ logger = logging.getLogger("websocket_server")
 # Load environment variables
 load_dotenv()
 
-# Define periodic data refresh task
-async def periodic_data_refresh(refresh_interval=300):  # Changed default from 60 to 300 seconds (5 minutes)
-    """Periodically refresh account data in Redis"""
-    logger.info(f"Starting periodic data refresh (every {refresh_interval} seconds)")
+# PRODUCTION-SAFE periodic data refresh task
+async def periodic_data_refresh(redis_client, refresh_interval=300):  # Changed default from 60 to 300 seconds (5 minutes)
+    """
+    Periodically refresh account data in Redis - PRODUCTION SAFE VERSION
+    Handles different portfolio modes without breaking existing functionality.
+    """
+    logger.info(f"Starting PRODUCTION-SAFE periodic data refresh (every {refresh_interval} seconds)")
     
-    # Create instances of required classes
-    symbol_collector = SymbolCollector(
-        redis_host=redis_host,
-        redis_port=redis_port,
-        redis_db=redis_db,
-        sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
-    )
+    # Create the production-safe realtime data service
+    realtime_service = RealtimeDataService(redis_client)
     
-    portfolio_calculator = PortfolioCalculator(
-        redis_host=redis_host,
-        redis_port=redis_port,
-        redis_db=redis_db,
-        min_update_interval=1,  # Allow immediate updates
-        sandbox=os.getenv("ALPACA_SANDBOX", "true").lower() == "true"
-    )
-    
-    # Create sector data collector instance
-    try:
-        sector_collector = SectorDataCollector(
-            redis_host=redis_host,
-            redis_port=redis_port,
-            redis_db=redis_db,
-            FINANCIAL_MODELING_PREP_API_KEY=os.getenv("FINANCIAL_MODELING_PREP_API_KEY")
-        )
-        logger.info("Sector data collector initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize sector data collector: {e}. Sector data will not be available.")
-        sector_collector = None
-    
-    # Track last full refresh time and last sector collection time
+    # Track refresh intervals
     last_full_refresh = 0
     last_sector_collection = 0
-    # Run sector collection once per day (24 hours = 86400 seconds)
-    sector_collection_interval = 86400
     
-    # Check if we need to run sector collection immediately on startup
-    if sector_collector is not None:
-        try:
-            # Check if sector data exists in Redis
-            existing_sector_data = redis_client.get('sector_data')
-            if not existing_sector_data:
-                logger.info("No sector data found in Redis. Running initial sector collection...")
-                await sector_collector.collect_sector_data()
+    # Configuration
+    full_refresh_interval = int(os.getenv("FULL_REFRESH_INTERVAL", "900"))  # 15 minutes default  
+    sector_collection_interval = 86400  # 24 hours
+    
+    # Initial sector data collection check (only if Alpaca components available)
+    try:
+        existing_sector_data = redis_client.get('sector_data')
+        if not existing_sector_data:
+            logger.info("No sector data found in Redis. Attempting initial sector collection...")
+            sector_success = await realtime_service.refresh_sector_data()
+            if sector_success:
                 last_sector_collection = time.time()
                 logger.info("Initial sector data collection completed")
                 await asyncio.sleep(2)  # Small delay after initial collection
-        except Exception as e:
-            logger.error(f"Error during initial sector data collection: {e}", exc_info=True)
+            else:
+                logger.info("Sector data collection not available - continuing without it")
+    except Exception as e:
+        logger.error(f"Error during initial sector data collection: {e}", exc_info=True)
     
     while True:
         try:
             current_time = time.time()
             
-            # Determine if we need a full refresh (including symbols collection)
-            # Only do full refresh every 15 minutes to avoid excessive API calls
-            full_refresh_interval = int(os.getenv("FULL_REFRESH_INTERVAL", "900"))  # 15 minutes default
+            # Determine refresh needs
             need_full_refresh = (current_time - last_full_refresh) > full_refresh_interval
+            need_sector_collection = (current_time - last_sector_collection) > sector_collection_interval
             
-            # Determine if we need sector data collection (once per day)
-            need_sector_collection = (
-                sector_collector is not None and 
-                (current_time - last_sector_collection) > sector_collection_interval
+            # Perform the refresh using the production-safe service
+            results = await realtime_service.perform_periodic_refresh(
+                need_full_refresh=need_full_refresh,
+                need_sector_refresh=need_sector_collection
             )
             
-            # Log before refresh
-            refresh_start = current_time
-            if need_full_refresh and need_sector_collection:
-                logger.info("Starting full data refresh cycle (including symbols collection and sector data)")
-            elif need_full_refresh:
-                logger.info("Starting full data refresh cycle (including symbols collection)")
-            elif need_sector_collection:
-                logger.info("Starting sector data collection cycle")
-            else:
-                logger.info("Starting portfolio value refresh cycle (without symbols collection)")
-            
-            # 1. Collect sector data if needed (do this first, as it's infrequent and important)
-            if need_sector_collection:
-                try:
-                    logger.info("Starting sector data collection...")
-                    await sector_collector.collect_sector_data()
-                    last_sector_collection = current_time
-                    logger.info("Sector data collection completed successfully")
-                    # Add small delay after sector collection
-                    await asyncio.sleep(2)
-                except Exception as e:
-                    logger.error(f"Error during sector data collection: {e}", exc_info=True)
-            
-            # 2. Collect symbols and positions only during full refresh
+            # Update tracking variables based on results
             if need_full_refresh:
-                await symbol_collector.collect_symbols()
                 last_full_refresh = current_time
-                
-                # Add small delay to avoid rate limiting
-                await asyncio.sleep(1)
+            if need_sector_collection and results.get("sector_success", False):
+                last_sector_collection = current_time
             
-            # 3. Get account IDs from Redis
-            account_keys = redis_client.keys('account_positions:*')
-            accounts_refreshed = 0
+            # Log results
+            total_refreshed = results.get("alpaca_refreshed", 0) + results.get("plaid_refreshed", 0)
+            duration = results.get("duration_seconds", 0)
             
-            # 4. Calculate portfolio values for each account
-            for key in account_keys:
-                try:
-                    account_id = key.decode('utf-8').split(':')[1]
-                    portfolio_data = portfolio_calculator.calculate_portfolio_value(account_id)
-                    
-                    if portfolio_data:
-                        # Publish to Redis for WebSocket clients
-                        redis_client.publish('portfolio_updates', json.dumps(portfolio_data))
-                        accounts_refreshed += 1
-                        
-                        # Small delay between accounts to avoid rate limiting
-                        if accounts_refreshed < len(account_keys):
-                            await asyncio.sleep(0.5)
-                except Exception as e:
-                    logger.error(f"Error refreshing account {account_id}: {e}")
+            log_message = f"Periodic refresh complete: {total_refreshed} accounts refreshed in {duration:.2f}s"
+            if results.get("alpaca_refreshed", 0) > 0:
+                log_message += f" (Alpaca: {results['alpaca_refreshed']})"
+            if results.get("plaid_refreshed", 0) > 0:
+                log_message += f" (Plaid: {results['plaid_refreshed']})"
+            if results.get("errors"):
+                log_message += f" (Errors: {len(results['errors'])})"
             
-            # Log after refresh
-            refresh_duration = time.time() - refresh_start
-            if need_full_refresh and need_sector_collection:
-                logger.info(f"Full data refresh with sector collection complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
-            elif need_full_refresh:
-                logger.info(f"Full data refresh complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
-            elif need_sector_collection:
-                logger.info(f"Sector data collection with portfolio refresh complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
-            else:
-                logger.info(f"Portfolio value refresh complete. Refreshed {accounts_refreshed} accounts in {refresh_duration:.2f}s")
+            logger.info(log_message)
+            
+            # Log any errors
+            for error in results.get("errors", []):
+                logger.warning(f"Refresh error: {error}")
             
         except Exception as e:
-            logger.error(f"Error in periodic data refresh: {e}", exc_info=True)
+            logger.error(f"Critical error in periodic data refresh: {e}", exc_info=True)
         
         # Wait before next refresh cycle
         await asyncio.sleep(refresh_interval)
@@ -186,7 +128,7 @@ async def lifespan(app: FastAPI):
     
     # Start periodic data refresh task with a more conservative default interval
     refresh_interval = int(os.getenv("DATA_REFRESH_INTERVAL", "300"))  # Changed default from 60 to 300 seconds
-    refresh_task = asyncio.create_task(periodic_data_refresh(refresh_interval))
+    refresh_task = asyncio.create_task(periodic_data_refresh(redis_client, refresh_interval))
     logger.info(f"Started periodic data refresh task (interval: {refresh_interval}s)")
     
     yield  # App runs here
@@ -413,22 +355,26 @@ async def websocket_endpoint(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication failed")
         return
         
-    # Authorization check: Does the authenticated user own this account_id?
+    # PRODUCTION-SAFE Authorization check: Handles all portfolio modes
     try:
-        authorized_account_id = get_user_alpaca_account_id(user_id)
+        authorized, error_message, auth_metadata = authorize_websocket_connection_safe(user_id, account_id)
+        
+        if not authorized:
+            error_reason = error_message or "Forbidden"
+            logger.warning(f"WebSocket AuthZ: User {user_id} denied access to account {account_id}: {error_reason}")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=error_reason)
+            return
+            
+        # Log successful authorization with mode information
+        portfolio_mode = auth_metadata.get('mode', 'unknown')
+        account_type = auth_metadata.get('account_type', 'unknown')
+        logger.info(f"WebSocket AuthZ: User {user_id} granted access to account {account_id} (mode: {portfolio_mode}, type: {account_type})")
+        
     except Exception as e:
-        # Handle potential DB connection errors during authorization check
-        logger.error(f"WebSocket AuthZ: Error checking account ownership for user {user_id}: {e}", exc_info=True)
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Authorization check failed")
+        # Handle unexpected errors in authorization
+        logger.error(f"WebSocket AuthZ: Unexpected error during authorization for user {user_id}: {e}", exc_info=True)
+        await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Authorization system error")
         return
-        
-    if not authorized_account_id or authorized_account_id != account_id:
-        logger.warning(f"WebSocket AuthZ: User {user_id} forbidden access to account {account_id}. Expected: {authorized_account_id}")
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Forbidden")
-        return
-        
-    # If checks pass, proceed with connection
-    logger.info(f"WebSocket AuthZ: User {user_id} granted access to account {account_id}")
     
     # --- Connection Handling (Original Logic) ---
     try:

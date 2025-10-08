@@ -49,6 +49,8 @@ export interface AssetAllocationPieProps {
     accountId: string | null;
     refreshTimestamp?: number;
     sideChatVisible?: boolean; // Add prop to detect when chat sidebar is open
+    selectedAccountFilter?: 'total' | string;  // NEW: Account filter for X-ray vision
+    userId?: string;  // NEW: User ID for aggregation mode
 }
 
 // Define color palettes - harmonious with sector colors for professional consistency
@@ -83,7 +85,7 @@ const CustomTooltip = ({ active, payload }: any) => {
     return null;
 };
 
-const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId, refreshTimestamp, sideChatVisible = false }) => {
+const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId, refreshTimestamp, sideChatVisible = false, selectedAccountFilter = 'total', userId }) => {
     const [viewType, setViewType] = useState<'assetClass' | 'sector'>('assetClass');
     // Add mobile detection (measured post-mount to avoid SSR hydration issues)
     const [isMobile, setIsMobile] = useState(false);
@@ -97,17 +99,21 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
     // Avoid using isMobile on initial render to prevent SSR hydration flicker.
     const useCompactLayout = sideChatVisible || (hasMeasured && isMobile);
 
-    // Fetch sector data when the sector tab is active and accountId is available
+    // Fetch sector data when the sector tab is active (with account filtering support)
     useEffect(() => {
-        if (viewType === 'sector' && accountId && !isSectorLoading) {
+        if (viewType === 'sector' && !isSectorLoading && !sectorData) {
             const fetchSectorData = async () => {
                 setIsSectorLoading(true);
                 setSectorError(null);
                 try {
-                    // If a refresh is triggered, we might want to clear existing sectorData
-                    // or ensure the fetch happens regardless of current sectorData state
-                    // For now, changing refreshTimestamp will trigger this if it's in deps.
-                    const response = await fetch(`/api/portfolio/sector-allocation?account_id=${accountId}`);
+                    // CORRECT: Use sector-allocation endpoint with filter_account parameter
+                    const filterParam = (selectedAccountFilter && selectedAccountFilter !== 'total') 
+                        ? `&filter_account=${selectedAccountFilter}` 
+                        : '';
+                    const url = `/api/portfolio/sector-allocation?account_id=${accountId || 'null'}${filterParam}`;
+                    
+                    console.log(`🎯 Fetching sector allocation for account filter: ${selectedAccountFilter || 'total'}`);
+                    const response = await fetch(url);
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({ detail: "Failed to fetch sector allocation data." }));
                         throw new Error(errorData.detail || `HTTP error ${response.status}`);
@@ -122,46 +128,93 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                 }
             };
             
-            // Fetch if sectorData is not present OR if refreshTimestamp has changed
-            // (assuming refreshTimestamp implies a need to refetch)
-            // The check for !sectorData is to load initially.
-            // The change in refreshTimestamp is for subsequent refreshes.
             fetchSectorData();
         }
-        // No explicit cleanup needed, fetch is triggered by state change
-    }, [viewType, accountId, refreshTimestamp]); // Re-run if viewType, accountId, or refreshTimestamp changes. REMOVED isSectorLoading from deps.
+    }, [viewType, accountId, selectedAccountFilter, userId]); // Account filter aware
+
+    // Clear sector data when account filter changes to force refetch
+    useEffect(() => {
+        if (viewType === 'sector') {
+            setSectorData(null); // Force refetch
+        }
+    }, [viewType, selectedAccountFilter]);
+
+    // Separate effect for refreshing sector data when refreshTimestamp changes
+    useEffect(() => {
+        if (viewType === 'sector' && refreshTimestamp && sectorData) {
+            // Only refresh if we already have data and user explicitly triggers refresh
+            const refreshSectorData = async () => {
+                try {
+                    // CORRECT: Use sector-allocation endpoint with filter_account parameter
+                    const filterParam = (selectedAccountFilter && selectedAccountFilter !== 'total') 
+                        ? `&filter_account=${selectedAccountFilter}` 
+                        : '';
+                    const url = `/api/portfolio/sector-allocation?account_id=${accountId || 'null'}${filterParam}`;
+                    
+                    console.log(`🎯 Refreshing sector allocation for account filter: ${selectedAccountFilter || 'total'}`);
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data: SectorAllocationData = await response.json();
+                        setSectorData(data);
+                    }
+                } catch (err) {
+                    console.debug('Sector data refresh failed:', err);
+                }
+            };
+            
+            refreshSectorData();
+        }
+    }, [refreshTimestamp, selectedAccountFilter]); // Refresh on account filter change too
 
     const [cashStockBondData, setCashStockBondData] = useState<CashStockBondAllocationItem[]>([]);
     const [isCashStockBondLoading, setIsCashStockBondLoading] = useState<boolean>(false);
     const [cashStockBondError, setCashStockBondError] = useState<string | null>(null);
 
-    // Clear cash/stock/bond data when not relevant
+    // Clear cash/stock/bond data when switching away from asset class view OR when account filter changes
     useEffect(() => {
-        if (viewType !== 'assetClass' || !accountId) {
+        if (viewType !== 'assetClass') {
             setCashStockBondData([]);
             setCashStockBondError(null);
             setIsCashStockBondLoading(false);
+        } else {
+            // Force refetch when account filter changes by clearing data
+            setCashStockBondData([]);
         }
-    }, [viewType, accountId]);
+    }, [viewType, selectedAccountFilter]);
 
-    // Fetch cash/stock/bond allocation data
+    // Fetch cash/stock/bond allocation data on initial load and view change
     useEffect(() => {
-        if (viewType === 'assetClass' && accountId) {
+        // Allow fetch even when accountId is null (for aggregation mode)
+        if (viewType === 'assetClass' && !isCashStockBondLoading && cashStockBondData.length === 0) {
             const fetchCashStockBondData = async () => {
                 const currentAccountId = accountId; // Capture accountId for validation
+                const currentAccountFilter = selectedAccountFilter; // Capture for validation
                 setIsCashStockBondLoading(true);
                 setCashStockBondError(null);
                 try {
-                    const response = await fetch(`/api/portfolio/cash-stock-bond-allocation?accountId=${currentAccountId}`);
+                    // CORRECT: Use cash-stock-bond-allocation endpoint with filter_account parameter
+                    const filterParam = (currentAccountFilter && currentAccountFilter !== 'total') 
+                        ? `&filter_account=${currentAccountFilter}` 
+                        : '';
+                    const url = `/api/portfolio/cash-stock-bond-allocation?accountId=${currentAccountId || 'null'}${filterParam}`;
+                    
+                    console.log(`🎯 Fetching initial allocation for account filter: ${currentAccountFilter || 'total'}`);
+                    const response = await fetch(url);
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({ detail: "Failed to fetch cash/stock/bond allocation data." }));
                         throw new Error(errorData.detail || `HTTP error ${response.status}`);
                     }
                     const data = await response.json();
                     
-                    // Validate response is still for current account before updating state
-                    if (currentAccountId === accountId) {
-                        setCashStockBondData(data.pie_data || []);
+                    // Validate response is still for current account/filter before updating state
+                    if (currentAccountId === accountId && currentAccountFilter === selectedAccountFilter) {
+                        // Handle both API formats (account-filtered returns different structure)
+                        const pieData = data.pie_data || [
+                            { name: 'Cash', value: data.cash?.value || 0, percentage: data.cash?.percentage || 0 },
+                            { name: 'Stock', value: data.stock?.value || 0, percentage: data.stock?.percentage || 0 },
+                            { name: 'Bond', value: data.bond?.value || 0, percentage: data.bond?.percentage || 0 }
+                        ].filter(item => item.value > 0);
+                        setCashStockBondData(pieData);
                     }
                 } catch (err: any) {
                     console.error('Error fetching cash/stock/bond allocation data:', err);
@@ -182,7 +235,39 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             
             fetchCashStockBondData();
         }
-    }, [viewType, accountId, refreshTimestamp]);
+    }, [viewType, accountId, selectedAccountFilter, userId]); // Account filter aware
+
+    // Separate effect for manual refresh (only when user explicitly refreshes)
+    useEffect(() => {
+        if (viewType === 'assetClass' && refreshTimestamp && cashStockBondData.length > 0) {
+            const refreshCashStockBondData = async () => {
+                try {
+                    // CORRECT: Use cash-stock-bond-allocation endpoint with filter_account parameter
+                    const filterParam = (selectedAccountFilter && selectedAccountFilter !== 'total') 
+                        ? `&filter_account=${selectedAccountFilter}` 
+                        : '';
+                    const url = `/api/portfolio/cash-stock-bond-allocation?accountId=${accountId || 'null'}${filterParam}`;
+                    
+                    console.log(`🎯 Fetching allocation for account filter: ${selectedAccountFilter || 'total'}`);
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        // Handle both API formats
+                        const pieData = data.pie_data || [
+                            { name: 'Cash', value: data.cash?.value || 0, percentage: data.cash?.percentage || 0 },
+                            { name: 'Stock', value: data.stock?.value || 0, percentage: data.stock?.percentage || 0 },
+                            { name: 'Bond', value: data.bond?.value || 0, percentage: data.bond?.percentage || 0 }
+                        ].filter(item => item.value > 0);
+                        setCashStockBondData(pieData);
+                    }
+                } catch (err) {
+                    console.debug('Allocation data refresh failed:', err);
+                }
+            };
+            
+            refreshCashStockBondData();
+        }
+    }, [refreshTimestamp, selectedAccountFilter]); // Refresh on account filter change too
 
     const allocationDataByClass = useMemo(() => {
         // Use new cash/stock/bond data if available

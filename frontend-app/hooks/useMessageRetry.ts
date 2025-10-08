@@ -22,7 +22,7 @@ interface UseMessageRetryReturn {
 interface UseMessageRetryOptions {
   chatClient: SecureChatClient; // NEW: Accept existing chatClient instead of creating new one
   userId: string;
-  accountId: string;
+  accountId?: string;
   onMessageSent?: () => void;
   onQuerySent?: () => Promise<void>;
   onFirstMessageFlagReset?: () => void;

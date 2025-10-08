@@ -258,31 +258,91 @@ def rebalance_instructions(state=None, config=None) -> str:
 
 @tool("get_portfolio_summary")
 def get_portfolio_summary(state=None, config=None) -> str:
-    """Get a comprehensive summary of the user's current portfolio.
+    """Get a comprehensive summary of the user's current portfolio with account-level breakdown.
     
-    This tool retrieves and analyzes the user's current portfolio positions,
-    providing insights into allocation, performance, and key metrics.
+    This tool retrieves and analyzes the user's portfolio across all connected accounts,
+    providing insights into each individual account as well as overall portfolio metrics.
+    
+    **Account Breakdown Structure:**
+    - For Plaid users: Shows each connected investment account (401k, IRA, Roth IRA, brokerage, etc.)
+      with its specific holdings, value, and performance metrics
+    - For Alpaca users: Shows the Clera brokerage account with holdings
+    - For Hybrid users: Shows both Alpaca AND all Plaid accounts separately, plus combined totals
+    
+    **Per-Account Information:**
+    - Account name and institution (e.g., "Fidelity 401(k)", "Vanguard Roth IRA")
+    - Account-specific portfolio value
+    - Account-specific risk and diversification scores
+    - List of securities held within that specific account
+    - Performance metrics for each security in the account
+    
+    **Overall Portfolio Information:**
+    - Combined total value across all accounts
+    - Overall risk and diversification scores
+    - Portfolio insights and recommendations
+    
+    This enables users to understand:
+    - How much is in each account (401k vs IRA vs brokerage)
+    - What specific holdings are in each account
+    - Risk/diversification for each account individually
+    - Which accounts need rebalancing
     
     Returns:
         str: Formatted portfolio summary including:
-             - Total portfolio value and position count
-             - Individual position details with performance metrics
-             - Asset allocation breakdown
-             - Key portfolio statistics and insights
+             - Overall portfolio totals
+             - Account-by-account breakdown with holdings
+             - Per-account risk and diversification metrics
+             - Key insights and recommendations
     """
     try:
-        # Validate user context first
-        account_id = get_account_id(config=config)
-        logger.info(f"[Portfolio Agent] Generating portfolio summary for account: {account_id}")
+        # Get user_id from config
+        from utils.account_utils import get_user_id_from_config
+        user_id = get_user_id_from_config(config)
+        logger.info(f"[Portfolio Agent] Generating portfolio summary for user: {user_id}")
         
-        # Get cash balance first
-        cash_balance = get_account_cash_balance(config=config)
+        # Use the unified portfolio data provider
+        from clera_agents.services.portfolio_data_provider import PortfolioDataProvider
+        provider = PortfolioDataProvider(user_id)
         
-        # Get all positions
-        positions = retrieve_portfolio_positions(state=state, config=config)
+        # Get user's account mode
+        mode = provider.get_user_mode()
+        logger.info(f"[Portfolio Agent] User mode: {mode.mode}")
         
-        if not positions and cash_balance == 0:
-            return """📊 **Portfolio Summary**
+        # Get cash balance (for hybrid mode, this will be broken down later)
+        cash_balance = provider.get_cash_balance()
+        
+        # For HYBRID mode, get separate cash balances for breakdown
+        alpaca_cash = Decimal('0')
+        plaid_cash = Decimal('0')
+        
+        if mode.mode == 'hybrid':
+            # Get Alpaca cash (brokerage cash - what user can invest on our platform)
+            try:
+                account = provider.broker_client.get_account_by_id(mode.alpaca_account_id)
+                alpaca_cash = Decimal(str(account.cash))
+                logger.info(f"[Portfolio Agent] Hybrid mode - Alpaca cash: ${alpaca_cash}")
+            except Exception as e:
+                logger.warning(f"[Portfolio Agent] Could not fetch Alpaca cash for hybrid mode: {e}")
+            
+            # Get Plaid cash (external accounts cash)
+            try:
+                result = provider.supabase.table('user_aggregated_holdings')\
+                    .select('total_market_value')\
+                    .eq('user_id', user_id)\
+                    .eq('security_type', 'cash')\
+                    .execute()
+                
+                if result.data and len(result.data) > 0:
+                    plaid_cash = Decimal(str(result.data[0].get('total_market_value', 0)))
+                    logger.info(f"[Portfolio Agent] Hybrid mode - Plaid cash: ${plaid_cash}")
+            except Exception as e:
+                logger.warning(f"[Portfolio Agent] Could not fetch Plaid cash for hybrid mode: {e}")
+        
+        # Get all holdings from available sources
+        holdings = provider.get_holdings()
+        
+        if not holdings and cash_balance == 0:
+            return f"""📊 **Portfolio Summary**
 
 ❌ **No Positions Found**
 
@@ -291,46 +351,77 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
 • Your positions are still settling
 • There's a temporary issue with account access
 
+**Account Mode:** {mode.mode}
+{"• Alpaca brokerage account connected" if mode.has_alpaca else ""}
+{"• Plaid aggregation accounts connected" if mode.has_plaid else ""}
+
 💡 **Next Steps:**
 • Check your account status
 • Consider making your first investment
 • Contact support if you believe this is an error"""
 
-        # Calculate portfolio totals (positions only)
+        # Separate CASH from INVESTMENT positions
+        # Cash (like "U S Dollar") should be shown separately, not counted as an investment position
+        cash_holdings = []
+        investment_holdings = []
+        
+        for holding in holdings:
+            if holding.security_type == 'cash':
+                cash_holdings.append(holding)
+            else:
+                investment_holdings.append(holding)
+        
+        # Calculate INVESTMENT position totals (excluding cash)
         positions_value = Decimal('0')
         total_unrealized_pl = Decimal('0')
         total_cost_basis = Decimal('0')
         
         position_details = []
         
-        for position in positions:
+        for holding in investment_holdings:
             try:
-                # Extract numeric values
-                market_value = Decimal(str(position.market_value))
-                unrealized_pl = Decimal(str(position.unrealized_pl))
-                cost_basis = Decimal(str(position.cost_basis))
-                unrealized_plpc = float(position.unrealized_plpc) * 100  # Convert to percentage
+                # Already in Decimal format from provider
+                market_value = holding.market_value
+                unrealized_pl = holding.unrealized_pl
+                cost_basis = holding.cost_basis
+                
+                # Handle sentinel value for unreliable cost basis
+                # Backend uses -999999 to indicate "N/A" (can't use NULL in DB)
+                if holding.unrealized_plpc <= Decimal('-999999'):
+                    unrealized_plpc = None  # Mark as N/A
+                    gain_loss_emoji = "⚠️"  # Unreliable data indicator
+                else:
+                    unrealized_plpc = float(holding.unrealized_plpc) * 100  # Convert to percentage
+                    gain_loss_emoji = "📈" if unrealized_pl >= 0 else "📉"
                 
                 positions_value += market_value
                 total_unrealized_pl += unrealized_pl
                 total_cost_basis += cost_basis
                 
-                # Format position details
-                gain_loss_emoji = "📈" if unrealized_pl >= 0 else "📉"
                 position_details.append({
-                    'symbol': position.symbol,
+                    'symbol': holding.symbol,
+                    'security_name': holding.security_name,
+                    'security_type': holding.security_type,
+                    'quantity': holding.quantity,
                     'market_value': market_value,
                     'unrealized_pl': unrealized_pl,
-                    'unrealized_plpc': unrealized_plpc,
+                    'unrealized_plpc': unrealized_plpc,  # Can be None for N/A
                     'emoji': gain_loss_emoji,
+                    'source': holding.source,
                 })
                 
             except (ValueError, AttributeError) as e:
-                logger.warning(f"[Portfolio Agent] Could not process position {position.symbol}: {e}")
+                logger.warning(f"[Portfolio Agent] Could not process holding {holding.symbol}: {e}")
                 continue
         
-        # Calculate TOTAL portfolio value including cash
-        total_portfolio_value = positions_value + cash_balance
+        # Calculate CASH balance from cash holdings
+        cash_from_holdings = sum(h.market_value for h in cash_holdings)
+        
+        # Total cash = cash from holdings + cash_balance (for hybrid mode with Alpaca cash)
+        total_cash = cash_from_holdings + cash_balance
+        
+        # Calculate TOTAL portfolio value (investments + cash)
+        total_portfolio_value = positions_value + total_cash
         
         # Calculate weights based on TOTAL portfolio value (including cash)
         for pos in position_details:
@@ -343,35 +434,64 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         # Sort positions by market value (largest first)
         position_details.sort(key=lambda x: x['market_value'], reverse=True)
         
-        # Get first purchase dates for enhanced information
-        first_purchases = find_first_purchase_dates(account_id)
+        # Get first purchase dates for enhanced information (only for Alpaca accounts)
+        first_purchases = {}
+        if mode.has_alpaca and mode.alpaca_account_id:
+            try:
+                first_purchases = find_first_purchase_dates(mode.alpaca_account_id)
+            except Exception as e:
+                logger.warning(f"[Portfolio Agent] Could not fetch first purchase dates: {e}")
         
         # Add first purchase dates to position details
         for pos in position_details:
             pos['first_purchase'] = first_purchases.get(pos['symbol'])
         
-        # Calculate risk and diversification scores using the same logic as frontend
+        # Calculate risk and diversification scores using the same logic as the backend API
         risk_score = Decimal('0')
         diversification_score = Decimal('0')
         
         if position_details:
             try:
-                # Import the same mapping function used by the backend API
-                from clera_agents.tools.portfolio_analysis import PortfolioAnalyticsEngine
+                from clera_agents.tools.portfolio_analysis import PortfolioPosition, PortfolioAnalyzer, PortfolioAnalyticsEngine
                 
-                # Get the original Alpaca positions for proper mapping
-                original_positions = retrieve_portfolio_positions(config=config)
-                
-                # Create asset details map (empty for now, but could be enhanced)
-                asset_details_map = {}
-                
-                # Map positions using the same logic as the backend API
                 portfolio_positions = []
                 
-                for original_pos in original_positions:
-                    mapped_pos = map_alpaca_position_to_portfolio_position(original_pos, asset_details_map)
-                    if mapped_pos:
-                        portfolio_positions.append(mapped_pos)
+                # Use different conversion logic based on mode
+                if mode.has_alpaca and not mode.has_plaid:
+                    # Brokerage mode: Use Alpaca position mapping
+                    original_positions = retrieve_portfolio_positions(config=config)
+                    asset_details_map = {}
+                    
+                    for original_pos in original_positions:
+                        mapped_pos = map_alpaca_position_to_portfolio_position(original_pos, asset_details_map)
+                        if mapped_pos:
+                            portfolio_positions.append(mapped_pos)
+                else:
+                    # Aggregation or hybrid mode: Convert holdings to PortfolioPosition format
+                    # Use the same logic as backend's aggregated_calculations.py (lines 76-97)
+                    for holding in holdings:
+                        try:
+                            current_price = Decimal('0')
+                            if holding.quantity > 0:
+                                current_price = holding.market_value / holding.quantity
+                            
+                            position = PortfolioPosition(
+                                symbol=holding.symbol,
+                                quantity=holding.quantity,
+                                current_price=current_price,
+                                market_value=holding.market_value,
+                                cost_basis=holding.cost_basis,
+                                unrealized_pl=holding.unrealized_pl,
+                                unrealized_plpc=None
+                            )
+                            
+                            # Classify the position for proper analytics
+                            position = PortfolioAnalyzer.classify_position(position)
+                            portfolio_positions.append(position)
+                            
+                        except Exception as e:
+                            logger.warning(f"[Portfolio Agent] Could not convert {holding.symbol} to PortfolioPosition: {e}")
+                            continue
                 
                 if portfolio_positions:
                     risk_score = PortfolioAnalyticsEngine.calculate_risk_score(portfolio_positions)
@@ -386,24 +506,120 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         current_timestamp = datetime.now(timezone.utc).strftime('%A, %B %d, %Y at %I:%M %p UTC')
 
         # Build summary with CORRECTED portfolio value calculations
+        # Count holdings by source
+        alpaca_count = sum(1 for p in position_details if p['source'] == 'alpaca')
+        plaid_count = sum(1 for p in position_details if p['source'] == 'plaid')
+        
         summary = f"""📊 **Portfolio Summary**
 **Generated:** {current_timestamp}
+**Account Mode:** {mode.mode.title()}
 
 **Risk Score:** {float(risk_score):.1f}/10
 **Diversification Score:** {float(diversification_score):.1f}/10
 """
 
+        # Cash breakdown section for hybrid mode
+        cash_breakdown = ""
+        if mode.mode == 'hybrid' and (alpaca_cash > 0 or plaid_cash > 0):
+            # Hybrid mode: Show breakdown of Clera vs External cash
+            total_cash_display = alpaca_cash + plaid_cash
+            cash_breakdown = f"""
+• **Cash Balance:** ${float(total_cash_display):,.2f} ({float(total_cash_display/total_portfolio_value*100) if total_portfolio_value > 0 else 0:.1f}%)
+  💰 **Clera Brokerage Cash:** ${float(alpaca_cash):,.2f} (available to invest on our platform)
+  🏦 **External Accounts Cash:** ${float(plaid_cash):,.2f} (held in other brokerages)"""
+        else:
+            # Aggregation or Brokerage mode: Show total cash
+            cash_breakdown = f"""
+• **Cash Balance:** ${float(total_cash):,.2f} ({float(total_cash/total_portfolio_value*100) if total_portfolio_value > 0 else 0:.1f}%)"""
+        
         summary += f"""{overall_emoji} **Portfolio Overview**
 • **Total Portfolio Value:** ${float(total_portfolio_value):,.2f}
-• **Investment Positions:** ${float(positions_value):,.2f} ({float(positions_value/total_portfolio_value*100) if total_portfolio_value > 0 else 0:.1f}%)
-• **Cash Balance:** ${float(cash_balance):,.2f} ({float(cash_balance/total_portfolio_value*100) if total_portfolio_value > 0 else 0:.1f}%)
-• **Total Positions:** {len(position_details)}"""
+• **Investment Positions:** ${float(positions_value):,.2f} ({float(positions_value/total_portfolio_value*100) if total_portfolio_value > 0 else 0:.1f}%){cash_breakdown}
+• **Total Positions:** {len(position_details)} investments"""
+        
+        # Add data source information for transparency
+        if mode.mode == 'hybrid':
+            summary += f"""
+• **Alpaca Holdings:** {alpaca_count}
+• **External Holdings (via Plaid):** {plaid_count}"""
+        elif mode.mode == 'aggregation':
+            summary += f"""
+• **Data Source:** External accounts (via Plaid aggregation)"""
+        elif mode.mode == 'brokerage':
+            summary += f"""
+• **Data Source:** Alpaca brokerage account"""
 
         if total_cost_basis > 0:
             summary += f"""
 • **Unrealized P&L:** ${float(total_unrealized_pl):+,.2f} ({overall_return_pct:+.2f}%)
 • **Cost Basis:** ${float(total_cost_basis):,.2f}"""
 
+        # ========== ACCOUNT BREAKDOWN SECTION (NEW!) ==========
+        # For Plaid users, show account-level breakdown
+        account_breakdown_section = ""
+        if mode.has_plaid and position_details:
+            try:
+                from clera_agents.services.account_breakdown_service import AccountBreakdownService
+                
+                # Get account information
+                account_info = AccountBreakdownService.get_account_information(user_id)
+                
+                # Group holdings by account
+                account_holdings = AccountBreakdownService.group_holdings_by_account(holdings, user_id)
+                
+                if len(account_holdings) > 1 or (len(account_holdings) == 1 and 'all' not in account_holdings):
+                    account_breakdown_section = "\n\n📁 **Account Breakdown**\n"
+                    account_breakdown_section += "Here's how your portfolio is distributed across your connected accounts:\n"
+                    
+                    for account_id, holdings_list in sorted(account_holdings.items(), key=lambda x: sum(h['account_market_value'] for h in x[1]), reverse=True):
+                        # Get account name
+                        if account_id.startswith('plaid_'):
+                            provider_id = account_id.replace('plaid_', '')
+                            acct_info = account_info.get(provider_id, {})
+                            
+                            # Log available keys for debugging
+                            if not acct_info:
+                                logger.debug(f"[Portfolio Agent] No account info found for provider_id: {provider_id}")
+                                logger.debug(f"[Portfolio Agent] Available account_info keys: {list(account_info.keys())[:5]}")
+                            
+                            account_name = acct_info.get('account_name', 'Unknown Account')
+                            institution = acct_info.get('institution_name', 'Unknown Institution')
+                            account_type = acct_info.get('account_subtype', acct_info.get('account_type', 'investment'))
+                            account_display = f"{institution} - {account_name} ({account_type.replace('_', ' ').title()})"
+                        elif account_id == 'alpaca':
+                            account_display = "Clera Brokerage Account"
+                        else:
+                            account_display = "Unknown Account"
+                        
+                        # Calculate account value using account-specific market values
+                        account_value = sum(h['account_market_value'] for h in holdings_list)
+                        account_pct = float(account_value / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
+                        
+                        # Calculate account metrics
+                        metrics = AccountBreakdownService.calculate_account_metrics(holdings_list)
+                        
+                        account_breakdown_section += f"""
+\n🏦 **{account_display}**
+• **Account Value:** ${float(account_value):,.2f} ({account_pct:.1f}% of total portfolio)
+• **Holdings:** {len(holdings_list)} securities
+• **Risk Score:** {float(metrics['risk_score']):.1f}/10
+• **Diversification Score:** {float(metrics['diversification_score']):.1f}/10
+"""
+                        
+                        # List ALL holdings in this account (so agent knows complete picture)
+                        sorted_holdings = sorted(holdings_list, key=lambda x: x['account_market_value'], reverse=True)
+                        for h_item in sorted_holdings:  # Show ALL holdings per account
+                            h = h_item['holding']
+                            acct_mv = h_item['account_market_value']
+                            h_pct = float(acct_mv / account_value * 100) if account_value > 0 else 0
+                            account_breakdown_section += f"  • {h.symbol}: ${float(acct_mv):,.2f} ({h_pct:.1f}%)\n"
+                
+                logger.info(f"[Portfolio Agent] Generated account breakdown for {len(account_holdings)} accounts")
+            except Exception as e:
+                logger.warning(f"[Portfolio Agent] Could not generate account breakdown: {e}")
+                # Continue without account breakdown
+        
+        # ========== MAIN HOLDINGS SECTION ==========
         if position_details:
             summary += f"""
 
@@ -413,6 +629,14 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
             # Add position details
             for pos in position_details:
                 weight_display = f"{pos['weight']*100:.1f}%"
+                
+                # Include security name and type for better context
+                security_info = ""
+                if pos['security_name'] != pos['symbol']:
+                    security_info = f" - {pos['security_name']}"
+                
+                type_display = f" [{pos['security_type'].title()}]" if pos['security_type'] != 'equity' else ""
+                
                 first_purchase_str = ""
                 if pos.get('first_purchase'):
                     purchase_date = pos['first_purchase'].strftime('%b %d, %Y')
@@ -427,24 +651,41 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
                         holding_str = f"{years} year{'s' if years != 1 else ''}"
                     first_purchase_str = f"\n• First purchased: {purchase_date} ({holding_str} ago)"
                 
+                # Format quantity display
+                qty_display = f"\n• Quantity: {float(pos['quantity']):.2f} shares" if pos.get('quantity') else ""
+                
+                # Format return percentage (handle N/A for unreliable cost basis)
+                if pos['unrealized_plpc'] is None:
+                    plpc_display = "N/A"
+                else:
+                    plpc_display = f"{pos['unrealized_plpc']:+.2f}%"
+                
                 summary += f"""
-{pos['emoji']} **{pos['symbol']}** ({weight_display})
-• Value: ${float(pos['market_value']):,.2f}
-• P&L: ${float(pos['unrealized_pl']):+,.2f} ({pos['unrealized_plpc']:+.2f}%){first_purchase_str}"""
+{pos['emoji']} **{pos['symbol']}**{security_info}{type_display} ({weight_display})
+• Value: ${float(pos['market_value']):,.2f}{qty_display}
+• P&L: ${float(pos['unrealized_pl']):+,.2f} ({plpc_display}){first_purchase_str}"""
         
-            # Add insights
+            # Add insights (all metrics exclude cash - these are investment positions only)
             summary += f"""
 
 💡 **Portfolio Insights**
-• **Largest Position:** {position_details[0]['symbol']} ({position_details[0]['weight']*100:.1f}% of portfolio)
-• **Best Performer:** {max(position_details, key=lambda x: x['unrealized_plpc'])['symbol']} ({max(position_details, key=lambda x: x['unrealized_plpc'])['unrealized_plpc']:+.2f}%)
+• **Largest Investment:** {position_details[0]['symbol']} ({position_details[0]['weight']*100:.1f}% of portfolio)"""
+            
+            # Find best performer (skip N/A values)
+            valid_performers = [p for p in position_details if p['unrealized_plpc'] is not None]
+            if valid_performers:
+                best_performer = max(valid_performers, key=lambda x: x['unrealized_plpc'])
+                summary += f"""
+• **Best Performer:** {best_performer['symbol']} ({best_performer['unrealized_plpc']:+.2f}%)"""
+            
+            summary += f"""
 • **Concentration Risk:** {'HIGH' if position_details[0]['weight'] > 0.3 else 'MODERATE' if position_details[0]['weight'] > 0.2 else 'LOW'}
 • **Risk Score:** {float(risk_score):.1f}/10 ({'LOW' if float(risk_score) < 3 else 'MEDIUM' if float(risk_score) < 7 else 'HIGH'})
 • **Diversification Score:** {float(diversification_score):.1f}/10 ({'POOR' if float(diversification_score) < 3 else 'MODERATE' if float(diversification_score) < 7 else 'GOOD'})"""
             
             if len(position_details) >= 3:
                 summary += f"""
-• **Top 3 Holdings:** {position_details[0]['symbol']}, {position_details[1]['symbol']}, {position_details[2]['symbol']}"""
+• **Top 3 Investments:** {position_details[0]['symbol']}, {position_details[1]['symbol']}, {position_details[2]['symbol']}"""
         else:
             summary += f"""
 
@@ -452,6 +693,10 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
 • **Portfolio Type:** Cash-only portfolio
 • **Investment Opportunity:** ${float(cash_balance):,.2f} available for investment
 • **Next Steps:** Consider diversified investment strategy"""
+        
+        # Add account breakdown section if generated
+        if account_breakdown_section:
+            summary += account_breakdown_section
         
         summary += """
 
@@ -464,14 +709,30 @@ Your portfolio appears to be empty or we couldn't retrieve your positions. This 
         return summary
         
     except ValueError as e:
-        logger.error(f"[Portfolio Agent] Account identification error: {e}")
+        error_msg = str(e)
+        logger.error(f"[Portfolio Agent] Account identification error: {error_msg}")
+        
+        # Check if this is a "no accounts connected" error
+        if "no connected accounts" in error_msg.lower():
+            return """📊 **Portfolio Summary**
+
+❌ **No Accounts Connected**
+
+You don't have any investment accounts connected yet.
+
+💡 **Next Steps:**
+• Connect your brokerage account (for trading capabilities)
+• Or link external accounts via Plaid (for portfolio tracking)
+• Visit the onboarding page to get started"""
+        
+        # Otherwise, it's an authentication/access error
         return f"""📊 **Portfolio Summary**
 
 🚫 **Authentication Error**
 
 Could not securely identify your account. This is a security protection to prevent unauthorized access.
 
-**Error Details:** {str(e)}
+**Error Details:** {error_msg}
 
 💡 **Next Steps:**
 • Please log out and log back in
@@ -611,9 +872,8 @@ def get_account_activities_tool(state=None, config=None) -> str:
     - First purchase dates and holding periods
     
     IMPORTANT NOTES:
-    - Trading activities shown are FILLED orders only (does NOT include pending orders)
-    - Recent trading activities cover the last 60 days
-    - First purchase dates cover the last 365 days for historical context
+    - For Alpaca brokerage accounts: Shows last 60 days of filled orders
+    - For Plaid aggregation accounts: Shows last 12 months of investment transactions
     - Pending/open orders are not included in this report
     
     This is the primary tool for understanding your complete executed trading and account history.
@@ -624,25 +884,130 @@ def get_account_activities_tool(state=None, config=None) -> str:
     try:
         logger.info("[Portfolio Agent] Retrieving comprehensive account activities")
         
-        # Get comprehensive activities (60 days by default)
-        # Use thread pool to run async function in sync context
-        import asyncio
-        import concurrent.futures
+        # Get user_id from config
+        from utils.account_utils import get_user_id_from_config
+        user_id = get_user_id_from_config(config)
         
-        # Use the synchronous version directly since we're already in a thread pool context
-        activities_report = get_comprehensive_account_activities(days_back=60, config=config)
+        # Use the unified portfolio data provider
+        from clera_agents.services.portfolio_data_provider import PortfolioDataProvider
+        provider = PortfolioDataProvider(user_id)
+        mode = provider.get_user_mode()
         
-        return activities_report
+        logger.info(f"[Portfolio Agent] Fetching activities for user {user_id} ({mode.mode} mode)")
+        
+        # Fetch activities based on mode
+        alpaca_activities = []
+        plaid_activities = []
+        
+        if mode.has_alpaca:
+            # Try to get Alpaca activities (60 days)
+            try:
+                alpaca_activities = provider.get_account_activities_alpaca()
+                logger.info(f"[Portfolio Agent] Retrieved {len(alpaca_activities)} Alpaca activities")
+            except Exception as e:
+                logger.warning(f"[Portfolio Agent] Could not fetch Alpaca activities: {e}")
+        
+        if mode.has_plaid:
+            # Get Plaid investment transactions (12 months)
+            try:
+                plaid_activities = provider.get_account_activities_plaid(months_back=12)
+                logger.info(f"[Portfolio Agent] Retrieved {len(plaid_activities)} Plaid transactions")
+            except Exception as e:
+                logger.warning(f"[Portfolio Agent] Could not fetch Plaid activities: {e}")
+        
+        # If both lists are empty, return appropriate message
+        if not alpaca_activities and not plaid_activities:
+            return f"""📋 **Account Activities**
+
+❌ **No Activities Found**
+
+We couldn't find any recent account activities.
+
+**Account Mode:** {mode.mode}
+
+💡 **This could mean:**
+• You haven't made any trades or transactions yet
+• Activities are still being processed
+• Data sync is in progress
+
+Contact support if you believe this is an error."""
+        
+        # Build the report
+        current_timestamp = datetime.now(timezone.utc).strftime('%A, %B %d, %Y at %I:%M %p UTC')
+        report = f"""📋 **Account Activities Report**
+**Generated:** {current_timestamp}
+**Account Mode:** {mode.mode.title()}
+
+"""
+        
+        # Add Alpaca activities if available
+        if alpaca_activities:
+            report += f"""**Alpaca Brokerage Account Activities (Last 60 Days)**
+{len(alpaca_activities)} activities found
+
+"""
+            # Sort by date (most recent first)
+            alpaca_activities.sort(key=lambda x: x['date'], reverse=True)
+            
+            for act in alpaca_activities[:20]:  # Show first 20
+                symbol_str = f" - {act['symbol']}" if act.get('symbol') else ""
+                report += f"""• {act['date']}: {act['description']}{symbol_str}
+  Amount: ${float(act['amount']):,.2f}
+"""
+            
+            if len(alpaca_activities) > 20:
+                report += f"\n... and {len(alpaca_activities) - 20} more activities\n"
+        
+        # Add Plaid activities if available
+        if plaid_activities:
+            report += f"""
+**External Account Transactions (via Plaid - Last 12 Months)**
+{len(plaid_activities)} transactions found
+
+"""
+            # Sort by date (most recent first)
+            plaid_activities.sort(key=lambda x: x['date'], reverse=True)
+            
+            for txn in plaid_activities[:20]:  # Show first 20
+                report += f"""• {txn['date']}: {txn['description']}
+  Quantity: {float(txn['quantity']):.2f}, Amount: ${float(txn['amount']):,.2f}
+"""
+            
+            if len(plaid_activities) > 20:
+                report += f"\n... and {len(plaid_activities) - 20} more transactions\n"
+        
+        report += """
+💡 **Need More Details?**
+• Ask about specific symbols or time periods
+• Request trading statistics or summaries
+"""
+        
+        return report
         
     except ValueError as e:
-        logger.error(f"[Portfolio Agent] Account identification error: {e}")
+        error_msg = str(e)
+        logger.error(f"[Portfolio Agent] Account identification error: {error_msg}")
+        
+        # Check if this is a "no accounts connected" error
+        if "no connected accounts" in error_msg.lower():
+            return """📋 **Account Activities**
+
+❌ **No Accounts Connected**
+
+You don't have any investment accounts connected yet.
+
+💡 **Next Steps:**
+• Connect your brokerage account (for trading capabilities)
+• Or link external accounts via Plaid (for portfolio tracking)
+• Visit the onboarding page to get started"""
+        
         return f"""📋 **Account Activities**
 
 🚫 **Authentication Error**
 
 Could not securely identify your account. This is a security protection to prevent unauthorized access.
 
-**Error Details:** _redacted for security_
+**Error Details:** {error_msg}
 
 💡 **Next Steps:**
 • Please log out and log back in  

@@ -187,9 +187,13 @@ export class ToolActivityManager {
   /**
    * Fetch persisted tool activities for a thread and merge into state. Returns sorted runIds.
    */
-  async fetchAndHydrateToolActivities(threadId: string, accountId: string): Promise<string[]> {
+  async fetchAndHydrateToolActivities(threadId: string, accountId: string | undefined): Promise<string[]> {
     try {
-      const params = new URLSearchParams({ thread_id: threadId, account_id: accountId });
+      const params = new URLSearchParams({ thread_id: threadId });
+      // Only include account_id if it's defined and not null
+      if (accountId && accountId !== 'undefined' && accountId !== 'null') {
+        params.set('account_id', accountId);
+      }
       const res = await fetch(`/api/conversations/get-tool-activities?${params.toString()}`, { method: 'GET' });
       if (!res.ok) return [];
       const data = await res.json();

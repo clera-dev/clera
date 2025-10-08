@@ -72,6 +72,7 @@ Thumbs.db
 
 # Additional common ignores
 # Temporary files
+*/tmp/*
 *.tmp
 *.bak
 *.backup

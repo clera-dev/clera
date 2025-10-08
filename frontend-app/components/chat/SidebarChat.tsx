@@ -11,7 +11,7 @@ import { DAILY_QUERY_LIMIT } from '@/lib/constants';
 import ChatSidebar from '@/components/chat/history/ChatSidebar';
 
 interface SidebarChatProps {
-  accountId: string;
+  accountId?: string; // Optional - only needed for brokerage mode
   userId: string;
   onClose: () => void;
   width?: number | string; // Width in pixels or percentage
