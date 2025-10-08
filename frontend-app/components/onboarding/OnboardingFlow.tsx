@@ -196,15 +196,19 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       const response = await fetch('/api/portfolio/connection-status');
       if (response.ok) {
         const data = await response.json();
-        setPortfolioMode(data.portfolio_mode || 'aggregation');
+        setPortfolioMode(data.portfolio_mode || 'brokerage');  // Default to brokerage if unset
       } else {
-        // Default to aggregation mode if API fails
-        setPortfolioMode('aggregation');
+        // ARCHITECTURE FIX: Fail closed - default to brokerage mode which requires KYC
+        // Defaulting to aggregation would skip compliance checks for brokerage/hybrid users
+        // This ensures all users go through proper onboarding unless explicitly in aggregation
+        console.warn('Portfolio mode API call failed, defaulting to brokerage for safety');
+        setPortfolioMode('brokerage');
       }
     } catch (error) {
       console.error('Error fetching portfolio mode in onboarding:', error);
-      // Default to aggregation mode on error  
-      setPortfolioMode('aggregation');
+      // ARCHITECTURE FIX: Fail closed - default to brokerage mode on error
+      // This ensures compliance checks are not bypassed during transient failures
+      setPortfolioMode('brokerage');
     } finally {
       setModeChecked(true);
     }

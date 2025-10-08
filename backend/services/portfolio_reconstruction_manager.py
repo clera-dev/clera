@@ -183,6 +183,9 @@ class PortfolioReconstructionManager:
         user_id = request.user_id
         
         try:
+            # Ensure services are loaded
+            self._get_services()
+            
             # Mark as active
             self.active_reconstructions.add(user_id)
             

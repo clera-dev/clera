@@ -33,9 +33,11 @@ router = APIRouter(prefix="/api/portfolio/account", tags=["account-filtering"])
 @router.get("/{account_uuid}/filtered-data")
 async def get_account_filtered_portfolio_data(
     account_uuid: str,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
+    # SECURITY FIX: user_id is now derived from authenticated JWT token, not query parameter
+    # This prevents IDOR attacks where clients could impersonate other users
     """
     Get complete portfolio data filtered to a specific account.
     

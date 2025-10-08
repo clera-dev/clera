@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { verifyAlpacaAccountOwnership } from '@/utils/api/route-middleware';
 
 export async function GET(request: NextRequest) {
   try {
@@ -80,22 +81,17 @@ export async function GET(request: NextRequest) {
     if (portfolioMode !== 'aggregation') {
       console.log('Portfolio History API: Validating Alpaca account ownership...');
       
-      const { data: onboardingData, error: onboardingError } = await supabase
-        .from('user_onboarding')
-        .select('alpaca_account_id')
-        .eq('user_id', user.id)
-        .eq('alpaca_account_id', accountId)
-        .single();
-      
-      if (onboardingError || !onboardingData) {
+      // REFACTOR: Use centralized ownership verification utility
+      try {
+        await verifyAlpacaAccountOwnership(user.id, accountId);
+        console.log('Portfolio History API: Account ownership verified successfully');
+      } catch (error: any) {
         console.error('Portfolio History API: Account ownership verification failed - access denied');
         return NextResponse.json(
-          { error: 'Account not found or access denied' },
-          { status: 403 }
+          { error: error.message || 'Account not found or access denied' },
+          { status: error.status || 403 }
         );
       }
-      
-      console.log('Portfolio History API: Account ownership verified successfully');
     } else {
       console.log('Portfolio History API: Aggregation mode - skipping Alpaca account validation');
     }

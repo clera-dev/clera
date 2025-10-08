@@ -145,9 +145,9 @@ CREATE TABLE public.global_historical_prices (
     created_at TIMESTAMPTZ DEFAULT now(),
     
     -- Constraints
-    -- For EOD data (price_timestamp NULL): unique by symbol and date
-    -- For intraday data: unique by symbol and timestamp
-    UNIQUE(fmp_symbol, price_date, price_timestamp),
+    -- SCHEMA FIX: UNIQUE constraint with NULL values doesn't enforce single EOD record
+    -- PostgreSQL treats NULL as distinct, so multiple NULL price_timestamp rows can exist
+    -- We'll add partial unique indexes below to properly enforce uniqueness
     CHECK (close_price > 0),
     CHECK (volume >= 0),
     CHECK (data_quality >= 0 AND data_quality <= 100),
@@ -166,6 +166,27 @@ FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
 
 CREATE TABLE public.global_historical_prices_2025 PARTITION OF public.global_historical_prices
 FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+
+-- SCHEMA FIX: Add partial unique indexes to properly enforce data integrity
+-- Separate indexes for EOD (NULL timestamp) and intraday (non-NULL timestamp) data
+-- This prevents duplicate EOD records which the UNIQUE constraint failed to catch
+
+-- Unique index for EOD data (price_timestamp IS NULL)
+CREATE UNIQUE INDEX idx_historical_prices_eod_unique 
+    ON public.global_historical_prices(fmp_symbol, price_date) 
+    WHERE price_timestamp IS NULL;
+
+-- Unique index for intraday data (price_timestamp IS NOT NULL)  
+CREATE UNIQUE INDEX idx_historical_prices_intraday_unique 
+    ON public.global_historical_prices(fmp_symbol, price_date, price_timestamp) 
+    WHERE price_timestamp IS NOT NULL;
+
+-- Additional performance indexes
+CREATE INDEX idx_historical_prices_symbol_date 
+    ON public.global_historical_prices(fmp_symbol, price_date DESC);
+
+CREATE INDEX idx_historical_prices_date 
+    ON public.global_historical_prices(price_date DESC);
 
 -- ===============================================
 -- RECONSTRUCTION STATUS TRACKING

@@ -38,6 +38,32 @@ export async function GET(request: NextRequest) {
     
     console.log(`Cash/Stock/Bond Allocation API: Portfolio mode for user ${userId}: ${portfolioMode}`);
 
+    // For brokerage mode, verify Alpaca account ownership BEFORE proxying
+    // The backend doesn't cross-check user_id against account_id, so we must verify here
+    if (portfolioMode === 'brokerage' && accountId && accountId !== 'aggregated') {
+      const { data: onboardingData, error: ownershipError } = await supabase
+        .from('user_onboarding')
+        .select('alpaca_account_id')
+        .eq('user_id', userId)
+        .single();
+      
+      if (ownershipError || !onboardingData?.alpaca_account_id) {
+        console.error(`Ownership verification failed for user ${userId}`);
+        return NextResponse.json(
+          { detail: 'Account not found or ownership verification failed' },
+          { status: 403 }
+        );
+      }
+      
+      if (onboardingData.alpaca_account_id !== accountId) {
+        console.error(`User ${userId} does not own account ${accountId}`);
+        return NextResponse.json(
+          { detail: 'Unauthorized access to account' },
+          { status: 403 }
+        );
+      }
+    }
+
     // --- Fetch from actual backend ---
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
@@ -48,7 +74,7 @@ export async function GET(request: NextRequest) {
     }
 
     // For aggregation mode, accountId can be null - backend uses user_id
-    // For brokerage mode, accountId is required and ownership is verified by backend
+    // For brokerage mode, accountId ownership has been verified above
     const filterParam = filterAccount ? `&filter_account=${encodeURIComponent(filterAccount)}` : '';
     const targetUrl = `${backendUrl}/api/portfolio/cash-stock-bond-allocation?account_id=${encodeURIComponent(accountId || 'aggregated')}&user_id=${encodeURIComponent(userId)}${filterParam}`;
     console.log(`Proxying request to: ${targetUrl}`);

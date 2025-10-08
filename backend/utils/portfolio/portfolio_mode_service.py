@@ -197,12 +197,32 @@ class PortfolioModeService:
             
             # For aggregation mode or hybrid mode with Plaid accounts
             if mode in [PortfolioMode.AGGREGATION, PortfolioMode.HYBRID]:
-                # For now, we'll need to implement Plaid account validation
-                # This is a placeholder for future Plaid account ID validation
-                if account_id.startswith("plaid_") or account_id == "aggregated":
+                # SECURITY FIX: Verify user owns the requested Plaid account
+                # Don't authorize based solely on ID prefix - verify ownership in database
+                if account_id == "aggregated":
+                    # Allow access to aggregated view (all user's accounts)
                     result["authorized"] = True
                     result["account_type"] = "plaid"
                     return result
+                elif account_id.startswith("plaid_"):
+                    # SECURITY FIX: Verify user owns this specific Plaid account
+                    # Prevent IDOR where users could subscribe to other users' Plaid portfolios
+                    from utils.supabase.db_client import get_supabase_client
+                    supabase = get_supabase_client()
+                    ownership_check = supabase.table('user_investment_accounts')\
+                        .select('id')\
+                        .eq('user_id', user_id)\
+                        .eq('id', account_id)\
+                        .eq('provider', 'plaid')\
+                        .execute()
+                    
+                    if ownership_check.data and len(ownership_check.data) > 0:
+                        result["authorized"] = True
+                        result["account_type"] = "plaid"
+                        return result
+                    else:
+                        result["error"] = f"User {user_id} does not own Plaid account {account_id}"
+                        return result
             
             result["error"] = f"Account {account_id} not authorized for user {user_id} in {mode.value} mode"
             return result

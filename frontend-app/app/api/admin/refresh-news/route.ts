@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateAdminSecret } from '@/utils/api/route-middleware';
 
 /**
  * Admin endpoint to manually refresh both trending and watchlist news caches
@@ -8,16 +9,19 @@ import { NextRequest, NextResponse } from 'next/server';
  * - Emergency cache refreshes
  * - Testing the news update pipeline
  * 
- * Usage: GET /api/admin/refresh-news?secret=YOUR_ADMIN_SECRET
+ * SECURITY FIX: Admin secret moved from URL query param to X-Admin-Secret header
+ * to prevent credential leaks in logs/history
+ * 
+ * Usage: GET /api/admin/refresh-news
+ * Headers: X-Admin-Secret: YOUR_ADMIN_SECRET
  */
 export async function GET(request: NextRequest) {
   try {
-    // Check admin authorization
-    const { searchParams } = new URL(request.url);
-    const providedSecret = searchParams.get('secret');
-    const adminSecret = process.env.ADMIN_SECRET;
-
-    if (!adminSecret || providedSecret !== adminSecret) {
+    // SECURITY FIX: Check admin authorization via header (not URL)
+    // This prevents credential leakage through browser history, referrer headers, and logs
+    const providedSecret = request.headers.get('x-admin-secret');
+    
+    if (!validateAdminSecret(providedSecret)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -28,7 +32,10 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    // SECURITY FIX: Use current request origin instead of potentially misconfigured env var
+    // This ensures the refresh calls are made to the same origin making the request
+    const requestUrl = new URL(request.url);
+    const baseUrl = `${requestUrl.protocol}//${requestUrl.host}`;
     
     const results = {
       trending: { success: false, message: '', error: null as any },

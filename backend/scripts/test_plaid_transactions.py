@@ -4,7 +4,11 @@ Test script to see actual Plaid transaction data from sandbox.
 
 import os
 import sys
-sys.path.insert(0, '/Users/cristian_mendoza/Desktop/clera/backend')
+# PORTABILITY FIX: Resolve backend path relative to this script's location
+# This makes the script portable across different environments
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.dirname(SCRIPT_DIR)  # Go up from scripts/ to backend/
+sys.path.insert(0, BACKEND_DIR)
 
 from utils.supabase.db_client import get_supabase_client
 from datetime import datetime, timedelta
@@ -29,8 +33,9 @@ def test_plaid_transactions():
         print("❌ Missing Plaid credentials in environment")
         return
     
+    # SECURITY FIX: Don't log secrets (even partial) to prevent credential leakage
     print(f"✅ Plaid Client ID: {client_id[:10]}...")
-    print(f"✅ Plaid Secret: {secret[:10]}...")
+    print(f"✅ Plaid Secret: [REDACTED]")
     print()
     
     # Initialize Plaid client

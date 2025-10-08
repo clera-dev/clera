@@ -6,8 +6,10 @@ const nextConfig = {
   // Exclude API routes from static optimization
   trailingSlash: false,
   
-  // Explicitly set the monorepo root for output file tracing to silence workspace root warning
-  outputFileTracingRoot: '/Users/cristian_mendoza/Desktop/clera',
+  // PORTABILITY FIX: Use path.join to dynamically resolve monorepo root
+  // This makes the config portable across different environments and workstations
+  // Go up one level from frontend-app to reach the monorepo root
+  outputFileTracingRoot: require('path').join(__dirname, '..'),
   
   // Use the environment variable for the backend URL, with a fallback for development
   async rewrites() {

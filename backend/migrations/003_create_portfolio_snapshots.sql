@@ -37,6 +37,7 @@ CREATE TABLE public.user_portfolio_snapshots (
     data_completeness_score DECIMAL(5, 2) DEFAULT 100.00, -- Percentage of accounts successfully synced
     providers_synced TEXT[] DEFAULT '{}', -- Array of providers that contributed data
     created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(), -- SCHEMA FIX: Add missing updated_at column referenced in function
     
     -- Constraints
     UNIQUE(user_id, snapshot_date, snapshot_type),
@@ -65,11 +66,13 @@ CREATE INDEX idx_portfolio_snapshots_holdings ON public.user_portfolio_snapshots
 -- Row Level Security
 ALTER TABLE public.user_portfolio_snapshots ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: Users can only access their own portfolio snapshots
+-- SECURITY FIX: RLS Policy with WITH CHECK clause to prevent users from creating/updating records for other users
+-- Without WITH CHECK, the USING clause only applies to SELECT/UPDATE/DELETE, allowing unauthorized INSERTs
 CREATE POLICY "Users can view their portfolio snapshots" 
     ON public.user_portfolio_snapshots
     FOR ALL
-    USING (auth.uid() = user_id);
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 -- Add helpful comments
 COMMENT ON TABLE public.user_portfolio_snapshots IS 'Historical portfolio snapshots for performance tracking and analysis';
@@ -79,6 +82,8 @@ COMMENT ON COLUMN public.user_portfolio_snapshots.top_holdings IS 'JSON array of
 COMMENT ON COLUMN public.user_portfolio_snapshots.data_completeness_score IS 'Percentage of accounts that successfully synced for this snapshot';
 
 -- Create function to create daily portfolio snapshot
+-- SECURITY FIX: Added auth.uid() check to prevent privilege escalation
+-- SECURITY DEFINER functions must validate caller identity to prevent abuse
 CREATE OR REPLACE FUNCTION create_daily_portfolio_snapshot(
     target_user_id UUID,
     portfolio_value DECIMAL(20, 2),
@@ -93,6 +98,12 @@ DECLARE
     gain_loss DECIMAL(20, 2);
     gain_loss_percent DECIMAL(10, 4);
 BEGIN
+    -- SECURITY FIX: Verify caller is creating snapshot for their own user_id
+    -- This prevents authenticated users from forging snapshots for other users
+    IF auth.uid() IS NULL OR auth.uid() != target_user_id THEN
+        RAISE EXCEPTION 'Unauthorized: Cannot create snapshot for other users';
+    END IF;
+    
     -- Calculate performance metrics
     gain_loss := portfolio_value - cost_basis;
     gain_loss_percent := CASE 

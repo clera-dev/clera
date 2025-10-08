@@ -54,6 +54,10 @@ class PlaidWebhookHandler:
         """
         Verify Plaid webhook signature for security.
         
+        SECURITY FIX: Uses HMAC instead of raw SHA256 to prevent length-extension attacks.
+        Raw SHA256(secret + message) is vulnerable to length-extension attacks that allow
+        attackers to forge valid signatures. HMAC provides proper cryptographic authentication.
+        
         Args:
             request_body: Raw webhook request body
             plaid_signature: X-Plaid-Signature header value
@@ -61,15 +65,19 @@ class PlaidWebhookHandler:
         Returns:
             True if signature is valid
         """
+        import hmac
         try:
             webhook_key = os.getenv('PLAID_WEBHOOK_VERIFICATION_KEY')
             if not webhook_key:
                 logger.warning("PLAID_WEBHOOK_VERIFICATION_KEY not configured - allowing webhook")
                 return True  # Allow in development
             
-            # Compute expected signature
-            expected_signature = hashlib.sha256(
-                (webhook_key + request_body.decode('utf-8')).encode('utf-8')
+            # SECURITY FIX: Use HMAC-SHA256 instead of raw SHA256(key + message)
+            # This prevents length-extension attacks and provides proper authentication
+            expected_signature = hmac.new(
+                webhook_key.encode('utf-8'),
+                request_body,
+                hashlib.sha256
             ).hexdigest()
             
             return hmac.compare_digest(plaid_signature, expected_signature)

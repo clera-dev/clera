@@ -52,7 +52,20 @@ export async function POST(request: Request) {
     }
 
     const data = await backendResponse.json();
-    return NextResponse.json(data);
+    
+    // SECURITY FIX: Strip sensitive fields before returning to browser
+    // Backend response may include access_token_encrypted which should never reach the client
+    if (data.accounts && Array.isArray(data.accounts)) {
+      data.accounts = data.accounts.map((account: any) => {
+        const { access_token_encrypted, ...safeAccount } = account;
+        return safeAccount;
+      });
+    }
+    
+    // Also remove any top-level sensitive fields
+    const { access_token, access_token_encrypted, ...safeData } = data as any;
+    
+    return NextResponse.json(safeData);
 
   } catch (error) {
     console.error('Error in exchange-token route:', error);

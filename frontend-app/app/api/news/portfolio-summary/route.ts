@@ -308,17 +308,20 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
     
     // Strategy 1: Try Plaid aggregated holdings first (works for aggregation & hybrid modes)
     try {
-      const plaidHoldings = await supabase
+      // ARCHITECTURE FIX: Remove .execute() - Supabase client doesn't have this method
+      // The query auto-executes when awaited
+      const { data: plaidHoldingsData, error: plaidError } = await supabase
         .from('user_aggregated_holdings')
         .select('symbol, total_quantity, security_type, security_name')
         .eq('user_id', userId)
         .neq('security_type', 'cash')  // Exclude cash
-        .neq('symbol', 'U S Dollar')    // Exclude USD
-        .execute();
+        .neq('symbol', 'U S Dollar');  // Exclude USD
       
-      if (plaidHoldings.data && plaidHoldings.data.length > 0) {
+      if (plaidError) {
+        console.log(`Error fetching Plaid holdings for user ${userId}:`, plaidError);
+      } else if (plaidHoldingsData && plaidHoldingsData.length > 0) {
         // Convert Plaid format to position format
-        positions = plaidHoldings.data.map((h: any) => ({
+        positions = plaidHoldingsData.map((h: any) => ({
           symbol: h.symbol,
           qty: h.total_quantity.toString(),
           name: h.security_name,
@@ -327,7 +330,7 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
         console.log(`✅ Found ${positions.length} Plaid holdings for user ${userId}`);
       }
     } catch (plaidError) {
-      console.log(`No Plaid holdings found for user ${userId}:`, plaidError);
+      console.log(`Exception fetching Plaid holdings for user ${userId}:`, plaidError);
     }
     
     // Strategy 2: Try Alpaca positions (works for brokerage & hybrid modes)

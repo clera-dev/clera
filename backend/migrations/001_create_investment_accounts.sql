@@ -51,11 +51,13 @@ CREATE INDEX idx_investment_accounts_institution ON public.user_investment_accou
 -- Row Level Security
 ALTER TABLE public.user_investment_accounts ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: Users can only access their own investment accounts
+-- SECURITY FIX: RLS Policy with WITH CHECK clause to prevent users from creating/updating records for other users
+-- Without WITH CHECK, the USING clause only applies to SELECT/UPDATE/DELETE, allowing unauthorized INSERTs
 CREATE POLICY "Users can manage their investment accounts" 
     ON public.user_investment_accounts
     FOR ALL 
-    USING (auth.uid() = user_id);
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 -- Create function for updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at_column()

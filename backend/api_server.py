@@ -2965,9 +2965,11 @@ async def trigger_daily_eod_capture(
 
 @app.post("/api/portfolio/live-tracking/start")
 async def start_live_portfolio_tracking(
-    user_id: str = Query(..., description="User ID for live tracking"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
+    # user_id now comes from authenticated JWT token, not query parameter
+    # This prevents IDOR attacks where callers could start tracking for other users
     """
     Start real-time portfolio tracking for a user.
     
@@ -2988,9 +2990,10 @@ async def start_live_portfolio_tracking(
 
 @app.delete("/api/portfolio/live-tracking/stop")
 async def stop_live_portfolio_tracking(
-    user_id: str = Query(..., description="User ID for stopping live tracking"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
+    # user_id now comes from authenticated JWT token, not query parameter
     """
     Stop real-time portfolio tracking for a user.
     
@@ -3011,9 +3014,10 @@ async def stop_live_portfolio_tracking(
 
 @app.get("/api/portfolio/live-tracking/status")
 async def get_live_tracking_status(
-    user_id: str = Query(..., description="User ID for status check"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
+    # user_id now comes from authenticated JWT token, not query parameter
     """
     Get live tracking status and current portfolio value.
     

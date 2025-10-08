@@ -61,11 +61,13 @@ CREATE INDEX idx_aggregated_holdings_institutions ON public.user_aggregated_hold
 -- Row Level Security
 ALTER TABLE public.user_aggregated_holdings ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: Users can only access their own aggregated holdings
+-- SECURITY FIX: RLS Policy with WITH CHECK clause to prevent users from creating/updating records for other users
+-- Without WITH CHECK, the USING clause only applies to SELECT/UPDATE/DELETE, allowing unauthorized INSERTs
 CREATE POLICY "Users can view their aggregated holdings" 
     ON public.user_aggregated_holdings
     FOR ALL
-    USING (auth.uid() = user_id);
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 -- Create trigger to automatically update updated_at column
 CREATE TRIGGER update_aggregated_holdings_updated_at 

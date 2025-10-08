@@ -38,7 +38,7 @@ logger = logging.getLogger("websocket_server")
 load_dotenv()
 
 # PRODUCTION-SAFE periodic data refresh task
-async def periodic_data_refresh(refresh_interval=300):  # Changed default from 60 to 300 seconds (5 minutes)
+async def periodic_data_refresh(redis_client, refresh_interval=300):  # Changed default from 60 to 300 seconds (5 minutes)
     """
     Periodically refresh account data in Redis - PRODUCTION SAFE VERSION
     Handles different portfolio modes without breaking existing functionality.
@@ -128,7 +128,7 @@ async def lifespan(app: FastAPI):
     
     # Start periodic data refresh task with a more conservative default interval
     refresh_interval = int(os.getenv("DATA_REFRESH_INTERVAL", "300"))  # Changed default from 60 to 300 seconds
-    refresh_task = asyncio.create_task(periodic_data_refresh(refresh_interval))
+    refresh_task = asyncio.create_task(periodic_data_refresh(redis_client, refresh_interval))
     logger.info(f"Started periodic data refresh task (interval: {refresh_interval}s)")
     
     yield  # App runs here

@@ -7,7 +7,11 @@ This will help us see exactly where the reconstruction is failing.
 import os
 import sys
 import asyncio
-sys.path.insert(0, '/Users/cristian_mendoza/Desktop/clera/backend')
+# PORTABILITY FIX: Resolve backend path relative to this script's location
+# This makes the script portable across different environments
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.dirname(SCRIPT_DIR)  # Go up from scripts/ to backend/
+sys.path.insert(0, BACKEND_DIR)
 
 import logging
 

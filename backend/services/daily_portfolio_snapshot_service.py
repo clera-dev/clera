@@ -78,10 +78,16 @@ class DailyPortfolioSnapshotService:
         if self.portfolio_service is None:
             from utils.portfolio.portfolio_service import get_portfolio_service
             self.portfolio_service = get_portfolio_service()
-        
+    
+    def _get_supabase_client(self):
+        """
+        Lazy load Supabase client.
+        ARCHITECTURE FIX: This method was missing, causing AttributeError at runtime.
+        """
         if self.supabase is None:
             from utils.supabase.db_client import get_supabase_client
             self.supabase = get_supabase_client()
+        return self.supabase
     
     async def capture_all_users_eod_snapshots(self) -> EODBatchResult:
         """

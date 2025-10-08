@@ -174,7 +174,29 @@ export default function LivePortfolioValuePlaid({
       
       // For aggregation mode, use "aggregated" as account identifier instead of Alpaca account ID
       const wsAccountId = "aggregated"; // Aggregation mode uses special identifier
-      const wsUrl = `ws://localhost:8001/ws/portfolio/${wsAccountId}?token=${encodeURIComponent(session.access_token)}`;
+      
+      // Use environment-specific WebSocket URL
+      const baseWsUrl = process.env.NODE_ENV === 'production'
+        ? process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD
+        : process.env.NEXT_PUBLIC_WEBSOCKET_URL_DEV;
+      
+      if (!baseWsUrl) {
+        console.error('WebSocket URL not configured in environment variables');
+        setError('WebSocket configuration missing');
+        return;
+      }
+      
+      // SECURITY FIX: Ensure wss:// (secure WebSocket) is used
+      // ws:// would expose credentials in plaintext
+      const secureWsUrl = baseWsUrl.replace('ws://', 'wss://');
+      
+      // ARCHITECTURE NOTE: Token in URL is sub-optimal (should use WebSocket subprotocol or initial message)
+      // However, this requires backend WebSocket server changes. For now, ensure wss:// is used
+      // and document this as a known limitation to address in future WebSocket refactor
+      // TODO: Refactor to send token in WebSocket connection message instead of URL
+      const wsUrl = `${secureWsUrl.replace('{accountId}', wsAccountId)}?token=${encodeURIComponent(session.access_token)}`;
+      
+      console.warn('WebSocket: Token in URL is not ideal - consider refactoring to use connection message');
       websocketRef.current = new WebSocket(wsUrl);
 
       websocketRef.current.onopen = () => {

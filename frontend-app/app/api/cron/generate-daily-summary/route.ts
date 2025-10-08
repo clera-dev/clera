@@ -296,12 +296,33 @@ export async function GET(request: Request) {
       .select('user_id, alpaca_account_id')
       .not('alpaca_account_id', 'is', null);
     
+    // ARCHITECTURE FIX: Restore error handling to prevent silent failures during outages
+    // Without this, a backend outage returns 200 OK with no summaries instead of failing fast
+    if (alpacaError) {
+      console.error('Database error fetching Alpaca users:', alpacaError);
+      return NextResponse.json({
+        success: false,
+        error: 'Database error fetching brokerage users',
+        details: alpacaError.message
+      }, { status: 500 });
+    }
+    
     // Then get all users with Plaid accounts (aggregation mode)
     const { data: plaidUsers, error: plaidError } = await supabase
       .from('user_investment_accounts')
       .select('user_id')
       .eq('provider', 'plaid')
       .eq('is_active', true);
+    
+    // ARCHITECTURE FIX: Check for errors in Plaid query too
+    if (plaidError) {
+      console.error('Database error fetching Plaid users:', plaidError);
+      return NextResponse.json({
+        success: false,
+        error: 'Database error fetching aggregation users',
+        details: plaidError.message
+      }, { status: 500 });
+    }
     
     // Combine and deduplicate users
     const userSet = new Set<string>();
@@ -410,7 +431,9 @@ export async function GET(request: Request) {
           if (positions.length > 15) {
             portfolioString += ` and ${positions.length - 15} other holdings`;
           }
-          console.log(`CRON: ✅ Portfolio string (${positions.length} holdings): ${portfolioString}`);
+          // SECURITY FIX: Remove detailed portfolio logging to prevent sensitive data leaks in server logs
+          // Logging user holdings and share counts creates confidentiality risk
+          console.log(`CRON: ✅ Portfolio data collected for user ${user.user_id}: ${positions.length} holdings`);
         } else {
           portfolioString = 'No positions found in portfolio.';
           console.log(`CRON: No holdings found - using general market overview`);

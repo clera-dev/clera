@@ -119,10 +119,24 @@ class SymbolMappingService:
         
         async def process_single_security(security):
             async with semaphore:
-                return await self._map_single_security(security)
+                # ARCHITECTURE FIX: Handle exceptions internally to maintain contract
+                # Downstream code expects SecurityMappingResult, not Exception objects
+                try:
+                    return await self._map_single_security(security)
+                except Exception as e:
+                    logger.error(f"Error mapping security: {e}")
+                    # Return a failed mapping result instead of raising
+                    return SecurityMappingResult(
+                        plaid_security_id=security.get('security_id', 'unknown'),
+                        fmp_symbol=None,
+                        mapping_method='error',
+                        confidence=0.0,
+                        error_message=str(e)
+                    )
         
         tasks = [process_single_security(security) for security in securities]
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        # No need for return_exceptions=True since we handle exceptions internally now
+        return await asyncio.gather(*tasks)
     
     async def _map_single_security(self, plaid_security: Dict[str, Any]) -> SecurityMappingResult:
         """

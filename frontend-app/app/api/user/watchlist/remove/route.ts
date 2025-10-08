@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { 
+  authenticateUser, 
+  getBackendProxyConfig,
+  createBackendHeaders,
+  handleError 
+} from '@/utils/api/route-middleware';
 
 /**
  * User-based watchlist remove API
  * DELETE: Remove symbol from user's watchlist
+ * 
+ * SECURITY FIX: Uses centralized authentication and backend configuration
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
-    // Authenticate user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // SECURITY: Authenticate user and get their verified ID
+    const userContext = await authenticateUser();
 
     // Parse request body
     const requestData = await request.json();
@@ -30,29 +28,20 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Get backend configuration
-    const backendUrl = process.env.BACKEND_API_URL;
-    const backendApiKey = process.env.BACKEND_API_KEY;
-    
-    if (!backendUrl || !backendApiKey) {
-      console.error('Missing backend API configuration');
-      return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
-      );
-    }
+    // Get backend configuration (centralized, consistent error handling)
+    const config = getBackendProxyConfig();
 
     // Call backend API to remove symbol from watchlist
-    console.log(`Removing symbol ${symbol} from watchlist for user ${user.id}`);
-    const response = await fetch(`${backendUrl}/api/user/${user.id}/watchlist/remove`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': backendApiKey,
-      },
-      body: JSON.stringify({ symbol }),
-      cache: 'no-store'
-    });
+    console.log(`Removing symbol ${symbol} from watchlist for user ${userContext.userId}`);
+    const response = await fetch(
+      `${config.backendUrl}/api/user/${encodeURIComponent(userContext.userId)}/watchlist/remove`,
+      {
+        method: 'DELETE',
+        headers: createBackendHeaders(config),
+        body: JSON.stringify({ symbol }),
+        cache: 'no-store'
+      }
+    );
 
     const responseBody = await response.text();
     
@@ -86,10 +75,7 @@ export async function DELETE(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error removing from watchlist:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return handleError(error);
   }
 }
 

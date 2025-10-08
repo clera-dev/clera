@@ -73,11 +73,16 @@ export async function GET(request: NextRequest) {
         throw new Error('No session found');
       }
 
-      // Call backend aggregated analytics endpoint
-      // Pass user_id and optional filter_account for account-level analytics
-      const backendUrl_analytics = filterAccount 
-        ? `${backendUrl}/api/portfolio/aggregated/analytics?user_id=${userId}&filter_account=${filterAccount}`
-        : `${backendUrl}/api/portfolio/aggregated/analytics?user_id=${userId}`;
+      // SECURITY FIX: Properly encode query parameters to prevent injection
+      const queryParams = new URLSearchParams({
+        user_id: userId,
+      });
+      
+      if (filterAccount) {
+        queryParams.append('filter_account', filterAccount);
+      }
+      
+      const backendUrl_analytics = `${backendUrl}/api/portfolio/aggregated/analytics?${queryParams.toString()}`;
       
       console.log(`Portfolio Analytics API: Calling backend with filter: ${filterAccount || 'none'}`);
       
