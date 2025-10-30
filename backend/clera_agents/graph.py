@@ -32,7 +32,6 @@ load_dotenv(override=True)
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, FunctionMessage
 from langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
 from langchain_core.tools import Tool, tool
-from langchain.agents.format_scratchpad.log_to_messages import format_log_to_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -111,8 +110,6 @@ chat_perplexity = ChatPerplexity(
 # Define tools for each agent upfront
 financial_analyst_tools = [
     fa_module.web_search,
-    fa_module.web_search_streaming,
-    fa_module.get_stock_price,
     fa_module.calculate_investment_performance
 ]
 
@@ -212,12 +209,9 @@ Provide institutional-quality research and analysis on securities, markets, and 
 - "How will US inflation data impact markets"
 - "Current economist consensus regarding performance of US equity markets"
 
-### **get_stock_price** - Current Market Data
-**Use for**: Current price, daily performance, market context
-**Always include**: Price level, daily change, 52-week context when available
-
-### **calculate_investment_performance** - Historical Analysis  
+### **calculate_investment_performance** - Historical + Current Price  
 **Use for**: Performance comparison, volatility analysis, benchmark comparison
+**Also returns**: Current price snapshot for the symbol
 **Default to S&P 500 comparison**: Include relative performance vs market
 
 ## INVESTMENT RECOMMENDATION FRAMEWORK
@@ -225,7 +219,7 @@ Provide institutional-quality research and analysis on securities, markets, and 
 When analyzing securities for investment potential:
 
 1. **CURRENT VALUATION**
-   - Get current price using get_stock_price
+   - Current price is included in calculate_investment_performance output
    - Research analyst price targets and ratings
    - Compare valuation metrics to peers/sector
 
@@ -270,15 +264,13 @@ When analyzing securities for investment potential:
 **Query**: "Is Palantir a good buy right now?"
 **Approach**:
 1. web_search("PLTR analyst price target buy rating Wall Street research 2025")
-2. get_stock_price("PLTR") 
-3. calculate_investment_performance("PLTR", start_date="2024-01-01", end_date="2025-01-17")
-4. Synthesize: Current valuation, analyst views, performance context, investment recommendation
+2. calculate_investment_performance("PLTR", start_date="2024-01-01", end_date="2025-01-17")
+3. Synthesize: Current valuation, analyst views, performance context, investment recommendation
 
 **Query**: "How is Apple performing lately?"  
 **Approach**:
-1. get_stock_price("AAPL")
+1. web_search("AAPL recent earnings performance news Q4 2024")
 2. calculate_investment_performance("AAPL", start_date="2024-10-01", end_date="2025-01-17")
-3. web_search("AAPL recent earnings performance news Q4 2024")
 
 Focus on delivering professional-grade analysis that institutional investors would expect.""",
     name="financial_analyst_agent",

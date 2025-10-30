@@ -257,21 +257,8 @@ Query: {query}
         return f"Error searching for information: {e}"
 
 
-@tool("get_stock_price")
-def get_stock_price(ticker: str) -> str:
-    """Get the current price of a stock.
-    
-    Args:
-        ticker (str): The stock symbol to get the price for
-        
-    Returns:
-        str: The current stock price information
-    """
-
-    stock_quote = get_stock_quote(ticker)
-    price = stock_quote[0]['price']
-
-    return f"The current price of {ticker} is {price}."
+# NOTE: get_stock_price tool deprecated. Current price is retrieved within
+# calculate_investment_performance for fewer tool calls and better efficiency.
 
 ###############################################################################
 # Performance Analysis Functions (moved from portfolio_management_agent.py)
@@ -558,6 +545,15 @@ def format_performance_analysis(performance_data: Dict, benchmark_data: Dict = N
 • Start Price: ${performance_data['start_price']:,.2f}
 • End Price: ${performance_data['end_price']:,.2f}
 • Price Change: ${price_change:+,.2f} ({pct_change:+.2f}%)
+"""
+    # Add current price if present
+    if performance_data.get('current_price') is not None:
+        try:
+            summary += f"\n• Current Price: ${performance_data['current_price']:,.2f}"
+        except Exception:
+            summary += f"\n• Current Price: {performance_data['current_price']}"
+
+    summary += f"""
 
 **Returns Analysis:**
 • Total Return: {pct_change:+.2f}%
@@ -628,6 +624,13 @@ def _calculate_investment_performance_impl(
             if 'full_price_data' in performance_data:
                 vol_stats = calculate_volatility_and_variance(performance_data['full_price_data'])
                 performance_data.update(vol_stats)
+            # Fetch current price and include in performance_data
+            try:
+                quote = get_stock_quote(symbol.upper())
+                if isinstance(quote, list) and len(quote) > 0 and 'price' in quote[0]:
+                    performance_data['current_price'] = quote[0]['price']
+            except Exception:
+                performance_data['current_price'] = None
         except ValueError as ve:
             return f"❌ **Data Error:** {str(ve)}\n\nPlease verify the symbol exists and has trading data for the specified period."
         except Exception as e:
