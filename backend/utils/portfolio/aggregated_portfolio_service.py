@@ -43,6 +43,8 @@ class AggregatedPortfolioService:
         """
         Calculate current portfolio value and return metrics for aggregated data.
         
+        PRODUCTION-GRADE: Uses live market prices via LiveEnrichmentService (FMP API).
+        
         Args:
             user_id: User ID to calculate portfolio value for
             include_cash: Whether to include cash positions (default True for accurate total portfolio value)
@@ -53,9 +55,9 @@ class AggregatedPortfolioService:
         try:
             supabase = self._get_supabase_client()
             
-            # Get aggregated holdings for this user
+            # Get aggregated holdings for this user (need ALL fields for enrichment)
             query = supabase.table('user_aggregated_holdings')\
-                .select('symbol, total_market_value, total_cost_basis, unrealized_gain_loss')\
+                .select('*')\
                 .eq('user_id', user_id)
             
             # CRITICAL: Include cash by default for accurate portfolio value
@@ -69,9 +71,14 @@ class AggregatedPortfolioService:
                 logger.warning(f"No aggregated holdings found for user {user_id}")
                 return self._empty_portfolio_value_response()
             
-            # Use modular calculation function
+            # CRITICAL: Enrich with LIVE market prices (database values are stale)
+            from utils.portfolio.live_enrichment_service import get_enrichment_service
+            enrichment_service = get_enrichment_service()
+            enriched_holdings = enrichment_service.enrich_holdings(result.data, user_id)
+            
+            # Use modular calculation function with enriched data
             from .aggregated_calculations import calculate_portfolio_value
-            return calculate_portfolio_value(result.data, user_id)
+            return calculate_portfolio_value(enriched_holdings, user_id)
             
         except Exception as e:
             logger.error(f"Error getting aggregated portfolio value for user {user_id}: {e}")
@@ -114,12 +121,21 @@ class AggregatedPortfolioService:
         """
         Calculate asset allocation breakdown from aggregated holdings.
         
+        OPTIMIZATION: Implements 30-second response cache for performance.
+        
         Args:
             user_id: User ID to calculate asset allocation for
             
         Returns:
             Dictionary with cash/stock/bond allocation and pie chart data
         """
+        # OPTIMIZATION: Check response cache first (30-second TTL)
+        cache_key = f"asset_allocation:aggregated:{user_id}"
+        cached_response = self._get_cached_response(cache_key)
+        if cached_response:
+            logger.debug(f"✅ [Cache Hit] Returning cached asset allocation for user {user_id}")
+            return cached_response
+        
         try:
             supabase = self._get_supabase_client()
             
@@ -135,7 +151,13 @@ class AggregatedPortfolioService:
             
             # Use modular calculation function
             from .aggregated_calculations import calculate_asset_allocation
-            return calculate_asset_allocation(result.data, user_id)
+            response = calculate_asset_allocation(result.data, user_id)
+            
+            # OPTIMIZATION: Cache the response for 30 seconds
+            self._cache_response(cache_key, response, ttl_seconds=30)
+            logger.debug(f"💾 [Cache Set] Cached asset allocation for user {user_id}")
+            
+            return response
             
         except Exception as e:
             logger.error(f"Error calculating aggregated asset allocation for user {user_id}: {e}")
@@ -190,6 +212,13 @@ class AggregatedPortfolioService:
             days_back = period_mapping.get(period, 30)
             start_date = end_date - timedelta(days=days_back)
             
+            # CRITICAL FIX: For 1D, ALWAYS use intraday chart with live price updates
+            # This shows multiple data points throughout the day (hourly interpolation)
+            # instead of just 2 EOD points (yesterday close → today close)
+            if period == '1D':
+                logger.info(f"🔧 1D request - building intraday chart with live price movements")
+                return await self._build_intraday_chart(user_id, filter_account)
+            
             # Get portfolio history snapshots for the period (from reconstructed history)
             result = supabase.table('user_portfolio_history')\
                 .select('value_date, total_value, total_gain_loss, total_gain_loss_percent, created_at')\
@@ -204,31 +233,12 @@ class AggregatedPortfolioService:
             
             if not snapshots:
                 logger.warning(f"No portfolio history found for user {user_id} in period {period}")
-                
-                # CRITICAL FIX: For 1D specifically, build intraday chart from live tracking
-                if period == '1D':
-                    logger.info(f"🔧 1D request - building intraday chart from live tracker + yesterday's close")
-                    return await self._build_intraday_chart(user_id, filter_account)
-                
                 return self._empty_history_response(period)
             
-            # CRITICAL: Get current cash balance to add to historical securities data
-            # Historical snapshots only included securities, not cash positions
-            # We add current cash balance to all historical points since cash is relatively stable
-            cash_balance = 0.0
-            try:
-                cash_result = supabase.table('user_aggregated_holdings')\
-                    .select('total_market_value')\
-                    .eq('user_id', user_id)\
-                    .eq('security_type', 'cash')\
-                    .execute()
-                
-                if cash_result.data:
-                    cash_balance = sum(float(h.get('total_market_value', 0)) for h in cash_result.data)
-                    if cash_balance > 0:
-                        logger.info(f"💵 Adding ${cash_balance:,.2f} cash to all historical equity values")
-            except Exception as e:
-                logger.warning(f"Could not fetch cash balance for history adjustment: {e}")
+            # CRITICAL FIX: Historical snapshots ALREADY include cash in total_value
+            # Snapshots are created with include_cash=True, so NO need to add cash again
+            # Double-counting cash was causing inflated historical values
+            # cash_balance = 0.0  # REMOVED: Don't add cash (already in snapshots)
             
             # Convert snapshots to chart data format
             timestamps = []
@@ -280,14 +290,14 @@ class AggregatedPortfolioService:
                     elif value > 0:
                         last_known_value = value  # Update last known value only for non-zero
                     
-                    # CRITICAL: Add cash balance to securities value for total portfolio value
-                    equity_values.append(value + cash_balance)
+                    # CRITICAL FIX: Snapshot already includes cash - don't add it again!
+                    equity_values.append(value)
                     profit_loss.append(float(snapshot.get('total_gain_loss', 0)))
                     profit_loss_pct.append(float(snapshot.get('total_gain_loss_percent', 0)))
                 else:
                     # Fill gaps with last known value (or zero before first data)
-                    # CRITICAL: Add cash balance for total portfolio value
-                    equity_values.append(last_known_value + cash_balance)
+                    # CRITICAL FIX: last_known_value already includes cash from snapshot
+                    equity_values.append(last_known_value)
                     profit_loss.append(0.0)
                     profit_loss_pct.append(0.0)
                 
@@ -298,7 +308,10 @@ class AggregatedPortfolioService:
             # CRITICAL FIX: If latest snapshot is not from TODAY, append current live value
             # This ensures the chart endpoint always matches the live portfolio value at the top
             from datetime import datetime
+            from utils.trading_calendar import get_trading_calendar
+            
             today = datetime.now().date()
+            trading_calendar = get_trading_calendar()
             latest_snapshot_date = datetime.fromisoformat(snapshots[-1]['value_date']).date() if snapshots else None
             
             if latest_snapshot_date and latest_snapshot_date < today:
@@ -314,15 +327,26 @@ class AggregatedPortfolioService:
                     timestamps.append(today_timestamp)
                     equity_values.append(current_value)
                     
-                    # Calculate today's P/L vs yesterday
-                    yesterday_value = equity_values[-2] if len(equity_values) > 1 else current_value
-                    today_pl = current_value - yesterday_value
-                    today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                    # PRODUCTION-GRADE: Calculate today's P/L ONLY if market is open
+                    # On weekends/holidays, return should be $0.00 (market closed, no trading)
+                    if trading_calendar.is_market_open_today(today):
+                        # Market is OPEN - calculate real P/L vs yesterday
+                        yesterday_value = equity_values[-2] if len(equity_values) > 1 else current_value
+                        today_pl = current_value - yesterday_value
+                        today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                        
+                        logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                    else:
+                        # Market is CLOSED (weekend/holiday) - return is $0.00
+                        today_pl = 0.0
+                        today_pl_pct = 0.0
+                        
+                        logger.info(f"📅 Market CLOSED: Today's return is $0.00 (weekend/holiday)")
                     
                     profit_loss.append(today_pl)
                     profit_loss_pct.append(today_pl_pct)
                     
-                    logger.info(f"✅ Appended today's value: ${current_value:,.2f} (vs yesterday ${yesterday_value:,.2f}, {today_pl_pct:+.2f}%)")
+                    logger.info(f"✅ Appended today's value: ${current_value:,.2f} (vs last trading day, return: ${today_pl:+,.2f})")
             
             # Calculate base value (oldest value in period)
             base_value = equity_values[0] if equity_values else 0.0
@@ -358,16 +382,83 @@ class AggregatedPortfolioService:
     
     async def _build_intraday_chart(self, user_id: str, filter_account: Optional[str] = None) -> Dict[str, Any]:
         """
-        Build intraday (1D) chart showing portfolio progression throughout the day.
+        Build intraday (1D) chart using REAL snapshots taken every 5 minutes.
         
-        Creates multiple data points from market open to now, showing live price movements.
-        Similar to how Alpaca provided hourly intraday data.
+        Falls back to interpolation only if no snapshots exist (e.g., first day of use).
+        This provides ACTUAL portfolio movements, not estimates.
         """
         try:
             from datetime import datetime, time, timedelta
             import pytz
+            from services.intraday_snapshot_service import get_intraday_snapshot_service
             
             supabase = self._get_supabase_client()
+            snapshot_service = get_intraday_snapshot_service()
+            
+            # Try to get real intraday snapshots first (PREFERRED)
+            today = datetime.now().date()
+            intraday_snapshots = await snapshot_service.get_intraday_snapshots(user_id, today)
+            
+            # If we have real snapshots, use them!
+            if intraday_snapshots and len(intraday_snapshots) >= 2:
+                logger.info(f"📊 Using {len(intraday_snapshots)} REAL intraday snapshots for 1D chart")
+                
+                timestamps = []
+                equity_values = []
+                profit_loss = []
+                profit_loss_pct = []
+                
+                # Get yesterday's close for baseline
+                yesterday = today - timedelta(days=1)
+                yesterday_result = supabase.table('user_portfolio_history')\
+                    .select('total_value, closing_value')\
+                    .eq('user_id', user_id)\
+                    .lte('value_date', yesterday.isoformat())\
+                    .in_('snapshot_type', ['daily_eod', 'reconstructed'])\
+                    .order('value_date', desc=True)\
+                    .limit(1)\
+                    .execute()
+                
+                yesterday_value = 0.0
+                if yesterday_result.data:
+                    yesterday_value = float(yesterday_result.data[0].get('closing_value') or yesterday_result.data[0]['total_value'])
+                
+                # Add yesterday's close as first point (for baseline comparison)
+                est = pytz.timezone('US/Eastern')
+                yesterday_close_time = datetime.combine(yesterday, time(16, 0)).replace(tzinfo=est)
+                timestamps.append(int(yesterday_close_time.timestamp()))
+                equity_values.append(yesterday_value)
+                profit_loss.append(0.0)
+                profit_loss_pct.append(0.0)
+                
+                # Add all intraday snapshots
+                for snapshot in intraday_snapshots:
+                    created_at = datetime.fromisoformat(snapshot['created_at'].replace('Z', '+00:00'))
+                    value = float(snapshot['total_value'])
+                    gain_loss = float(snapshot.get('total_gain_loss', 0))
+                    gain_loss_pct = float(snapshot.get('total_gain_loss_percent', 0))
+                    
+                    timestamps.append(int(created_at.timestamp()))
+                    equity_values.append(value)
+                    profit_loss.append(gain_loss)
+                    profit_loss_pct.append(gain_loss_pct)
+                
+                logger.info(f"✅ Built 1D chart with {len(timestamps)} REAL data points (not interpolated)")
+                
+                return {
+                    "timestamp": timestamps,
+                    "equity": equity_values,
+                    "profit_loss": profit_loss,
+                    "profit_loss_pct": profit_loss_pct,
+                    "base_value": yesterday_value,
+                    "timeframe": "1D",
+                    "base_value_asof": str(timestamps[0]) if timestamps else None,
+                    "data_source": "intraday_real"  # REAL data, not interpolated
+                }
+            
+            # FALLBACK: If no snapshots exist, use interpolation (first day of use)
+            logger.warning(f"⚠️  No intraday snapshots found for user {user_id} - falling back to interpolation")
+            logger.warning(f"   Snapshots will be created automatically every 5 minutes during market hours")
             
             # Get yesterday's closing value as baseline
             yesterday = datetime.now().date() - timedelta(days=1)
@@ -881,6 +972,45 @@ class AggregatedPortfolioService:
         except Exception as e:
             logger.error(f"Error calculating account percentage for {account_uuid}: {e}")
             return 0.0
+    
+    def _get_cached_response(self, cache_key: str) -> Dict[str, Any] | None:
+        """
+        Get cached response from Redis if available and not expired.
+        
+        Args:
+            cache_key: Redis cache key
+            
+        Returns:
+            Cached response dict or None if not found/expired
+        """
+        try:
+            import json
+            redis_client = self._get_redis_client()
+            cached_json = redis_client.get(cache_key)
+            
+            if cached_json:
+                return json.loads(cached_json)
+            return None
+        except Exception as e:
+            logger.warning(f"Error reading from cache: {e}")
+            return None
+    
+    def _cache_response(self, cache_key: str, response: Dict[str, Any], ttl_seconds: int = 30) -> None:
+        """
+        Cache response in Redis with expiration.
+        
+        Args:
+            cache_key: Redis cache key
+            response: Response dictionary to cache
+            ttl_seconds: Time-to-live in seconds (default: 30)
+        """
+        try:
+            import json
+            redis_client = self._get_redis_client()
+            response_json = json.dumps(response, default=str)  # default=str handles Decimals
+            redis_client.setex(cache_key, ttl_seconds, response_json)
+        except Exception as e:
+            logger.warning(f"Error writing to cache: {e}")
     
     def _empty_allocation_response(self, error: Optional[str] = None) -> Dict[str, Any]:
         """Return empty allocation response."""

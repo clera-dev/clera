@@ -196,6 +196,77 @@ class RealtimeDataService:
             logger.error(f"Error in Alpaca account refresh: {e}", exc_info=True)
             return 0
     
+    async def refresh_aggregation_users(self) -> int:
+        """
+        Refresh aggregation mode users and create intraday snapshots.
+        This runs every 5 minutes to capture real portfolio movements.
+        
+        Returns:
+            Number of users processed
+        """
+        try:
+            from utils.supabase.db_client import get_supabase_client
+            from services.intraday_snapshot_service import get_intraday_snapshot_service
+            from utils.portfolio.aggregated_portfolio_service import get_aggregated_portfolio_service
+            
+            supabase = get_supabase_client()
+            snapshot_service = get_intraday_snapshot_service()
+            portfolio_service = get_aggregated_portfolio_service()
+            
+            # Only create snapshots during market hours
+            if not snapshot_service.is_market_hours():
+                logger.debug("Outside market hours - skipping intraday snapshots")
+                return 0
+            
+            # Get all users with aggregation mode (SnapTrade or Plaid data)
+            # Users with holdings in user_aggregated_holdings
+            result = supabase.table('user_aggregated_holdings')\
+                .select('user_id')\
+                .execute()
+            
+            if not result.data:
+                return 0
+            
+            # Get unique user IDs
+            user_ids = list(set(row['user_id'] for row in result.data))
+            logger.info(f"📸 Creating intraday snapshots for {len(user_ids)} aggregation users")
+            
+            snapshots_created = 0
+            for user_id in user_ids:
+                try:
+                    # Check if snapshot should be created (respects 5-minute interval)
+                    if not snapshot_service.should_create_snapshot(user_id):
+                        continue
+                    
+                    # Get current portfolio value with live prices
+                    portfolio_data = await portfolio_service.get_portfolio_value(user_id, include_cash=True)
+                    current_value = portfolio_data.get('raw_value', 0)
+                    
+                    if current_value > 0:
+                        # Create intraday snapshot
+                        success = await snapshot_service.create_snapshot(
+                            user_id=user_id,
+                            portfolio_value=current_value,
+                            metadata={
+                                'data_source': 'aggregation_mode',
+                                'securities_count': len(portfolio_data.get('holdings', []))
+                            }
+                        )
+                        
+                        if success:
+                            snapshots_created += 1
+                    
+                except Exception as e:
+                    logger.error(f"Error creating snapshot for user {user_id}: {e}")
+                    continue
+            
+            logger.info(f"✅ Created {snapshots_created} intraday snapshots")
+            return snapshots_created
+            
+        except Exception as e:
+            logger.error(f"Error in aggregation user refresh: {e}", exc_info=True)
+            return 0
+    
     async def refresh_plaid_accounts(self, account_ids: List[str]) -> int:
         """
         Refresh Plaid-based accounts.
@@ -331,6 +402,17 @@ class RealtimeDataService:
                     error_msg = f"Plaid refresh error: {str(e)}"
                     results["errors"].append(error_msg)
                     logger.error(error_msg)
+            
+            # CRITICAL: Create intraday snapshots for aggregation users
+            # This runs every 5 minutes during market hours to capture REAL portfolio movements
+            # Not interpolation - actual live price updates stored in database
+            try:
+                snapshots_created = await self.refresh_aggregation_users()
+                results["intraday_snapshots_created"] = snapshots_created
+            except Exception as e:
+                error_msg = f"Intraday snapshot error: {str(e)}"
+                results["errors"].append(error_msg)
+                logger.error(error_msg)
             
             # Handle unknown accounts (treat as Alpaca for backward compatibility)
             if accounts_by_mode['unknown']:

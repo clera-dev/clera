@@ -42,8 +42,8 @@ class PlaidPortfolioProvider(AbstractPortfolioProvider):
     
     def __init__(self):
         """Initialize Plaid client with proper configuration."""
+        self.provider_name = "plaid"  # Set provider name FIRST
         self.client = self._initialize_plaid_client()
-        self.provider_name = "plaid"
     
     def _initialize_plaid_client(self) -> plaid_api.PlaidApi:
         """Initialize Plaid API client using existing patterns from bank_funding.py."""
@@ -56,7 +56,7 @@ class PlaidPortfolioProvider(AbstractPortfolioProvider):
             if not plaid_client_id or not plaid_secret:
                 raise ProviderError(
                     "PLAID_CLIENT_ID and PLAID_SECRET must be set in environment",
-                    self.get_provider_name(),
+                    "plaid",  # Use string literal
                     "MISSING_CREDENTIALS"
                 )
 
@@ -206,16 +206,22 @@ class PlaidPortfolioProvider(AbstractPortfolioProvider):
                             else:
                                 logger.info(f"🔍 PROCESSING HOLDING: {symbol} - {holding.get('quantity', 0)} shares - ${holding.get('institution_value', 0)}")
                             
+                            # Calculate unrealized P/L
+                            market_val = Decimal(str(holding.get('institution_value', 0) or 0))
+                            cost_basis_val = Decimal(str(holding.get('cost_basis', 0) or 0))
+                            unrealized_pl_val = market_val - cost_basis_val if cost_basis_val > 0 else Decimal('0')
+                            
                             positions.append(Position(
                                 symbol=symbol,
                                 quantity=Decimal(str(holding.get('quantity', 0))),
-                                market_value=Decimal(str(holding.get('institution_value', 0) or 0)),
-                                cost_basis=Decimal(str(holding.get('cost_basis', 0) or 0)),
+                                market_value=market_val,
+                                cost_basis=cost_basis_val,
                                 account_id=holding_account_id,
                                 institution_name=token_data['institution_name'],
                                 security_type=security.get('type', 'equity'),
                                 security_name=security.get('name'),
-                                price=Decimal(str(holding.get('institution_price', 0) or 0))
+                                price=Decimal(str(holding.get('institution_price', 0) or 0)),
+                                unrealized_pl=unrealized_pl_val
                             ))
                             
                             # Store rich Plaid security metadata separately for asset details

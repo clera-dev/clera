@@ -72,8 +72,74 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
     };
 
     const fetchPortfolioData = async () => {
-        if (!accountId || accountId === 'undefined') {
-            console.error('No valid account ID provided for fetching portfolio data');
+        // For aggregation mode, use aggregated endpoint + calculate today's return from history
+        if (portfolioMode === 'aggregation') {
+            try {
+                // Fetch both current value and 1W history in parallel to calculate today's return
+                const [positionsRes, historyRes] = await Promise.all([
+                    fetch(`/api/portfolio/aggregated`),
+                    fetch(`/api/portfolio/history?accountId=null&period=1W`)
+                ]);
+                
+                if (positionsRes.ok && historyRes.ok) {
+                    const positionsData = await positionsRes.json();
+                    const historyData = await historyRes.json();
+                    
+                    // CRITICAL: Use summary.total_value which includes cash
+                    // The positions array excludes cash (for holdings table display)
+                    // but the summary includes cash for accurate total portfolio value
+                    const totalValue = positionsData.summary?.total_value || 0;
+                    
+                    setTotalValue(`$${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+                    
+                    // Calculate today's return from history data
+                    // Backend returns { timestamp: [], equity: [], profit_loss: [], profit_loss_pct: [] } format
+                    const equityValues = historyData?.equity || [];
+                    const profitLoss = historyData?.profit_loss || [];
+                    const profitLossPct = historyData?.profit_loss_pct || [];
+                    
+                    // PRODUCTION-GRADE: Use backend's calculated P/L (handles weekends/holidays correctly)
+                    // Backend sets profit_loss[last] = 0.0 on weekends/holidays
+                    if (equityValues.length >= 2 && profitLoss.length > 0) {
+                        // Get today's P/L from backend (last element in profit_loss array)
+                        const todayReturn = parseFloat(profitLoss[profitLoss.length - 1]) || 0;
+                        const returnPercent = parseFloat(profitLossPct[profitLossPct.length - 1]) || 0;
+                        
+                        // Check if market is closed (weekend/holiday) - backend returns 0.0
+                        const isMarketClosed = todayReturn === 0 && returnPercent === 0;
+                        
+                        // Format with correct signs (both dollar and percent must match)
+                        const sign = todayReturn >= 0 ? '+' : '-';
+                        const absReturn = Math.abs(todayReturn);
+                        const absPercent = Math.abs(returnPercent);
+                        
+                        if (isMarketClosed) {
+                            // Market closed (weekend/holiday) - show $0.00 explicitly
+                            setTodayReturn("$0.00 (0.00%)");
+                        } else {
+                            // Market open - show actual return
+                            setTodayReturn(`${sign}$${absReturn.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${sign}${absPercent.toFixed(2)}%)`);
+                        }
+                    } else {
+                        // Fallback if not enough history
+                        setTodayReturn("$0.00 (0.00%)");
+                    }
+                    
+                    setIsLoading(false);
+                    return true;
+                } else {
+                    console.error(`Failed to fetch aggregation data: positions=${positionsRes.status}, history=${historyRes.status}`);
+                }
+            } catch (error) {
+                console.error('Error fetching aggregated portfolio data:', error);
+            }
+            setIsLoading(false);
+            return false;
+        }
+        
+        // For brokerage/hybrid mode, use the existing endpoint
+        if (!accountId || accountId === 'undefined' || accountId === 'null') {
+            console.error('No valid account ID provided for fetching brokerage portfolio data');
             setIsLoading(false);
             return false;
         }
@@ -87,10 +153,10 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
                 setIsLoading(false);
                 return true;
             } else {
-                console.error(`Failed to fetch portfolio data: ${response.status} ${response.statusText}`);
+                console.error(`Failed to fetch brokerage portfolio data: ${response.status} ${response.statusText}`);
             }
         } catch (error) {
-            console.error('Error fetching portfolio data:', error);
+            console.error('Error fetching brokerage portfolio data:', error);
         }
         
         setIsLoading(false); // Ensure loading is set to false even on error
@@ -354,8 +420,16 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
     // We don't include connectWebSocket directly as it causes loops
     }, [accountId, websocketUrl, supabase]); // Add supabase to dependency array
 
-    const isPositiveReturn = !todayReturn.startsWith('-');
-    const returnColor = isPositiveReturn ? 'text-[#22c55e]' : 'text-[#ef4444]';
+    // PRODUCTION-GRADE: Color logic for Today's Return
+    // Grey for $0.00 (market closed), Green for positive, Red for negative
+    const isZeroReturn = todayReturn.startsWith('$0.00') || todayReturn.startsWith('+$0.00');
+    const isPositiveReturn = todayReturn.startsWith('+') && !isZeroReturn;
+    const isNegativeReturn = todayReturn.startsWith('-');
+    
+    const returnColor = isZeroReturn ? 'text-gray-500' : 
+                       isPositiveReturn ? 'text-[#22c55e]' : 
+                       isNegativeReturn ? 'text-[#ef4444]' : 
+                       'text-gray-500'; // Fallback to grey
 
     return (
         <div className="space-y-4">
@@ -380,11 +454,10 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
             {process.env.NODE_ENV === 'development' && (
                 <div className="text-xs text-gray-400 mt-2">
                     {isLoading ? 'Loading data...' :  
+                     portfolioMode === 'aggregation' ? 'Portfolio API (aggregated holdings)' :
                      useFallback ? 'Using fallback API (WebSocket unavailable)' : 
                      isConnected ? 'Live updates connected' : 
                      `Connecting (${connectionAttempts})...`}
-                     {/* Removed attempt count display for connecting state to simplify */}
-                     {/* `Connecting to live updates... ${connectionAttempts > 0 ? `(Attempt ${connectionAttempts})` : ''}` */} 
                 </div>
             )}
         </div>

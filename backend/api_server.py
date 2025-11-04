@@ -261,7 +261,9 @@ app = FastAPI(
 
 # Register modular route modules (keep api_server.py clean)
 from routes.account_filtering_routes import router as account_filtering_router
+from routes.snaptrade_routes import router as snaptrade_router
 app.include_router(account_filtering_router)
+app.include_router(snaptrade_router)
 
 # Add CORS middleware with restricted origins
 app.add_middleware(
@@ -327,6 +329,8 @@ except ImportError as e:
     PortfolioPosition = None
     AssetClass = None
     SecurityType = None
+    OrderResponse = None
+    PositionResponse = None
 
 # Import Alpaca broker client - fail gracefully
 try:
@@ -704,11 +708,18 @@ class WatchlistSymbolCheckResponse(BaseModel):
     in_watchlist: bool
 
 @app.post("/api/trade")
-async def execute_trade(request: TradeRequest):
-    """Execute a market order trade."""
+async def execute_trade(
+    request: TradeRequest,
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Execute a market order trade via Alpaca or SnapTrade.
+    
+    PRODUCTION-GRADE: Automatically routes to correct brokerage based on account_id.
+    For SnapTrade accounts, uses the new SnapTradeTradingService for proper order placement.
+    """
     try:
-        # Log the request
-        logger.info(f"Received trade request: {request}")
+        logger.info(f"Received trade request: {request} for user {user_id}")
         
         # Validate the side
         if request.side.upper() not in ["BUY", "SELL"]:
@@ -716,19 +727,74 @@ async def execute_trade(request: TradeRequest):
         
         # Determine order side
         order_side = OrderSide.BUY if request.side.upper() == "BUY" else OrderSide.SELL
+        action = "BUY" if order_side == OrderSide.BUY else "SELL"
         
-        # Execute the trade
-        result = _submit_market_order(
-            account_id=request.account_id, 
-            ticker=request.ticker, 
-            notional_amount=request.notional_amount, 
-            side=order_side
-        )
+        # Check if this is a SnapTrade account
+        if request.account_id.startswith('snaptrade_') or (len(request.account_id) == 36 and '-' in request.account_id):
+            # SnapTrade account - use SnapTrade trading service
+            logger.info(f"Routing trade to SnapTrade for account {request.account_id}")
+            
+            from services.snaptrade_trading_service import get_snaptrade_trading_service
+            trading_service = get_snaptrade_trading_service()
+            
+            # Clean account ID (remove our prefix if present)
+            clean_account_id = request.account_id.replace('snaptrade_', '')
+            
+            # Place order directly (force order without impact check)
+            # For production, you could add an optional impact check step here
+            result = trading_service.place_order(
+                user_id=user_id,
+                account_id=clean_account_id,
+                symbol=request.ticker.upper(),
+                action=action,
+                order_type='Market',  # Market order for notional trades
+                time_in_force='Day',
+                notional_value=float(request.notional_amount)
+            )
+            
+            if not result['success']:
+                return JSONResponse({
+                    "success": False,
+                    "message": result.get('error', 'Failed to place order'),
+                    "error": result.get('error')
+                }, status_code=400)
+            
+            # Format success message
+            order = result['order']
+            success_message = (
+                f"✅ {action} order placed successfully via SnapTrade: "
+                f"${request.notional_amount:.2f} of {request.ticker}. "
+                f"Order ID: {order['brokerage_order_id']}"
+            )
+            
+            return JSONResponse({
+                "success": True,
+                "message": success_message,
+                "order": order
+            })
         
-        return JSONResponse({
-            "success": True,
-            "message": result
-        })
+        else:
+            # Alpaca account - use existing Alpaca trade execution
+            logger.info(f"Routing trade to Alpaca for account {request.account_id}")
+            
+            if not _submit_market_order:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Alpaca trading service unavailable"
+                )
+            
+            result = _submit_market_order(
+                account_id=request.account_id, 
+                ticker=request.ticker, 
+                notional_amount=request.notional_amount, 
+                side=order_side
+            )
+            
+            return JSONResponse({
+                "success": True,
+                "message": result
+            })
+        
     except Exception as e:
         logger.error(f"Error executing trade: {e}", exc_info=True)
         return JSONResponse({
@@ -3850,6 +3916,99 @@ async def check_symbol_in_watchlist(
         )
 
 
+# === USER PREFERENCES ENDPOINTS ===
+
+@app.get("/api/user/preferences")
+async def get_user_preferences(
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Get user's trading preferences.
+    
+    PRODUCTION-GRADE: Returns user preferences for trading behavior.
+    """
+    try:
+        supabase = get_supabase_client()
+        
+        result = supabase.table('user_preferences')\
+            .select('buying_power_display')\
+            .eq('user_id', user_id)\
+            .execute()
+        
+        # Return default if no preferences exist yet
+        if not result.data or len(result.data) == 0:
+            return {
+                'success': True,
+                'preferences': {
+                    'buying_power_display': 'cash_only'
+                }
+            }
+        
+        return {
+            'success': True,
+            'preferences': {
+                'buying_power_display': result.data[0].get('buying_power_display', 'cash_only')
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching user preferences: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/user/preferences/buying-power")
+async def update_buying_power_preference(
+    request: Request,
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Update user's buying power display preference.
+    
+    PRODUCTION-GRADE: Allows users to choose between cash_only (safer, default)
+    or cash_and_margin (includes margin for experienced traders).
+    
+    Body:
+        {
+            "buying_power_display": "cash_only" | "cash_and_margin"
+        }
+    """
+    try:
+        body = await request.json()
+        buying_power_display = body.get('buying_power_display')
+        
+        # Validate input
+        if buying_power_display not in ['cash_only', 'cash_and_margin']:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid value. Must be 'cash_only' or 'cash_and_margin'"
+            )
+        
+        supabase = get_supabase_client()
+        
+        # Upsert user preference (insert if doesn't exist, update if it does)
+        supabase.table('user_preferences')\
+            .upsert({
+                'user_id': user_id,
+                'buying_power_display': buying_power_display,
+                'updated_at': 'NOW()'
+            }, on_conflict='user_id')\
+            .execute()
+        
+        logger.info(f"Updated buying power preference for user {user_id}: {buying_power_display}")
+        
+        return {
+            'success': True,
+            'message': f'Buying power display updated to: {buying_power_display}',
+            'preference': buying_power_display
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating buying power preference: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # === USER-BASED WATCHLIST ENDPOINTS (Aggregation & Brokerage Mode) ===
 # These endpoints work for all users regardless of having an Alpaca account
 
@@ -4697,13 +4856,67 @@ async def get_aggregated_portfolio_positions(
         external_positions = []
         clera_positions = []
         
-        # Get external account data (Plaid) - CURRENT IMPLEMENTATION
+        # Get external account data (SnapTrade/Plaid aggregated holdings) - CURRENT IMPLEMENTATION
         if portfolio_mode in ['aggregation', 'hybrid']:
-            from utils.portfolio.sync_service import sync_service
-            portfolio_data = await sync_service.ensure_user_portfolio_fresh(user_id, max_age_minutes=30)
+            # CRITICAL: Query user_aggregated_holdings directly for SnapTrade/Plaid data
+            # This table is populated by snaptrade_sync_service and plaid background sync
+            from utils.supabase.db_client import get_supabase_client
+            supabase = get_supabase_client()
             
-            if portfolio_data and 'positions' in portfolio_data:
-                external_positions = portfolio_data['positions']
+            logger.info(f"📊 Fetching aggregated holdings from database for user {user_id}")
+            holdings_result = supabase.table('user_aggregated_holdings')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .execute()
+            
+            if holdings_result.data:
+                logger.info(f"✅ Found {len(holdings_result.data)} aggregated holdings for user {user_id}")
+                
+                # CRITICAL: Enrich with live market prices using production-grade enrichment service
+                # Uses FMP API (10x cheaper than Alpaca) with 60-second caching
+                from utils.portfolio.live_enrichment_service import get_enrichment_service
+                enrichment_service = get_enrichment_service()
+                
+                # Enrich holdings with live prices
+                enriched_holdings = enrichment_service.enrich_holdings(holdings_result.data, user_id)
+                
+                # Transform to position format
+                external_positions = []
+                for h in enriched_holdings:
+                    symbol = h['symbol']
+                    quantity = float(h['total_quantity'])
+                    cost_basis = float(h['total_cost_basis'])
+                    market_value = float(h['total_market_value'])
+                    unrealized_pl = float(h['unrealized_gain_loss'])
+                    
+                    # CRITICAL: enrichment service returns percentage as decimal already
+                    # Frontend expects DECIMAL (0.7641) and will multiply by 100 for display
+                    unrealized_pl_percent = float(h['unrealized_gain_loss_percent']) / 100 if not h.get('price_is_live') else (unrealized_pl / cost_basis) if cost_basis > 0 else 0
+                    
+                    current_price = (market_value / quantity) if quantity > 0 else 0
+                    
+                    external_positions.append({
+                        'symbol': symbol,
+                        'total_quantity': quantity,
+                        'market_value': market_value,
+                        'total_market_value': market_value,
+                        'cost_basis': cost_basis,
+                        'total_cost_basis': cost_basis,
+                        'average_cost_basis': float(h['average_cost_basis']),
+                        'current_price': current_price,
+                        'unrealized_gain_loss': unrealized_pl,
+                        'unrealized_gain_loss_percent': unrealized_pl_percent,
+                        'security_name': h.get('security_name'),
+                        'security_type': h.get('security_type'),
+                        'data_source': 'external',
+                        'account_id': 'aggregated',
+                        'account_contributions': h.get('account_contributions', [])
+                    })
+                
+                logger.info(f"💰 Total portfolio value: ${sum(p['market_value'] for p in external_positions):,.2f}")
+            else:
+                logger.warning(f"⚠️  No aggregated holdings found for user {user_id}")
+                external_positions = []
         
         # Get Clera brokerage data (when include_clera=True or brokerage mode)
         if include_clera and portfolio_mode in ['brokerage', 'hybrid']:
@@ -4737,17 +4950,19 @@ async def get_aggregated_portfolio_positions(
         positions = []
         total_portfolio_value = 0
         
-        # Calculate total portfolio value first for weight calculations
+        # CRITICAL: Calculate total portfolio value INCLUDING cash
+        # Cash is excluded from holdings display, but MUST be included in portfolio value
         if filtered_positions:
             total_portfolio_value = sum(pos.get('total_market_value', 0) for pos in filtered_positions)
         
         # Transform each position to PositionData format with SOURCE ATTRIBUTION
         for position in filtered_positions:
-            # CRITICAL FIX: Filter out cash positions from portfolio holdings display
+            # CRITICAL: Filter out cash positions from portfolio holdings TABLE display
+            # Cash should NOT appear in the holdings table, but IS included in total portfolio value
             if (position.get('security_type') == 'cash' or 
                 position.get('symbol') == 'U S Dollar' or
                 position.get('symbol') == 'USD'):
-                continue  # Skip cash positions in holdings display
+                continue  # Skip cash positions in holdings TABLE (cash is still in total_portfolio_value)
             # Determine position source for filtering capabilities
             institution_info = position.get('institutions', ['Unknown'])
             
@@ -4827,11 +5042,17 @@ async def get_aggregated_portfolio_positions(
         
         filter_msg = f", filtered to account: {filter_account}" if filter_account and filter_account != 'total' else ""
         logger.info(f"📊 Portfolio composition: {external_count} external positions (${external_value:,.2f}), {clera_count} Clera positions (${clera_value:,.2f}){filter_msg}")
+        logger.info(f"💰 TOTAL PORTFOLIO VALUE (incl. cash): ${total_portfolio_value:,.2f}")
         
-        # FUTURE-READY: Return enhanced structure for filtering capabilities
-        # For now, returning just positions array for compatibility
-        # Future: return {"positions": positions, "summary": {...}, "sources": {...}}
-        return positions
+        # Return structured response for frontend
+        return {
+            "positions": positions,  # Holdings table (excludes cash)
+            "summary": {
+                "total_value": total_portfolio_value,  # INCLUDES cash for accurate portfolio value
+                "total_positions": len(positions),  # Number of holdings displayed (excludes cash)
+                "portfolio_mode": portfolio_mode
+            }
+        }
         
     except Exception as e:
         logger.error(f"Error getting aggregated portfolio for user {user_id}: {e}")
@@ -4883,6 +5104,19 @@ async def get_portfolio_connection_status(
                 .execute()
             plaid_accounts = result.data or []
         
+        # Get SnapTrade connections
+        snaptrade_accounts = []
+        try:
+            snaptrade_result = supabase.table('user_investment_accounts')\
+                .select('id, institution_name, account_name, brokerage_name, connection_type, is_active, last_synced')\
+                .eq('user_id', user_id)\
+                .eq('provider', 'snaptrade')\
+                .eq('is_active', True)\
+                .execute()
+            snaptrade_accounts = snaptrade_result.data or []
+        except Exception as snaptrade_error:
+            logger.warning(f"Error fetching SnapTrade accounts for user {user_id}: {snaptrade_error}")
+        
         # Get Alpaca connection (if enabled)
         alpaca_account = None
         if feature_flags.is_enabled(FeatureFlagKey.BROKERAGE_MODE.value, user_id):
@@ -4898,11 +5132,14 @@ async def get_portfolio_connection_status(
                     'provider': 'alpaca'
                 }
         
+        total_accounts = len(plaid_accounts) + len(snaptrade_accounts) + (1 if alpaca_account else 0)
+        
         return {
             'portfolio_mode': portfolio_mode,
             'plaid_accounts': plaid_accounts,
+            'snaptrade_accounts': snaptrade_accounts,
             'alpaca_account': alpaca_account,
-            'total_connected_accounts': len(plaid_accounts) + (1 if alpaca_account else 0)
+            'total_connected_accounts': total_accounts
         }
         
     except Exception as e:

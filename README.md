@@ -2,18 +2,28 @@
 
 Clera is a financial AI platform leveraging advanced language models and agent-based architecture to provide financial analysis, portfolio management, brokerage services, and conversational capabilities. This monorepo contains all the code pertaining to building Clera, simplifying CI/CD pipelines, testing, and onboarding.
 
+## 📚 Documentation
+
+- **[Portfolio History Architecture](docs/architecture/portfolio-history/README.md)** - Production-grade portfolio history system with automated snapshots and backfill
+- **[Backend API Documentation](backend/docs/)** - API endpoints, database schema, and service architecture
+- **[Frontend Components](frontend-app/components/)** - React component library and UI patterns
+
 ## TL;DR
 ### How to run servers
 Open 3 terminals (T1, T2, T3)
 In T1 run: 
 ```bash
 cd backend && python -m venv venv && source venv/bin/activate &&
-&& pip install -r requirements.txt && python -m portfolio_realtime.websocket_server
+pip install -r requirements.txt && python -m portfolio_realtime.websocket_server
 ```
 
 In T2 run: 
 ```bash
-source activate.sh && python api_server.py
+cd backend && source venv/bin/activate && source activate.sh && python api_server.py
+```
+or 
+```bash
+cd backend && source venv/bin/activate && source activate.sh && uvicorn api_server:app --reload
 ```
 
 In T3 run: 
@@ -40,6 +50,20 @@ If it crashes because there isn't enough room in docker, run:
 docker system prune -a --volumes -f
 ```
 And you can track their progress in AWS > Elastic Container Service.
+
+When cursor has to update, open up to these 4 terminals to get started again:
+```bash
+# t1
+source venv/bin/activate && python -m portfolio_realtime.websocket_server
+# t2 (option 1)
+source venv/bin/activate && source activate.sh && python api_server.py
+# t2 (option 2)
+source venv/bin/activate && source activate.sh && uvicorn api_server:app --reload
+# t3
+npm install && rm -rf .next && npm run dev
+# t4 (if needed)
+ngrok http 8000
+```
 
 ### How to get cursor to cook:
 

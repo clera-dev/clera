@@ -7,7 +7,6 @@ import CleraAssistCard from '@/components/ui/clera-assist-card';
 import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
 import LivePortfolioValue from './LivePortfolioValue';
 import StaticPortfolioValue from './StaticPortfolioValue';
-import LivePortfolioValuePlaid from './LivePortfolioValuePlaid';
 import PortfolioHistoryChart from './PortfolioHistoryChart';
 
 interface PortfolioHistoryData {
@@ -118,29 +117,18 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
           <CardTitle className="text-base md:text-lg font-medium">Portfolio Summary</CardTitle>
         </CardHeader>
         <CardContent className="pb-0">
-          {accountId && (
+          {/* For aggregation mode: accountId can be null, that's OK */}
+          {(accountId || portfolioMode === 'aggregation') && (
             portfolioMode === 'aggregation' ? (
-              hasHistoricalData && userId ? (
-                <LivePortfolioValuePlaid 
-                  accountId={accountId}
-                  userId={userId}
-                  onRefresh={onReturnRefresh}
-                  refreshTrigger={refreshTimestamp}
-                />
-              ) : (
-                <StaticPortfolioValue 
-                  accountId={accountId} 
-                  onRefresh={onReturnRefresh}
-                  refreshTrigger={refreshTimestamp}
-                  onHistoryReady={() => {
-                    // Trigger parent to re-check historical data status
-                    onReturnRefresh?.();
-                  }}
-                />
-              )
-            ) : (
+              // Aggregation mode: Always show LivePortfolioValue
               <LivePortfolioValue 
-                accountId={accountId} 
+                accountId={accountId || 'aggregated'}
+                portfolioMode={portfolioMode}
+              />
+            ) : (
+              // Brokerage mode: Requires valid accountId
+              <LivePortfolioValue 
+                accountId={accountId!} 
                 portfolioMode={portfolioMode}
               />
             )
@@ -182,18 +170,15 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
       <div className="pb-0">
         {(accountId || (portfolioMode === 'aggregation' && userId)) && (
           portfolioMode === 'aggregation' ? (
+            // Aggregation mode: Always show if userId exists
             userId ? (
-              <LivePortfolioValuePlaid 
-                accountId={accountId}
-                userId={userId}
-                onRefresh={onReturnRefresh}
-                refreshTrigger={refreshTimestamp}
-                selectedAccountFilter={selectedAccountFilter}
-                onAccountFilterChange={onAccountFilterChange}
-                availableAccounts={availableAccounts}
+              <LivePortfolioValue 
+                accountId={accountId || 'aggregated'}
+                portfolioMode={portfolioMode}
               />
             ) : null
           ) : accountId ? (
+            // Brokerage mode: Requires accountId
             <LivePortfolioValue 
               accountId={accountId} 
               portfolioMode={portfolioMode}

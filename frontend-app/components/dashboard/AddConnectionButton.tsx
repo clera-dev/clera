@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PlusCircle, Building2, CheckCircle2, AlertTriangle } from "lucide-react";
-import PlaidConnectButton from "@/components/portfolio/PlaidConnectButton";
+import { SnapTradeConnectButton } from "@/components/portfolio/SnapTradeConnectButton";
 
 interface PlaidAccount {
   id: string;
@@ -104,11 +104,14 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
 
         {/* Connect Investment Account Button */}
         <div className="border-t pt-3">
-          <PlaidConnectButton 
-            onAccountConnected={handleAccountConnected}
-            className="shadow-none border-0"
-            showCard={false}
-          />
+          <SnapTradeConnectButton 
+            connectionType="trade"
+            onSuccess={handleAccountConnected}
+            className="w-full shadow-none border-0"
+          >
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Connect External Brokerage
+          </SnapTradeConnectButton>
         </div>
       </CardContent>
     </Card>

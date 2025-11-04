@@ -98,6 +98,7 @@ interface OrderData {
   trail_price?: string | null; // Decimal as string
   hwm?: string | null; // Decimal as string
   commission?: string | null; // Decimal as string
+  account_name?: string; // For SnapTrade orders: Brokerage name (e.g., "Webull")
 }
 
 interface PortfolioAnalyticsData {
@@ -477,13 +478,22 @@ export default function PortfolioPage() {
                 }),
             ];
             
-            // Add orders call only for brokerage mode (aggregation has no orders)
-            if (accountId && portfolioMode === 'brokerage') {
+            // Add orders call based on portfolio mode
+            if (portfolioMode === 'brokerage' && accountId) {
+                // Brokerage mode: Fetch from Alpaca
                 const ordersUrl = buildFilteredUrl(`/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`);
                 apiCalls.push(
                     fetchData(ordersUrl).catch(err => { 
                       console.error("Orders fetch failed:", err); 
                       return []; 
+                    })
+                );
+            } else if (portfolioMode === 'aggregation') {
+                // Aggregation mode: Fetch from SnapTrade
+                apiCalls.push(
+                    fetchData('/api/snaptrade/pending-orders').catch(err => {
+                      console.error("SnapTrade orders fetch failed:", err);
+                      return { orders: [] };
                     })
                 );
             }
@@ -495,13 +505,22 @@ export default function PortfolioPage() {
             const positionsResult = results[0];
             const allTimeResult = results[1];
             const analyticsResult = results[2];
-            const ordersResult = portfolioMode === 'brokerage' && results.length > 3 ? results[3] : { status: 'fulfilled' as const, value: [] };
+            const ordersResult = (portfolioMode === 'brokerage' || portfolioMode === 'aggregation') && results.length > 3 ? results[3] : { status: 'fulfilled' as const, value: [] };
 
             if (!isMounted) return;
 
             // Check if we have trade history - this determines if we're in "new account" mode
-            const positionsData = positionsResult.status === 'fulfilled' ? positionsResult.value : [];
-            const ordersData = ordersResult.status === 'fulfilled' ? ordersResult.value : [];
+            // Handle aggregation mode response format: { positions: [...], summary: {...} } vs brokerage mode's direct array
+            const positionsRaw = positionsResult.status === 'fulfilled' ? positionsResult.value : [];
+            const positionsData = (positionsRaw && typeof positionsRaw === 'object' && 'positions' in positionsRaw) 
+                ? positionsRaw.positions 
+                : (Array.isArray(positionsRaw) ? positionsRaw : []);
+            
+            // Handle SnapTrade response format: { orders: [...] } vs Alpaca's direct array
+            const ordersRaw = ordersResult.status === 'fulfilled' ? ordersResult.value : [];
+            const ordersData = (ordersRaw && typeof ordersRaw === 'object' && 'orders' in ordersRaw) 
+                ? ordersRaw.orders 
+                : ordersRaw;
             
             // For aggregation mode: users always have "trade history" from Plaid
             // For brokerage mode: check if we have positions or completed orders
@@ -731,6 +750,43 @@ export default function PortfolioPage() {
    );
   }
 
+  // Empty portfolio state - no accounts connected
+  if (!isLoading && positions.length === 0 && portfolioMode !== 'brokerage' && !error) {
+    return (
+      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
+          <div className="text-center space-y-6 max-w-2xl">
+            <div className="mx-auto w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+              <DollarSign className="h-10 w-10 text-primary" />
+            </div>
+            
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold tracking-tight">Connect Your First Brokerage</h2>
+              <p className="text-muted-foreground text-lg">
+                Link your external investment accounts to view your complete portfolio and get AI-powered insights.
+              </p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+              <Link href="/dashboard">
+                <Button size="lg" className="w-full sm:w-auto">
+                  <BarChart2 className="mr-2 h-5 w-5" />
+                  Connect Brokerage Account
+                </Button>
+              </Link>
+            </div>
+            
+            <div className="pt-6 border-t">
+              <p className="text-sm text-muted-foreground">
+                Supported brokerages include: Robinhood, Fidelity, Charles Schwab, TD Ameritrade, E*TRADE, and 20+ more
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Define the overlay style for locked sections (brokerage mode only)
   const lockedSectionStyle = !hasTradeHistory && portfolioMode === 'brokerage' ? {
     position: 'relative',
@@ -787,7 +843,11 @@ export default function PortfolioPage() {
                       
                       // Fetch positions (works for both modes) - with account filter
                       const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`, cacheBuster);
-                      const positionsData = await fetchWithCacheBusting(positionsUrl);
+                      const positionsRaw = await fetchWithCacheBusting(positionsUrl);
+                      // Handle aggregation mode response format: { positions: [...], summary: {...} }
+                      const positionsData = (positionsRaw && typeof positionsRaw === 'object' && 'positions' in positionsRaw) 
+                          ? positionsRaw.positions 
+                          : (Array.isArray(positionsRaw) ? positionsRaw : []);
                       
                       // Fetch analytics (works for both modes) - with account filter
                       const analyticsUrl = buildFilteredUrl(`/api/portfolio/analytics?accountId=${accountId}`, cacheBuster);
@@ -1033,13 +1093,8 @@ export default function PortfolioPage() {
                 <TabsTrigger 
                   value="transactions" 
                   className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md relative"
-                  disabled={portfolioMode !== 'brokerage'}
-                  title={portfolioMode !== 'brokerage' ? "Feature coming soon" : undefined}
                 >
                   Pending Orders
-                  {portfolioMode !== 'brokerage' && (
-                    <LockIcon className="h-3 w-3 ml-2 inline-block text-muted-foreground" />
-                  )}
                 </TabsTrigger>
               </TabsList>
 
@@ -1095,7 +1150,9 @@ export default function PortfolioPage() {
         </div>
 
         {/* Order Modal for Trade Actions */}
-        {selectedSymbolForTrade && accountId && (
+        {/* PRODUCTION-GRADE: OrderModal works in both aggregation and brokerage mode */}
+        {/* In aggregation mode, accountId may be null - modal fetches trade-enabled accounts */}
+        {selectedSymbolForTrade && (
           <OrderModal
             isOpen={isOrderModalOpen}
             onClose={handleOrderModalClose}

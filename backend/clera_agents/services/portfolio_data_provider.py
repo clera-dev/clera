@@ -47,24 +47,25 @@ class UserPortfolioMode:
     """Represents the user's portfolio account configuration"""
     has_alpaca: bool
     has_plaid: bool
+    has_snaptrade: bool
     alpaca_account_id: Optional[str]
     user_id: str
     
     @property
     def mode(self) -> str:
         """Returns 'brokerage', 'aggregation', or 'hybrid'"""
-        if self.has_alpaca and self.has_plaid:
+        if self.has_alpaca and (self.has_plaid or self.has_snaptrade):
             return 'hybrid'
         elif self.has_alpaca:
             return 'brokerage'
-        elif self.has_plaid:
+        elif self.has_plaid or self.has_snaptrade:
             return 'aggregation'
         return 'none'
     
     @property
     def is_valid(self) -> bool:
         """User must have at least one account type"""
-        return self.has_alpaca or self.has_plaid
+        return self.has_alpaca or self.has_plaid or self.has_snaptrade
 
 
 class PortfolioDataProvider:
@@ -115,17 +116,21 @@ class PortfolioDataProvider:
             has_plaid = bool(data.get('plaid_connection_completed_at'))
             alpaca_account_id = data.get('alpaca_account_id') if has_alpaca else None
             
+            # Check for SnapTrade accounts
+            has_snaptrade = self._has_snaptrade_accounts()
+            
             self._mode = UserPortfolioMode(
                 has_alpaca=has_alpaca,
                 has_plaid=has_plaid,
+                has_snaptrade=has_snaptrade,
                 alpaca_account_id=alpaca_account_id,
                 user_id=self.user_id
             )
             
             if not self._mode.is_valid:
-                raise ValueError(f"User {self.user_id} has no connected accounts (Alpaca or Plaid)")
+                raise ValueError(f"User {self.user_id} has no connected accounts (Alpaca, Plaid, or SnapTrade)")
             
-            logger.info(f"[PortfolioDataProvider] User {self.user_id} mode: {self._mode.mode}")
+            logger.info(f"[PortfolioDataProvider] User {self.user_id} mode: {self._mode.mode} (Alpaca:{has_alpaca}, Plaid:{has_plaid}, SnapTrade:{has_snaptrade})")
             return self._mode
             
         except ValueError:
@@ -183,7 +188,13 @@ class PortfolioDataProvider:
             holdings.extend(alpaca_holdings)
             logger.info(f"[PortfolioDataProvider] Fetched {len(alpaca_holdings)} Alpaca holdings")
         
-        # Fetch Plaid holdings if available
+        # Fetch SnapTrade holdings if available (preferred over Plaid)
+        if mode.has_snaptrade:
+            snaptrade_holdings = self._get_snaptrade_holdings()
+            holdings.extend(snaptrade_holdings)
+            logger.info(f"[PortfolioDataProvider] Fetched {len(snaptrade_holdings)} SnapTrade holdings")
+        
+        # Fetch Plaid holdings if available (fallback/additional)
         if mode.has_plaid:
             plaid_holdings = self._get_plaid_holdings()
             holdings.extend(plaid_holdings)
@@ -286,6 +297,77 @@ class PortfolioDataProvider:
             return 'option'
         else:
             return 'equity'  # Default to equity for US equities
+    
+    def _has_snaptrade_accounts(self) -> bool:
+        """Check if user has active SnapTrade accounts."""
+        try:
+            result = self.supabase.table('user_investment_accounts')\
+                .select('id')\
+                .eq('user_id', self.user_id)\
+                .eq('provider', 'snaptrade')\
+                .eq('is_active', True)\
+                .limit(1)\
+                .execute()
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Error checking SnapTrade accounts: {e}")
+            return False
+    
+    def _get_snaptrade_holdings(self) -> List[PortfolioHolding]:
+        """Fetch holdings from SnapTrade aggregated data (same table as Plaid)."""
+        try:
+            # SnapTrade holdings are stored in the same aggregated_holdings table
+            # We filter by checking if any accounts in the 'accounts' JSONB array are SnapTrade
+            result = self.supabase.table('user_aggregated_holdings')\
+                .select('*')\
+                .eq('user_id', self.user_id)\
+                .execute()
+            
+            if not result.data:
+                return []
+            
+            holdings = []
+            for h in result.data:
+                try:
+                    # Check if this holding has SnapTrade accounts
+                    accounts_list = h.get('accounts', [])
+                    has_snaptrade = any(
+                        acc.get('account_id', '').startswith('snaptrade_') 
+                        for acc in accounts_list
+                    )
+                    
+                    if not has_snaptrade:
+                        continue  # Skip non-SnapTrade holdings
+                    
+                    # Handle sentinel value for unreliable returns
+                    unrealized_plpc = h.get('unrealized_gain_loss_percent')
+                    if unrealized_plpc == -999999.0 or unrealized_plpc <= -999999:
+                        unrealized_plpc = Decimal('-999999')  # Keep sentinel
+                    else:
+                        unrealized_plpc = Decimal(str(unrealized_plpc or 0))
+                    
+                    holding = PortfolioHolding(
+                        symbol=h['symbol'],
+                        security_name=h.get('security_name', h['symbol']),
+                        security_type=h.get('security_type', 'equity'),
+                        quantity=Decimal(str(h.get('total_quantity', 0))),
+                        market_value=Decimal(str(h.get('total_market_value', 0))),
+                        cost_basis=Decimal(str(h.get('average_cost_basis', 0) or 0)),
+                        unrealized_pl=Decimal(str(h.get('unrealized_gain_loss', 0) or 0)),
+                        unrealized_plpc=unrealized_plpc,
+                        source='snaptrade'
+                    )
+                    holdings.append(holding)
+                    
+                except Exception as e:
+                    logger.warning(f"[PortfolioDataProvider] Error processing SnapTrade holding {h.get('symbol')}: {e}")
+                    continue
+            
+            return holdings
+            
+        except Exception as e:
+            logger.error(f"[PortfolioDataProvider] Error fetching SnapTrade holdings: {e}", exc_info=True)
+            return []
     
     def get_account_activities_alpaca(
         self,

@@ -41,6 +41,7 @@ interface OrderData {
   stop_price?: string | null; 
   status?: string;
   commission?: string | null;
+  account_name?: string; // For SnapTrade orders: Brokerage name (e.g., "Webull")
   // Activity fields
   activity_type?: string;
   net_amount?: string;
@@ -407,6 +408,7 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
                   <TableHead>Submitted At</TableHead>
                   <TableHead>Last Updated</TableHead>
                   <TableHead>Ticker</TableHead>
+                  <TableHead>Account</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Order ID</TableHead>
                   <TableHead className="text-right">Status</TableHead>
@@ -441,6 +443,15 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
                       <TableCell>{formatDateTime(item.submitted_at || item.created_at || item.date)}</TableCell>
                       <TableCell>{formatDateTime(item.updated_at || item.filled_at)}</TableCell>
                       <TableCell className="font-medium">{symbol}</TableCell>
+                      <TableCell>
+                        {item.account_name ? (
+                          <Badge variant="outline" className="text-xs font-normal">
+                            {item.account_name}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">Clera</span>
+                        )}
+                      </TableCell>
                       <TableCell>{formatCurrency(amount.toString())}</TableCell>
                       <TableCell>
                         {item.id ? (

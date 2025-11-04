@@ -145,15 +145,29 @@ class PortfolioModeService:
         try:
             mode = self.get_user_portfolio_mode(user_id)
             
+            # Check which providers user has connected
+            has_snaptrade = self._has_snaptrade_accounts(user_id)
+            has_plaid = self._has_plaid_accounts(user_id)
+            has_alpaca = self.has_alpaca_account_safe(user_id)
+            
             if mode == PortfolioMode.AGGREGATION:
-                return ["plaid"]
+                # Prefer SnapTrade over Plaid for aggregation
+                sources = []
+                if has_snaptrade:
+                    sources.append("snaptrade")
+                if has_plaid:
+                    sources.append("plaid")
+                return sources
             elif mode == PortfolioMode.BROKERAGE:
-                return ["alpaca"] if self.has_alpaca_account_safe(user_id) else ["plaid"]
+                return ["alpaca"] if has_alpaca else []
             elif mode == PortfolioMode.HYBRID:
                 sources = []
-                if self.has_alpaca_account_safe(user_id):
+                if has_alpaca:
                     sources.append("alpaca")
-                sources.append("plaid")  # Always include Plaid in hybrid mode
+                if has_snaptrade:
+                    sources.append("snaptrade")
+                if has_plaid:
+                    sources.append("plaid")
                 return sources
             else:
                 return []
@@ -161,6 +175,34 @@ class PortfolioModeService:
         except Exception as e:
             logger.error(f"Error determining data sources for user {user_id}: {e}")
             return []
+    
+    def _has_snaptrade_accounts(self, user_id: str) -> bool:
+        """Check if user has active SnapTrade accounts."""
+        try:
+            result = self.supabase.table('user_investment_accounts')\
+                .select('id')\
+                .eq('user_id', user_id)\
+                .eq('provider', 'snaptrade')\
+                .eq('is_active', True)\
+                .execute()
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Error checking SnapTrade accounts for user {user_id}: {e}")
+            return False
+    
+    def _has_plaid_accounts(self, user_id: str) -> bool:
+        """Check if user has active Plaid accounts."""
+        try:
+            result = self.supabase.table('user_investment_accounts')\
+                .select('id')\
+                .eq('user_id', user_id)\
+                .eq('provider', 'plaid')\
+                .eq('is_active', True)\
+                .execute()
+            return bool(result.data)
+        except Exception as e:
+            logger.error(f"Error checking Plaid accounts for user {user_id}: {e}")
+            return False
     
     def get_websocket_authorization_mode(self, user_id: str, account_id: str) -> Dict[str, Any]:
         """

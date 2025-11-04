@@ -190,17 +190,18 @@ export async function getAlpacaAccountId(supabase: any, userId: string): Promise
   }
 }
 
-// Real-time funding status check using Alpaca API - no caching for critical user flows  
+// Real-time funding status check for ALPACA USERS ONLY - no caching for critical user flows
+// NOTE: This should only be called for users in brokerage/hybrid mode with Alpaca accounts
+// SnapTrade and Plaid users don't need "funding" - they have external accounts
 export async function getFundingStatus(supabase: any, userId: string): Promise<boolean> {
   try {
     // Force no caching for critical user flow data (Next.js 15.3.3 fix)
     noStore();
     
-    
     // Get user's Alpaca account ID
     const alpacaAccountId = await getAlpacaAccountId(supabase, userId);
     if (!alpacaAccountId) {
-      console.log(`[Middleware] No Alpaca account found for user`);
+      console.log(`[Middleware] No Alpaca account found for user - skipping funding check`);
       return false;
     }
     
@@ -268,6 +269,66 @@ export async function getFundingStatus(supabase: any, userId: string): Promise<b
 
 export function hasCompletedFunding(fundingStatus: boolean): boolean {
   return fundingStatus;
+}
+
+// Check if user has ANY connected portfolio accounts (SnapTrade, Plaid, or funded Alpaca)
+// This is the production-grade way to determine if user should have access to main app
+export async function hasConnectedAccounts(supabase: any, userId: string): Promise<boolean> {
+  try {
+    noStore();
+    
+    // Check 1: SnapTrade connections (trade or read-only)
+    try {
+      const { data: snaptradeConnections, error: snaptradeError } = await supabase
+        .from('snaptrade_brokerage_connections')
+        .select('authorization_id')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .limit(1);
+      
+      if (!snaptradeError && snaptradeConnections && snaptradeConnections.length > 0) {
+        console.log(`[Middleware] User has active SnapTrade connection`);
+        return true;
+      }
+    } catch (snaptradeError) {
+      console.log('[Middleware] SnapTrade check failed, continuing...');
+    }
+    
+    // Check 2: Plaid investment accounts
+    try {
+      const { data: plaidAccounts, error: plaidError } = await supabase
+        .from('user_investment_accounts')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('provider', 'plaid')
+        .eq('is_active', true)
+        .limit(1);
+      
+      if (!plaidError && plaidAccounts && plaidAccounts.length > 0) {
+        console.log(`[Middleware] User has active Plaid accounts`);
+        return true;
+      }
+    } catch (plaidError) {
+      console.log('[Middleware] Plaid check failed, continuing...');
+    }
+    
+    // Check 3: Funded Alpaca account (only if they have an Alpaca account)
+    const alpacaAccountId = await getAlpacaAccountId(supabase, userId);
+    if (alpacaAccountId) {
+      const fundingStatus = await getFundingStatus(supabase, userId);
+      if (fundingStatus) {
+        console.log(`[Middleware] User has funded Alpaca account`);
+        return true;
+      }
+    }
+    
+    console.log(`[Middleware] User has no connected accounts`);
+    return false;
+    
+  } catch (error) {
+    console.error('[Middleware] Error checking connected accounts:', error);
+    return false;
+  }
 }
 
 // CommonJS exports for testing

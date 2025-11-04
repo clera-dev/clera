@@ -15,6 +15,7 @@ from .abstract_provider import (
 )
 from .plaid_provider import PlaidPortfolioProvider
 from .alpaca_provider import AlpacaPortfolioProvider
+from .snaptrade_provider import SnapTradePortfolioProvider
 
 logger = logging.getLogger(__name__)
 
@@ -34,17 +35,26 @@ class PortfolioService:
     def _initialize_providers(self):
         """Initialize all available providers."""
         try:
-            # Initialize Plaid provider
-            self.providers['plaid'] = PlaidPortfolioProvider()
-            logger.info("✅ Plaid provider initialized")
+            # Initialize SnapTrade provider (primary aggregation + trading)
+            try:
+                self.providers['snaptrade'] = SnapTradePortfolioProvider()
+                logger.info("✅ SnapTrade provider initialized")
+            except Exception as snaptrade_error:
+                logger.warning(f"SnapTrade provider initialization failed: {snaptrade_error}")
             
-            # Initialize Alpaca provider (ready for brokerage/hybrid mode)
+            # Initialize Plaid provider (fallback for aggregation)
+            try:
+                self.providers['plaid'] = PlaidPortfolioProvider()
+                logger.info("✅ Plaid provider initialized")
+            except Exception as plaid_error:
+                logger.warning(f"Plaid provider initialization failed: {plaid_error}")
+            
+            # Initialize Alpaca provider (for brokerage/hybrid mode)
             try:
                 self.providers['alpaca'] = AlpacaPortfolioProvider()
                 logger.info("✅ Alpaca provider initialized")
             except Exception as alpaca_error:
-                logger.warning(f"Alpaca provider initialization failed (will be disabled): {alpaca_error}")
-                # Don't fail overall initialization if Alpaca is unavailable
+                logger.warning(f"Alpaca provider initialization failed: {alpaca_error}")
             
         except Exception as e:
             logger.error(f"Error initializing providers: {e}")

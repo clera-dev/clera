@@ -9,6 +9,7 @@ import {
   hasCompletedOnboarding,
   getFundingStatus,
   hasCompletedFunding,
+  hasConnectedAccounts,
   isPendingClosure,
   isAccountClosed,
   shouldRestartOnboarding
@@ -184,7 +185,7 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    // Handle /protected page specifically - redirect funded users to portfolio
+    // Handle /protected page specifically - redirect users with connected accounts to portfolio
     if (path === '/protected' && user) {
       console.log(`[Middleware] Processing /protected page for user ${user.id}`);
       try {
@@ -192,22 +193,23 @@ export async function middleware(request: NextRequest) {
         console.log(`[Middleware] Onboarding status for user ${user.id}: ${onboardingStatus}`);
         
         if (hasCompletedOnboarding(onboardingStatus)) {
-          console.log(`[Middleware] User ${user.id} has completed onboarding, checking funding status`);
-          const fundingStatus = await getFundingStatus(supabase, user.id);
-          console.log(`[Middleware] Funding status for user ${user.id}: ${fundingStatus}`);
+          console.log(`[Middleware] User ${user.id} has completed onboarding, checking connected accounts`);
+          // Check if user has ANY connected accounts (SnapTrade, Plaid, or funded Alpaca)
+          const hasAccounts = await hasConnectedAccounts(supabase, user.id);
+          console.log(`[Middleware] Connected accounts status for user ${user.id}: ${hasAccounts}`);
           
-          if (hasCompletedFunding(fundingStatus)) {
-            console.log(`[Middleware] User ${user.id} has completed funding, redirecting to portfolio`);
+          if (hasAccounts) {
+            console.log(`[Middleware] User ${user.id} has connected accounts, redirecting to portfolio`);
             const redirectUrl = new URL('/portfolio', request.url);
             return NextResponse.redirect(redirectUrl);
           } else {
-            console.log(`[Middleware] User ${user.id} has not completed funding, staying on /protected`);
+            console.log(`[Middleware] User ${user.id} has no connected accounts, staying on /protected`);
           }
         } else {
           console.log(`[Middleware] User ${user.id} has not completed onboarding, staying on /protected`);
         }
       } catch (dbError) {
-        console.error('Database error checking funding status for /protected redirect:', dbError);
+        console.error('Database error checking connected accounts for /protected redirect:', dbError);
         // Continue to normal processing if there's an error
       }
     }
@@ -323,6 +325,31 @@ export async function middleware(request: NextRequest) {
             return redirectResponse;
           }
         }
+        
+        // CRITICAL: For portfolio-related routes, also check if user has connected accounts
+        // Even if onboarding is "complete", they shouldn't access portfolio without accounts
+        const portfolioRoutes = ['/portfolio', '/invest', '/dashboard', '/api/portfolio'];
+        const isPortfolioRoute = portfolioRoutes.some(route => path.startsWith(route));
+        
+        if (isPortfolioRoute) {
+          const hasAccounts = await hasConnectedAccounts(supabase, user.id);
+          
+          if (!hasAccounts) {
+            console.log(`[Middleware] User ${user.id} has completed onboarding but no connected accounts`);
+            
+            if (path.startsWith('/api/')) {
+              return new NextResponse(
+                JSON.stringify({ error: 'No portfolio accounts connected' }),
+                { status: 403, headers: { 'Content-Type': 'application/json' } }
+              );
+            } else {
+              // Redirect to /protected where they can connect accounts
+              const redirectUrl = new URL('/protected', request.url);
+              return NextResponse.redirect(redirectUrl);
+            }
+          }
+        }
+        
       } catch (dbError) {
         console.error('Database connection error in middleware:', dbError);
         if (path.startsWith('/api/')) {

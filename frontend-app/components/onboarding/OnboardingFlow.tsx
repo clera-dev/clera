@@ -14,7 +14,7 @@ import DisclosuresStep from "./DisclosuresStep";
 import AgreementsStep from "./AgreementsStep";
 import OnboardingSuccessLoading from "./OnboardingSuccessLoading";
 import PersonalizationSuccess from "./PersonalizationSuccess";
-import PlaidConnectionStep from "./PlaidConnectionStep";
+import SnapTradeConnectionStep from "./SnapTradeConnectionStep";
 import { getPersonalizationData } from "@/utils/api/personalization-client";
 import { createAlpacaAccount } from "@/utils/api/alpaca";
 import { saveOnboardingData } from "@/utils/api/onboarding-client";
@@ -465,7 +465,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
         return <PersonalizationSuccess onComplete={nextStep} />;
       case "plaid_connection":
         return (
-          <PlaidConnectionStep 
+          <SnapTradeConnectionStep 
             onComplete={nextStep}
             onBack={prevStep}
           />

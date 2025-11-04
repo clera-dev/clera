@@ -59,10 +59,11 @@ class SymbolCollector:
         logger.info("Symbol Collector initialized")
     
     async def collect_symbols(self):
-        """Collect all unique symbols across all accounts and store in Redis."""
+        """Collect all unique symbols across all accounts (Alpaca + SnapTrade) and store in Redis."""
         try:
             logger.info("Starting symbol collection")
             
+            # === STEP 1: Get Alpaca symbols ===
             # Use the efficient get_all_accounts_positions method
             all_positions = self.broker_client.get_all_accounts_positions()
             
@@ -72,7 +73,7 @@ class SymbolCollector:
             # Store for future reference
             self.all_account_positions = positions_dict
             
-            # Extract unique symbols from all accounts
+            # Extract unique symbols from Alpaca accounts
             new_unique_symbols = set()
             account_count = 0
             position_count = 0
@@ -82,6 +83,36 @@ class SymbolCollector:
                 for position in positions:
                     position_count += 1
                     new_unique_symbols.add(position.symbol)
+            
+            logger.info(f"Found {len(new_unique_symbols)} symbols from Alpaca accounts")
+            
+            # === STEP 2: Get SnapTrade/Plaid symbols from aggregated holdings ===
+            try:
+                from utils.supabase.db_client import get_supabase_client
+                
+                supabase = get_supabase_client()
+                result = supabase.table('user_aggregated_holdings')\
+                    .select('symbol, security_type')\
+                    .execute()
+                
+                aggregated_symbols = set()
+                for holding in result.data:
+                    symbol = holding.get('symbol')
+                    security_type = holding.get('security_type', '')
+                    
+                    # Skip cash positions
+                    if security_type == 'cash' or symbol in ['USD', 'U S Dollar']:
+                        continue
+                    
+                    if symbol:
+                        aggregated_symbols.add(symbol)
+                        new_unique_symbols.add(symbol)
+                
+                logger.info(f"Found {len(aggregated_symbols)} symbols from aggregated holdings (SnapTrade/Plaid)")
+                
+            except Exception as e:
+                logger.warning(f"Could not fetch aggregated holdings symbols: {e}")
+                # Continue without aggregated symbols - not critical
             
             # Identify symbols to add and remove from tracking
             symbols_to_add = new_unique_symbols - self.unique_symbols

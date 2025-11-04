@@ -9,6 +9,7 @@ import BankConnectionsCard from "@/components/dashboard/BankConnectionsCard";
 import OrderHistory from "@/components/dashboard/OrderHistory";
 import DocumentsAndStatements from "@/components/dashboard/DocumentsAndStatements";
 import DangerZone from "@/components/account/DangerZone";
+import TradingPreferences from "@/components/dashboard/TradingPreferences";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
@@ -414,7 +415,12 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Row 5: Account Management (only for brokerage mode) */}
+          {/* Row 5: Trading Preferences (for all users with trade-enabled accounts) */}
+          <div className="mt-8">
+            <TradingPreferences />
+          </div>
+
+          {/* Row 6: Account Management (only for brokerage mode) */}
           {showBrokerageComponents && alpacaAccountId && (
             <div className="mt-8">
               <DangerZone

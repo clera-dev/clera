@@ -121,23 +121,15 @@ class AlpacaPortfolioProvider(AbstractPortfolioProvider):
             for alpaca_pos in alpaca_positions:
                 position = Position(
                     symbol=alpaca_pos.symbol,
-                    quantity=float(alpaca_pos.qty or 0),
-                    market_value=float(alpaca_pos.market_value or 0),
-                    cost_basis=float(alpaca_pos.cost_basis or 0),
+                    quantity=Decimal(str(alpaca_pos.qty or 0)),
+                    market_value=Decimal(str(alpaca_pos.market_value or 0)),
+                    cost_basis=Decimal(str(alpaca_pos.cost_basis or 0)),
                     account_id=f"clera_{alpaca_account_id}",
                     institution_name="Clera",
                     security_type=self._map_alpaca_asset_class(alpaca_pos.asset_class),
-                    
-                    # Additional Alpaca-specific data
-                    current_price=float(alpaca_pos.current_price or 0),
-                    unrealized_gain_loss=float(alpaca_pos.unrealized_pl or 0),
-                    unrealized_gain_loss_percent=float(alpaca_pos.unrealized_plpc or 0),
-                    side=str(alpaca_pos.side.value) if alpaca_pos.side else 'long',
-                    
-                    # Intraday data (unique to Alpaca)
-                    unrealized_intraday_pl=float(alpaca_pos.unrealized_intraday_pl or 0),
-                    unrealized_intraday_plpc=float(alpaca_pos.unrealized_intraday_plpc or 0),
-                    change_today=float(alpaca_pos.change_today or 0)
+                    security_name=alpaca_pos.symbol,  # Alpaca doesn't provide full names
+                    price=Decimal(str(alpaca_pos.current_price or 0)),
+                    unrealized_pl=Decimal(str(alpaca_pos.unrealized_pl or 0))
                 )
                 positions.append(position)
             

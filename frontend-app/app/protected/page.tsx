@@ -48,20 +48,30 @@ export default function ProtectedPageClient() {
           .maybeSingle();
         setProfile(profileData);
 
-        // Fetch portfolio mode to determine if funding is required
+        // Check if user has ANY connected accounts (SnapTrade, Plaid, or funded Alpaca)
+        // This determines if they should be redirected to /portfolio or stay on /protected
         try {
           const modeResponse = await fetch('/api/portfolio/connection-status');
           if (modeResponse.ok) {
             const modeData = await modeResponse.json();
             const mode = modeData.portfolio_mode || 'aggregation';
+            const snaptradeAccounts = modeData.snaptrade_accounts || [];
+            const plaidAccounts = modeData.plaid_accounts || [];
+            const alpacaAccount = modeData.alpaca_account;
             setPortfolioMode(mode);
             
-            // In aggregation mode, skip funding check (no brokerage account)
-            if (mode === 'aggregation') {
-              console.log('Aggregation mode detected - skipping funding check');
-              setHasFunding(true); // Mark as "funded" so they skip to /invest
-            } else {
-              // Check funding status for brokerage/hybrid users
+            // Production-grade check: Does user have ANY connected accounts?
+            const hasSnapTrade = snaptradeAccounts.length > 0;
+            const hasPlaid = plaidAccounts.length > 0;
+            const hasAlpaca = !!alpacaAccount;
+            
+            if (hasSnapTrade || hasPlaid) {
+              // SnapTrade or Plaid users have external accounts - they're "ready"
+              console.log('User has connected accounts (SnapTrade or Plaid) - redirecting to portfolio');
+              setHasFunding(true);
+            } else if (hasAlpaca) {
+              // Alpaca users need to check actual funding status
+              console.log('User has Alpaca account - checking funding status');
               const { data: transfers } = await supabase
                 .from('user_transfers')
                 .select('amount, status')
@@ -77,11 +87,15 @@ export default function ProtectedPageClient() {
                 ));
               
               setHasFunding(funded);
+            } else {
+              // No connected accounts - user needs to connect something
+              console.log('User has no connected accounts - staying on /protected');
+              setHasFunding(false);
             }
           }
         } catch (error) {
-          console.error('Error fetching portfolio mode:', error);
-          // Default to checking funding
+          console.error('Error fetching connection status:', error);
+          // Fallback: Check for Alpaca funding only
           const { data: transfers } = await supabase
             .from('user_transfers')
             .select('amount, status')

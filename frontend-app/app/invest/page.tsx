@@ -132,18 +132,21 @@ export default function InvestPage() {
         const data = await response.json();
         const mode = data.portfolio_mode || 'brokerage';
         setPortfolioMode(mode);
-        // Trading is enabled only in brokerage or hybrid mode
-        setTradingEnabled(mode === 'brokerage' || mode === 'hybrid');
+        // PRODUCTION-GRADE: Trading is ALWAYS enabled with SnapTrade
+        // Aggregation mode users can trade via SnapTrade connected accounts
+        // Brokerage mode users can trade via Alpaca
+        // Hybrid mode users can trade via both
+        setTradingEnabled(true);
       } else {
-        // Default to disabled trading if API fails
+        // Default to enabled - let OrderModal handle account detection
         setPortfolioMode('aggregation');
-        setTradingEnabled(false);
+        setTradingEnabled(true);
       }
     } catch (error) {
       console.error('Error fetching portfolio mode:', error);
-      // Default to disabled trading on error
+      // Default to enabled trading - let OrderModal handle account detection
       setPortfolioMode('aggregation');
-      setTradingEnabled(false);
+      setTradingEnabled(true);
     }
   };
   
@@ -223,7 +226,9 @@ export default function InvestPage() {
   };
 
   const handleOpenModal = () => {
-    if (selectedSymbol && accountId && !isLoadingAccountId && !isLoadingBalance && tradingEnabled) {
+    // PRODUCTION-GRADE: Open modal if symbol is selected and trading is enabled
+    // Modal handles account selection and balance checks internally
+    if (selectedSymbol && tradingEnabled) {
       setIsModalOpen(true);
     }
   };
@@ -240,13 +245,15 @@ export default function InvestPage() {
     className?: string;
     disabled?: boolean;
   }) => {
+    // PRODUCTION-GRADE: Trading is always enabled with SnapTrade
+    // Modal handles account selection and balance checks
     if (tradingEnabled) {
       return (
         <Button 
           size={size} 
           className={className}
           onClick={handleOpenModal}
-          disabled={disabled || !accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
+          disabled={disabled}
         >
           {children}
         </Button>
@@ -542,27 +549,16 @@ export default function InvestPage() {
             </div>
             
             {/* Desktop Action Footer - Fixed at bottom (hidden when trading disabled) */}
+            {/* PRODUCTION-GRADE: Always show Invest button - modal handles account selection */}
             {selectedSymbol && tradingEnabled && (
               <div className="hidden lg:flex flex-shrink-0 bg-background border-t border-border p-4 items-center justify-between shadow-md">
                 <div className="text-left">
-                  {isLoadingBalance || isLoadingAccountId ? (
-                    <Skeleton className="h-6 w-32 mb-1" />
-                  ) : balanceError ? (
-                    <>
-                      <p className="text-lg font-bold text-amber-600">Account info unavailable</p>
-                      <p className="text-sm text-muted-foreground">Cash available</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-lg font-bold">{formatCurrency(availableBalance?.cash)}</p>
-                      <p className="text-sm text-muted-foreground">Cash available</p>
-                    </>
-                  )}
+                  <p className="text-lg font-bold">Select Brokerage Account</p>
+                  <p className="text-sm text-muted-foreground">Choose account in next step</p>
                 </div>
                 <LockedInvestButton 
                   size="lg" 
                   className="font-semibold text-lg px-8 py-3"
-                  disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
                 >
                   $ Invest
                 </LockedInvestButton>
@@ -570,27 +566,16 @@ export default function InvestPage() {
             )}
 
             {/* Mobile Action Footer - Sticky bottom positioning (hidden when trading disabled) */}
+            {/* PRODUCTION-GRADE: Always show Invest button - modal handles account selection */}
             {selectedSymbol && tradingEnabled && (
               <div className="lg:hidden sticky bottom-0 left-0 right-0 mt-auto bg-background border-t border-border p-3 flex items-center justify-between shadow-md z-10">
                 <div className="text-left min-w-0 flex-1">
-                  {isLoadingBalance || isLoadingAccountId ? (
-                    <Skeleton className="h-5 w-24 mb-1" />
-                  ) : balanceError ? (
-                    <>
-                      <p className="text-base font-bold text-amber-600">Account info unavailable</p>
-                      <p className="text-xs text-muted-foreground">Cash available</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-base font-bold">{formatCurrency(availableBalance?.cash)}</p>
-                      <p className="text-xs text-muted-foreground">Cash available</p>
-                    </>
-                  )}
+                  <p className="text-base font-bold">Select Account</p>
+                  <p className="text-xs text-muted-foreground">Choose in next step</p>
                 </div>
                 <LockedInvestButton 
                   size="default" 
                   className="font-semibold text-base px-6 py-2 ml-3 flex-shrink-0"
-                  disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
                 >
                   $ Invest
                 </LockedInvestButton>
@@ -600,8 +585,9 @@ export default function InvestPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Order Modal (only in brokerage mode) */}
-        {selectedSymbol && accountId && tradingEnabled && (
+        {/* Order Modal - works in both aggregation and brokerage mode */}
+        {/* PRODUCTION-GRADE: Modal handles account selection internally */}
+        {selectedSymbol && tradingEnabled && (
           <OrderModal 
               isOpen={isModalOpen} 
               onClose={handleCloseModal} 

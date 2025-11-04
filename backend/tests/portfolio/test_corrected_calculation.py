@@ -48,14 +48,14 @@ def create_mock_broker_client():
 
 def create_mock_portfolio_calculator():
     """Create a PortfolioCalculator with mocked dependencies."""
-from portfolio_realtime.portfolio_calculator import PortfolioCalculator
+    from portfolio_realtime.portfolio_calculator import PortfolioCalculator
 
     # Create calculator with test configuration
-        calc = PortfolioCalculator(
+    calc = PortfolioCalculator(
         broker_api_key='test_api_key',
         broker_secret_key='test_secret_key',
-            sandbox=True
-        )
+        sandbox=True
+    )
         
     # Replace the broker client with our mock
     calc.broker_client = create_mock_broker_client()

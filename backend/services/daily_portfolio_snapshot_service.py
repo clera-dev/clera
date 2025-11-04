@@ -193,19 +193,24 @@ class DailyPortfolioSnapshotService:
     async def _get_all_aggregation_users(self) -> List[str]:
         """
         Get all users in aggregation mode who need daily snapshots.
+        
+        Includes users with:
+        - Active Plaid connections (legacy)
+        - Active SnapTrade connections (current)
         """
         try:
             supabase = self._get_supabase_client()
             
-            # Get users with active Plaid connections
+            # Get all users with active aggregation connections (Plaid OR SnapTrade)
             result = supabase.table('user_investment_accounts')\
                 .select('user_id')\
-                .eq('provider', 'plaid')\
+                .in_('provider', ['plaid', 'snaptrade'])\
                 .eq('is_active', True)\
                 .execute()
             
             if result.data:
                 user_ids = list(set(row['user_id'] for row in result.data))
+                logger.info(f"📊 Found {len(user_ids)} aggregation users (Plaid + SnapTrade)")
                 return user_ids
             
             return []
@@ -248,14 +253,33 @@ class DailyPortfolioSnapshotService:
         
         Much simpler than reconstruction - just get current portfolio value
         and store as the next point in their historical timeline.
+        
+        CRITICAL: Uses live price enrichment to ensure accurate EOD values.
         """
         try:
-            # Get current portfolio data (uses existing aggregated holdings)
-            from utils.portfolio.aggregated_portfolio_service import get_aggregated_portfolio_service
-            service = get_aggregated_portfolio_service()
+            # Get aggregated holdings with LIVE price enrichment
+            supabase = self._get_supabase_client()
+            holdings_result = supabase.table('user_aggregated_holdings')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .execute()
             
-            # Get portfolio value
-            portfolio_value = await service.get_portfolio_value(user_id)
+            if not holdings_result.data:
+                return {
+                    'success': False,
+                    'user_id': user_id,
+                    'error': 'No holdings found'
+                }
+            
+            # Enrich with live prices using production-grade enrichment service
+            from utils.portfolio.live_enrichment_service import get_enrichment_service
+            from utils.portfolio.aggregated_calculations import calculate_portfolio_value
+            
+            enrichment_service = get_enrichment_service()
+            enriched_holdings = enrichment_service.enrich_holdings(holdings_result.data, user_id)
+            
+            # Calculate portfolio value from enriched holdings
+            portfolio_value = calculate_portfolio_value(enriched_holdings, user_id)
             current_value = portfolio_value.get('raw_value', 0)
             
             if current_value <= 0:
@@ -265,24 +289,26 @@ class DailyPortfolioSnapshotService:
                     'error': 'No portfolio value available'
                 }
             
-            # Get portfolio analytics for complete snapshot
-            analytics = await service.get_portfolio_analytics(user_id)
+            # Calculate cost basis and gain/loss from enriched holdings
+            total_cost_basis = sum(float(h.get('total_cost_basis', 0)) for h in enriched_holdings)
+            total_gain_loss = current_value - total_cost_basis
+            total_gain_loss_percent = (total_gain_loss / total_cost_basis * 100) if total_cost_basis > 0 else 0
             
             # Get account breakdown from aggregated holdings
             account_breakdown, institution_breakdown = await self._get_account_breakdown(user_id)
             
-            # Create EOD snapshot
+            # Create EOD snapshot with live-enriched data
             eod_snapshot = EODSnapshot(
                 user_id=user_id,
                 snapshot_date=datetime.now().date(),
                 total_value=current_value,
-                total_cost_basis=portfolio_value.get('raw_cost_basis', 0),
-                total_gain_loss=portfolio_value.get('raw_return', 0),
-                total_gain_loss_percent=portfolio_value.get('raw_return_percent', 0),
+                total_cost_basis=total_cost_basis,
+                total_gain_loss=total_gain_loss,
+                total_gain_loss_percent=total_gain_loss_percent,
                 account_breakdown=account_breakdown,
                 institution_breakdown=institution_breakdown,
-                securities_count=len(account_breakdown),  # Approximate
-                data_quality_score=100.0  # Assume full quality from Plaid
+                securities_count=len(enriched_holdings),
+                data_quality_score=100.0  # Full quality from live prices
             )
             
             # Store EOD snapshot (extends historical timeline)
@@ -453,17 +479,17 @@ class DailyPortfolioScheduler:
                 # Wait until target time
                 await asyncio.sleep(wait_seconds)
                 
-                # Check if it's a market day (skip weekends, holidays could be added)
-                if next_run.weekday() < 5:  # Monday=0, Friday=4
-                    logger.info(f"🌅 Starting scheduled EOD collection at {datetime.now(self.est_timezone).strftime('%Y-%m-%d %H:%M %Z')}")
-                    
-                    # Execute daily collection
-                    result = await self.snapshot_service.capture_all_users_eod_snapshots()
-                    
-                    logger.info(f"✅ Scheduled collection complete: {result.successful_snapshots} snapshots, "
-                               f"${result.total_portfolio_value:,.2f} total value")
-                else:
-                    logger.info("⏭️ Skipping EOD collection - market closed (weekend)")
+                # PRODUCTION-GRADE: Capture EOD snapshots EVERY DAY (including weekends)
+                # This ensures continuous portfolio history charts without gaps
+                # Weekend values will be the same as Friday's close (market is closed)
+                # but this maintains data continuity for charting purposes
+                logger.info(f"🌅 Starting scheduled EOD collection at {datetime.now(self.est_timezone).strftime('%Y-%m-%d %H:%M %Z')}")
+                
+                # Execute daily collection
+                result = await self.snapshot_service.capture_all_users_eod_snapshots()
+                
+                logger.info(f"✅ Scheduled collection complete: {result.successful_snapshots} snapshots, "
+                           f"${result.total_portfolio_value:,.2f} total value")
         
         except Exception as e:
             logger.error(f"❌ Daily scheduler error: {e}")

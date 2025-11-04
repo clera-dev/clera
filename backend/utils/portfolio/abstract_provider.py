@@ -42,6 +42,8 @@ class Position:
     security_type: str          # 'equity', 'bond', 'etf', 'mutual_fund', 'option', 'cash'
     security_name: Optional[str] = None  # Full security name
     price: Optional[Decimal] = None      # Current price per share
+    unrealized_pl: Optional[Decimal] = None  # Unrealized profit/loss
+    universal_symbol_id: Optional[str] = None  # SnapTrade universal symbol ID (for trading)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

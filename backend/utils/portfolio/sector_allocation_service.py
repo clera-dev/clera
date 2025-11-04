@@ -72,6 +72,7 @@ class SectorAllocationService:
         - Use FMP API to get sector data (same as Alpaca mode)
         - This gives clean sector breakdown focused on long equity positions
         - Supports account-level filtering for X-Ray Vision
+        - OPTIMIZATION: Implements 30-second response cache for performance
         
         Args:
             user_id: User ID to get aggregated holdings for
@@ -80,6 +81,13 @@ class SectorAllocationService:
         Returns:
             Sector allocation response dictionary
         """
+        # OPTIMIZATION: Check response cache first (30-second TTL)
+        cache_key = f"sector_allocation:plaid:{user_id}:{filter_account or 'total'}"
+        cached_response = self._get_cached_response(cache_key)
+        if cached_response:
+            logger.debug(f"✅ [Cache Hit] Returning cached sector allocation for user {user_id}")
+            return cached_response
+        
         try:
             # CRITICAL: Use AccountFilteringService for account-specific filtering
             from utils.portfolio.account_filtering_service import get_account_filtering_service
@@ -88,9 +96,14 @@ class SectorAllocationService:
             # Get filtered holdings (will return all holdings if filter_account is None)
             all_holdings = await filter_service.filter_holdings_by_account(user_id, filter_account)
             
+            # CRITICAL: Enrich with live prices for accurate sector allocation
+            from utils.portfolio.live_enrichment_service import get_enrichment_service
+            enrichment_service = get_enrichment_service()
+            enriched_holdings = enrichment_service.enrich_holdings(all_holdings, user_id)
+            
             # Filter to ONLY equity stocks and ETFs for sector allocation
             equity_holdings = [
-                h for h in all_holdings 
+                h for h in enriched_holdings 
                 if h.get('security_type') in ['equity', 'etf']
             ]
             
@@ -161,12 +174,18 @@ class SectorAllocationService:
             filter_msg = f", filter: {filter_account}" if filter_account else ""
             logger.info(f"Plaid sector allocation calculated for user {user_id}{filter_msg}: {len(sector_allocation_response)} sectors, total: ${total_portfolio_value}")
             
-            return {
+            response = {
                 'sectors': sector_allocation_response,
                 'total_portfolio_value': round(total_portfolio_value, 2),
                 'last_data_update_timestamp': datetime.now(timezone.utc).isoformat(),
                 'data_source': 'plaid_aggregated'
             }
+            
+            # OPTIMIZATION: Cache the response for 30 seconds
+            self._cache_response(cache_key, response, ttl_seconds=30)
+            logger.debug(f"💾 [Cache Set] Cached sector allocation for user {user_id}")
+            
+            return response
             
         except Exception as e:
             logger.error(f"Error calculating Plaid sector allocation for user {user_id}: {e}")
@@ -395,6 +414,43 @@ class SectorAllocationService:
         }
         
         return type_to_sector_mapping.get(security_type, 'Unknown')
+    
+    def _get_cached_response(self, cache_key: str) -> Dict[str, Any] | None:
+        """
+        Get cached response from Redis if available and not expired.
+        
+        Args:
+            cache_key: Redis cache key
+            
+        Returns:
+            Cached response dict or None if not found/expired
+        """
+        try:
+            redis_client = self._get_redis_client()
+            cached_json = redis_client.get(cache_key)
+            
+            if cached_json:
+                return json.loads(cached_json)
+            return None
+        except Exception as e:
+            logger.warning(f"Error reading from cache: {e}")
+            return None
+    
+    def _cache_response(self, cache_key: str, response: Dict[str, Any], ttl_seconds: int = 30) -> None:
+        """
+        Cache response in Redis with expiration.
+        
+        Args:
+            cache_key: Redis cache key
+            response: Response dictionary to cache
+            ttl_seconds: Time-to-live in seconds (default: 30)
+        """
+        try:
+            redis_client = self._get_redis_client()
+            response_json = json.dumps(response)
+            redis_client.setex(cache_key, ttl_seconds, response_json)
+        except Exception as e:
+            logger.warning(f"Error writing to cache: {e}")
     
     def _empty_sector_allocation_response(self, error: str = None) -> Dict[str, Any]:
         """

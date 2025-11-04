@@ -59,6 +59,8 @@ def calculate_portfolio_analytics(holdings_data: List[Dict[str, Any]], user_id: 
     """
     Calculate portfolio analytics from aggregated holdings data.
     
+    PRODUCTION-GRADE: Uses live market prices for accurate analytics.
+    
     Args:
         holdings_data: List of aggregated holdings from database
         user_id: User ID for logging
@@ -70,23 +72,32 @@ def calculate_portfolio_analytics(holdings_data: List[Dict[str, Any]], user_id: 
         return {"risk_score": "0.0", "diversification_score": "0.0"}
     
     try:
+        # CRITICAL: Enrich with live prices for accurate analytics
+        from utils.portfolio.live_enrichment_service import get_enrichment_service
+        enrichment_service = get_enrichment_service()
+        enriched_holdings = enrichment_service.enrich_holdings(holdings_data, user_id)
+        
         # Convert to PortfolioPosition objects
         portfolio_positions = []
         
-        for holding in holdings_data:
+        for holding in enriched_holdings:
             try:
+                # Use live-enriched market value and current price
+                total_market_value = float(holding.get('total_market_value', 0))
+                total_quantity = float(holding.get('total_quantity', 0))
+                
                 current_price = Decimal('0')
-                if holding.get('total_quantity', 0) > 0:
-                    current_price = Decimal(str(holding.get('total_market_value', 0))) / Decimal(str(holding.get('total_quantity', 1)))
+                if total_quantity > 0 and total_market_value > 0:
+                    current_price = Decimal(str(total_market_value)) / Decimal(str(total_quantity))
                 
                 # Import analytics components
                 from clera_agents.tools.portfolio_analysis import PortfolioPosition, PortfolioAnalyzer, PortfolioAnalyticsEngine
                 
                 position = PortfolioPosition(
                     symbol=holding['symbol'],
-                    quantity=Decimal(str(holding.get('total_quantity', 0))),
+                    quantity=Decimal(str(total_quantity)),
                     current_price=current_price,
-                    market_value=Decimal(str(holding.get('total_market_value', 0))),
+                    market_value=Decimal(str(total_market_value)),
                     cost_basis=Decimal(str(holding.get('total_cost_basis', 0))),
                     unrealized_pl=Decimal(str(holding.get('unrealized_gain_loss', 0))),
                     unrealized_plpc=None
@@ -104,8 +115,8 @@ def calculate_portfolio_analytics(holdings_data: List[Dict[str, Any]], user_id: 
             logger.warning(f"No valid positions created for analytics calculation for user {user_id}")
             return {"risk_score": "0.0", "diversification_score": "0.0"}
         
-        # Calculate analytics
-        logger.info(f"Calculating analytics for {len(portfolio_positions)} aggregated positions")
+        # Calculate analytics with live data
+        logger.info(f"Calculating analytics for {len(portfolio_positions)} aggregated positions (live-enriched)")
         
         risk_score = PortfolioAnalyticsEngine.calculate_risk_score(portfolio_positions)
         diversification_score = PortfolioAnalyticsEngine.calculate_diversification_score(portfolio_positions)
@@ -125,6 +136,8 @@ def calculate_asset_allocation(holdings_data: List[Dict[str, Any]], user_id: str
     """
     Calculate asset allocation from aggregated holdings data.
     
+    PRODUCTION-GRADE: Uses live market prices for accurate allocation.
+    
     Args:
         holdings_data: List of aggregated holdings from database
         user_id: User ID for logging
@@ -135,18 +148,23 @@ def calculate_asset_allocation(holdings_data: List[Dict[str, Any]], user_id: str
     if not holdings_data:
         return _empty_allocation_response()
     
-    # Map Plaid security types to asset categories
+    # CRITICAL: Enrich with live prices for accurate allocation
+    from utils.portfolio.live_enrichment_service import get_enrichment_service
+    enrichment_service = get_enrichment_service()
+    enriched_holdings = enrichment_service.enrich_holdings(holdings_data, user_id)
+    
+    # Map security types to asset categories
     allocations = {
         'cash': Decimal('0'),
         'stock': Decimal('0'),
         'bond': Decimal('0')
     }
     
-    for holding in holdings_data:
+    for holding in enriched_holdings:
         market_value = Decimal(str(holding.get('total_market_value', 0)))
         security_type = holding.get('security_type', 'equity')
         
-        # Intelligent classification based on Plaid security types
+        # Intelligent classification based on security types
         category = _classify_security_type(security_type, holding)
         allocations[category] += market_value
     

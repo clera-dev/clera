@@ -15,10 +15,12 @@ logger = logging.getLogger(__name__)
 class FeatureFlagKey(Enum):
     """Feature flag keys following naming convention from technical specifications."""
     BROKERAGE_MODE = "brokerage_mode"
-    AGGREGATION_MODE = "aggregation_mode" 
-    TRADE_EXECUTION = "trade_execution"
+    AGGREGATION_MODE = "aggregation_mode"
+    # REMOVED: TRADE_EXECUTION - Trade execution is account-based, not mode-based
     MULTI_ACCOUNT_ANALYTICS = "multi_account_analytics"
     PLAID_INVESTMENT_SYNC = "plaid_investment_sync"
+    SNAPTRADE_INVESTMENT_SYNC = "snaptrade_investment_sync"
+    # REMOVED: SNAPTRADE_TRADE_EXECUTION - Trade execution is always available based on connected accounts, not feature flags
     PORTFOLIO_INSIGHTS = "portfolio_insights"
 
 class FeatureFlags:
@@ -45,10 +47,7 @@ class FeatureFlags:
                 'FF_AGGREGATION_MODE', 
                 default='true'   # Default to aggregation mode for pivot
             ),
-            FeatureFlagKey.TRADE_EXECUTION.value: self._parse_bool_env(
-                'FF_TRADE_EXECUTION', 
-                default='false'  # Disabled during aggregation pivot
-            ),
+            # REMOVED: FF_TRADE_EXECUTION - Trade execution is account-based, not mode-based
             FeatureFlagKey.MULTI_ACCOUNT_ANALYTICS.value: self._parse_bool_env(
                 'FF_MULTI_ACCOUNT_ANALYTICS', 
                 default='true'   # Enable analytics for aggregated data
@@ -57,6 +56,11 @@ class FeatureFlags:
                 'FF_PLAID_INVESTMENT_SYNC', 
                 default='true'   # Enable Plaid data synchronization
             ),
+            FeatureFlagKey.SNAPTRADE_INVESTMENT_SYNC.value: self._parse_bool_env(
+                'FF_SNAPTRADE_INVESTMENT_SYNC',
+                default='true'   # Enable SnapTrade data synchronization
+            ),
+            # REMOVED: FF_SNAPTRADE_TRADE_EXECUTION - Trade execution is account-based, not flag-based
             FeatureFlagKey.PORTFOLIO_INSIGHTS.value: self._parse_bool_env(
                 'FF_PORTFOLIO_INSIGHTS', 
                 default='true'   # Enable portfolio insights features
