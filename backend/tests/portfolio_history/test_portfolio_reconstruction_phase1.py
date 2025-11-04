@@ -304,6 +304,18 @@ class TestDatabaseIntegration:
     @pytest.mark.asyncio
     async def test_database_schema_creation(self):
         """Test that database schema can be validated."""
+        # CRITICAL FIX: Skip test if Supabase credentials not configured (e.g., in CI)
+        # This prevents tests from failing out of the box when env vars are missing
+        import os
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not supabase_key:
+            pytest.skip(
+                "Skipping database integration test: SUPABASE_URL or "
+                "SUPABASE_SERVICE_ROLE_KEY not configured"
+            )
+        
         try:
             # Test database connection and table existence
             from utils.supabase.db_client import get_supabase_client

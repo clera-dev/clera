@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
     // Proxy to backend with authentication
     const backendUrl = process.env.BACKEND_API_URL || process.env.BACKEND_URL || 'http://localhost:8000';
     const backendApiKey = process.env.BACKEND_API_KEY;
-    const url = `${backendUrl}/api/portfolio/reconstruction/request?user_id=${user.id}&priority=${priority}`;
+    // CRITICAL FIX: Properly encode URL parameters to prevent injection and handle special characters
+    const url = `${backendUrl}/api/portfolio/reconstruction/request?user_id=${encodeURIComponent(user.id)}&priority=${encodeURIComponent(priority)}`;
     
     const headers: HeadersInit = {
       'Content-Type': 'application/json'

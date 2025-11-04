@@ -29,6 +29,9 @@ class PortfolioModeService:
     
     def __init__(self):
         self.feature_flags = get_feature_flags()
+        # CRITICAL FIX: Initialize supabase client for account checks
+        from utils.supabase.db_client import get_supabase_client
+        self.supabase = get_supabase_client()
     
     def get_user_portfolio_mode(self, user_id: str) -> PortfolioMode:
         """

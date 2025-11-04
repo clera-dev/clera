@@ -1999,7 +1999,7 @@ async def get_account_positions(
 # CRITICAL: Define specific route BEFORE parameterized route to avoid conflicts
 @app.get("/api/portfolio/aggregated/analytics", response_model=PortfolioAnalyticsResponse)
 async def get_aggregated_portfolio_analytics(
-    user_id: str = Query(..., description="User ID for analytics calculation"),
+    user_id: str = Depends(get_authenticated_user_id),
     filter_account: Optional[str] = Query(None, description="Filter to specific account UUID for account-level analytics"),
     api_key: str = Depends(verify_api_key)
 ):
@@ -2048,7 +2048,7 @@ async def get_aggregated_portfolio_analytics(
 @app.get("/api/portfolio/{account_id}/analytics", response_model=PortfolioAnalyticsResponse)
 async def get_portfolio_analytics(
     account_id: str,
-    user_id: str = Query(..., description="User ID for portfolio mode detection"),
+    user_id: str = Depends(get_authenticated_user_id),
     client = Depends(get_broker_client), # Original: client: BrokerClient
     api_key: str = Depends(verify_api_key) # Add authentication
 ):
@@ -2382,7 +2382,7 @@ async def cancel_order_for_account(
 @app.get("/api/portfolio/value")
 async def get_portfolio_value(
     accountId: str = Query(..., description="Account ID (Alpaca or aggregated)"),
-    user_id: str = Query(..., description="User ID for portfolio mode detection"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
     """
@@ -2634,7 +2634,7 @@ def get_sync_redis_client(): # Renamed from get_redis_client
 async def get_sector_allocation(
     request: Request, 
     account_id: str = Query(..., description="The account ID"),
-    user_id: str = Query(..., description="User ID for portfolio mode detection"),
+    user_id: str = Depends(get_authenticated_user_id),
     filter_account: Optional[str] = Query(None, description="Filter to specific account for account-level sector allocation"),
     api_key: str = Depends(verify_api_key)
 ):
@@ -2766,7 +2766,7 @@ async def get_sector_allocation(
 
 @app.post("/api/portfolio/reconstruction/request")
 async def request_portfolio_reconstruction(
-    user_id: str = Query(..., description="User ID for reconstruction"),
+    user_id: str = Depends(get_authenticated_user_id),
     priority: str = Query('normal', description="Priority: high, normal, low"),
     api_key: str = Depends(verify_api_key)
 ):
@@ -2792,7 +2792,7 @@ async def request_portfolio_reconstruction(
 
 @app.get("/api/portfolio/reconstruction/status")
 async def get_portfolio_reconstruction_status(
-    user_id: str = Query(..., description="User ID for status check"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
     """
@@ -3119,7 +3119,7 @@ async def get_live_tracking_status(
 
 @app.get("/api/portfolio/account-breakdown")
 async def get_portfolio_account_breakdown(
-    user_id: str = Query(..., description="User ID for account breakdown"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
     """
@@ -4445,7 +4445,7 @@ from utils.asset_classification import calculate_allocation, get_allocation_pie_
 async def get_cash_stock_bond_allocation(
     request: Request,
     account_id: str = Query(..., description="The account ID"),
-    user_id: str = Query(..., description="User ID for portfolio mode detection"),
+    user_id: str = Depends(get_authenticated_user_id),
     filter_account: Optional[str] = Query(None, description="Filter to specific account for account-level allocation"),
     api_key: str = Depends(verify_api_key)
 ):

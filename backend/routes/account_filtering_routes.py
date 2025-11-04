@@ -72,7 +72,7 @@ async def get_account_filtered_portfolio_data(
 @router.get("/{account_uuid}/asset-allocation")
 async def get_account_asset_allocation(
     account_uuid: str,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
     """
@@ -99,7 +99,7 @@ async def get_account_asset_allocation(
 @router.get("/{account_uuid}/sector-allocation")
 async def get_account_sector_allocation(
     account_uuid: str,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
     """

@@ -23,6 +23,11 @@ from utils.leader_election import LeaderElectionService
 logger = logging.getLogger(__name__)
 
 
+class LeadershipLostError(Exception):
+    """Exception raised when service loses leadership during execution."""
+    pass
+
+
 class BackgroundServiceConfig:
     """Configuration for background service with leader election."""
     
@@ -84,7 +89,7 @@ class BackgroundServiceManager:
         This method:
         1. Retries becoming leader until success (with jitter)
         2. Monitors leadership status continuously
-        3. Stops immediately if leadership is lost
+        3. Retries becoming leader if leadership is lost (handles transient failures)
         4. Handles graceful shutdown
         
         Args:
@@ -95,22 +100,46 @@ class BackgroundServiceManager:
         """
         leader_service = LeaderElectionService(leader_key=config.leader_key)
         
-        # Phase 1: Retry until we become leader
-        await self._retry_until_leader(leader_service, config)
-        
-        # Phase 2: Start heartbeat
-        heartbeat_task = asyncio.create_task(leader_service.start_heartbeat())
-        
-        try:
-            # Phase 3: Run service with continuous monitoring
-            await self._run_with_monitoring(
-                leader_service,
-                config,
-                heartbeat_task
-            )
-        finally:
-            # Phase 4: Cleanup
-            await self._cleanup(leader_service, heartbeat_task, config.service_name)
+        # CRITICAL FIX: Continuous loop that retries on leadership loss
+        # This handles transient network issues, Redis failures, etc.
+        while True:
+            heartbeat_task = None
+            try:
+                # Phase 1: Retry until we become leader
+                await self._retry_until_leader(leader_service, config)
+                
+                # Phase 2: Start heartbeat
+                heartbeat_task = asyncio.create_task(leader_service.start_heartbeat())
+                
+                # Phase 3: Run service with continuous monitoring
+                await self._run_with_monitoring(
+                    leader_service,
+                    config,
+                    heartbeat_task
+                )
+                # If service completes normally, exit loop (unlikely for long-running services)
+                await self._cleanup(leader_service, heartbeat_task, config.service_name)
+                break
+            except LeadershipLostError:
+                # Leadership lost - cleanup and retry becoming leader
+                logger.warning(
+                    f"⚠️  {config.service_name} lost leadership, "
+                    f"will retry becoming leader..."
+                )
+                if heartbeat_task:
+                    await self._cleanup(leader_service, heartbeat_task, config.service_name)
+                # Create new leader service instance for retry
+                leader_service = LeaderElectionService(leader_key=config.leader_key)
+                # Small delay before retry to avoid thundering herd
+                await asyncio.sleep(config.retry_interval)
+                # Continue loop to retry becoming leader
+                continue
+            except asyncio.CancelledError:
+                # Shutdown signal - exit gracefully
+                logger.info(f"{config.service_name} cancelled during leader election")
+                if heartbeat_task:
+                    await self._cleanup(leader_service, heartbeat_task, config.service_name)
+                raise
     
     async def _retry_until_leader(
         self,
@@ -196,9 +225,9 @@ class BackgroundServiceManager:
                 
                 # Check if we're still the leader
                 if not leader_service.is_leader:
-                    logger.error(
+                    logger.warning(
                         f"⚠️  {config.service_name} LOST LEADERSHIP! "
-                        f"Stopping immediately"
+                        f"Stopping service and will retry becoming leader"
                     )
                     
                     # Cancel the service
@@ -208,7 +237,9 @@ class BackgroundServiceManager:
                     except asyncio.CancelledError:
                         pass
                     
-                    raise Exception(
+                    # CRITICAL FIX: Raise custom exception instead of generic Exception
+                    # This allows the outer loop to catch it and retry becoming leader
+                    raise LeadershipLostError(
                         f"{config.service_name} lost leadership - "
                         f"another task is now leader"
                     )
