@@ -42,6 +42,9 @@ from langgraph_supervisor import create_supervisor
 from langgraph.prebuilt import create_react_agent
 from langgraph.types import interrupt
 
+# Import optimized agent implementation for parallel tool execution
+from clera_agents.optimized_agent import create_optimized_react_agent
+
 # Import embeddings function from openAI
 #from ...
 
@@ -185,7 +188,7 @@ trade_llm = ChatAnthropic(
 
 current_datetime = datetime.now(timezone.utc).strftime('%A, %B %d, %Y at %I:%M %p UTC')
 
-financial_analyst_agent = create_react_agent(
+financial_analyst_agent = create_optimized_react_agent(
     model=financial_analyst_llm,
     tools=financial_analyst_tools,
     prompt=f"""You are an expert financial analyst specializing in equity research and market analysis. Today is {current_datetime}.
@@ -277,7 +280,7 @@ Focus on delivering professional-grade analysis that institutional investors wou
     state_schema=State
 )
 
-portfolio_management_agent = create_react_agent(
+portfolio_management_agent = create_optimized_react_agent(
     model=rebalance_llm,
     tools=portfolio_management_tools,
     prompt=f"""You are a portfolio management specialist focusing on the user's specific investment account. Today is {current_datetime}.
@@ -433,7 +436,7 @@ Focus on personalized portfolio management that considers their unique financial
     state_schema=State
 )
 
-trade_execution_agent = create_react_agent(
+trade_execution_agent = create_optimized_react_agent(
     model=trade_llm,
     tools=trade_execution_tools,
     prompt='''You are a trade execution assistant. Today's date and time is {}. 
