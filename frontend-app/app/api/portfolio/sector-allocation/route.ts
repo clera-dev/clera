@@ -34,14 +34,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
     }
 
-    // CRITICAL FIX: Pass user_id to backend for portfolio mode detection
+    // PRODUCTION-GRADE: Pass user_id AND JWT token to backend
     const targetUrl = `${backendUrl}/api/portfolio/sector-allocation?account_id=${account_id}&user_id=${encodeURIComponent(user.id)}`;
     console.log(`Proxying sector allocation request to: ${targetUrl}`);
+    
+    // Get session for JWT token
+    const session = await supabase.auth.getSession();
+    
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
-    // Add API key if available (for authenticated backend requests)
+    // CRITICAL: Add JWT token for user authentication
+    if (session.data.session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.data.session.access_token}`;
+    }
+
+    // Add API key for service authentication
     if (backendApiKey) {
       headers['X-API-Key'] = backendApiKey;
     }

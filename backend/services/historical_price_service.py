@@ -198,9 +198,12 @@ class HistoricalPriceService:
                 if result.data and len(result.data) > 0:
                     # Convert to PriceDataPoint objects
                     data_points = []
+                    cached_dates = set()
                     for row in result.data:
+                        row_date = datetime.fromisoformat(row['price_date']).date()
+                        cached_dates.add(row_date)
                         data_points.append(PriceDataPoint(
-                            date=datetime.fromisoformat(row['price_date']).date(),
+                            date=row_date,
                             open_price=float(row['open_price']) if row['open_price'] else None,
                             high_price=float(row['high_price']) if row['high_price'] else None,
                             low_price=float(row['low_price']) if row['low_price'] else None,
@@ -209,15 +212,32 @@ class HistoricalPriceService:
                             adjusted_close=float(row['adjusted_close']) if row['adjusted_close'] else None
                         ))
                     
-                    cached_results[symbol] = HistoricalPriceResult(
-                        symbol=symbol,
-                        start_date=start_date,
-                        end_date=end_date,
-                        data_points=data_points,
-                        success=True,
-                        cache_hit=True
-                    )
-                    self.cache_hits += 1
+                    # FIX: Only mark as cache hit if we have full coverage of the date range
+                    # Check if all dates in range are present (accounting for weekends/holidays)
+                    from datetime import timedelta
+                    expected_dates = set()
+                    current_date = start_date
+                    while current_date <= end_date:
+                        # Skip weekends (Saturday=5, Sunday=6)
+                        if current_date.weekday() < 5:
+                            expected_dates.add(current_date)
+                        current_date += timedelta(days=1)
+                    
+                    # Cache is complete if we have all expected trading days
+                    if cached_dates >= expected_dates:
+                        cached_results[symbol] = HistoricalPriceResult(
+                            symbol=symbol,
+                            start_date=start_date,
+                            end_date=end_date,
+                            data_points=data_points,
+                            success=True,
+                            cache_hit=True
+                        )
+                        self.cache_hits += 1
+                    else:
+                        # Partial cache - still need to fetch missing dates
+                        uncached_symbols.append(symbol)
+                        self.cache_misses += 1
                 else:
                     uncached_symbols.append(symbol)
                     self.cache_misses += 1
@@ -389,14 +409,31 @@ class HistoricalPriceService:
                     price_records.append(price_record)
             
             if price_records:
-                # Batch insert with conflict resolution (ignore duplicates)
-                # Note: on_conflict now includes price_timestamp to match new unique constraint
-                # For EOD data (price_timestamp=NULL), this works correctly
-                supabase.table('global_historical_prices')\
-                    .upsert(price_records, on_conflict='fmp_symbol,price_date,price_timestamp')\
-                    .execute()
+                # FIX: Handle EOD data (NULL timestamp) separately from intraday data
+                # PostgreSQL's unique constraint with NULL values requires special handling
+                # The partial unique indexes (idx_historical_prices_eod_unique) handle EOD data
+                # but Supabase upsert may not recognize them correctly
                 
-                logger.info(f"💾 Stored {len(price_records)} price data points permanently")
+                # Separate EOD and intraday records
+                eod_records = [r for r in price_records if r.get('price_timestamp') is None]
+                intraday_records = [r for r in price_records if r.get('price_timestamp') is not None]
+                
+                # Upsert EOD data using partial unique index (fmp_symbol, price_date WHERE price_timestamp IS NULL)
+                if eod_records:
+                    # For EOD data, use fmp_symbol + price_date for conflict resolution
+                    # The partial unique index will enforce uniqueness
+                    supabase.table('global_historical_prices')\
+                        .upsert(eod_records, on_conflict='fmp_symbol,price_date')\
+                        .execute()
+                
+                # Upsert intraday data using full unique constraint
+                if intraday_records:
+                    supabase.table('global_historical_prices')\
+                        .upsert(intraday_records, on_conflict='fmp_symbol,price_date,price_timestamp')\
+                        .execute()
+                
+                logger.info(f"💾 Stored {len(price_records)} price data points permanently "
+                          f"({len(eod_records)} EOD, {len(intraday_records)} intraday)")
             
         except Exception as e:
             logger.error(f"Error storing price data: {e}")

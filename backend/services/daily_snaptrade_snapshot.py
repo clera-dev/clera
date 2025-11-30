@@ -220,9 +220,11 @@ class DailySnapTradeSnapshotService:
             start_date = today - timedelta(days=lookback_days)
             
             # Get existing snapshots in this period
+            # FIX: Filter by snapshot_type='daily_eod' to avoid treating reconstructed rows as coverage
             result = supabase.table('user_portfolio_history')\
                 .select('value_date')\
                 .eq('user_id', user_id)\
+                .eq('snapshot_type', 'daily_eod')\
                 .gte('value_date', start_date.isoformat())\
                 .lte('value_date', today.isoformat())\
                 .execute()

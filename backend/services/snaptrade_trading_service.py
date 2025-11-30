@@ -14,7 +14,6 @@ Follows SOLID principles and SnapTrade best practices.
 import os
 import logging
 from typing import Dict, Any, Optional, List
-from decimal import Decimal
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -177,7 +176,8 @@ class SnapTradeTradingService:
             logger.info(f"Checking order impact: {action} {symbol} via account {account_id}")
             
             # Call SnapTrade order impact API
-            # CRITICAL FIX: Removed trading_session parameter (not in SDK)
+            # PRODUCTION-GRADE: Convert Decimal to float to match SDK signature
+            # SDK expects: notional_value: Union[str, int, float, NoneType]
             response = self.client.trading.get_order_impact(
                 user_id=credentials['snaptrade_user_id'],
                 user_secret=credentials['snaptrade_user_secret'],
@@ -186,7 +186,7 @@ class SnapTradeTradingService:
                 universal_symbol_id=universal_symbol_id,
                 order_type=order_type,
                 time_in_force=time_in_force,
-                notional_value=Decimal(str(notional_value)) if notional_value else None,
+                notional_value=float(notional_value) if notional_value else None,
                 units=units,
                 price=price,
                 stop=stop
@@ -306,7 +306,8 @@ class SnapTradeTradingService:
                 
                 logger.info(f"Force placing order: {action} {symbol} via account {account_id}")
                 
-                # CRITICAL FIX: Removed trading_session parameter (not in SDK)
+                # PRODUCTION-GRADE: Convert to float to match SDK signature exactly
+                # SDK expects: notional_value: Union[str, int, float, NoneType]
                 response = self.client.trading.place_force_order(
                     user_id=credentials['snaptrade_user_id'],
                     user_secret=credentials['snaptrade_user_secret'],
@@ -315,7 +316,7 @@ class SnapTradeTradingService:
                     universal_symbol_id=universal_symbol_id,
                     order_type=order_type,
                     time_in_force=time_in_force,
-                    notional_value=Decimal(str(notional_value)) if notional_value else None,
+                    notional_value=float(notional_value) if notional_value else None,
                     units=units,
                     price=price,
                     stop=stop

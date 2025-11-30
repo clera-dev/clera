@@ -75,8 +75,12 @@ async function acquireLock(lockKey: string, ttlSeconds: number): Promise<boolean
       ex: ttlSeconds
     });
     return result === 'OK';
-  } catch (redisError) {
-    console.warn(`Redis lock acquisition failed for ${lockKey}:`, redisError);
+  } catch (redisError: any) {
+    // PRODUCTION-GRADE: Only log Redis errors if they're not connection issues
+    // Connection errors are expected if Redis is down and don't need noisy logging
+    if (redisError?.code !== 'ENOTFOUND' && redisError?.code !== 'ECONNREFUSED') {
+      console.warn(`Redis lock acquisition failed for ${lockKey}:`, redisError);
+    }
     // ARCHITECTURAL FIX: Treat Redis connectivity failures as unlocked state
     // This prevents silent failures that leave data stale when Redis is down
     // Instead of blocking refresh, we allow it to proceed when Redis is unavailable
@@ -88,8 +92,12 @@ async function acquireLock(lockKey: string, ttlSeconds: number): Promise<boolean
 async function releaseLock(lockKey: string): Promise<void> {
   try {
     await redisClient.del(lockKey);
-  } catch (redisError) {
-    console.warn(`Redis lock release failed for ${lockKey}:`, redisError);
+  } catch (redisError: any) {
+    // PRODUCTION-GRADE: Only log Redis errors if they're not connection issues
+    // Connection errors are expected if Redis is down and don't need noisy logging
+    if (redisError?.code !== 'ENOTFOUND' && redisError?.code !== 'ECONNREFUSED') {
+      console.warn(`Redis lock release failed for ${lockKey}:`, redisError);
+    }
     // Don't throw - lock will expire automatically
   }
 }
@@ -100,8 +108,11 @@ async function triggerCacheRefresh(): Promise<void> {
   let lastRefreshTimeStr: string | null = null;
   try {
     lastRefreshTimeStr = await redisClient.get(WATCHLIST_LAST_REFRESH) as string | null;
-  } catch (redisError) {
-    console.warn('Redis read error for last refresh time:', redisError);
+  } catch (redisError: any) {
+    // PRODUCTION-GRADE: Only log Redis errors if they're not connection issues
+    if (redisError?.code !== 'ENOTFOUND' && redisError?.code !== 'ECONNREFUSED') {
+      console.warn('Redis read error for last refresh time:', redisError);
+    }
     // Continue without cache check
   }
   
@@ -126,8 +137,11 @@ async function triggerCacheRefresh(): Promise<void> {
     // Update the last refresh time
     try {
       await redisClient.set(WATCHLIST_LAST_REFRESH, now.toString());
-    } catch (redisError) {
-      console.warn('Failed to update last refresh time in Redis:', redisError);
+    } catch (redisError: any) {
+      // PRODUCTION-GRADE: Only log Redis errors if they're not connection issues
+      if (redisError?.code !== 'ENOTFOUND' && redisError?.code !== 'ECONNREFUSED') {
+        console.warn('Failed to update last refresh time in Redis:', redisError);
+      }
       // Continue with cache refresh even if Redis write fails
     }
     
@@ -173,19 +187,41 @@ async function triggerCacheRefresh(): Promise<void> {
     
     console.log(`Manually triggering watchlist news cache refresh via ${cronUrl}`);
     
-    const response = await fetch(cronUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${cronSecret}`
+    // PRODUCTION-GRADE: Add timeout to prevent hanging requests
+    // The cron job can take 5+ minutes, so we fire-and-forget and don't wait
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    try {
+      const response = await fetch(cronUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${cronSecret}`
+        },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to trigger cache refresh: ${response.status} ${response.statusText} - ${errorText}`);
       }
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to trigger cache refresh: ${response.status} ${response.statusText} - ${errorText}`);
+      
+      console.log('Watchlist news cache refresh triggered successfully');
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      
+      // If it's a timeout, that's OK - the cron job is running in background
+      if (error.name === 'AbortError') {
+        console.log('Cache refresh request sent (fire-and-forget). Cron job will complete in background.');
+        return; // Success - job is running
+      }
+      
+      // Other errors should be logged but not thrown
+      console.warn('Cache refresh request failed, but cron job may still be running:', error.message);
+      return; // Don't throw - allow request to continue
     }
-    
-    console.log('Watchlist news cache refresh triggered successfully');
   } catch (error) {
     console.error('Error triggering watchlist news cache refresh:', error);
     // We don't throw here, as we still want to return whatever is in the cache

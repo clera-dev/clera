@@ -130,7 +130,7 @@ export default function InvestPage() {
       const response = await fetch('/api/portfolio/connection-status');
       if (response.ok) {
         const data = await response.json();
-        const mode = data.portfolio_mode || 'brokerage';
+        const mode = data.portfolio_mode || 'aggregation';
         setPortfolioMode(mode);
         // PRODUCTION-GRADE: Trading is ALWAYS enabled with SnapTrade
         // Aggregation mode users can trade via SnapTrade connected accounts
@@ -138,28 +138,40 @@ export default function InvestPage() {
         // Hybrid mode users can trade via both
         setTradingEnabled(true);
       } else {
-        // Default to enabled - let OrderModal handle account detection
+        // Default to aggregation mode - most users use SnapTrade now
+        // Let OrderModal handle account detection
+        console.log('Portfolio connection-status returned non-OK, defaulting to aggregation mode');
         setPortfolioMode('aggregation');
         setTradingEnabled(true);
       }
     } catch (error) {
       console.error('Error fetching portfolio mode:', error);
-      // Default to enabled trading - let OrderModal handle account detection
+      // Default to aggregation mode - most users use SnapTrade now
+      // Let OrderModal handle account detection
       setPortfolioMode('aggregation');
       setTradingEnabled(true);
     }
   };
   
+  // Fetch portfolio mode on mount
+  useEffect(() => {
+    fetchPortfolioMode();
+  }, []);
+  
+  // Fetch account ID after portfolio mode is determined
   useEffect(() => {
     const fetchAndSetAccountId = async () => {
-      if (!tradingEnabled) {
-        // Skip Alpaca account setup in aggregation mode (saves unnecessary API calls)
+      // PRODUCTION-GRADE: With SnapTrade, we don't need Alpaca account in aggregation mode
+      // Skip Alpaca setup entirely for aggregation users
+      if (portfolioMode === 'aggregation') {
         setIsLoadingAccountId(false);
-        setAccountId(null);
-        setAvailableBalance(null);
+        setAccountId(null);  // No Alpaca account needed
+        setAvailableBalance(null);  // OrderModal fetches SnapTrade accounts
+        setBalanceError(null);  // Clear any errors
         return;
       }
 
+      // Only fetch Alpaca account for brokerage/hybrid mode
       setIsLoadingAccountId(true);
       setBalanceError(null);
       try {
@@ -167,7 +179,7 @@ export default function InvestPage() {
         if (fetchedAccountId) {
           setAccountId(fetchedAccountId);
         } else {
-          console.warn("Alpaca Account ID not found. Cannot fetch balance or place trades.");
+          console.warn("Alpaca Account ID not found for brokerage mode.");
           setBalanceError("Alpaca account ID not found. Please complete onboarding or check your connection.");
         }
       } catch (error) {
@@ -178,13 +190,11 @@ export default function InvestPage() {
       }
     };
 
-    fetchPortfolioMode();  // Always fetch mode first to set tradingEnabled
-    
     // Only fetch account ID after portfolio mode is determined
     if (portfolioMode !== 'loading') {
       fetchAndSetAccountId();
     }
-  }, [portfolioMode, tradingEnabled]);
+  }, [portfolioMode]);
 
   useEffect(() => {
     if (!accountId || isLoadingAccountId || !tradingEnabled) return;
@@ -346,7 +356,9 @@ export default function InvestPage() {
     );
   }
 
-  if (!accountId && balanceError) {
+  // PRODUCTION-GRADE: Only show account error for brokerage mode
+  // Aggregation mode users don't need Alpaca accounts - they use SnapTrade
+  if (!accountId && balanceError && portfolioMode === 'brokerage') {
      return (
         <div className="flex items-center justify-center h-full p-4">
             <Alert variant="destructive" className="max-w-md">

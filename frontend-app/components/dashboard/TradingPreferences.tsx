@@ -18,30 +18,18 @@ export default function TradingPreferences() {
   useEffect(() => {
     const fetchPreference = async () => {
       try {
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          console.error('No session found');
-          setIsLoading(false);
-          return;
-        }
-
-        // Use backend URL from environment variable
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-        const apiKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY || 'clera-is-the-goat-tok8s825nvjdk0482mc6';
-        
-        const response = await fetch(`${backendUrl}/api/user/preferences`, {
+        // SECURITY FIX: Proxy through Next.js API route (server-side handles auth)
+        const response = await fetch('/api/user/preferences', {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-            'X-API-Key': apiKey,
           },
         });
         const data = await response.json();
         
         if (data.success) {
           setBuyingPowerDisplay(data.preferences.buying_power_display);
+        } else if (data.error) {
+          console.error('Error fetching preferences:', data.error);
         }
       } catch (error) {
         console.error('Error fetching preferences:', error);
@@ -67,16 +55,11 @@ export default function TradingPreferences() {
         return;
       }
 
-      // Use backend URL from environment variable
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-      const apiKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY || 'clera-is-the-goat-tok8s825nvjdk0482mc6';
-      
-      const response = await fetch(`${backendUrl}/api/user/preferences/buying-power`, {
+      // SECURITY FIX: Proxy through Next.js API route (server-side handles API key)
+      const response = await fetch('/api/user/preferences/buying-power', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'X-API-Key': apiKey,
         },
         body: JSON.stringify({
           buying_power_display: value

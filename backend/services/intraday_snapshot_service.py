@@ -81,7 +81,14 @@ class IntradaySnapshotService:
         if last_time is None:
             return True
         
-        elapsed = (datetime.now() - last_time).total_seconds()
+        # FIX: Use timezone-aware datetime.now() to match last_time
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        if last_time.tzinfo is None:
+            # If last_time is naive, assume it's UTC
+            last_time = last_time.replace(tzinfo=timezone.utc)
+        
+        elapsed = (now - last_time).total_seconds()
         return elapsed >= self.snapshot_interval
     
     async def create_snapshot(self, user_id: str, portfolio_value: float, 

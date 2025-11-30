@@ -461,19 +461,69 @@ class PortfolioDataProvider:
             if not result.data:
                 return []
             
+            # Batch lookup symbol mappings for all security_ids
+            security_ids = [txn.get('security_id') for txn in result.data if txn.get('security_id')]
+            symbol_mapping = {}
+            
+            if security_ids:
+                try:
+                    mapping_result = self.supabase.table('global_security_symbol_mappings')\
+                        .select('plaid_security_id, fmp_symbol')\
+                        .in_('plaid_security_id', security_ids)\
+                        .not_.is_('fmp_symbol', 'null')\
+                        .execute()
+                    
+                    if mapping_result.data:
+                        symbol_mapping = {
+                            row['plaid_security_id']: row['fmp_symbol']
+                            for row in mapping_result.data
+                        }
+                except Exception as e:
+                    logger.warning(f"[PortfolioDataProvider] Error fetching symbol mappings: {e}")
+            
             # Convert to standardized format
             activities = []
+            unmapped_count = 0
             for txn in result.data:
+                security_id = txn.get('security_id')
+                
+                # Determine symbol: prefer existing symbol field, then mapped symbol, then handle cash/unknown
+                symbol = txn.get('symbol')  # Check if symbol already exists in transaction
+                
+                if not symbol and security_id:
+                    # Look up mapped symbol from security_id
+                    symbol = symbol_mapping.get(security_id)
+                    
+                    if not symbol:
+                        # No mapping found - this is a problem for downstream symbol-based logic
+                        unmapped_count += 1
+                        logger.debug(
+                            f"[PortfolioDataProvider] No symbol mapping for security_id: {security_id}, "
+                            f"transaction: {txn.get('name', 'Unknown')}"
+                        )
+                        # Use None for unmapped securities (downstream should handle gracefully)
+                        symbol = None
+                
+                # Handle cash transactions (no security_id)
+                if not symbol and not security_id:
+                    symbol = 'CASH'
+                
                 activities.append({
                     'date': txn.get('date'),
                     'type': txn.get('type', 'transaction'),
-                    'symbol': txn.get('security_id', 'UNKNOWN'),
+                    'symbol': symbol,  # Now properly mapped symbol or None/CASH
                     'description': f"{txn.get('type', 'Transaction')} - {txn.get('name', 'Investment Transaction')}",
                     'quantity': abs(Decimal(str(txn.get('quantity', 0)))),
                     'price': Decimal(str(txn.get('price', 0))),
                     'amount': Decimal(str(txn.get('amount', 0))),
                     'source': 'plaid'
                 })
+            
+            if unmapped_count > 0:
+                logger.warning(
+                    f"[PortfolioDataProvider] {unmapped_count}/{len(activities)} transactions "
+                    f"have unmapped security_ids - symbol-based logic may be affected"
+                )
             
             logger.info(f"[PortfolioDataProvider] Fetched {len(activities)} Plaid transactions")
             return activities

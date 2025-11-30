@@ -102,9 +102,10 @@ class TradeRoutingService:
             account_id = acc.get('account_id', '')
             
             if account_id.startswith('snaptrade_'):
-                # Check if this account has trade permission
+                # SECURITY: Check if this account has trade permission AND belongs to user
                 account_info = supabase.table('user_investment_accounts')\
                     .select('*')\
+                    .eq('user_id', user_id)\
                     .eq('provider_account_id', account_id.replace('snaptrade_', ''))\
                     .eq('provider', 'snaptrade')\
                     .eq('connection_type', 'trade')\

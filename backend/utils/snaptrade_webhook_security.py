@@ -29,8 +29,9 @@ def verify_webhook_signature(payload: Dict[str, Any], signature: str) -> bool:
         webhook_secret = os.getenv('SNAPTRADE_WEBHOOK_SECRET')
         
         if not webhook_secret:
-            logger.warning("⚠️ SNAPTRADE_WEBHOOK_SECRET not set - skipping signature verification")
-            return True  # Allow in dev, but log warning
+            logger.error("❌ CRITICAL: SNAPTRADE_WEBHOOK_SECRET not set - rejecting webhook for security")
+            # SECURITY FIX: Fail closed - never allow webhooks without verification
+            return False
         
         # Convert payload to JSON string (SnapTrade sends it as JSON)
         import json

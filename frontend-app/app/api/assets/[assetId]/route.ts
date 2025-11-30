@@ -40,16 +40,25 @@ export async function GET(
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    // CRITICAL FIX: Include user_id parameter for Plaid security lookups
-    const backendUrl = user 
-      ? `${BACKEND_URL}/api/assets/${encodeURIComponent(assetIdOrSymbol)}?user_id=${encodeURIComponent(user.id)}`
-      : `${BACKEND_URL}/api/assets/${encodeURIComponent(assetIdOrSymbol)}`;
+    // SECURITY FIX: User ID now comes from JWT token in Authorization header, not query params
+    // Backend will extract user_id from authenticated JWT token
+    const backendUrl = `${BACKEND_URL}/api/assets/${encodeURIComponent(assetIdOrSymbol)}`;
+
+    // Get JWT token from session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      'x-api-key': BACKEND_API_KEY,
+    };
+    
+    // Add JWT token if available
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
 
     const response = await fetch(backendUrl, {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': BACKEND_API_KEY,
-      },
+      headers,
       cache: 'no-store',
     });
 

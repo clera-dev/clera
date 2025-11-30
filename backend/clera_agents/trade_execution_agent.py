@@ -302,6 +302,8 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         
         # Place order using SnapTrade
         logger.info(f"[Trade Agent] Placing {action} order via SnapTrade for {ticker}")
+        # CRITICAL FIX: notional_value must be float/int/str, NOT a dict
+        # SDK signature: notional_value: Union[str, int, float, NoneType]
         order_response = snaptrade_client.trading.place_force_order(
             account_id=clean_account_id,
             user_id=snaptrade_user_id,
@@ -310,7 +312,7 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
             order_type="Market",
             time_in_force="Day",
             universal_symbol_id=universal_symbol_id,
-            notional_value={"amount": notional_amount, "currency": "USD"}
+            notional_value=float(notional_amount)  # Must be float, not dict
         )
         
         # Store order in database

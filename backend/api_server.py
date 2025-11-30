@@ -211,6 +211,7 @@ async def lifespan(app: FastAPI):
     from services.intraday_portfolio_tracker import get_intraday_portfolio_tracker
     from services.daily_portfolio_snapshot_service import DailyPortfolioScheduler
     
+    bg_manager = None
     try:
         bg_manager = get_background_service_manager()
         
@@ -237,6 +238,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"❌ Failed to configure background services: {e}")
         startup_errors.append(f"Background services configuration failed: {str(e)}")
+        bg_manager = None
     
     # ═══════════════════════════════════════════════════════════════════════
     
@@ -248,8 +250,14 @@ async def lifespan(app: FastAPI):
     # Shutdown logic
     logger.info("Shutting down API server...")
     
-    # Gracefully shutdown all background services
+    # Gracefully shutdown all background services (if initialized)
+    if bg_manager is not None:
+        try:
     await bg_manager.shutdown_all()
+        except Exception as e:
+            logger.error(f"Error shutting down background services: {e}")
+    else:
+        logger.warning("Background service manager was not initialized - skipping shutdown")
 
 # Create FastAPI app with lifespan
 app = FastAPI(
@@ -1871,7 +1879,7 @@ def get_trading_client():
 @app.get("/api/portfolio/{account_id}/history", response_model=PortfolioHistoryResponse)
 async def get_portfolio_history(
     account_id: str,
-    user_id: Optional[str] = Query(None, description="User ID for portfolio mode detection"),
+    request: Request,
     period: Optional[str] = '1M',
     filter_account: Optional[str] = Query(None, description="Filter to specific account UUID for account-specific view"),
     timeframe: Optional[str] = None,
@@ -1883,21 +1891,41 @@ async def get_portfolio_history(
     broker_client = Depends(get_broker_client), # Use BrokerClient instead of TradingClient
     api_key: str = Depends(verify_api_key)
 ):
+    # SECURITY FIX: Get user_id from authentication only (not from query params)
+    # For aggregation mode, user_id is required. For brokerage mode, account_id is sufficient.
+    authenticated_user_id = None
+    try:
+        auth_header = request.headers.get("Authorization")
+        authenticated_user_id = get_authenticated_user_id(request, api_key, auth_header)
+    except HTTPException:
+        # No authenticated user - this is OK for brokerage mode (uses account_id)
+        # Aggregation mode will not work without authentication
+        pass
+    
     # CRITICAL FIX: Portfolio mode aware history
-    if user_id:
+    if authenticated_user_id:
         feature_flags = get_feature_flags()
-        portfolio_mode = feature_flags.get_portfolio_mode(user_id)
+        portfolio_mode = feature_flags.get_portfolio_mode(authenticated_user_id)
         
-        logger.info(f"Portfolio history request for user {user_id}, account {account_id}, mode: {portfolio_mode}")
+        logger.info(f"Portfolio history request for user {authenticated_user_id}, account {account_id}, mode: {portfolio_mode}")
         
         # Handle aggregation mode - construct history from snapshots
         if portfolio_mode == 'aggregation':
             if filter_account:
-                logger.info(f"Aggregation mode: Building account-specific portfolio history for user {user_id}, account {filter_account}")
+                logger.info(f"Aggregation mode: Building account-specific portfolio history for user {authenticated_user_id}, account {filter_account}")
             else:
-                logger.info(f"Aggregation mode: Building portfolio history from snapshots for user {user_id}")
+                logger.info(f"Aggregation mode: Building portfolio history from snapshots for user {authenticated_user_id}")
             aggregated_service = get_aggregated_portfolio_service()
-            return await aggregated_service.get_portfolio_history(user_id, period, filter_account)
+            return await aggregated_service.get_portfolio_history(authenticated_user_id, period, filter_account)
+    
+    # PRODUCTION-GRADE: If account_id is 'null' (string) but no authenticated user,
+    # this means frontend is trying to use aggregation mode without proper auth
+    if account_id == 'null' and not authenticated_user_id:
+        logger.error("Portfolio history requested with account_id='null' but no authentication provided")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required for aggregated portfolio history"
+        )
     
     # Handle brokerage/hybrid mode - use Alpaca history
     if not broker_client:
@@ -2160,7 +2188,7 @@ async def get_portfolio_analytics(
 @app.get("/api/assets/{symbol_or_asset_id}", response_model=AssetDetailsResponse)
 async def get_asset_details(
     symbol_or_asset_id: str,
-    user_id: Optional[str] = Query(None, description="User ID for Plaid security lookups (optional for backward compatibility)"),
+    request: Request,
     client = Depends(get_broker_client), # Original: client: BrokerClient
     api_key: str = Depends(verify_api_key) # Add API key validation
 ):
@@ -2174,8 +2202,20 @@ async def get_asset_details(
     
     For Plaid securities, provides rich details including sector, industry, 
     and proper security names from the Investment API.
+    
+    SECURITY: User ID is now obtained from authentication only (not query params).
+    If no authenticated user, falls back to Alpaca-only lookup.
     """
     logger.info(f"Fetching asset details for {symbol_or_asset_id}")
+    
+    # SECURITY FIX: Get user_id from authentication only (not from query params)
+    authenticated_user_id = None
+    try:
+        auth_header = request.headers.get("Authorization")
+        authenticated_user_id = get_authenticated_user_id(request, api_key, auth_header)
+    except HTTPException:
+        # No authenticated user - will use Alpaca-only lookup or fallback
+        pass
     
     try:
         # CRITICAL FIX: Use production-grade asset details service
@@ -2183,8 +2223,8 @@ async def get_asset_details(
         asset_service = get_asset_details_service()
         
         # Use multi-source lookup (requires user_id for Plaid securities)
-        if user_id:
-            asset_details = await asset_service.get_asset_details_multi_source(symbol_or_asset_id, user_id, client)
+        if authenticated_user_id:
+            asset_details = await asset_service.get_asset_details_multi_source(symbol_or_asset_id, authenticated_user_id, client)
         else:
             # Backward compatibility: Try Alpaca first, then fallback
             try:
@@ -2792,7 +2832,8 @@ async def request_portfolio_reconstruction(
 
 @app.get("/api/portfolio/reconstruction/status")
 async def get_portfolio_reconstruction_status(
-    user_id: str = Depends(get_authenticated_user_id),
+    request: Request,
+    user_id: Optional[str] = Query(None, description="User ID for reconstruction status (backward compatibility)"),
     api_key: str = Depends(verify_api_key)
 ):
     """
@@ -2800,13 +2841,43 @@ async def get_portfolio_reconstruction_status(
     
     Used by frontend to show progress, completion status, and error handling.
     Provides real-time updates during the 2-3 minute reconstruction process.
+    
+    SECURITY: Accepts user_id via query param for backward compatibility with current frontend.
+    If Authorization header is present, validates it matches the query param user_id.
     """
     try:
+        # Try to get authenticated user ID from JWT token (if provided)
+        authenticated_user_id = None
+        try:
+            auth_header = request.headers.get("Authorization")
+            authenticated_user_id = get_authenticated_user_id(request, api_key, auth_header)
+        except HTTPException:
+            # No valid JWT token - fall back to query param for backward compatibility
+            pass
+        
+        # Use authenticated user ID if available, otherwise fall back to query param
+        final_user_id = authenticated_user_id or user_id
+        
+        if not final_user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required (either via query parameter or Authorization header)"
+            )
+        
+        # Security: If both are provided, they must match
+        if authenticated_user_id and user_id and authenticated_user_id != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Authenticated user ID does not match provided user_id"
+            )
+        
         reconstruction_manager = get_portfolio_reconstruction_manager()
-        status = await reconstruction_manager.get_reconstruction_status_for_user(user_id)
+        status = await reconstruction_manager.get_reconstruction_status_for_user(final_user_id)
         
         return status
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting reconstruction status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get reconstruction status: {str(e)}")
@@ -4891,7 +4962,8 @@ async def get_aggregated_portfolio_positions(
                     
                     # CRITICAL: enrichment service returns percentage as decimal already
                     # Frontend expects DECIMAL (0.7641) and will multiply by 100 for display
-                    unrealized_pl_percent = float(h['unrealized_gain_loss_percent']) / 100 if not h.get('price_is_live') else (unrealized_pl / cost_basis) if cost_basis > 0 else 0
+                    # PRODUCTION-GRADE: Use safe .get() to prevent KeyError if enrichment fails
+                    unrealized_pl_percent = float(h.get('unrealized_gain_loss_percent', 0)) / 100 if not h.get('price_is_live') else (unrealized_pl / cost_basis) if cost_basis > 0 else 0
                     
                     current_price = (market_value / quantity) if quantity > 0 else 0
                     

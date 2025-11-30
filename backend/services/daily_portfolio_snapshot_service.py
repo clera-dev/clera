@@ -89,15 +89,39 @@ class DailyPortfolioSnapshotService:
             self.supabase = get_supabase_client()
         return self.supabase
     
-    async def capture_all_users_eod_snapshots(self) -> EODBatchResult:
+    async def capture_all_users_eod_snapshots(self, sync_stale_holdings: bool = True) -> EODBatchResult:
         """
-        Main daily job: capture EOD snapshots for ALL aggregation users.
+        Capture EOD snapshots for all aggregation users.
         
-        Runs at 4 AM EST after market close to ensure accurate EOD prices.
+        Args:
+            sync_stale_holdings: If True, syncs stale SnapTrade holdings BEFORE capturing snapshots.
+                                This ensures snapshots use fresh holdings quantities.
         
         Returns:
-            EODBatchResult with comprehensive processing statistics
+            EODBatchResult with comprehensive stats
         """
+        # PRODUCTION-GRADE: Sync stale holdings BEFORE capturing snapshots
+        # This ensures we're using fresh holdings quantities, not stale data
+        if sync_stale_holdings:
+            from services.smart_snaptrade_sync_service import get_smart_sync_service
+            
+            logger.info("🔄 Step 1/2: Syncing stale SnapTrade holdings...")
+            sync_service = get_smart_sync_service(
+                staleness_threshold_hours=23,  # Sync if not synced in last 23h
+                batch_size=10,
+                rate_limit_delay=0.5
+            )
+            
+            sync_metrics = await sync_service.sync_stale_users(force=False)
+            
+            logger.info(
+                f"✅ Holdings sync complete: {sync_metrics.synced_users} users synced, "
+                f"{sync_metrics.failed_users} failed, ${sync_metrics.estimated_cost_usd:.4f} cost"
+            )
+        
+        # STEP 2: Now capture snapshots with fresh holdings
+        logger.info("📸 Step 2/2: Capturing EOD snapshots...")
+        
         start_time = datetime.now()
         
         try:
@@ -399,9 +423,19 @@ class DailyPortfolioSnapshotService:
                 'securities_count': snapshot.securities_count
             }
             
-            # Upsert to handle potential duplicates
+            # PRODUCTION-GRADE: Use delete+insert instead of upsert
+            # The partitioned table doesn't have a unique constraint we can use with ON CONFLICT
+            # First delete any existing daily_eod snapshot for this user/date
             supabase.table('user_portfolio_history')\
-                .upsert(snapshot_data, on_conflict='user_id,value_date,snapshot_type')\
+                .delete()\
+                .eq('user_id', snapshot.user_id)\
+                .eq('value_date', snapshot.snapshot_date.isoformat())\
+                .eq('snapshot_type', 'daily_eod')\
+                .execute()
+            
+            # Then insert the new snapshot
+            supabase.table('user_portfolio_history')\
+                .insert(snapshot_data)\
                 .execute()
             
             logger.debug(f"💾 Stored EOD snapshot for user {snapshot.user_id}: ${snapshot.total_value:.2f}")

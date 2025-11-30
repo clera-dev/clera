@@ -73,17 +73,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
     }
 
-    // For aggregation mode, accountId can be null - backend uses user_id
+    // PRODUCTION-GRADE: For aggregation mode, accountId can be null - backend uses user_id
     // For brokerage mode, accountId ownership has been verified above
     const filterParam = filterAccount ? `&filter_account=${encodeURIComponent(filterAccount)}` : '';
     const targetUrl = `${backendUrl}/api/portfolio/cash-stock-bond-allocation?account_id=${encodeURIComponent(accountId || 'aggregated')}&user_id=${encodeURIComponent(userId)}${filterParam}`;
     console.log(`Proxying request to: ${targetUrl}`);
 
-    // Prepare headers
+    // Get session for JWT token
+    const session = await supabase.auth.getSession();
+
+    // Prepare headers with both JWT and API key
     const headers: HeadersInit = {
       'Accept': 'application/json'
     };
     
+    // CRITICAL: Add JWT token for user authentication
+    if (session.data.session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.data.session.access_token}`;
+    }
+    
+    // Add API key for service authentication
     if (backendApiKey) {
       headers['X-API-Key'] = backendApiKey;
     }

@@ -171,11 +171,12 @@ export async function proxyToBackend(
 
   const config = getBackendProxyConfig();
   
-  // SECURITY: Always include authenticated user_id in query params
-  // This prevents IDOR attacks by ensuring backend knows who is making the request
+  // SECURITY FIX: Prevent queryParams from overriding authenticated user_id
+  // Spread queryParams FIRST, then user_id to ensure it cannot be overridden
+  // This prevents IDOR attacks where malicious callers could pass user_id in queryParams
   const finalQueryParams = {
-    user_id: userContext.userId,
     ...queryParams,
+    user_id: userContext.userId,  // Always set last to prevent override
   };
 
   // Build URL with properly encoded query parameters

@@ -11,16 +11,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Proxy to backend with authentication
+    // PRODUCTION-GRADE: Proxy to backend with full authentication
     const backendUrl = process.env.BACKEND_API_URL || process.env.BACKEND_URL || 'http://localhost:8000';
     const backendApiKey = process.env.BACKEND_API_KEY;
     const url = `${backendUrl}/api/portfolio/reconstruction/status?user_id=${user.id}`;
+    
+    // Get session for JWT token
+    const session = await supabase.auth.getSession();
     
     const headers: HeadersInit = {
       'Content-Type': 'application/json'
     };
     
-    // Add API key for backend authentication
+    // CRITICAL: Add JWT token for user authentication
+    if (session.data.session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.data.session.access_token}`;
+    }
+    
+    // Add API key for service authentication
     if (backendApiKey) {
       headers['X-API-Key'] = backendApiKey;
     }

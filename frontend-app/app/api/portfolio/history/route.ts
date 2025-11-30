@@ -107,14 +107,20 @@ export async function GET(request: NextRequest) {
 
     console.log(`Proxying request to: ${targetUrl.toString()} ${filterAccount ? `[FILTERED TO: ${filterAccount}]` : '[TOTAL PORTFOLIO]'}`);
 
-    // Prepare headers
+    // PRODUCTION-GRADE: Prepare headers with both JWT and API key
+    const session = await supabase.auth.getSession();
     const headers: HeadersInit = {
       'Accept': 'application/json'
     };
     
-    // Add API key if available
+    // CRITICAL: Add JWT token for user authentication
+    if (session.data.session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.data.session.access_token}`;
+    }
+    
+    // Add API key for service authentication
     if (backendApiKey) {
-      headers['x-api-key'] = backendApiKey;
+      headers['X-API-Key'] = backendApiKey;
     }
     
     const backendResponse = await fetch(targetUrl.toString(), {

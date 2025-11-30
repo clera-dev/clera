@@ -305,27 +305,30 @@ class AggregatedPortfolioService:
             
             logger.info(f"📊 Generated daily timeline for {period}: {len(timestamps)} daily points from {start_date} to {end_date}")
             
-            # CRITICAL FIX: If latest snapshot is not from TODAY, append current live value
-            # This ensures the chart endpoint always matches the live portfolio value at the top
+            # PRODUCTION-GRADE: Update today's data point with LIVE value if market is open
+            # The loop above already included today (end_date >= today), so we update it, not append
             from datetime import datetime
             from utils.trading_calendar import get_trading_calendar
             
             today = datetime.now().date()
             trading_calendar = get_trading_calendar()
-            latest_snapshot_date = datetime.fromisoformat(snapshots[-1]['value_date']).date() if snapshots else None
             
-            if latest_snapshot_date and latest_snapshot_date < today:
-                logger.info(f"📍 Latest snapshot is from {latest_snapshot_date}, appending TODAY's live value")
+            # Check if today is already in the timeline (it should be, since end_date = today)
+            if today in snapshot_by_date:
+                # Today's snapshot already exists - no need to update (use DB value)
+                logger.info(f"✅ Today's EOD snapshot exists in DB - using stored value")
+            elif end_date >= today and len(equity_values) > 0:
+                # Today was included in the loop but has no snapshot yet
+                # Update the last data point (today) with live value
+                logger.info(f"📍 Updating today's placeholder with LIVE portfolio value")
                 
                 # Get current portfolio value (including cash)
                 current_portfolio = await self.get_portfolio_value(user_id, include_cash=True)
                 current_value = current_portfolio.get('raw_value', 0)
                 
                 if current_value > 0:
-                    # Add today's data point
-                    today_timestamp = int(datetime.combine(today, datetime.min.time()).timestamp())
-                    timestamps.append(today_timestamp)
-                    equity_values.append(current_value)
+                    # Update today's value (last item in arrays)
+                    equity_values[-1] = current_value
                     
                     # PRODUCTION-GRADE: Calculate today's P/L ONLY if market is open
                     # On weekends/holidays, return should be $0.00 (market closed, no trading)
@@ -343,10 +346,11 @@ class AggregatedPortfolioService:
                         
                         logger.info(f"📅 Market CLOSED: Today's return is $0.00 (weekend/holiday)")
                     
-                    profit_loss.append(today_pl)
-                    profit_loss_pct.append(today_pl_pct)
+                    # Update today's P/L (last item)
+                    profit_loss[-1] = today_pl
+                    profit_loss_pct[-1] = today_pl_pct
                     
-                    logger.info(f"✅ Appended today's value: ${current_value:,.2f} (vs last trading day, return: ${today_pl:+,.2f})")
+                    logger.info(f"✅ Updated today's value: ${current_value:,.2f} (return: ${today_pl:+,.2f})")
             
             # Calculate base value (oldest value in period)
             base_value = equity_values[0] if equity_values else 0.0

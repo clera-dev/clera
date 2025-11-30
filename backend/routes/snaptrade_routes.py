@@ -10,13 +10,23 @@ This module provides REST API endpoints for:
 
 import logging
 import os
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, Header
 from typing import Dict, Any, Optional
 from datetime import datetime
 
 from utils.portfolio.snaptrade_provider import SnapTradePortfolioProvider
 from utils.supabase.db_client import get_supabase_client
 from utils.authentication import get_authenticated_user_id
+
+# Inline verify_api_key to avoid circular imports
+def verify_api_key(x_api_key: str = Header(None)):
+    """Verify API key for authentication."""
+    expected_key = os.getenv("BACKEND_API_KEY")
+    if not expected_key:
+        return x_api_key  # If no key configured, allow all (dev mode)
+    if x_api_key != expected_key:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+    return x_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -286,14 +296,17 @@ async def get_pending_orders(
 
 @router.post("/connection-url")
 async def create_connection_url(
-    request: Request
+    request: Request,
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Generate SnapTrade connection portal URL for user to connect brokerage.
     
+    SECURITY: User ID is now obtained from authenticated JWT token only.
+    
     Request body:
         {
-            "user_id": str,
             "connection_type": "read" | "trade",  // default: "trade"
             "broker": Optional[str],  // e.g., "SCHWAB", "FIDELITY"
             "redirect_url": Optional[str]
@@ -308,14 +321,11 @@ async def create_connection_url(
     """
     try:
         body = await request.json()
-        user_id = body.get('user_id')
         connection_type = body.get('connection_type', 'trade')
         broker = body.get('broker')
         redirect_url = body.get('redirect_url')
         
-        # Validate user_id is provided
-        if not user_id:
-            raise HTTPException(status_code=400, detail="user_id is required")
+        # SECURITY FIX: user_id comes from authenticated JWT token, not request body
         
         # Initialize SnapTrade provider
         provider = SnapTradePortfolioProvider()
@@ -805,14 +815,17 @@ async def sync_connection(
 
 @router.post("/refresh")
 async def trigger_refresh(
-    request: Request
+    request: Request,
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Trigger manual refresh of SnapTrade data for user.
     
+    SECURITY: User ID is now obtained from authenticated JWT token only.
+    
     Request body:
         {
-            "user_id": str,
             "account_id": Optional[str]
         }
     
@@ -824,12 +837,9 @@ async def trigger_refresh(
     """
     try:
         body = await request.json()
-        user_id = body.get('user_id')
         account_id = body.get('account_id')
         
-        # Validate user_id is provided
-        if not user_id:
-            raise HTTPException(status_code=400, detail="user_id is required")
+        # SECURITY FIX: user_id comes from authenticated JWT token, not request body
         
         # Step 1: Trigger SnapTrade API refresh (pulls latest from brokerages)
         provider = SnapTradePortfolioProvider()

@@ -45,8 +45,9 @@ Development: YOUR_NGROK_URL/api/snaptrade/webhook
 **Backend `.env`:**
 ```bash
 # SnapTrade Credentials
-SNAPTRADE_CLIENT_ID=CLERA-INC-TEST-IMXMV
-SNAPTRADE_CONSUMER_KEY=99Dj1pvetNHlSb3eiwYHExc85xFSqR0HJ0XmlsZR121JF95fep
+# ⚠️ SECURITY: Replace with your actual credentials. If these were committed to git, rotate them immediately.
+SNAPTRADE_CLIENT_ID=<your-client-id>
+SNAPTRADE_CONSUMER_KEY=<your-consumer-key>
 SNAPTRADE_WEBHOOK_SECRET=YOUR_WEBHOOK_SECRET_FROM_DASHBOARD  # ⚠️ UPDATE THIS!
 ```
 

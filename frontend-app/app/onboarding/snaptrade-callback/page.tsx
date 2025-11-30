@@ -68,23 +68,92 @@ function SnapTradeCallbackContent() {
         if (response.ok) {
           const result = await response.json();
           console.log('✅ All connections synced successfully:', result);
-          // Now redirect with confidence that everything is stored
-          setTimeout(() => {
-            window.location.href = '/portfolio';
-          }, 1000);
+          
+          // Check if user has active payment/subscription
+          const paymentCheck = await fetch('/api/stripe/check-payment-status', {
+            method: 'GET',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+
+          if (paymentCheck.ok) {
+            const paymentData = await paymentCheck.json();
+            
+            if (paymentData.hasActivePayment) {
+              // User has active payment, redirect to portfolio
+              console.log('✅ User has active payment, redirecting to portfolio');
+              setTimeout(() => {
+                window.location.href = '/portfolio';
+              }, 1000);
+            } else {
+              // User needs to complete payment, redirect to Stripe checkout
+              console.log('📝 User needs to complete payment, redirecting to Stripe checkout');
+              const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+                method: 'POST',
+                headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`
+                }
+              });
+
+              if (checkoutResponse.ok) {
+                const { url } = await checkoutResponse.json();
+                if (url) {
+                  window.location.href = url;
+                } else {
+                  console.error('❌ No checkout URL received');
+                  setTimeout(() => {
+                    window.location.href = '/protected';
+                  }, 2000);
+                }
+              } else {
+                console.error('❌ Failed to create checkout session');
+                setTimeout(() => {
+                  window.location.href = '/protected';
+                }, 2000);
+              }
+            }
+          } else {
+            // If payment check fails, redirect to checkout to be safe
+            console.log('⚠️ Payment check failed, redirecting to checkout');
+            const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+              }
+            });
+
+            if (checkoutResponse.ok) {
+              const { url } = await checkoutResponse.json();
+              if (url) {
+                window.location.href = url;
+              } else {
+                setTimeout(() => {
+                  window.location.href = '/protected';
+                }, 2000);
+              }
+            } else {
+              setTimeout(() => {
+                window.location.href = '/protected';
+              }, 2000);
+            }
+          }
         } else {
           const error = await response.json().catch(() => ({ error: 'Unknown error' }));
           console.error('❌ Failed to sync connections:', error);
-          // Redirect anyway - they can try reconnecting if needed
+          // Redirect back to protected page
           setTimeout(() => {
-            window.location.href = '/portfolio';
+            router.push('/protected');
           }, 2000);
         }
       } catch (error) {
         console.error('❌ Error completing onboarding:', error);
-        // Redirect anyway - worst case they'll be sent back to /protected
+        // Redirect back to protected page
         setTimeout(() => {
-          window.location.href = '/portfolio';
+          router.push('/protected');
         }, 2000);
       }
     };
@@ -145,7 +214,7 @@ function SnapTradeCallbackContent() {
             </div>
             <h2 className="text-2xl font-bold text-green-600 mb-2">Connection Successful!</h2>
             <p className="text-gray-600">
-              Your brokerage account has been connected. Redirecting to your portfolio...
+              Your brokerage account has been connected. Setting up your subscription...
             </p>
           </>
         )}

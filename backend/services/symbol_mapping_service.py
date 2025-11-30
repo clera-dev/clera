@@ -131,7 +131,7 @@ class SymbolMappingService:
                         fmp_symbol=None,
                         mapping_method='error',
                         confidence=0.0,
-                        error_message=str(e)
+                        error=str(e)  # FIX: Use 'error' field, not 'error_message'
                     )
         
         tasks = [process_single_security(security) for security in securities]

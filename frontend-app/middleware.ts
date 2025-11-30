@@ -24,7 +24,8 @@ const publicPaths = [
   '/protected/reset-password', 
   '/ingest',
   '/.well-known',
-  '/api/test' // Portfolio aggregation test endpoints
+  '/api/test', // Portfolio aggregation test endpoints
+  '/api/stripe/webhook', // Stripe webhooks use signature verification, not user auth
 ];
 
 // Auth pages that authenticated users should not access

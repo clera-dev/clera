@@ -407,6 +407,40 @@ export default function PortfolioPage() {
 
   }, []);
 
+  // Check payment status before allowing access
+  useEffect(() => {
+    const checkPaymentStatus = async () => {
+      try {
+        const paymentCheck = await fetch('/api/stripe/check-payment-status');
+        if (paymentCheck.ok) {
+          const paymentData = await paymentCheck.json();
+          if (!paymentData.hasActivePayment) {
+            // User doesn't have active payment, redirect to checkout
+            console.log('Payment required, redirecting to checkout');
+            const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+              method: 'POST',
+            });
+            if (checkoutResponse.ok) {
+              const { url } = await checkoutResponse.json();
+              if (url) {
+                router.push(url);
+                return;
+              }
+            }
+            // If checkout creation fails, redirect to protected page
+            router.push('/protected');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking payment status:', error);
+        // On error, redirect to protected page to be safe
+        router.push('/protected');
+      }
+    };
+
+    checkPaymentStatus();
+  }, [router]);
+
   // Essential initialization for component selection
   useEffect(() => {
     const initializePortfolioMode = async () => {

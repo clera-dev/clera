@@ -386,9 +386,30 @@ class SnapTradePortfolioReconstructionService:
         elif tx.type == 'SELL':
             # Reduce position (proportional cost basis)
             if holdings[symbol]['quantity'] > 0:
-                sell_ratio = tx.quantity / holdings[symbol]['quantity']
-                holdings[symbol]['cost_basis'] *= (1 - sell_ratio)
-                holdings[symbol]['quantity'] -= tx.quantity
+                # FIX: Detect overselling - don't allow selling more than available
+                if tx.quantity > holdings[symbol]['quantity']:
+                    logger.warning(
+                        f"⚠️ Oversell detected: Attempting to sell {tx.quantity} shares "
+                        f"but only {holdings[symbol]['quantity']} available for {symbol}. "
+                        f"Transaction: {tx.trade_date} - This may indicate data inconsistency."
+                    )
+                    # Cap the sell to available quantity to prevent negative holdings
+                    actual_sell_quantity = holdings[symbol]['quantity']
+                    sell_ratio = actual_sell_quantity / holdings[symbol]['quantity']
+                    holdings[symbol]['cost_basis'] *= (1 - sell_ratio)
+                    holdings[symbol]['quantity'] = Decimal(0)
+                else:
+                    sell_ratio = tx.quantity / holdings[symbol]['quantity']
+                    holdings[symbol]['cost_basis'] *= (1 - sell_ratio)
+                    holdings[symbol]['quantity'] -= tx.quantity
+            else:
+                # Attempting to sell when position is zero or negative
+                logger.warning(
+                    f"⚠️ Sell transaction on zero/negative position: {symbol} "
+                    f"on {tx.trade_date}. Quantity: {holdings[symbol]['quantity']}, "
+                    f"Sell amount: {tx.quantity}. This may indicate data inconsistency."
+                )
+                # Don't process the sell - position is already zero/negative
         
         elif tx.type == 'DIVIDEND':
             # Dividends don't affect quantity or cost basis

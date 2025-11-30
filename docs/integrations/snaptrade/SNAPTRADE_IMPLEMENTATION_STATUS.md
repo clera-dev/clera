@@ -44,9 +44,10 @@
 6. **Environment Configuration** - COMPLETE
    - File: `backend/.env`
    - Variables:
-     - `SNAPTRADE_CLIENT_ID=CLERA-INC-TEST-IMXMV`
-     - `SNAPTRADE_CONSUMER_KEY=99Dj1pvetNHlSb3eiwYHExc85xFSqR0HJ0XmlsZR121JF95fep`
+     - `SNAPTRADE_CLIENT_ID=<your-client-id>` (⚠️ **SECURITY**: Rotate if this was committed to git)
+     - `SNAPTRADE_CONSUMER_KEY=<your-consumer-key>` (⚠️ **SECURITY**: Rotate if this was committed to git)
    - Status: ✅ **Configured and tested**
+   - ⚠️ **CRITICAL**: If credentials were previously exposed in this file, rotate them immediately
 
 7. **Trade Routing Service** - COMPLETE
    - File: `backend/clera_agents/services/trade_routing_service.py` (169 lines)
