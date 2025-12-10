@@ -9,7 +9,7 @@ Clera is a financial AI platform leveraging advanced language models and agent-b
 - **[Frontend Components](frontend-app/components/)** - React component library and UI patterns
 
 ## TL;DR
-### How to run servers
+### How to run servers (for the frist time)
 Open 3 terminals (T1, T2, T3)
 In T1 run: 
 ```bash
@@ -63,6 +63,11 @@ source venv/bin/activate && source activate.sh && uvicorn api_server:app --reloa
 npm install && rm -rf .next && npm run dev
 # t4 (if needed)
 ngrok http 8000
+```
+
+If you want to run our langgraph deployment locally, just run:
+```bash
+langgraph dev --tunnel
 ```
 
 ### How to get cursor to cook:

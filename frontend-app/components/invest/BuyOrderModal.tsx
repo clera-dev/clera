@@ -12,9 +12,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, Terminal } from "lucide-react";
+import { Loader2, Terminal, Clock } from "lucide-react";
 import toast from 'react-hot-toast';
-import { formatCurrency } from "@/lib/utils"; // Assuming formatCurrency is in lib/utils
+import { formatCurrency } from "@/lib/utils";
+import { getMarketStatus } from "@/utils/market-hours";
+
+// Webull requires a minimum of $5 for fractional share orders
+const MINIMUM_ORDER_AMOUNT = 5;
 
 interface BuyOrderModalProps {
   isOpen: boolean;
@@ -56,6 +60,9 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Check market status
+  const marketStatus = getMarketStatus();
 
   const fetchMarketPrice = useCallback(async () => {
     if (!symbol) return;
@@ -112,6 +119,11 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
       setAmount(value);
     }
   };
+
+  // Check if amount meets minimum order requirement
+  const parsedAmount = parseFloat(amount) || 0;
+  const isBelowMinimum = parsedAmount > 0 && parsedAmount < MINIMUM_ORDER_AMOUNT;
+  const meetsMinimum = parsedAmount >= MINIMUM_ORDER_AMOUNT;
 
   const handlePlaceOrder = async () => {
     if (!accountId) {
@@ -184,6 +196,16 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
         
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 min-h-0">
           <div className="space-y-3">
+            {/* Market Closed Banner */}
+            {!marketStatus.isOpen && (
+              <Alert className="border-amber-500/50 bg-amber-500/10">
+                <Clock className="h-4 w-4 text-amber-600" />
+                <AlertDescription className="text-sm text-amber-700 dark:text-amber-400">
+                  {marketStatus.message}
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex justify-between items-center bg-muted p-3 rounded-md">
               <span className="text-sm font-medium text-muted-foreground">Order Type:</span>
               <span className="font-semibold">BUY (Market)</span>
@@ -228,6 +250,15 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
                 <AlertDescription>{submitError}</AlertDescription>
               </Alert>
             )}
+
+            {/* Minimum order amount warning */}
+            {isBelowMinimum && (
+              <Alert className="mt-4 border-amber-500/50 bg-amber-500/10">
+                <AlertDescription className="text-sm text-amber-600 dark:text-amber-400">
+                  Minimum order amount is ${MINIMUM_ORDER_AMOUNT}. Please enter at least ${MINIMUM_ORDER_AMOUNT} to place an order.
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
         </div>
 
@@ -235,12 +266,16 @@ export default function BuyOrderModal({ isOpen, onClose, symbol, accountId }: Bu
           <Button 
             type="button"
             size="lg"
-            className="w-full bg-gradient-to-r from-teal-500 to-green-500 hover:from-teal-600 hover:to-green-600 text-white font-bold text-base sm:text-lg h-12 sm:h-14"
+            className={`w-full ${!marketStatus.isOpen ? 'bg-gray-400 hover:bg-gray-400' : 'bg-gradient-to-r from-teal-500 to-green-500 hover:from-teal-600 hover:to-green-600'} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || isLoadingPrice || !amount || parseFloat(amount) <= 0}
+            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || !marketStatus.isOpen}
           >
             {isSubmitting ? (
               <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Placing Order...</>
+            ) : !marketStatus.isOpen ? (
+              <><Clock className="mr-2 h-4 w-4" /> Market Closed</>
+            ) : isBelowMinimum ? (
+              `Minimum $${MINIMUM_ORDER_AMOUNT} required`
             ) : (
               "Place Buy Order"
             )}

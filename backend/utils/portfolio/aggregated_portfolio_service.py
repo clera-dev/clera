@@ -16,7 +16,7 @@ import logging
 import json
 from typing import Dict, Any, List, Optional
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +219,7 @@ class AggregatedPortfolioService:
                 logger.info(f"🔧 1D request - building intraday chart with live price movements")
                 return await self._build_intraday_chart(user_id, filter_account)
             
-            # Get portfolio history snapshots for the period (from reconstructed history)
+            # Get portfolio history snapshots for the period (from reconstructed/daily_eod history)
             result = supabase.table('user_portfolio_history')\
                 .select('value_date, total_value, total_gain_loss, total_gain_loss_percent, created_at')\
                 .eq('user_id', user_id)\
@@ -230,6 +230,32 @@ class AggregatedPortfolioService:
                 .execute()
             
             snapshots = result.data or []
+            
+            # CRITICAL FIX: If daily_eod/reconstructed snapshots are missing for recent dates,
+            # fall back to intraday snapshots (aggregated to daily) for the missing dates
+            if snapshots:
+                latest_daily_date = datetime.fromisoformat(snapshots[-1]['value_date']).date()
+                
+                # Check if there's a gap between latest daily snapshot and today
+                if latest_daily_date < end_date:
+                    logger.info(f"📊 Gap detected: latest daily snapshot is {latest_daily_date}, end_date is {end_date}")
+                    
+                    # Fill the gap with aggregated intraday snapshots
+                    gap_snapshots = await self._fill_gap_with_intraday_snapshots(
+                        user_id, 
+                        latest_daily_date + timedelta(days=1), 
+                        end_date
+                    )
+                    
+                    if gap_snapshots:
+                        logger.info(f"✅ Filled gap with {len(gap_snapshots)} intraday-derived snapshots")
+                        snapshots.extend(gap_snapshots)
+                        # Re-sort by date
+                        snapshots.sort(key=lambda x: x['value_date'])
+            else:
+                # No daily snapshots at all - try using only intraday snapshots
+                logger.warning(f"No daily_eod/reconstructed snapshots found, falling back to intraday data")
+                snapshots = await self._fill_gap_with_intraday_snapshots(user_id, start_date, end_date)
             
             if not snapshots:
                 logger.warning(f"No portfolio history found for user {user_id} in period {period}")
@@ -715,6 +741,87 @@ class AggregatedPortfolioService:
         except Exception as e:
             logger.error(f"Error building account intraday chart: {e}")
             return self._empty_history_response('1D')
+    
+    async def _fill_gap_with_intraday_snapshots(
+        self, 
+        user_id: str, 
+        start_date: date, 
+        end_date: date
+    ) -> List[Dict[str, Any]]:
+        """
+        Fill missing daily snapshots with aggregated intraday data.
+        
+        For each date that's missing a daily_eod snapshot, we take the last
+        intraday snapshot from that day and use it as the daily value.
+        
+        This is a production-grade fallback when the daily snapshot job hasn't run.
+        
+        Args:
+            user_id: User ID
+            start_date: Start date to fill from
+            end_date: End date to fill to
+            
+        Returns:
+            List of snapshot dictionaries in the same format as daily_eod snapshots
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            supabase = self._get_supabase_client()
+            gap_snapshots = []
+            
+            # Query all intraday snapshots in the date range
+            intraday_result = supabase.table('user_portfolio_history')\
+                .select('value_date, total_value, total_gain_loss, total_gain_loss_percent, created_at')\
+                .eq('user_id', user_id)\
+                .eq('snapshot_type', 'intraday')\
+                .gte('value_date', start_date.isoformat())\
+                .lte('value_date', end_date.isoformat())\
+                .order('value_date', desc=False)\
+                .order('created_at', desc=False)\
+                .execute()
+            
+            if not intraday_result.data:
+                logger.warning(f"No intraday snapshots found for gap fill ({start_date} to {end_date})")
+                return []
+            
+            # Group intraday snapshots by date and take the last one for each day
+            # (represents the end-of-day value for that day)
+            from collections import defaultdict
+            intraday_by_date = defaultdict(list)
+            
+            for snapshot in intraday_result.data:
+                value_date = snapshot['value_date']
+                intraday_by_date[value_date].append(snapshot)
+            
+            # For each date with intraday data, use the LAST snapshot (latest time) as the daily value
+            for value_date, day_snapshots in intraday_by_date.items():
+                # Sort by created_at and take the last one
+                day_snapshots.sort(key=lambda x: x.get('created_at', ''))
+                last_snapshot = day_snapshots[-1]
+                
+                # Only include if the value is non-zero
+                if float(last_snapshot.get('total_value', 0)) > 0:
+                    gap_snapshots.append({
+                        'value_date': value_date,
+                        'total_value': last_snapshot['total_value'],
+                        'total_gain_loss': last_snapshot.get('total_gain_loss', 0),
+                        'total_gain_loss_percent': last_snapshot.get('total_gain_loss_percent', 0),
+                        'created_at': last_snapshot.get('created_at'),
+                        'snapshot_type': 'intraday_aggregated'  # Mark as derived from intraday
+                    })
+            
+            # Sort by date
+            gap_snapshots.sort(key=lambda x: x['value_date'])
+            
+            if gap_snapshots:
+                logger.info(f"📊 Aggregated {len(gap_snapshots)} intraday snapshots to fill gap from {start_date} to {end_date}")
+            
+            return gap_snapshots
+            
+        except Exception as e:
+            logger.error(f"Error filling gap with intraday snapshots: {e}")
+            return []
     
     async def _get_account_specific_history(self, user_id: str, period: str, filter_account: str) -> Dict[str, Any]:
         """

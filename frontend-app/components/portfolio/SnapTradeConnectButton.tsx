@@ -90,7 +90,7 @@ export function SnapTradeConnectButton({
           Connecting...
         </>
       ) : (
-        children || 'Connect External Brokerage'
+        children || 'Connect Brokerage Account'
       )}
     </Button>
   );

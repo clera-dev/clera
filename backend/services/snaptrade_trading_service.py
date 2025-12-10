@@ -7,6 +7,7 @@ PRODUCTION-GRADE: Handles trade execution via SnapTrade API with:
 - Order status tracking
 - Order cancellation
 - Multi-account support
+- ORDER QUEUEING: When market is closed, orders are queued locally
 
 Follows SOLID principles and SnapTrade best practices.
 """
@@ -14,11 +15,26 @@ Follows SOLID principles and SnapTrade best practices.
 import os
 import logging
 from typing import Dict, Any, Optional, List
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+def is_market_closed_error(error_str: str) -> bool:
+    """Check if an error indicates the market is closed."""
+    market_closed_indicators = [
+        'not open for trading',
+        'market hours',
+        'non_trading_hours',
+        'NON_TRADING_HOURS',
+        '1019',  # SnapTrade market closed code
+        'CAN_NOT_TRADING_FOR_NON_TRADING_HOURS',
+    ]
+    error_lower = error_str.lower()
+    return any(indicator.lower() in error_lower for indicator in market_closed_indicators)
 
 
 class SnapTradeTradingService:
@@ -46,6 +62,173 @@ class SnapTradeTradingService:
             os.getenv('SUPABASE_URL'),
             os.getenv('SUPABASE_SERVICE_ROLE_KEY')
         )
+    
+    def queue_order(
+        self,
+        user_id: str,
+        account_id: str,
+        symbol: str,
+        action: str,
+        order_type: str = 'Market',
+        time_in_force: str = 'Day',
+        notional_value: Optional[float] = None,
+        units: Optional[float] = None,
+        price: Optional[float] = None,
+        stop_price: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Queue an order for execution when market opens.
+        
+        Used when the market is closed and the brokerage doesn't accept orders.
+        The order is stored in our database and will be executed by a background
+        job when the market opens.
+        
+        Args:
+            user_id: Platform user ID
+            account_id: SnapTrade account ID
+            symbol: Stock ticker
+            action: 'BUY' or 'SELL'
+            order_type: 'Market', 'Limit', etc.
+            time_in_force: 'Day', 'GTC', etc.
+            notional_value: Dollar amount
+            units: Number of shares
+            price: Limit price
+            stop_price: Stop price
+            
+        Returns:
+            {
+                'success': bool,
+                'queued': True,
+                'order_id': str,
+                'message': str
+            }
+        """
+        try:
+            supabase = self.get_supabase_client()
+            
+            order_data = {
+                'user_id': user_id,
+                'account_id': account_id,
+                'provider': 'snaptrade',
+                'symbol': symbol,
+                'action': action,
+                'order_type': order_type,
+                'time_in_force': time_in_force,
+                'notional_value': notional_value,
+                'units': units,
+                'price': price,
+                'stop_price': stop_price,
+                'status': 'pending',
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }
+            
+            result = supabase.table('queued_orders').insert(order_data).execute()
+            
+            if result.data:
+                order_id = result.data[0]['id']
+                logger.info(f"✅ Order queued successfully: {order_id} - {action} ${notional_value or units} of {symbol}")
+                
+                return {
+                    'success': True,
+                    'queued': True,
+                    'order_id': order_id,
+                    'message': f'Order queued for market open. Your {action} order for ${notional_value:.2f} of {symbol} will be executed when the market opens (9:30 AM ET).',
+                    'order': {
+                        'id': order_id,
+                        'symbol': symbol,
+                        'action': action,
+                        'notional_value': notional_value,
+                        'status': 'pending',
+                        'queued_at': order_data['created_at']
+                    }
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': 'Failed to queue order'
+                }
+                
+        except Exception as e:
+            logger.error(f"Error queueing order: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': f'Failed to queue order: {str(e)}'
+            }
+    
+    def get_queued_orders(self, user_id: str, status: str = 'pending') -> List[Dict[str, Any]]:
+        """
+        Get queued orders for a user.
+        
+        Args:
+            user_id: Platform user ID
+            status: Filter by status ('pending', 'executing', 'executed', 'failed', 'cancelled')
+            
+        Returns:
+            List of queued orders
+        """
+        try:
+            supabase = self.get_supabase_client()
+            
+            query = supabase.table('queued_orders')\
+                .select('*')\
+                .eq('user_id', user_id)
+            
+            if status:
+                query = query.eq('status', status)
+            
+            result = query.order('created_at', desc=True).execute()
+            
+            return result.data or []
+            
+        except Exception as e:
+            logger.error(f"Error fetching queued orders: {e}")
+            return []
+    
+    def cancel_queued_order(self, user_id: str, order_id: str) -> Dict[str, Any]:
+        """
+        Cancel a queued order.
+        
+        Args:
+            user_id: Platform user ID
+            order_id: Queued order ID
+            
+        Returns:
+            {'success': bool, 'message': str}
+        """
+        try:
+            supabase = self.get_supabase_client()
+            
+            # Verify ownership and status
+            result = supabase.table('queued_orders')\
+                .select('*')\
+                .eq('id', order_id)\
+                .eq('user_id', user_id)\
+                .single()\
+                .execute()
+            
+            if not result.data:
+                return {'success': False, 'error': 'Order not found'}
+            
+            if result.data['status'] != 'pending':
+                return {'success': False, 'error': f"Cannot cancel order with status: {result.data['status']}"}
+            
+            # Update status to cancelled
+            supabase.table('queued_orders')\
+                .update({'status': 'cancelled', 'updated_at': datetime.now(timezone.utc).isoformat()})\
+                .eq('id', order_id)\
+                .execute()
+            
+            logger.info(f"✅ Queued order cancelled: {order_id}")
+            
+            return {
+                'success': True,
+                'message': f"Order {order_id} cancelled successfully"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error cancelling queued order: {e}")
+            return {'success': False, 'error': str(e)}
     
     def get_user_credentials(self, user_id: str) -> Optional[Dict[str, str]]:
         """
@@ -97,15 +280,26 @@ class SnapTradeTradingService:
             # Search for symbol in SnapTrade
             response = self.client.reference_data.get_symbols_by_ticker(query=ticker)
             
-            if not response.body or len(response.body) == 0:
+            # PRODUCTION-GRADE FIX: The API returns a single symbol dict, not a list
+            # response.body is the symbol object directly with 'id', 'symbol', etc.
+            if not response.body:
                 logger.warning(f"Symbol {ticker} not found in SnapTrade")
                 return None
             
-            # Return the first matching symbol's ID
-            universal_symbol_id = response.body[0]['id']
-            logger.info(f"Found universal symbol ID for {ticker}: {universal_symbol_id}")
+            # Get the ID from the symbol object (it's a dict, not a list)
+            if isinstance(response.body, dict) and 'id' in response.body:
+                universal_symbol_id = response.body['id']
+                logger.info(f"Found universal symbol ID for {ticker}: {universal_symbol_id}")
+                return universal_symbol_id
             
-            return universal_symbol_id
+            # Fallback: if it's somehow a list (API version difference)
+            if isinstance(response.body, list) and len(response.body) > 0:
+                universal_symbol_id = response.body[0].get('id') if isinstance(response.body[0], dict) else response.body[0]['id']
+                logger.info(f"Found universal symbol ID for {ticker}: {universal_symbol_id}")
+                return universal_symbol_id
+            
+            logger.warning(f"Symbol {ticker} response format unexpected: {type(response.body)}")
+            return None
             
         except Exception as e:
             logger.error(f"Error looking up symbol {ticker}: {e}")
@@ -234,9 +428,15 @@ class SnapTradeTradingService:
         """
         Place a trade order via SnapTrade.
         
-        PRODUCTION-GRADE: Two methods of order placement:
-        1. Using trade_id from check_order_impact (recommended)
-        2. Direct placement with order parameters (force order)
+        PRODUCTION-GRADE: Uses the proper two-step flow:
+        1. Call get_order_impact to validate the order and get a trade_id
+        2. Call place_order with the trade_id to execute
+        
+        This ensures proper validation including:
+        - Market hours check
+        - Symbol validity
+        - Account permissions
+        - Buying power validation
         
         Args:
             user_id: Platform user ID
@@ -288,7 +488,8 @@ class SnapTradeTradingService:
                     wait_to_confirm=True
                 )
                 
-            # Method 2: Force place order directly (no impact check)
+            # Method 2: PRODUCTION-GRADE - Use get_order_impact first, then place_order
+            # This validates market hours, symbol, and buying power BEFORE placing
             else:
                 if not all([symbol, action, order_type, time_in_force]):
                     return {
@@ -304,22 +505,139 @@ class SnapTradeTradingService:
                         'error': f'Symbol {symbol} not found or not supported for trading.'
                     }
                 
-                logger.info(f"Force placing order: {action} {symbol} via account {account_id}")
+                logger.info(f"Validating order via get_order_impact: {action} {symbol} via account {account_id}")
                 
-                # PRODUCTION-GRADE: Convert to float to match SDK signature exactly
-                # SDK expects: notional_value: Union[str, int, float, NoneType]
-                response = self.client.trading.place_force_order(
+                # PRODUCTION-GRADE: Convert notional_value to units if needed
+                # Some brokerages (like Webull) don't support notional orders, only unit-based orders
+                order_units = units
+                if notional_value and not units:
+                    # Get current price to convert notional to units
+                    try:
+                        # Use symbol search to get price info
+                        symbol_response = self.client.reference_data.symbol_search_user_account(
+                            user_id=credentials['snaptrade_user_id'],
+                            user_secret=credentials['snaptrade_user_secret'],
+                            account_id=account_id,
+                            substring=symbol
+                        )
+                        
+                        # Find exact symbol match
+                        symbol_data = None
+                        for s in symbol_response.body:
+                            if s.get('symbol') == symbol:
+                                symbol_data = s
+                                break
+                        
+                        if symbol_data and symbol_data.get('id') == universal_symbol_id:
+                            # Get a quote for the symbol to get current price
+                            # First try with a small test order to get the price from impact
+                            test_impact = self.client.trading.get_order_impact(
+                                user_id=credentials['snaptrade_user_id'],
+                                user_secret=credentials['snaptrade_user_secret'],
+                                account_id=account_id,
+                                action=action,
+                                universal_symbol_id=universal_symbol_id,
+                                order_type=order_type,
+                                time_in_force=time_in_force,
+                                units=0.001  # Tiny amount just to get price
+                            )
+                            current_price = test_impact.body.get('trade', {}).get('price')
+                            
+                            if current_price and current_price > 0:
+                                # Calculate units from notional value
+                                order_units = float(notional_value) / float(current_price)
+                                # Round to reasonable precision (4 decimal places for fractional shares)
+                                order_units = round(order_units, 4)
+                                logger.info(f"Converted notional ${notional_value} to {order_units} units at ${current_price}/share")
+                            else:
+                                logger.warning(f"Could not get price for {symbol}, using notional_value directly")
+                    except Exception as price_error:
+                        # If we can't get price, the order will likely fail with a clear error
+                        logger.warning(f"Could not convert notional to units: {price_error}")
+                        # Fall through and try with notional_value anyway
+                
+                # STEP 1: Get order impact (validates market hours, symbol, buying power)
+                try:
+                    # Build order params - prefer units over notional_value for broader brokerage support
+                    order_params = {
+                        'user_id': credentials['snaptrade_user_id'],
+                        'user_secret': credentials['snaptrade_user_secret'],
+                        'account_id': account_id,
+                        'action': action,
+                        'universal_symbol_id': universal_symbol_id,
+                        'order_type': order_type,
+                        'time_in_force': time_in_force,
+                    }
+                    
+                    if order_units:
+                        order_params['units'] = order_units
+                    elif notional_value:
+                        # Fallback to notional if units conversion failed
+                        order_params['notional_value'] = float(notional_value)
+                    
+                    if price:
+                        order_params['price'] = price
+                    if stop:
+                        order_params['stop'] = stop
+                    
+                    impact_response = self.client.trading.get_order_impact(**order_params)
+                    
+                    # Extract trade_id from impact response
+                    impact_trade = impact_response.body.get('trade', {})
+                    impact_trade_id = impact_trade.get('id')
+                    
+                    if not impact_trade_id:
+                        logger.error(f"No trade_id in impact response: {impact_response.body}")
+                        return {
+                            'success': False,
+                            'error': 'Failed to validate order - no trade ID returned'
+                        }
+                    
+                    logger.info(f"Order validated, trade_id: {impact_trade_id}")
+                    
+                except Exception as impact_error:
+                    error_str = str(impact_error)
+                    
+                    # PRODUCTION-GRADE: If market is closed, queue the order instead of failing
+                    if is_market_closed_error(error_str):
+                        logger.info(f"Market closed - queueing order for {action} {symbol}")
+                        return self.queue_order(
+                            user_id=user_id,
+                            account_id=account_id,
+                            symbol=symbol,
+                            action=action,
+                            order_type=order_type,
+                            time_in_force=time_in_force,
+                            notional_value=notional_value,
+                            units=units,
+                            price=price,
+                            stop_price=stop
+                        )
+                    elif 'insufficient' in error_str.lower() or 'buying power' in error_str.lower():
+                        return {
+                            'success': False,
+                            'error': 'Insufficient buying power to place this order.'
+                        }
+                    elif 'permission' in error_str.lower():
+                        return {
+                            'success': False,
+                            'error': 'Your account does not have permission to place this type of order.'
+                        }
+                    else:
+                        logger.error(f"Order impact validation failed: {impact_error}")
+                        return {
+                            'success': False,
+                            'error': f'Order validation failed: {error_str}'
+                        }
+                
+                # STEP 2: Place the order using the validated trade_id
+                logger.info(f"Placing validated order with trade_id: {impact_trade_id}")
+                
+                response = self.client.trading.place_order(
                     user_id=credentials['snaptrade_user_id'],
                     user_secret=credentials['snaptrade_user_secret'],
-                    account_id=account_id,
-                    action=action,
-                    universal_symbol_id=universal_symbol_id,
-                    order_type=order_type,
-                    time_in_force=time_in_force,
-                    notional_value=float(notional_value) if notional_value else None,
-                    units=units,
-                    price=price,
-                    stop=stop
+                    trade_id=impact_trade_id,
+                    wait_to_confirm=True
                 )
             
             # Parse response

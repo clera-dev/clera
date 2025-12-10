@@ -282,7 +282,38 @@ async def get_pending_orders(
                 logger.warning(f"Failed to fetch orders for account {account_id}: {e}")
                 continue
         
-        logger.info(f"Found {len(all_pending_orders)} pending orders for user {user_id}")
+        # PRODUCTION-GRADE: Also include locally queued orders (for when market was closed)
+        try:
+            queued_orders_result = supabase.table('queued_orders')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .eq('status', 'pending')\
+                .order('created_at', desc=True)\
+                .execute()
+            
+            for queued in queued_orders_result.data or []:
+                all_pending_orders.append({
+                    'order_id': queued['id'],
+                    'account_id': queued['account_id'],
+                    'account_name': 'Queued (Market Closed)',  # Special indicator
+                    'symbol': queued['symbol'],
+                    'quantity': float(queued.get('units') or 0),
+                    'notional_value': float(queued.get('notional_value') or 0),
+                    'order_type': queued.get('order_type', 'Market'),
+                    'side': queued.get('action', 'BUY'),
+                    'status': 'queued',  # Special status for queued orders
+                    'price': float(queued.get('price') or 0) if queued.get('price') else None,
+                    'created_at': queued.get('created_at'),
+                    'time_in_force': queued.get('time_in_force', 'Day'),
+                    'is_queued': True,  # Flag to identify queued orders
+                    'queued_message': 'Will execute when market opens (9:30 AM ET)'
+                })
+                
+            logger.info(f"Added {len(queued_orders_result.data or [])} queued orders")
+        except Exception as e:
+            logger.warning(f"Failed to fetch queued orders: {e}")
+        
+        logger.info(f"Found {len(all_pending_orders)} total pending orders for user {user_id}")
         
         return {
             "success": True,
@@ -292,6 +323,69 @@ async def get_pending_orders(
     except Exception as e:
         logger.error(f"Error fetching pending orders: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch pending orders: {str(e)}")
+
+
+@router.delete("/queued-order/{order_id}")
+async def cancel_queued_order(
+    order_id: str,
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Cancel a queued order (order placed when market was closed).
+    
+    Args:
+        order_id: The queued order ID to cancel
+        
+    Returns:
+        {
+            "success": True,
+            "message": str
+        }
+    """
+    try:
+        logger.info(f"Cancelling queued order {order_id} for user {user_id}")
+        
+        supabase = get_supabase_client()
+        
+        # Verify ownership and status
+        result = supabase.table('queued_orders')\
+            .select('*')\
+            .eq('id', order_id)\
+            .eq('user_id', user_id)\
+            .single()\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        if result.data['status'] != 'pending':
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot cancel order with status: {result.data['status']}"
+            )
+        
+        # Update status to cancelled
+        from datetime import datetime, timezone
+        supabase.table('queued_orders')\
+            .update({
+                'status': 'cancelled',
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            })\
+            .eq('id', order_id)\
+            .execute()
+        
+        logger.info(f"✅ Queued order cancelled: {order_id}")
+        
+        return {
+            "success": True,
+            "message": f"Order cancelled successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling queued order: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/connection-url")
@@ -611,11 +705,28 @@ async def sync_all_connections(
                 .execute()
             logger.info(f"✅ Created user_onboarding record with status 'submitted' for user {user_id}")
         
+        # CRITICAL: After syncing accounts, also sync holdings!
+        # This was missing - accounts were synced but holdings were never fetched
+        holdings_synced = 0
+        try:
+            from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
+            logger.info(f"🔄 Triggering holdings sync for user {user_id}")
+            sync_result = await trigger_full_user_sync(user_id, force_rebuild=True)
+            if sync_result.get('success'):
+                holdings_synced = sync_result.get('positions_synced', 0)
+                logger.info(f"✅ Synced {holdings_synced} holdings for user {user_id}")
+            else:
+                logger.warning(f"⚠️  Holdings sync returned non-success: {sync_result}")
+        except Exception as holdings_error:
+            logger.error(f"⚠️  Failed to sync holdings (non-fatal): {holdings_error}")
+            # Don't fail the whole request if holdings sync fails
+        
         return {
             "success": True,
-            "message": f"Synced {connections_synced} connections and {accounts_synced} accounts",
+            "message": f"Synced {connections_synced} connections, {accounts_synced} accounts, and {holdings_synced} holdings",
             "connections_synced": connections_synced,
             "accounts_synced": accounts_synced,
+            "holdings_synced": holdings_synced,
             "user_id": user_id
         }
         
@@ -1356,4 +1467,188 @@ async def capture_daily_snapshot(
     except Exception as e:
         logger.error(f"Error capturing snapshot: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Snapshot capture failed: {str(e)}")
+
+
+@router.delete("/disconnect-account/{account_id}")
+async def disconnect_account(
+    account_id: str,
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    PRODUCTION-GRADE: Disconnect a brokerage account.
+    
+    This endpoint allows users to:
+    - Remove a brokerage connection they no longer want
+    - Fix broken connections by disconnecting and reconnecting
+    - Switch to a different brokerage
+    
+    What this does:
+    1. Deletes the user's holdings for this account
+    2. Marks the account as inactive in our database
+    3. Optionally removes the connection from SnapTrade (if remove_from_snaptrade=true)
+    
+    Args:
+        account_id: The account ID (provider_account_id from user_investment_accounts)
+    
+    Returns:
+        {
+            "success": True,
+            "message": "Account disconnected successfully",
+            "account_id": str
+        }
+    """
+    try:
+        logger.info(f"🔌 Disconnecting account {account_id} for user {user_id}")
+        
+        supabase = get_supabase_client()
+        
+        # Step 1: Verify user owns this account
+        account_check = supabase.table('user_investment_accounts')\
+            .select('id, provider_account_id, institution_name, snaptrade_authorization_id')\
+            .eq('user_id', user_id)\
+            .eq('provider_account_id', account_id)\
+            .eq('provider', 'snaptrade')\
+            .execute()
+        
+        if not account_check.data:
+            raise HTTPException(status_code=404, detail="Account not found or you don't have permission to disconnect it")
+        
+        account = account_check.data[0]
+        institution_name = account.get('institution_name', 'Unknown')
+        authorization_id = account.get('snaptrade_authorization_id')
+        
+        # Step 2: Delete holdings for this account
+        holdings_result = supabase.table('user_aggregated_holdings')\
+            .delete()\
+            .eq('user_id', user_id)\
+            .eq('account_id', account['id'])\
+            .execute()
+        
+        holdings_deleted = len(holdings_result.data) if holdings_result.data else 0
+        logger.info(f"Deleted {holdings_deleted} holdings for account {account_id}")
+        
+        # Step 3: Mark account as inactive (soft delete)
+        supabase.table('user_investment_accounts')\
+            .update({
+                'is_active': False,
+                'connection_status': 'disconnected',
+                'sync_status': 'disabled'
+            })\
+            .eq('id', account['id'])\
+            .execute()
+        
+        # Step 4: Check if this was the last account for this authorization
+        # If so, we should also clean up the brokerage connection
+        remaining_accounts = supabase.table('user_investment_accounts')\
+            .select('id')\
+            .eq('user_id', user_id)\
+            .eq('snaptrade_authorization_id', authorization_id)\
+            .eq('is_active', True)\
+            .execute()
+        
+        if not remaining_accounts.data or len(remaining_accounts.data) == 0:
+            # No more active accounts for this authorization, mark connection as inactive
+            if authorization_id:
+                supabase.table('snaptrade_brokerage_connections')\
+                    .update({'status': 'disconnected'})\
+                    .eq('authorization_id', authorization_id)\
+                    .execute()
+                logger.info(f"Marked brokerage connection {authorization_id} as disconnected")
+        
+        logger.info(f"✅ Successfully disconnected {institution_name} account {account_id}")
+        
+        return {
+            "success": True,
+            "message": f"Successfully disconnected {institution_name} account",
+            "account_id": account_id,
+            "holdings_deleted": holdings_deleted
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error disconnecting account: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to disconnect account: {str(e)}")
+
+
+@router.delete("/disconnect-all")
+async def disconnect_all_accounts(
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    PRODUCTION-GRADE: Disconnect ALL brokerage accounts and reset SnapTrade connection.
+    
+    This is a nuclear option for:
+    - Switching from sandbox to production API keys
+    - Complete account reset
+    - User wants to start fresh
+    
+    What this does:
+    1. Deletes all user holdings
+    2. Deletes all user investment accounts (SnapTrade)
+    3. Deletes SnapTrade user credentials
+    4. Resets user_onboarding status
+    
+    After this, the user will need to reconnect their brokerage accounts.
+    
+    Returns:
+        {
+            "success": True,
+            "message": "All accounts disconnected",
+            "accounts_removed": int,
+            "holdings_removed": int
+        }
+    """
+    try:
+        logger.info(f"🔌 Disconnecting ALL accounts for user {user_id}")
+        
+        supabase = get_supabase_client()
+        
+        # Step 1: Delete all holdings
+        holdings_result = supabase.table('user_aggregated_holdings')\
+            .delete()\
+            .eq('user_id', user_id)\
+            .execute()
+        
+        holdings_removed = len(holdings_result.data) if holdings_result.data else 0
+        
+        # Step 2: Delete all SnapTrade investment accounts
+        accounts_result = supabase.table('user_investment_accounts')\
+            .delete()\
+            .eq('user_id', user_id)\
+            .eq('provider', 'snaptrade')\
+            .execute()
+        
+        accounts_removed = len(accounts_result.data) if accounts_result.data else 0
+        
+        # Step 3: Delete SnapTrade user credentials
+        supabase.table('snaptrade_users')\
+            .delete()\
+            .eq('user_id', user_id)\
+            .execute()
+        
+        # Step 4: Delete brokerage connections
+        supabase.table('snaptrade_brokerage_connections')\
+            .delete()\
+            .eq('user_id', user_id)\
+            .execute()
+        
+        # Step 5: Reset onboarding status so user can reconnect
+        supabase.table('user_onboarding')\
+            .update({'status': 'pending'})\
+            .eq('user_id', user_id)\
+            .execute()
+        
+        logger.info(f"✅ Disconnected all accounts: {accounts_removed} accounts, {holdings_removed} holdings")
+        
+        return {
+            "success": True,
+            "message": "All SnapTrade accounts disconnected. You can now reconnect with fresh credentials.",
+            "accounts_removed": accounts_removed,
+            "holdings_removed": holdings_removed
+        }
+        
+    except Exception as e:
+        logger.error(f"Error disconnecting all accounts: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to disconnect accounts: {str(e)}")
 

@@ -110,7 +110,7 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
             className="w-full shadow-none border-0"
           >
             <PlusCircle className="mr-2 h-4 w-4" />
-            Connect External Brokerage
+            Connect Brokerage Account
           </SnapTradeConnectButton>
         </div>
       </CardContent>

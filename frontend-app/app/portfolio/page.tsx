@@ -594,7 +594,8 @@ export default function PortfolioPage() {
             }
             
             if (ordersResult.status === 'fulfilled') {
-              setOrders(ordersResult.value || []);
+              // Use ordersData which correctly extracts orders from SnapTrade's { orders: [...] } format
+              setOrders(Array.isArray(ordersData) ? ordersData : []);
             }
             
             if (allTimeResult.status === 'fulfilled' && allTimeResult.value) {

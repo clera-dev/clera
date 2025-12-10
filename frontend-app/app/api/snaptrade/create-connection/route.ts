@@ -12,6 +12,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
+    // Get the session for JWT token
+    const { data: { session } } = await supabase.auth.getSession();
+    
     // Get request body
     const body = await request.json();
     const { 
@@ -29,7 +32,10 @@ export async function POST(request: Request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Pass through any auth headers if needed
+        // PRODUCTION-GRADE: Pass JWT token for authentication
+        'Authorization': `Bearer ${session?.access_token || ''}`,
+        // Also pass API key as fallback
+        'X-API-Key': process.env.BACKEND_API_KEY || '',
       },
       body: JSON.stringify({
         user_id: user.id,

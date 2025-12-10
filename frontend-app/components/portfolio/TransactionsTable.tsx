@@ -30,7 +30,9 @@ interface OrderData {
   symbol?: string;
   asset_class?: string;
   notional?: string | null; 
+  notional_value?: number; // For queued orders
   qty?: string | null; 
+  quantity?: number; // For SnapTrade orders
   filled_qty?: string | null; 
   filled_avg_price?: string | null; 
   order_type?: string;
@@ -39,9 +41,14 @@ interface OrderData {
   time_in_force?: string;
   limit_price?: string | null; 
   stop_price?: string | null; 
+  price?: number | null; // For SnapTrade orders
   status?: string;
   commission?: string | null;
   account_name?: string; // For SnapTrade orders: Brokerage name (e.g., "Webull")
+  account_id?: string; // For SnapTrade orders
+  // Queued order fields (orders placed when market was closed)
+  is_queued?: boolean;
+  queued_message?: string;
   // Activity fields
   activity_type?: string;
   net_amount?: string;
@@ -245,8 +252,11 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
         // Only orders (not activities) can be cancelled
         if (order.activity_type) return false;
         
+        // Queued orders (placed when market was closed) can always be cancelled
+        if (order.is_queued) return true;
+        
         // Only pending/open orders can be cancelled
-        const cancellableStatuses = ['new', 'pending_new', 'accepted', 'pending_cancel', 'pending_replace', 'open'];
+        const cancellableStatuses = ['new', 'pending_new', 'accepted', 'pending_cancel', 'pending_replace', 'open', 'queued'];
         return order.status ? cancellableStatuses.includes(order.status.toLowerCase()) : false;
     };
 
@@ -266,17 +276,33 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
 
     // Function to handle order cancellation confirmation
     const handleConfirmCancellation = async () => {
-        if (!orderToCancel || !accountId) return;
+        if (!orderToCancel) return;
 
         setIsCancelling(true);
 
         try {
-            const response = await fetch(`/api/portfolio/orders/cancel/${accountId}/${orderToCancel.id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
+            let response: Response;
+            
+            // Use different endpoint for queued orders vs brokerage orders
+            if (orderToCancel.is_queued) {
+                // Queued orders use our internal database endpoint
+                response = await fetch(`/api/snaptrade/queued-order/${orderToCancel.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+            } else if (!accountId) {
+                throw new Error('Account ID required to cancel brokerage order');
+            } else {
+                // Brokerage orders use the Alpaca/SnapTrade endpoint
+                response = await fetch(`/api/portfolio/orders/cancel/${accountId}/${orderToCancel.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+            }
 
             const data = await response.json();
 

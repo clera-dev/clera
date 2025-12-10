@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Terminal, TrendingUp, TrendingDown, XCircle, Building2, Wallet } from "lucide-react";
+import { Loader2, Terminal, TrendingUp, TrendingDown, XCircle, Building2, Wallet, Clock } from "lucide-react";
 import toast from 'react-hot-toast';
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -25,6 +25,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getMarketStatus } from "@/utils/market-hours";
+
+// Webull requires a minimum of $5 for fractional share orders
+const MINIMUM_ORDER_AMOUNT = 5;
 
 interface OrderModalProps {
   isOpen: boolean;
@@ -72,6 +76,9 @@ export default function OrderModal({
 
   const isBuyOrder = orderType === 'BUY';
   const isSellOrder = orderType === 'SELL';
+
+  // Check market status
+  const marketStatus = getMarketStatus();
 
   // Fetch trade-enabled accounts
   const fetchTradeAccounts = useCallback(async () => {
@@ -179,6 +186,11 @@ export default function OrderModal({
     
     return null;
   };
+
+  // Check if amount meets minimum order requirement
+  const parsedAmount = parseFloat(amount) || 0;
+  const isBelowMinimum = parsedAmount > 0 && parsedAmount < MINIMUM_ORDER_AMOUNT;
+  const meetsMinimum = parsedAmount >= MINIMUM_ORDER_AMOUNT;
 
   const handlePlaceOrder = async () => {
     // Validate brokerage account selection
@@ -345,6 +357,16 @@ export default function OrderModal({
         
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 min-h-0">
           <div className="space-y-3">
+            {/* Market Closed Banner */}
+            {!marketStatus.isOpen && (
+              <Alert className="border-amber-500/50 bg-amber-500/10">
+                <Clock className="h-4 w-4 text-amber-600" />
+                <AlertDescription className="text-sm text-amber-700 dark:text-amber-400">
+                  {marketStatus.message}
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* SPACE OPTIMIZATION: Order Type and Market Price side-by-side */}
             <div className="grid grid-cols-2 gap-2">
               <div className="bg-muted p-3 rounded-md">
@@ -487,6 +509,15 @@ export default function OrderModal({
                 <AlertDescription className="text-sm">{submitError}</AlertDescription>
               </Alert>
             )}
+
+            {/* Minimum order amount warning */}
+            {isBelowMinimum && (
+              <Alert className="mt-4 border-amber-500/50 bg-amber-500/10">
+                <AlertDescription className="text-sm text-amber-600 dark:text-amber-400">
+                  Minimum order amount is ${MINIMUM_ORDER_AMOUNT}. Please enter at least ${MINIMUM_ORDER_AMOUNT} to place an order.
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
         </div>
 
@@ -494,12 +525,16 @@ export default function OrderModal({
           <Button 
             type="button"
             size="lg"
-            className={`w-full ${buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
+            className={`w-full ${!marketStatus.isOpen ? 'bg-gray-400 hover:bg-gray-400' : buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || isLoadingPrice || !amount || parseFloat(amount) <= 0}
+            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || !marketStatus.isOpen}
           >
             {isSubmitting ? (
               <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> Placing Order...</>
+            ) : !marketStatus.isOpen ? (
+              <><Clock className="mr-2 h-4 w-4" /> Market Closed</>
+            ) : isBelowMinimum ? (
+              `Minimum $${MINIMUM_ORDER_AMOUNT} required`
             ) : (
               `Place ${isBuyOrder ? 'Buy' : 'Sell'} Order`
             )}

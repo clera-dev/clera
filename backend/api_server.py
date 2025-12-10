@@ -253,7 +253,7 @@ async def lifespan(app: FastAPI):
     # Gracefully shutdown all background services (if initialized)
     if bg_manager is not None:
         try:
-    await bg_manager.shutdown_all()
+            await bg_manager.shutdown_all()
         except Exception as e:
             logger.error(f"Error shutting down background services: {e}")
     else:
@@ -767,19 +767,29 @@ async def execute_trade(
                     "error": result.get('error')
                 }, status_code=400)
             
-            # Format success message
-            order = result['order']
-            success_message = (
-                f"✅ {action} order placed successfully via SnapTrade: "
-                f"${request.notional_amount:.2f} of {request.ticker}. "
-                f"Order ID: {order['brokerage_order_id']}"
-            )
-            
-            return JSONResponse({
-                "success": True,
-                "message": success_message,
-                "order": order
-            })
+            # PRODUCTION-GRADE: Handle both executed orders and queued orders
+            if result.get('queued'):
+                # Order was queued (market closed)
+                return JSONResponse({
+                    "success": True,
+                    "queued": True,
+                    "message": result.get('message', f"Order queued for market open: {action} ${request.notional_amount:.2f} of {request.ticker}"),
+                    "order": result.get('order', {})
+                })
+            else:
+                # Order was executed immediately
+                order = result['order']
+                success_message = (
+                    f"✅ {action} order placed successfully via SnapTrade: "
+                    f"${request.notional_amount:.2f} of {request.ticker}. "
+                    f"Order ID: {order['brokerage_order_id']}"
+                )
+                
+                return JSONResponse({
+                    "success": True,
+                    "message": success_message,
+                    "order": order
+                })
         
         else:
             # Alpaca account - use existing Alpaca trade execution

@@ -403,6 +403,15 @@ def run_all_tests():
         try:
             test_instance.setup_method()  # Reset for each test
             test()
-            passed += 1if __name__ == "__main__":
+            passed += 1
+        except Exception as e:
+            print(f"❌ {test.__name__} FAILED: {e}")
+            failed += 1
+    
+    print(f"\n{'='*60}")
+    print(f"📊 Results: {passed} passed, {failed} failed")
+    return failed == 0
+
+if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1) 

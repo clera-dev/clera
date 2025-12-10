@@ -68,40 +68,40 @@ def test_corrected_calculation():
     calc = create_mock_portfolio_calculator()
     
     account_id = 'test-account-id'
-        print(f"🧪 Testing corrected calculation for account {account_id}")
+    print(f"🧪 Testing corrected calculation for account {account_id}")
+    
+    # Test the corrected position-based calculation
+    todays_return, portfolio_value = calc.calculate_todays_return_position_based(account_id)
+    print(f"📊 Position-based calculation result:")
+    print(f"   Portfolio value: ${portfolio_value:.2f}")
+    print(f"   Today's return: ${todays_return:.2f}")
+    
+    # Test the full portfolio calculation
+    portfolio_data = calc.calculate_portfolio_value(account_id)
+    
+    if portfolio_data:
+        print("✅ Portfolio calculation successful!")
+        print(f"💰 Total Value: {portfolio_data['total_value']}")
+        print(f"📈 Today's Return: {portfolio_data['today_return']}")
+        print(f"🔢 Raw Return: ${portfolio_data['raw_return']:.2f}")
+        print(f"📊 Return %: {portfolio_data['raw_return_percent']:.2f}%")
         
-        # Test the corrected position-based calculation
-        todays_return, portfolio_value = calc.calculate_todays_return_position_based(account_id)
-        print(f"📊 Position-based calculation result:")
-        print(f"   Portfolio value: ${portfolio_value:.2f}")
-        print(f"   Today's return: ${todays_return:.2f}")
-        
-        # Test the full portfolio calculation
-        portfolio_data = calc.calculate_portfolio_value(account_id)
-        
-        if portfolio_data:
-            print("✅ Portfolio calculation successful!")
-            print(f"💰 Total Value: {portfolio_data['total_value']}")
-            print(f"📈 Today's Return: {portfolio_data['today_return']}")
-            print(f"🔢 Raw Return: ${portfolio_data['raw_return']:.2f}")
-            print(f"📊 Return %: {portfolio_data['raw_return_percent']:.2f}%")
-            
-            # Check if the return is reasonable (not 27% loss!)
-            return_percent = portfolio_data['raw_return_percent']
-            if abs(return_percent) < 10:  # Reasonable daily return
-                print("✅ GOOD: Return calculation shows reasonable daily change")
-            else:
-                print(f"⚠️  WARNING: Return shows {return_percent:.2f}% which may be unrealistic")
-                
+        # Check if the return is reasonable (not 27% loss!)
+        return_percent = portfolio_data['raw_return_percent']
+        if abs(return_percent) < 10:  # Reasonable daily return
+            print("✅ GOOD: Return calculation shows reasonable daily change")
         else:
-            print("❌ Portfolio calculation failed")
+            print(f"⚠️  WARNING: Return shows {return_percent:.2f}% which may be unrealistic")
             
-        # Also test against account data directly
-        account = calc.broker_client.get_trade_account_by_id(account_id)
-        print(f"\n📋 Account data verification:")
-        print(f"   Current equity: ${float(account.equity):.2f}")
-        print(f"   Last equity: ${float(account.last_equity):.2f}")
-        print(f"   Simple difference: ${float(account.equity) - float(account.last_equity):.2f}")
+    else:
+        print("❌ Portfolio calculation failed")
+        
+    # Also test against account data directly
+    account = calc.broker_client.get_trade_account_by_id(account_id)
+    print(f"\n📋 Account data verification:")
+    print(f"   Current equity: ${float(account.equity):.2f}")
+    print(f"   Last equity: ${float(account.last_equity):.2f}")
+    print(f"   Simple difference: ${float(account.equity) - float(account.last_equity):.2f}")
             
 def test_corrected_calculation_with_real_data():
     """Integration test with real data (optional, for end-to-end validation)."""
