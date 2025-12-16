@@ -726,6 +726,9 @@ async def execute_trade(
     PRODUCTION-GRADE: Automatically routes to correct brokerage based on account_id.
     For SnapTrade accounts, uses the new SnapTradeTradingService for proper order placement.
     """
+    # #region agent log
+    import json;open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:718","message":"execute_trade entry","data":{"user_id":user_id,"account_id":request.account_id,"ticker":request.ticker,"side":request.side},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1,H4,H5"})+'\n')
+    # #endregion
     try:
         logger.info(f"Received trade request: {request} for user {user_id}")
         
@@ -737,8 +740,51 @@ async def execute_trade(
         order_side = OrderSide.BUY if request.side.upper() == "BUY" else OrderSide.SELL
         action = "BUY" if order_side == OrderSide.BUY else "SELL"
         
-        # Check if this is a SnapTrade account
-        if request.account_id.startswith('snaptrade_') or (len(request.account_id) == 36 and '-' in request.account_id):
+        # PRODUCTION-GRADE: Determine provider by querying database instead of relying on account ID format
+        # This prevents UUID-format Alpaca accounts from being incorrectly routed to SnapTrade
+        clean_account_id = request.account_id.replace('snaptrade_', '')
+        
+        # #region agent log
+        import json;supabase_defined=False;
+        try:
+            supabase;supabase_defined=True
+        except NameError:
+            supabase_defined=False
+        open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:745","message":"before supabase query","data":{"supabase_defined":supabase_defined,"clean_account_id":clean_account_id,"user_id":user_id},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1,H2,H5"})+'\n')
+        # #endregion
+        
+        # Initialize Supabase client
+        supabase = get_supabase_client()
+        
+        # Query database to determine the account provider
+        # First try to match by provider_account_id
+        account_result = supabase.table('user_investment_accounts')\
+            .select('provider, provider_account_id')\
+            .eq('user_id', user_id)\
+            .eq('provider_account_id', clean_account_id)\
+            .execute()
+        
+        # If not found, try matching by UUID (id field)
+        if not account_result.data or len(account_result.data) == 0:
+            # #region agent log
+            import json;open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:753","message":"first query returned empty, trying UUID match","data":{"first_query_result_count":len(account_result.data) if account_result.data else 0},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1"})+'\n')
+            # #endregion
+            account_result = supabase.table('user_investment_accounts')\
+                .select('provider, provider_account_id')\
+                .eq('user_id', user_id)\
+                .eq('id', clean_account_id)\
+                .execute()
+        
+        is_snaptrade_account = False
+        if account_result.data and len(account_result.data) > 0:
+            account_provider = account_result.data[0]['provider']
+            is_snaptrade_account = (account_provider == 'snaptrade')
+            logger.info(f"Account {request.account_id} provider: {account_provider}")
+        else:
+            # If not found in user_investment_accounts, check if it's the legacy Alpaca account ID
+            logger.info(f"Account {request.account_id} not found in user_investment_accounts, assuming Alpaca")
+        
+        if is_snaptrade_account:
             # SnapTrade account - use SnapTrade trading service
             logger.info(f"Routing trade to SnapTrade for account {request.account_id}")
             
@@ -2973,7 +3019,11 @@ async def get_portfolio_history_data(
             timeline_data['profit_loss_pct'].append(float(row['total_gain_loss_percent']))
             
             # Parse account breakdown for future filtering
-            account_breakdown = json.loads(row['account_breakdown']) if row['account_breakdown'] else {}
+            account_breakdown_raw = row['account_breakdown']
+            if isinstance(account_breakdown_raw, str):
+                account_breakdown = json.loads(account_breakdown_raw) if account_breakdown_raw else {}
+            else:
+                account_breakdown = account_breakdown_raw if account_breakdown_raw else {}
             timeline_data['account_breakdown'].append(account_breakdown)
         
         # Calculate base value (oldest value in timeline)
@@ -4071,7 +4121,7 @@ async def update_buying_power_preference(
             .upsert({
                 'user_id': user_id,
                 'buying_power_display': buying_power_display,
-                'updated_at': 'NOW()'
+                'updated_at': datetime.now().isoformat()
             }, on_conflict='user_id')\
             .execute()
         
@@ -4093,14 +4143,16 @@ async def update_buying_power_preference(
 # === USER-BASED WATCHLIST ENDPOINTS (Aggregation & Brokerage Mode) ===
 # These endpoints work for all users regardless of having an Alpaca account
 
-@app.get("/api/user/{user_id}/watchlist", response_model=WatchlistResponse)
+@app.get("/api/user/watchlist", response_model=WatchlistResponse)
 async def get_user_watchlist(
-    user_id: str,
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
     """
     Get user's watchlist (works for both aggregation and brokerage modes).
     Stores watchlist in Supabase, independent of Alpaca accounts.
+    
+    SECURITY: user_id is derived from JWT token to prevent IDOR attacks.
     """
     try:
         logger.info(f"Getting watchlist for user {user_id}")
@@ -4118,14 +4170,16 @@ async def get_user_watchlist(
         )
 
 
-@app.post("/api/user/{user_id}/watchlist/add")
+@app.post("/api/user/watchlist/add")
 async def add_symbol_to_user_watchlist(
-    user_id: str,
     request: AddToWatchlistRequest,
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
     """
     Add a symbol to user's watchlist (works for both aggregation and brokerage modes).
+    
+    SECURITY: user_id is derived from JWT token to prevent IDOR attacks.
     """
     try:
         symbol = request.symbol.upper().strip()
@@ -4166,14 +4220,16 @@ async def add_symbol_to_user_watchlist(
         )
 
 
-@app.delete("/api/user/{user_id}/watchlist/remove")
+@app.delete("/api/user/watchlist/remove")
 async def remove_symbol_from_user_watchlist(
-    user_id: str,
     request: RemoveFromWatchlistRequest,
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ):
     """
     Remove a symbol from user's watchlist (works for both aggregation and brokerage modes).
+    
+    SECURITY: user_id is derived from JWT token to prevent IDOR attacks.
     """
     try:
         symbol = request.symbol.upper().strip()

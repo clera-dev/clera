@@ -10,11 +10,11 @@ import {
  * User-based watchlist remove API
  * DELETE: Remove symbol from user's watchlist
  * 
- * SECURITY FIX: Uses centralized authentication and backend configuration
+ * SECURITY FIX: User ID is derived from JWT token on backend to prevent IDOR attacks
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // SECURITY: Authenticate user and get their verified ID
+    // SECURITY: Authenticate user and get their verified ID + access token
     const userContext = await authenticateUser();
 
     // Parse request body
@@ -32,12 +32,13 @@ export async function DELETE(request: NextRequest) {
     const config = getBackendProxyConfig();
 
     // Call backend API to remove symbol from watchlist
+    // SECURITY: User ID extracted from JWT token on backend, not from URL
     console.log(`Removing symbol ${symbol} from watchlist for user ${userContext.userId}`);
     const response = await fetch(
-      `${config.backendUrl}/api/user/${encodeURIComponent(userContext.userId)}/watchlist/remove`,
+      `${config.backendUrl}/api/user/watchlist/remove`,
       {
         method: 'DELETE',
-        headers: createBackendHeaders(config),
+        headers: createBackendHeaders(config, userContext.accessToken),
         body: JSON.stringify({ symbol }),
         cache: 'no-store'
       }

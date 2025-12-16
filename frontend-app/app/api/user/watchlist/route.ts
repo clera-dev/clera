@@ -1,44 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { 
+  authenticateUser, 
+  getBackendProxyConfig,
+  createBackendHeaders,
+  handleError 
+} from '@/utils/api/route-middleware';
 
 /**
  * User-based watchlist API (works for both aggregation and brokerage modes)
  * GET: Fetch user's watchlist
+ * 
+ * SECURITY FIX: User ID is derived from JWT token on backend to prevent IDOR attacks
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
-    // Authenticate user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // SECURITY: Authenticate user and get their verified ID + access token
+    const userContext = await authenticateUser();
 
-    // Get backend configuration
-    const backendUrl = process.env.BACKEND_API_URL;
-    const backendApiKey = process.env.BACKEND_API_KEY;
-    
-    if (!backendUrl || !backendApiKey) {
-      console.error('Missing backend API configuration');
-      return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
-      );
-    }
+    // Get backend configuration (centralized, consistent error handling)
+    const config = getBackendProxyConfig();
 
-    // Call backend API to get watchlist by user ID
-    console.log(`Getting watchlist for user ${user.id}`);
-    const response = await fetch(`${backendUrl}/api/user/${user.id}/watchlist`, {
+    // Call backend API to get watchlist
+    // SECURITY: User ID extracted from JWT token on backend, not from URL
+    console.log(`Getting watchlist for user ${userContext.userId}`);
+    const response = await fetch(`${config.backendUrl}/api/user/watchlist`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': backendApiKey,
-      },
+      headers: createBackendHeaders(config, userContext.accessToken),
       cache: 'no-store'
     });
 
@@ -74,10 +61,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error in user watchlist API:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return handleError(error);
   }
 }
 
