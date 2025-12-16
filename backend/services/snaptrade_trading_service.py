@@ -545,10 +545,30 @@ class SnapTradeTradingService:
                             
                             if current_price and current_price > 0:
                                 # Calculate units from notional value
-                                order_units = float(notional_value) / float(current_price)
-                                # Round to reasonable precision (4 decimal places for fractional shares)
-                                order_units = round(order_units, 4)
-                                logger.info(f"Converted notional ${notional_value} to {order_units} units at ${current_price}/share")
+                                raw_units = float(notional_value) / float(current_price)
+                                
+                                # PRODUCTION-GRADE FIX: Handle fractional share limitations
+                                # Many brokerages don't allow selling fractional shares when you hold whole shares
+                                # For SELL orders, we round DOWN to whole shares to avoid this error
+                                if action == 'SELL':
+                                    import math
+                                    whole_units = math.floor(raw_units)
+                                    
+                                    if whole_units == 0:
+                                        # User is trying to sell less than 1 share
+                                        min_sell_value = float(current_price)
+                                        return {
+                                            'success': False,
+                                            'error': f'Minimum sell amount is 1 share (${min_sell_value:.2f}). Your ${notional_value:.2f} order equals {raw_units:.3f} shares. Please sell at least ${min_sell_value:.2f} worth.'
+                                        }
+                                    
+                                    # CRITICAL: SnapTrade API expects float/Decimal, not int
+                                    order_units = float(whole_units)
+                                    logger.info(f"SELL order: Converted notional ${notional_value} to {order_units} whole shares (raw: {raw_units:.4f}) at ${current_price}/share")
+                                else:
+                                    # For BUY orders, fractional shares are usually supported
+                                    order_units = round(raw_units, 4)
+                                    logger.info(f"BUY order: Converted notional ${notional_value} to {order_units} units at ${current_price}/share")
                             else:
                                 logger.warning(f"Could not get price for {symbol}, using notional_value directly")
                     except Exception as price_error:
@@ -623,6 +643,12 @@ class SnapTradeTradingService:
                             'success': False,
                             'error': 'Your account does not have permission to place this type of order.'
                         }
+                    elif 'FRACT_NOT_CLOSE_INT_POSITION' in error_str or 'fractional shares trading is not available' in error_str.lower():
+                        # Brokerage doesn't allow selling fractional shares from whole-share positions
+                        return {
+                            'success': False,
+                            'error': 'This brokerage requires selling whole shares only. Please adjust your sell amount to at least 1 full share.'
+                        }
                     else:
                         logger.error(f"Order impact validation failed: {impact_error}")
                         return {
@@ -661,10 +687,19 @@ class SnapTradeTradingService:
             }
             
         except Exception as e:
+            error_str = str(e)
             logger.error(f"Error placing order: {e}", exc_info=True)
+            
+            # PRODUCTION-GRADE: Handle specific brokerage error messages with user-friendly responses
+            if 'FRACT_NOT_CLOSE_INT_POSITION' in error_str or 'fractional shares trading is not available' in error_str.lower():
+                return {
+                    'success': False,
+                    'error': 'This brokerage requires selling whole shares only. Please adjust your sell amount to at least 1 full share.'
+                }
+            
             return {
                 'success': False,
-                'error': f'Failed to place order: {str(e)}'
+                'error': f'Failed to place order: {error_str}'
             }
     
     def cancel_order(

@@ -256,7 +256,7 @@ class PortfolioDataProvider:
                     
                     # Handle sentinel value for unreliable returns
                     unrealized_plpc = h.get('unrealized_gain_loss_percent')
-                    if unrealized_plpc == -999999.0 or unrealized_plpc <= -999999:
+                    if unrealized_plpc is None or unrealized_plpc == -999999.0 or unrealized_plpc <= -999999:
                         # Unreliable data - keep sentinel value for agent to detect
                         unrealized_plpc = Decimal('-999999')
                     else:
@@ -341,7 +341,7 @@ class PortfolioDataProvider:
                     
                     # Handle sentinel value for unreliable returns
                     unrealized_plpc = h.get('unrealized_gain_loss_percent')
-                    if unrealized_plpc == -999999.0 or unrealized_plpc <= -999999:
+                    if unrealized_plpc is None or unrealized_plpc == -999999.0 or unrealized_plpc <= -999999:
                         unrealized_plpc = Decimal('-999999')  # Keep sentinel
                     else:
                         unrealized_plpc = Decimal(str(unrealized_plpc or 0))

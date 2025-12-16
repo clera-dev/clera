@@ -32,7 +32,6 @@ load_dotenv(override=True)
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, FunctionMessage
 from langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
 from langchain_core.tools import Tool, tool
-from langchain.agents.format_scratchpad.log_to_messages import format_log_to_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.memory import InMemoryStore

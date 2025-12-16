@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Terminal, TrendingUp, TrendingDown, XCircle, Building2, Wallet, Clock } from "lucide-react";
+import { Loader2, Terminal, TrendingUp, TrendingDown, XCircle, Building2, Wallet, Clock, DollarSign, Hash } from "lucide-react";
 import toast from 'react-hot-toast';
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -69,6 +69,9 @@ export default function OrderModal({
   const [priceError, setPriceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   
+  // Input mode: dollars (default for buy), shares (available for sell)
+  const [inputMode, setInputMode] = useState<'dollars' | 'shares'>('dollars');
+  
   // Brokerage account selection
   const [tradeAccounts, setTradeAccounts] = useState<TradeAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
@@ -76,6 +79,10 @@ export default function OrderModal({
 
   const isBuyOrder = orderType === 'BUY';
   const isSellOrder = orderType === 'SELL';
+  
+  // Calculate available shares for sell orders
+  const availableShares = currentQuantity ? parseFloat(currentQuantity) : 0;
+  const maxWholeShares = Math.floor(availableShares);
 
   // Check market status
   const marketStatus = getMarketStatus();
@@ -150,8 +157,10 @@ export default function OrderModal({
       fetchTradeAccounts();
       setAmount(''); // Reset amount on open
       setSubmitError(null);
+      // Default to shares mode for sell orders (whole shares required by brokerages)
+      setInputMode(isSellOrder ? 'shares' : 'dollars');
     }
-  }, [isOpen, fetchMarketPrice, fetchTradeAccounts]);
+  }, [isOpen, fetchMarketPrice, fetchTradeAccounts, isSellOrder]);
 
   const handleNumberPadInput = (value: string) => {
     if (value === '⌫') {
@@ -177,11 +186,21 @@ export default function OrderModal({
   const validateSellOrder = (): string | null => {
     if (!isSellOrder) return null;
     
-    const notionalAmount = parseFloat(amount);
-    const maxSellValue = currentMarketValue ? parseFloat(currentMarketValue) : null;
-    
-    if (maxSellValue && notionalAmount > maxSellValue) {
-      return `Cannot sell more than your current holdings value of ${formatCurrency(maxSellValue)}.`;
+    if (inputMode === 'shares') {
+      const shareAmount = parseFloat(amount);
+      if (shareAmount > maxWholeShares) {
+        return `Cannot sell more than ${maxWholeShares} whole shares. You have ${availableShares.toFixed(3)} shares total.`;
+      }
+      if (shareAmount <= 0) {
+        return 'Please enter at least 1 share to sell.';
+      }
+    } else {
+      const notionalAmount = parseFloat(amount);
+      const maxSellValue = currentMarketValue ? parseFloat(currentMarketValue) : null;
+      
+      if (maxSellValue && notionalAmount > maxSellValue) {
+        return `Cannot sell more than your current holdings value of ${formatCurrency(maxSellValue)}.`;
+      }
     }
     
     return null;
@@ -189,8 +208,13 @@ export default function OrderModal({
 
   // Check if amount meets minimum order requirement
   const parsedAmount = parseFloat(amount) || 0;
-  const isBelowMinimum = parsedAmount > 0 && parsedAmount < MINIMUM_ORDER_AMOUNT;
-  const meetsMinimum = parsedAmount >= MINIMUM_ORDER_AMOUNT;
+  // For shares mode, minimum is 1 share; for dollars mode, minimum is $5
+  const isBelowMinimum = inputMode === 'shares' 
+    ? (parsedAmount > 0 && parsedAmount < 1)
+    : (parsedAmount > 0 && parsedAmount < MINIMUM_ORDER_AMOUNT);
+  const meetsMinimum = inputMode === 'shares'
+    ? (parsedAmount >= 1 && Number.isInteger(parsedAmount))
+    : (parsedAmount >= MINIMUM_ORDER_AMOUNT);
 
   const handlePlaceOrder = async () => {
     // Validate brokerage account selection
@@ -199,16 +223,24 @@ export default function OrderModal({
       return;
     }
     
-    const notionalAmount = parseFloat(amount);
-    if (isNaN(notionalAmount) || notionalAmount <= 0) {
-      setSubmitError("Please enter a valid amount greater than $0.");
+    const parsedValue = parseFloat(amount);
+    if (isNaN(parsedValue) || parsedValue <= 0) {
+      setSubmitError(inputMode === 'shares' 
+        ? "Please enter a valid number of shares." 
+        : "Please enter a valid amount greater than $0.");
+      return;
+    }
+    
+    // For shares mode, ensure whole number
+    if (inputMode === 'shares' && !Number.isInteger(parsedValue)) {
+      setSubmitError("Please enter a whole number of shares to sell.");
       return;
     }
 
     // Check if user has sufficient buying power for buy orders
     const selectedAccountData = tradeAccounts.find(acc => acc.account_id === selectedAccount);
     if (isBuyOrder && selectedAccountData) {
-      if (notionalAmount > selectedAccountData.buying_power) {
+      if (parsedValue > selectedAccountData.buying_power) {
         setSubmitError(`Insufficient buying power. Available: ${formatCurrency(selectedAccountData.buying_power)}`);
         return;
       }
@@ -225,24 +257,41 @@ export default function OrderModal({
     setSubmitError(null);
     const orderAction = isBuyOrder ? 'BUY' : 'SELL';
     const accountName = selectedAccountData?.institution_name || 'your account';
+    
     // More specific loading message for different order types
-    const loadingMessage = isSellOrder 
-      ? `Selling $${notionalAmount.toFixed(2)} worth of ${symbol} from ${accountName}...`
-      : `Submitting ${orderAction} order for $${notionalAmount.toFixed(2)} of ${symbol} via ${accountName}...`;
+    const loadingMessage = inputMode === 'shares'
+      ? `Selling ${parsedValue} shares of ${symbol} from ${accountName}...`
+      : isSellOrder 
+        ? `Selling $${parsedValue.toFixed(2)} worth of ${symbol} from ${accountName}...`
+        : `Submitting ${orderAction} order for $${parsedValue.toFixed(2)} of ${symbol} via ${accountName}...`;
     const toastId = toast.loading(loadingMessage);
 
     try {
+        // Build request body - use units for shares mode, notional_amount for dollars mode
+        const requestBody: {
+          account_id: string;
+          ticker: string;
+          side: string;
+          notional_amount?: number;
+          units?: number;
+        } = {
+          account_id: selectedAccount,
+          ticker: symbol,
+          side: orderAction,
+        };
+        
+        if (inputMode === 'shares') {
+          requestBody.units = parsedValue;
+        } else {
+          requestBody.notional_amount = parsedValue;
+        }
+        
         const response = await fetch('/api/trade', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                account_id: selectedAccount, // Use selected brokerage account
-                ticker: symbol,
-                notional_amount: notionalAmount,
-                side: orderAction
-            }),
+            body: JSON.stringify(requestBody),
         });
 
         const result = await response.json();
@@ -261,9 +310,11 @@ export default function OrderModal({
 
         // More specific success message for sell orders from portfolio
         const successMessage = result.message || (
-          isSellOrder 
-            ? `Successfully sold $${notionalAmount.toFixed(2)} worth of ${symbol} from your portfolio.`
-            : `Successfully placed ${orderAction} order for ${symbol}.`
+          inputMode === 'shares'
+            ? `Successfully sold ${parsedValue} shares of ${symbol} from your portfolio.`
+            : isSellOrder 
+              ? `Successfully sold $${parsedValue.toFixed(2)} worth of ${symbol} from your portfolio.`
+              : `Successfully placed ${orderAction} order for ${symbol}.`
         );
         toast.success(successMessage, { id: toastId });
         setAmount(''); // Clear amount on success
@@ -439,7 +490,7 @@ export default function OrderModal({
                   <div className="text-right">
                     <div className="font-semibold text-sm">{formatCurrency(parseFloat(currentMarketValue))}</div>
                     <div className="text-xs text-muted-foreground">
-                      {parseFloat(currentQuantity).toFixed(3)} shares
+                      {parseFloat(currentQuantity).toFixed(3)} shares ({maxWholeShares} whole)
                     </div>
                   </div>
                 </div>
@@ -448,10 +499,40 @@ export default function OrderModal({
                   <div className="text-right">
                     <div className="font-semibold">{formatCurrency(parseFloat(currentMarketValue))}</div>
                     <div className="text-xs text-muted-foreground">
-                      {parseFloat(currentQuantity).toLocaleString()} shares
+                      {parseFloat(currentQuantity).toLocaleString()} shares ({maxWholeShares} whole)
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+            
+            {/* Sell Mode Toggle - Shares vs Dollars */}
+            {isSellOrder && (
+              <div className="flex gap-1 p-1 bg-muted rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => { setInputMode('shares'); setAmount(''); }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${
+                    inputMode === 'shares'
+                      ? 'bg-background shadow-sm text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Hash className="h-4 w-4" />
+                  Shares
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setInputMode('dollars'); setAmount(''); }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${
+                    inputMode === 'dollars'
+                      ? 'bg-background shadow-sm text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <DollarSign className="h-4 w-4" />
+                  Dollars
+                </button>
               </div>
             )}
 
@@ -465,40 +546,55 @@ export default function OrderModal({
 
             <div className="mt-4">
               <label htmlFor="amount" className="block text-sm font-medium text-muted-foreground mb-1">
-                Amount ($)
+                {inputMode === 'shares' ? 'Number of Shares' : 'Amount ($)'}
               </label>
-              <Input
-                id="amount"
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={amount}
-                onChange={handleInputChange}
-                className="text-center text-xl sm:text-2xl font-bold h-12 sm:h-14 focus-visible:ring-primary"
-                disabled={isSubmitting}
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck="false"
-                data-form-type="other"
-              />
+              <div className="relative">
+                {inputMode === 'shares' && (
+                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                )}
+                {inputMode === 'dollars' && (
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                )}
+                <Input
+                  id="amount"
+                  type="text"
+                  inputMode={inputMode === 'shares' ? 'numeric' : 'decimal'}
+                  placeholder={inputMode === 'shares' ? '0' : '0.00'}
+                  value={amount}
+                  onChange={handleInputChange}
+                  className="text-center text-xl sm:text-2xl font-bold h-12 sm:h-14 focus-visible:ring-primary pl-10"
+                  disabled={isSubmitting}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  data-form-type="other"
+                />
+              </div>
+              {inputMode === 'shares' && marketPrice && parsedAmount > 0 && (
+                <div className="text-center text-sm text-muted-foreground mt-1">
+                  ≈ {formatCurrency(parsedAmount * marketPrice)}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-2 mt-4">
-              {[
-                '1', '2', '3', 
-                '4', '5', '6', 
-                '7', '8', '9', 
-                '.', '0', '⌫'
-              ].map((btn) => (
-                <Button
-                  key={btn}
-                  variant="outline"
-                  size="lg"
-                  className="text-lg sm:text-xl font-semibold h-12 sm:h-14"
-                  onClick={() => handleNumberPadInput(btn)}
-                >
-                  {btn}
-                </Button>
+              {(inputMode === 'shares' 
+                ? ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫']
+                : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫']
+              ).map((btn, idx) => (
+                btn === '' ? (
+                  <div key={idx} className="h-12 sm:h-14" /> // Empty space for grid alignment
+                ) : (
+                  <Button
+                    key={btn}
+                    variant="outline"
+                    size="lg"
+                    className="text-lg sm:text-xl font-semibold h-12 sm:h-14"
+                    onClick={() => handleNumberPadInput(btn)}
+                  >
+                    {btn}
+                  </Button>
+                )
               ))}
             </div>
 
@@ -514,7 +610,18 @@ export default function OrderModal({
             {isBelowMinimum && (
               <Alert className="mt-4 border-amber-500/50 bg-amber-500/10">
                 <AlertDescription className="text-sm text-amber-600 dark:text-amber-400">
-                  Minimum order amount is ${MINIMUM_ORDER_AMOUNT}. Please enter at least ${MINIMUM_ORDER_AMOUNT} to place an order.
+                  {inputMode === 'shares' 
+                    ? 'You must sell at least 1 whole share. Fractional share selling is not supported by this brokerage.'
+                    : `Minimum order amount is $${MINIMUM_ORDER_AMOUNT}. Please enter at least $${MINIMUM_ORDER_AMOUNT} to place an order.`}
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {/* Non-whole number warning for shares mode */}
+            {inputMode === 'shares' && parsedAmount > 0 && !Number.isInteger(parsedAmount) && (
+              <Alert className="mt-4 border-amber-500/50 bg-amber-500/10">
+                <AlertDescription className="text-sm text-amber-600 dark:text-amber-400">
+                  Please enter a whole number of shares. This brokerage only supports selling whole shares.
                 </AlertDescription>
               </Alert>
             )}
@@ -527,14 +634,16 @@ export default function OrderModal({
             size="lg"
             className={`w-full ${!marketStatus.isOpen ? 'bg-gray-400 hover:bg-gray-400' : buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || !marketStatus.isOpen}
+            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || !marketStatus.isOpen || (inputMode === 'shares' && !Number.isInteger(parsedAmount))}
           >
             {isSubmitting ? (
               <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> Placing Order...</>
             ) : !marketStatus.isOpen ? (
               <><Clock className="mr-2 h-4 w-4" /> Market Closed</>
             ) : isBelowMinimum ? (
-              `Minimum $${MINIMUM_ORDER_AMOUNT} required`
+              inputMode === 'shares' ? 'Minimum 1 share required' : `Minimum $${MINIMUM_ORDER_AMOUNT} required`
+            ) : inputMode === 'shares' && !Number.isInteger(parsedAmount) ? (
+              'Whole shares only'
             ) : (
               `Place ${isBuyOrder ? 'Buy' : 'Sell'} Order`
             )}
