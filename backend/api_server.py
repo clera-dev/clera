@@ -31,7 +31,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from langgraph.errors import GraphInterrupt
 from langgraph.graph.message import add_messages
@@ -311,6 +311,13 @@ class TradeRequest(BaseModel):
     notional_amount: Optional[float] = Field(None, description="Dollar amount to trade")
     units: Optional[float] = Field(None, description="Number of shares to trade (alternative to notional_amount)")
     side: str = Field(..., description="BUY or SELL")
+    
+    @model_validator(mode='after')
+    def validate_amount_or_units(self) -> 'TradeRequest':
+        """Ensure at least one of notional_amount or units is provided."""
+        if self.notional_amount is None and self.units is None:
+            raise ValueError('Either notional_amount or units must be provided')
+        return self
 
 class CompanyInfoRequest(BaseModel):
     ticker: str = Field(..., description="Stock ticker symbol")
@@ -846,6 +853,14 @@ async def execute_trade(
                     status_code=503,
                     detail="Alpaca trading service unavailable"
                 )
+            
+            # PRODUCTION-GRADE: Alpaca path only supports notional_amount, not units
+            # When shares mode is used (units provided instead of notional_amount), reject with clear error
+            if request.notional_amount is None:
+                return JSONResponse({
+                    "success": False,
+                    "error": "Alpaca accounts only support dollar-amount orders. Please use dollar amount instead of shares."
+                }, status_code=400)
             
             result = _submit_market_order(
                 account_id=request.account_id, 

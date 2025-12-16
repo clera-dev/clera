@@ -127,18 +127,31 @@ class SnapTradeTradingService:
             
             if result.data:
                 order_id = result.data[0]['id']
-                logger.info(f"✅ Order queued successfully: {order_id} - {action} ${notional_value or units} of {symbol}")
+                
+                # Build order description based on whether notional or units was provided
+                if notional_value is not None:
+                    order_desc = f"${notional_value:.2f} of {symbol}"
+                    log_desc = f"${notional_value}"
+                elif units is not None:
+                    order_desc = f"{units} shares of {symbol}"
+                    log_desc = f"{units} shares"
+                else:
+                    order_desc = symbol
+                    log_desc = "unknown amount"
+                
+                logger.info(f"✅ Order queued successfully: {order_id} - {action} {log_desc} of {symbol}")
                 
                 return {
                     'success': True,
                     'queued': True,
                     'order_id': order_id,
-                    'message': f'Order queued for market open. Your {action} order for ${notional_value:.2f} of {symbol} will be executed when the market opens (9:30 AM ET).',
+                    'message': f'Order queued for market open. Your {action} order for {order_desc} will be executed when the market opens (9:30 AM ET).',
                     'order': {
                         'id': order_id,
                         'symbol': symbol,
                         'action': action,
                         'notional_value': notional_value,
+                        'units': units,
                         'status': 'pending',
                         'queued_at': order_data['created_at']
                     }
