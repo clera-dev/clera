@@ -127,18 +127,31 @@ class SnapTradeTradingService:
             
             if result.data:
                 order_id = result.data[0]['id']
-                logger.info(f"✅ Order queued successfully: {order_id} - {action} ${notional_value or units} of {symbol}")
+                
+                # Build order description based on whether notional or units was provided
+                if notional_value is not None:
+                    order_desc = f"${notional_value:.2f} of {symbol}"
+                    log_desc = f"${notional_value}"
+                elif units is not None:
+                    order_desc = f"{units} shares of {symbol}"
+                    log_desc = f"{units} shares"
+                else:
+                    order_desc = symbol
+                    log_desc = "unknown amount"
+                
+                logger.info(f"✅ Order queued successfully: {order_id} - {action} {log_desc} of {symbol}")
                 
                 return {
                     'success': True,
                     'queued': True,
                     'order_id': order_id,
-                    'message': f'Order queued for market open. Your {action} order for ${notional_value:.2f} of {symbol} will be executed when the market opens (9:30 AM ET).',
+                    'message': f'Order queued for market open. Your {action} order for {order_desc} will be executed when the market opens (9:30 AM ET).',
                     'order': {
                         'id': order_id,
                         'symbol': symbol,
                         'action': action,
                         'notional_value': notional_value,
+                        'units': units,
                         'status': 'pending',
                         'queued_at': order_data['created_at']
                     }
@@ -153,7 +166,7 @@ class SnapTradeTradingService:
             logger.error(f"Error queueing order: {e}", exc_info=True)
             return {
                 'success': False,
-                'error': f'Failed to queue order: {str(e)}'
+                'error': 'Unable to queue order for later. Please try again when the market opens.'
             }
     
     def get_queued_orders(self, user_id: str, status: str = 'pending') -> List[Dict[str, Any]]:
@@ -372,6 +385,7 @@ class SnapTradeTradingService:
             # Call SnapTrade order impact API
             # PRODUCTION-GRADE: Convert Decimal to float to match SDK signature
             # SDK expects: notional_value: Union[str, int, float, NoneType]
+            # Use explicit `is not None` checks for consistency
             response = self.client.trading.get_order_impact(
                 user_id=credentials['snaptrade_user_id'],
                 user_secret=credentials['snaptrade_user_secret'],
@@ -380,10 +394,10 @@ class SnapTradeTradingService:
                 universal_symbol_id=universal_symbol_id,
                 order_type=order_type,
                 time_in_force=time_in_force,
-                notional_value=float(notional_value) if notional_value else None,
-                units=units,
-                price=price,
-                stop=stop
+                notional_value=float(notional_value) if notional_value is not None else None,
+                units=float(units) if units is not None else None,
+                price=float(price) if price is not None else None,
+                stop=float(stop) if stop is not None else None
             )
             
             # Parse response
@@ -408,7 +422,7 @@ class SnapTradeTradingService:
             logger.error(f"Error checking order impact: {e}", exc_info=True)
             return {
                 'success': False,
-                'error': f'Failed to validate order: {str(e)}'
+                'error': 'Unable to validate order. Please check your order details and try again.'
             }
     
     def place_order(
@@ -494,7 +508,7 @@ class SnapTradeTradingService:
                 if not all([symbol, action, order_type, time_in_force]):
                     return {
                         'success': False,
-                        'error': 'Missing required order parameters: symbol, action, order_type, time_in_force'
+                        'error': 'Order information is incomplete. Please try again.'
                     }
                 
                 # Get universal symbol ID
@@ -545,10 +559,30 @@ class SnapTradeTradingService:
                             
                             if current_price and current_price > 0:
                                 # Calculate units from notional value
-                                order_units = float(notional_value) / float(current_price)
-                                # Round to reasonable precision (4 decimal places for fractional shares)
-                                order_units = round(order_units, 4)
-                                logger.info(f"Converted notional ${notional_value} to {order_units} units at ${current_price}/share")
+                                raw_units = float(notional_value) / float(current_price)
+                                
+                                # PRODUCTION-GRADE FIX: Handle fractional share limitations
+                                # Many brokerages don't allow selling fractional shares when you hold whole shares
+                                # For SELL orders, we round DOWN to whole shares to avoid this error
+                                if action == 'SELL':
+                                    import math
+                                    whole_units = math.floor(raw_units)
+                                    
+                                    if whole_units == 0:
+                                        # User is trying to sell less than 1 share
+                                        min_sell_value = float(current_price)
+                                        return {
+                                            'success': False,
+                                            'error': f'Minimum sell amount is 1 share (${min_sell_value:.2f}). Your ${notional_value:.2f} order equals {raw_units:.3f} shares. Please sell at least ${min_sell_value:.2f} worth.'
+                                        }
+                                    
+                                    # CRITICAL: SnapTrade API expects float/Decimal, not int
+                                    order_units = float(whole_units)
+                                    logger.info(f"SELL order: Converted notional ${notional_value} to {order_units} whole shares (raw: {raw_units:.4f}) at ${current_price}/share")
+                                else:
+                                    # For BUY orders, fractional shares are usually supported
+                                    order_units = round(raw_units, 4)
+                                    logger.info(f"BUY order: Converted notional ${notional_value} to {order_units} units at ${current_price}/share")
                             else:
                                 logger.warning(f"Could not get price for {symbol}, using notional_value directly")
                     except Exception as price_error:
@@ -559,6 +593,7 @@ class SnapTradeTradingService:
                 # STEP 1: Get order impact (validates market hours, symbol, buying power)
                 try:
                     # Build order params - prefer units over notional_value for broader brokerage support
+                    # Use explicit `is not None` checks for defensive programming
                     order_params = {
                         'user_id': credentials['snaptrade_user_id'],
                         'user_secret': credentials['snaptrade_user_secret'],
@@ -569,16 +604,16 @@ class SnapTradeTradingService:
                         'time_in_force': time_in_force,
                     }
                     
-                    if order_units:
-                        order_params['units'] = order_units
-                    elif notional_value:
+                    if order_units is not None:
+                        order_params['units'] = float(order_units)
+                    elif notional_value is not None:
                         # Fallback to notional if units conversion failed
                         order_params['notional_value'] = float(notional_value)
                     
-                    if price:
-                        order_params['price'] = price
-                    if stop:
-                        order_params['stop'] = stop
+                    if price is not None:
+                        order_params['price'] = float(price)
+                    if stop is not None:
+                        order_params['stop'] = float(stop)
                     
                     impact_response = self.client.trading.get_order_impact(**order_params)
                     
@@ -590,7 +625,7 @@ class SnapTradeTradingService:
                         logger.error(f"No trade_id in impact response: {impact_response.body}")
                         return {
                             'success': False,
-                            'error': 'Failed to validate order - no trade ID returned'
+                            'error': 'Unable to process this order right now. Please try again in a moment.'
                         }
                     
                     logger.info(f"Order validated, trade_id: {impact_trade_id}")
@@ -623,11 +658,21 @@ class SnapTradeTradingService:
                             'success': False,
                             'error': 'Your account does not have permission to place this type of order.'
                         }
-                    else:
-                        logger.error(f"Order impact validation failed: {impact_error}")
+                    elif 'FRACT_NOT_CLOSE_INT_POSITION' in error_str or 'fractional shares trading is not available' in error_str.lower():
+                        # Brokerage doesn't allow selling fractional shares from whole-share positions
                         return {
                             'success': False,
-                            'error': f'Order validation failed: {error_str}'
+                            'error': 'This brokerage requires selling whole shares only. Please adjust your sell amount to at least 1 full share.'
+                        }
+                    else:
+                        logger.error(f"Order impact validation failed: {impact_error}")
+                        # Simplify technical errors for user display
+                        user_error = error_str
+                        if len(error_str) > 150:
+                            user_error = "Unable to validate order with your brokerage. Please try again."
+                        return {
+                            'success': False,
+                            'error': f'Order failed: {user_error}'
                         }
                 
                 # STEP 2: Place the order using the validated trade_id
@@ -661,10 +706,23 @@ class SnapTradeTradingService:
             }
             
         except Exception as e:
+            error_str = str(e)
             logger.error(f"Error placing order: {e}", exc_info=True)
+            
+            # PRODUCTION-GRADE: Handle specific brokerage error messages with user-friendly responses
+            if 'FRACT_NOT_CLOSE_INT_POSITION' in error_str or 'fractional shares trading is not available' in error_str.lower():
+                return {
+                    'success': False,
+                    'error': 'This brokerage requires selling whole shares only. Please adjust your sell amount to at least 1 full share.'
+                }
+            
+            # Simplify technical errors for user display
+            user_error = error_str
+            if len(error_str) > 150:
+                user_error = "Unable to complete order with your brokerage. Please try again."
             return {
                 'success': False,
-                'error': f'Failed to place order: {str(e)}'
+                'error': f'Order failed: {user_error}'
             }
     
     def cancel_order(
@@ -719,7 +777,7 @@ class SnapTradeTradingService:
             logger.error(f"Error cancelling order: {e}", exc_info=True)
             return {
                 'success': False,
-                'error': f'Failed to cancel order: {str(e)}'
+                'error': 'Unable to cancel order. Please try again or contact your brokerage.'
             }
     
     def get_account_orders(
@@ -779,7 +837,7 @@ class SnapTradeTradingService:
             logger.error(f"Error fetching orders: {e}", exc_info=True)
             return {
                 'success': False,
-                'error': f'Failed to fetch orders: {str(e)}',
+                'error': 'Unable to load orders. Please refresh and try again.',
                 'orders': []
             }
 

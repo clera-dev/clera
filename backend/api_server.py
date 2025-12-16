@@ -31,7 +31,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from langgraph.errors import GraphInterrupt
 from langgraph.graph.message import add_messages
@@ -308,8 +308,19 @@ class ChatWithAccountRequest(BaseModel):
 class TradeRequest(BaseModel):
     account_id: str = Field(..., description="Account ID for the trade")
     ticker: str = Field(..., description="Stock ticker symbol")
-    notional_amount: float = Field(..., description="Dollar amount to trade")
+    notional_amount: Optional[float] = Field(None, description="Dollar amount to trade")
+    units: Optional[float] = Field(None, description="Number of shares to trade (alternative to notional_amount)")
     side: str = Field(..., description="BUY or SELL")
+    
+    @model_validator(mode='after')
+    def validate_amount_or_units(self) -> 'TradeRequest':
+        """Ensure at least one of notional_amount or units is provided with a positive value."""
+        has_valid_notional = self.notional_amount is not None and self.notional_amount > 0
+        has_valid_units = self.units is not None and self.units > 0
+        
+        if not has_valid_notional and not has_valid_units:
+            raise ValueError('Please enter an order amount greater than $0 or at least 1 share.')
+        return self
 
 class CompanyInfoRequest(BaseModel):
     ticker: str = Field(..., description="Stock ticker symbol")
@@ -726,9 +737,6 @@ async def execute_trade(
     PRODUCTION-GRADE: Automatically routes to correct brokerage based on account_id.
     For SnapTrade accounts, uses the new SnapTradeTradingService for proper order placement.
     """
-    # #region agent log
-    import json;open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:718","message":"execute_trade entry","data":{"user_id":user_id,"account_id":request.account_id,"ticker":request.ticker,"side":request.side},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1,H4,H5"})+'\n')
-    # #endregion
     try:
         logger.info(f"Received trade request: {request} for user {user_id}")
         
@@ -744,15 +752,6 @@ async def execute_trade(
         # This prevents UUID-format Alpaca accounts from being incorrectly routed to SnapTrade
         clean_account_id = request.account_id.replace('snaptrade_', '')
         
-        # #region agent log
-        import json;supabase_defined=False;
-        try:
-            supabase;supabase_defined=True
-        except NameError:
-            supabase_defined=False
-        open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:745","message":"before supabase query","data":{"supabase_defined":supabase_defined,"clean_account_id":clean_account_id,"user_id":user_id},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1,H2,H5"})+'\n')
-        # #endregion
-        
         # Initialize Supabase client
         supabase = get_supabase_client()
         
@@ -766,9 +765,6 @@ async def execute_trade(
         
         # If not found, try matching by UUID (id field)
         if not account_result.data or len(account_result.data) == 0:
-            # #region agent log
-            import json;open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:753","message":"first query returned empty, trying UUID match","data":{"first_query_result_count":len(account_result.data) if account_result.data else 0},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1"})+'\n')
-            # #endregion
             account_result = supabase.table('user_investment_accounts')\
                 .select('provider, provider_account_id')\
                 .eq('user_id', user_id)\
@@ -794,6 +790,14 @@ async def execute_trade(
             # Clean account ID (remove our prefix if present)
             clean_account_id = request.account_id.replace('snaptrade_', '')
             
+            # Determine if using units directly or notional value
+            # Units take priority (for sell orders by share amount)
+            # Use explicit `is not None` checks to handle edge case of value=0 correctly
+            order_units = request.units if request.units is not None else None
+            order_notional = float(request.notional_amount) if request.notional_amount is not None and order_units is None else None
+            
+            logger.info(f"Order params - units: {order_units}, notional: {order_notional}")
+            
             # Place order directly (force order without impact check)
             # For production, you could add an optional impact check step here
             result = trading_service.place_order(
@@ -803,7 +807,8 @@ async def execute_trade(
                 action=action,
                 order_type='Market',  # Market order for notional trades
                 time_in_force='Day',
-                notional_value=float(request.notional_amount)
+                notional_value=order_notional,
+                units=order_units
             )
             
             if not result['success']:
@@ -813,13 +818,19 @@ async def execute_trade(
                     "error": result.get('error')
                 }, status_code=400)
             
+            # Build order description for messages
+            if order_units is not None:
+                order_desc = f"{order_units} shares of {request.ticker}"
+            else:
+                order_desc = f"${order_notional:.2f} of {request.ticker}"
+            
             # PRODUCTION-GRADE: Handle both executed orders and queued orders
             if result.get('queued'):
                 # Order was queued (market closed)
                 return JSONResponse({
                     "success": True,
                     "queued": True,
-                    "message": result.get('message', f"Order queued for market open: {action} ${request.notional_amount:.2f} of {request.ticker}"),
+                    "message": result.get('message', f"Order queued for market open: {action} {order_desc}"),
                     "order": result.get('order', {})
                 })
             else:
@@ -827,7 +838,7 @@ async def execute_trade(
                 order = result['order']
                 success_message = (
                     f"✅ {action} order placed successfully via SnapTrade: "
-                    f"${request.notional_amount:.2f} of {request.ticker}. "
+                    f"{order_desc}. "
                     f"Order ID: {order['brokerage_order_id']}"
                 )
                 
@@ -846,6 +857,14 @@ async def execute_trade(
                     status_code=503,
                     detail="Alpaca trading service unavailable"
                 )
+            
+            # PRODUCTION-GRADE: Alpaca path only supports notional_amount, not units
+            # When shares mode is used (units provided instead of notional_amount), reject with clear error
+            if request.notional_amount is None:
+                return JSONResponse({
+                    "success": False,
+                    "error": "Alpaca accounts only support dollar-amount orders. Please use dollar amount instead of shares."
+                }, status_code=400)
             
             result = _submit_market_order(
                 account_id=request.account_id, 
