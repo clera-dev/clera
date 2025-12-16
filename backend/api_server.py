@@ -314,9 +314,12 @@ class TradeRequest(BaseModel):
     
     @model_validator(mode='after')
     def validate_amount_or_units(self) -> 'TradeRequest':
-        """Ensure at least one of notional_amount or units is provided."""
-        if self.notional_amount is None and self.units is None:
-            raise ValueError('Either notional_amount or units must be provided')
+        """Ensure at least one of notional_amount or units is provided with a positive value."""
+        has_valid_notional = self.notional_amount is not None and self.notional_amount > 0
+        has_valid_units = self.units is not None and self.units > 0
+        
+        if not has_valid_notional and not has_valid_units:
+            raise ValueError('Please enter an order amount greater than $0 or at least 1 share.')
         return self
 
 class CompanyInfoRequest(BaseModel):
@@ -789,8 +792,9 @@ async def execute_trade(
             
             # Determine if using units directly or notional value
             # Units take priority (for sell orders by share amount)
-            order_units = request.units if request.units else None
-            order_notional = float(request.notional_amount) if request.notional_amount and not order_units else None
+            # Use explicit `is not None` checks to handle edge case of value=0 correctly
+            order_units = request.units if request.units is not None else None
+            order_notional = float(request.notional_amount) if request.notional_amount is not None and order_units is None else None
             
             logger.info(f"Order params - units: {order_units}, notional: {order_notional}")
             
@@ -815,7 +819,7 @@ async def execute_trade(
                 }, status_code=400)
             
             # Build order description for messages
-            if order_units:
+            if order_units is not None:
                 order_desc = f"{order_units} shares of {request.ticker}"
             else:
                 order_desc = f"${order_notional:.2f} of {request.ticker}"
