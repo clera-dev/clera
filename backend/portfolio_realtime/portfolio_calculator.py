@@ -276,9 +276,102 @@ class PortfolioCalculator:
             logger.error(f"Error in fallback calculation for account {account_id}: {e}")
             return 0.0, 0.0
     
+    def _calculate_aggregated_account_value(self, account_id):
+        """
+        Calculate portfolio value for SnapTrade/Plaid accounts using aggregated holdings.
+        Uses real-time prices from Alpaca market data stream.
+        """
+        try:
+            from utils.supabase.db_client import get_supabase_client
+            
+            supabase = get_supabase_client()
+            
+            # Extract user_id from account (we'll need this)
+            # For now, get all holdings and filter by account
+            result = supabase.table('user_aggregated_holdings')\
+                .select('*')\
+                .execute()
+            
+            total_value = 0.0
+            total_todays_return = 0.0
+            positions_detail = []
+            cash_value = 0.0
+            
+            # Filter to holdings for this specific account
+            for holding in result.data:
+                accounts_list = holding.get('accounts', [])
+                
+                # Find this account's contribution
+                account_quantity = 0
+                for acc in accounts_list:
+                    if acc.get('account_id') == account_id:
+                        account_quantity = float(acc.get('quantity', 0))
+                        break
+                
+                if account_quantity == 0:
+                    continue
+                
+                symbol = holding['symbol']
+                
+                # Check if this is cash
+                if holding.get('security_type') == 'cash' or symbol == 'USD':
+                    cash_value += account_quantity  # For cash, quantity = value
+                    continue
+                
+                # Get real-time price from Redis (Alpaca market data)
+                price_key = f"price:{symbol}"
+                price_str = self.redis_client.get(price_key)
+                
+                if price_str:
+                    current_price = float(price_str.decode('utf-8'))
+                    position_value = current_price * account_quantity
+                    total_value += position_value
+                    
+                    # Calculate today's return (simplified - would need yesterday's price for accurate)
+                    # For now, assume 0 since we don't have yesterday's close for SnapTrade
+                    position_today_return = 0.0
+                    total_todays_return += position_today_return
+                    
+                    positions_detail.append({
+                        'symbol': symbol,
+                        'quantity': account_quantity,
+                        'price': current_price,
+                        'value': position_value
+                    })
+                    
+                    logger.debug(f"[{account_id}] {symbol}: {account_quantity} @ ${current_price:.2f} = ${position_value:.2f}")
+                else:
+                    logger.warning(f"No real-time price for {symbol}, skipping from value calc")
+            
+            # Total portfolio value = investments + cash
+            total_portfolio_value = total_value + cash_value
+            
+            logger.info(f"Aggregated account {account_id}: ${total_portfolio_value:.2f} (positions: ${total_value:.2f}, cash: ${cash_value:.2f})")
+            
+            return {
+                "account_id": account_id,
+                "total_value": f"${total_portfolio_value:.2f}",
+                "today_return": f"+$0.00 (0.00%)",  # Simplified for now
+                "raw_value": total_portfolio_value,
+                "raw_return": total_todays_return,
+                "raw_return_percent": 0.0,
+                "timestamp": datetime.now().isoformat(),
+                "provider": "aggregated"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating aggregated account value for {account_id}: {e}", exc_info=True)
+            return None
+    
     def calculate_portfolio_value(self, account_id):
         """Calculate portfolio value using positions and cached prices."""
         try:
+            # Determine provider type from account_id prefix
+            if account_id.startswith('snaptrade_') or account_id.startswith('plaid_'):
+                # Use aggregated holdings for SnapTrade/Plaid accounts
+                return self._calculate_aggregated_account_value(account_id)
+            
+            # Original Alpaca logic below
             # Get positions from Redis (cached by symbol_collector)
             positions_json = self.redis_client.get(f'account_positions:{account_id}')
             if not positions_json:

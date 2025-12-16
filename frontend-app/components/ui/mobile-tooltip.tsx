@@ -54,8 +54,15 @@ export function MobileTooltip({
       adjustedY = position.y - rect.height - offset;
     }
 
-    setAdjustedPosition({ x: adjustedX, y: adjustedY });
-  }, [position, isVisible, offset]);
+    // CRITICAL FIX: Only update if position actually changed to prevent infinite re-renders
+    const newPosition = { x: adjustedX, y: adjustedY };
+    setAdjustedPosition(prev => {
+      if (prev.x !== newPosition.x || prev.y !== newPosition.y) {
+        return newPosition;
+      }
+      return prev;
+    });
+  }, [position.x, position.y, isVisible, offset]); // FIXED: Use position.x, position.y instead of position object
 
   if (!isVisible) return null;
 
@@ -101,7 +108,11 @@ export function useMobileChartTooltip() {
 
   const showTooltip = (x: number, y: number, tooltipContent: React.ReactNode) => {
     // Show tooltip on all devices for unified behavior
-    setPosition({ x, y });
+    // Only update if position actually changed to prevent infinite loops
+    setPosition(prev => {
+      if (prev.x === x && prev.y === y) return prev;
+      return { x, y };
+    });
     setContent(tooltipContent);
     setIsVisible(true);
   };
@@ -113,7 +124,10 @@ export function useMobileChartTooltip() {
 
   const updatePosition = (x: number, y: number) => {
     if (isVisible) {
-      setPosition({ x, y });
+      setPosition(prev => {
+        if (prev.x === x && prev.y === y) return prev;
+        return { x, y };
+      });
     }
   };
 

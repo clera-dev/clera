@@ -98,6 +98,7 @@ interface OrderData {
   trail_price?: string | null; // Decimal as string
   hwm?: string | null; // Decimal as string
   commission?: string | null; // Decimal as string
+  account_name?: string; // For SnapTrade orders: Brokerage name (e.g., "Webull")
 }
 
 interface PortfolioAnalyticsData {
@@ -129,6 +130,16 @@ interface AssetDetails {
 export default function PortfolioPage() {
   const router = useRouter();
   const { sideChatVisible } = useCleraAssist();
+  
+  // Essential state for component selection (aggregation vs brokerage mode)
+  const [portfolioMode, setPortfolioMode] = useState<string>('loading');
+  const [userId, setUserId] = useState<string | null>(null);
+  const [hasHistoricalData, setHasHistoricalData] = useState<boolean>(false);
+  
+  // Account filtering for X-ray vision into individual accounts
+  const [selectedAccountFilter, setSelectedAccountFilter] = useState<'total' | string>('total');
+  const [availableAccounts, setAvailableAccounts] = useState<any[]>([]);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioData, setPortfolioData] = useState({
     totalValue: 68395.63,
@@ -238,11 +249,38 @@ export default function PortfolioPage() {
       
       // Handle 404s specifically to avoid parse errors
       if (response.status === 404) {
+        // Silence complex securities that don't have asset detail endpoints (safe URL decoding)
+        let decodedUrl = url;
+        try {
+          decodedUrl = decodeURIComponent(url);
+        } catch (e) {
+          // URI malformed - use original URL for pattern matching
+          console.debug('URI decode failed, using original URL for pattern matching');
+        }
+        if (url.includes('/api/assets/') && (
+          // Treasury Bills and government securities
+          decodedUrl.includes('Treasury') || decodedUrl.includes('Treas') || decodedUrl.includes('Bills') ||
+          // Complex security names with special characters
+          decodedUrl.includes('%') || decodedUrl.includes('B/E') || decodedUrl.includes('N/C') || decodedUrl.includes('Dtd') ||
+          // Options contracts 
+          decodedUrl.includes('Call') || decodedUrl.includes('Put') || /[A-Z]{2,4}\d{6}[CP]\d{8}/.test(decodedUrl) ||
+          // Mutual fund codes and complex identifiers
+          decodedUrl.includes('United States') || decodedUrl.length > 50
+        )) {
+          // These securities are expected to 404 - return null silently
+          return null;
+        }
+        
         console.warn(`Resource not found: ${url}`);
         
         // For activities endpoint, return an empty array instead of throwing
         if (url.includes('activities')) {
           return [];
+        }
+        
+        // For assets endpoint, return null instead of throwing (handled by fetchAssetDetails)
+        if (url.includes('/api/assets/')) {
+          return null;
         }
         
         throw new Error(`Resource not found: ${url}`);
@@ -281,16 +319,42 @@ export default function PortfolioPage() {
     }
   };
 
-  const fetchAssetDetails = async (symbolOrId: string, bypassCache: boolean = false): Promise<AssetDetails | null> => {
+  // Helper function to build URLs with account filtering
+  const buildFilteredUrl = (baseUrl: string, additionalParams?: string): string => {
+    const accountFilter = selectedAccountFilter !== 'total' ? `filter_account=${selectedAccountFilter}` : '';
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    const params = [accountFilter, additionalParams].filter(Boolean).join('&');
+    const finalUrl = params ? `${baseUrl}${separator}${params}` : baseUrl;
+    
+    // DEBUG: Log URL construction for history endpoints
+    if (baseUrl.includes('/history')) {
+      console.log('🔍 [buildFilteredUrl] History URL:', {
+        baseUrl,
+        selectedAccountFilter,
+        accountFilter,
+        finalUrl
+      });
+    }
+    
+    return finalUrl;
+  };
+
+  const fetchAssetDetails = async (symbolOrId: string, bypassCache: boolean = false, userId?: string): Promise<AssetDetails | null> => {
     // Check cache only if not bypassing cache
     if (!bypassCache && assetDetailsMap[symbolOrId]) {
         return assetDetailsMap[symbolOrId];
     }
+    
+    // Let the backend handle all securities through proper Plaid asset details service
+    // (Removed preemptive blocking that was preventing rich Plaid security details)
+    
     try {
-        // Use the Next.js API route that properly includes the API key
+        // Use the Next.js API route that properly includes the API key and user_id for Plaid security lookups
         // This will go through /app/api/assets/[assetId]/route.ts instead of directly to the backend
         const cacheBuster = bypassCache ? `?_cb=${Date.now()}` : '';
-        const url = `/api/assets/${symbolOrId}${cacheBuster}`;
+        const userIdParam = userId ? `${cacheBuster ? '&' : '?'}user_id=${userId}` : '';
+        const encodedSymbol = encodeURIComponent(symbolOrId);  // Proper encoding for complex security names
+        const url = `/api/assets/${encodedSymbol}${cacheBuster}${userIdParam}`;
         const details = await fetchData(url, bypassCache ? {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -324,7 +388,9 @@ export default function PortfolioPage() {
           if (data.accountId) {
             setAccountId(data.accountId);
           } else {
-            setError(data.detail || "Alpaca account setup not complete.");
+            // No Alpaca account - user in aggregation mode, this is expected
+            console.log("No Alpaca account found - user in aggregation mode");
+            setAccountId(null);
           }
         }
       } catch (err: any) {
@@ -341,8 +407,82 @@ export default function PortfolioPage() {
 
   }, []);
 
+  // Check payment status before allowing access
   useEffect(() => {
-    if (!accountId) return;
+    const checkPaymentStatus = async () => {
+      try {
+        const paymentCheck = await fetch('/api/stripe/check-payment-status');
+        if (paymentCheck.ok) {
+          const paymentData = await paymentCheck.json();
+          if (!paymentData.hasActivePayment) {
+            // User doesn't have active payment, redirect to checkout
+            console.log('Payment required, redirecting to checkout');
+            const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+              method: 'POST',
+            });
+            if (checkoutResponse.ok) {
+              const { url } = await checkoutResponse.json();
+              if (url) {
+                router.push(url);
+                return;
+              }
+            }
+            // If checkout creation fails, redirect to protected page
+            router.push('/protected');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking payment status:', error);
+        // On error, redirect to protected page to be safe
+        router.push('/protected');
+      }
+    };
+
+    checkPaymentStatus();
+  }, [router]);
+
+  // Essential initialization for component selection
+  useEffect(() => {
+    const initializePortfolioMode = async () => {
+      try {
+        // Get user ID
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) setUserId(user.id);
+
+        // Get portfolio mode
+        const response = await fetch('/api/portfolio/connection-status');
+        if (response.ok) {
+          const data = await response.json();
+          setPortfolioMode(data.portfolio_mode || 'brokerage');
+          
+          // Check historical data status for aggregation mode
+          if (data.portfolio_mode === 'aggregation' && user) {
+            try {
+              const histResponse = await fetch('/api/portfolio/reconstruction/status');
+              if (histResponse.ok) {
+                const status = await histResponse.json();
+                setHasHistoricalData(status.status === 'completed');
+              }
+            } catch (err) {
+              console.debug('Historical data check failed:', err);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing portfolio mode:', error);
+        setPortfolioMode('brokerage'); // Safe fallback
+      }
+    };
+
+    initializePortfolioMode();
+  }, []);
+
+  useEffect(() => {
+    // For brokerage mode: need accountId
+    // For aggregation mode: need userId and portfolio mode to be set
+    if (!accountId && portfolioMode !== 'aggregation') return;
+    if (portfolioMode === 'aggregation' && !userId) return;
 
     let isMounted = true;
     const loadInitialStaticData = async () => {
@@ -350,40 +490,78 @@ export default function PortfolioPage() {
         setIsLoading(true);
         setError(null);
         try {
-            const positionsUrl = `/api/portfolio/positions?accountId=${accountId}`;
-            const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
-            const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}`;
-            const allTimeUrl = `/api/portfolio/history?accountId=${accountId}&period=MAX`;
+            const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`);
+            const allTimeUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=MAX`);
             
-            // Use Promise.allSettled instead of Promise.all to handle partial failures
-            const [positionsResult, ordersResult, analyticsResult, allTimeResult] = await Promise.allSettled([
+            // Build API call list based on portfolio mode
+            const apiCalls = [
+                // Positions - works for both modes
                 fetchData(positionsUrl).catch(err => { 
                   console.error("Positions fetch failed:", err); 
                   return []; 
                 }),
-                fetchData(ordersUrl).catch(err => { 
-                  console.error("Orders fetch failed:", err); 
-                  return []; 
-                }),
-                fetchData(analyticsUrl).catch(err => { 
-                  console.error("Analytics fetch failed:", err); 
-                  return null; 
-                }),
+                // History - works for both modes
                 fetchData(allTimeUrl).catch(err => { 
                   console.error("History fetch failed:", err); 
                   return null; 
                 }),
-            ]);
+                // Analytics - works for both modes
+                fetchData(buildFilteredUrl(`/api/portfolio/analytics?accountId=${accountId}`)).catch(err => { 
+                  console.error("Analytics fetch failed:", err); 
+                  return null; 
+                }),
+            ];
+            
+            // Add orders call based on portfolio mode
+            if (portfolioMode === 'brokerage' && accountId) {
+                // Brokerage mode: Fetch from Alpaca
+                const ordersUrl = buildFilteredUrl(`/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`);
+                apiCalls.push(
+                    fetchData(ordersUrl).catch(err => { 
+                      console.error("Orders fetch failed:", err); 
+                      return []; 
+                    })
+                );
+            } else if (portfolioMode === 'aggregation') {
+                // Aggregation mode: Fetch from SnapTrade
+                apiCalls.push(
+                    fetchData('/api/snaptrade/pending-orders').catch(err => {
+                      console.error("SnapTrade orders fetch failed:", err);
+                      return { orders: [] };
+                    })
+                );
+            }
+            
+            // Execute all API calls
+            const results = await Promise.allSettled(apiCalls);
+            
+            // Extract results with consistent indexing
+            const positionsResult = results[0];
+            const allTimeResult = results[1];
+            const analyticsResult = results[2];
+            const ordersResult = (portfolioMode === 'brokerage' || portfolioMode === 'aggregation') && results.length > 3 ? results[3] : { status: 'fulfilled' as const, value: [] };
 
             if (!isMounted) return;
 
             // Check if we have trade history - this determines if we're in "new account" mode
-            const positionsData = positionsResult.status === 'fulfilled' ? positionsResult.value : [];
-            const ordersData = ordersResult.status === 'fulfilled' ? ordersResult.value : [];
+            // Handle aggregation mode response format: { positions: [...], summary: {...} } vs brokerage mode's direct array
+            const positionsRaw = positionsResult.status === 'fulfilled' ? positionsResult.value : [];
+            const positionsData = (positionsRaw && typeof positionsRaw === 'object' && 'positions' in positionsRaw) 
+                ? positionsRaw.positions 
+                : (Array.isArray(positionsRaw) ? positionsRaw : []);
             
-            // If we have positions or completed orders, then user has trade history
-            const hasHistory = (Array.isArray(positionsData) && positionsData.length > 0) || 
-              (Array.isArray(ordersData) && ordersData.some(order => order.status === 'filled'));
+            // Handle SnapTrade response format: { orders: [...] } vs Alpaca's direct array
+            const ordersRaw = ordersResult.status === 'fulfilled' ? ordersResult.value : [];
+            const ordersData = (ordersRaw && typeof ordersRaw === 'object' && 'orders' in ordersRaw) 
+                ? ordersRaw.orders 
+                : ordersRaw;
+            
+            // For aggregation mode: users always have "trade history" from Plaid
+            // For brokerage mode: check if we have positions or completed orders
+            const hasHistory = portfolioMode === 'aggregation' 
+              ? (Array.isArray(positionsData) && positionsData.length > 0)
+              : ((Array.isArray(positionsData) && positionsData.length > 0) || 
+                 (Array.isArray(ordersData) && ordersData.some(order => order.status === 'filled')));
             
             setHasTradeHistory(hasHistory);
 
@@ -391,7 +569,7 @@ export default function PortfolioPage() {
               const totalMarketValue = positionsData.reduce((sum: number, pos: any) => sum + (safeParseFloat(pos.market_value) ?? 0), 0);
               if (Array.isArray(positionsData) && positionsData.length > 0) {
                 const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
-                    const details = await fetchAssetDetails(pos.symbol);
+                    const details = await fetchAssetDetails(pos.symbol, false, userId || undefined);
                     const marketValue = safeParseFloat(pos.market_value);
                     const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
                     return {
@@ -407,19 +585,25 @@ export default function PortfolioPage() {
             }
 
             if (analyticsResult.status === 'fulfilled' && analyticsResult.value) {
+              console.log('✅ Analytics loaded:', analyticsResult.value);
               setAnalytics(analyticsResult.value);
+            } else if (analyticsResult.status === 'rejected') {
+              console.error('❌ Analytics fetch rejected:', analyticsResult.reason);
+            } else {
+              console.warn('⚠️  Analytics result:', analyticsResult);
             }
             
             if (ordersResult.status === 'fulfilled') {
-              setOrders(ordersResult.value || []);
+              // Use ordersData which correctly extracts orders from SnapTrade's { orders: [...] } format
+              setOrders(Array.isArray(ordersData) ? ordersData : []);
             }
             
             if (allTimeResult.status === 'fulfilled' && allTimeResult.value) {
               setAllTimeHistory(allTimeResult.value);
             }
 
-            // Only try to load activities if we haven't determined its availability yet or if it's available
-            if (activitiesEndpointAvailable.current !== false) {
+            // Only try to load activities for brokerage mode (Alpaca-specific endpoint)
+            if (portfolioMode === 'brokerage' && activitiesEndpointAvailable.current !== false) {
               try {
                 const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100`;
                 const response = await fetch(activitiesUrl);
@@ -480,19 +664,34 @@ export default function PortfolioPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
 
-  }, [accountId]);
+  }, [accountId, portfolioMode, userId, selectedAccountFilter]);
 
   useEffect(() => {
-     if (!accountId || !selectedTimeRange) return;
-     if (isLoading && !portfolioHistory && positions.length === 0 && !analytics) return;
+     // For brokerage mode: need accountId
+     // For aggregation mode: need userId
+     if (!accountId && portfolioMode !== 'aggregation') return;
+     if (portfolioMode === 'aggregation' && !userId) return;
+     if (!selectedTimeRange) return;
 
      let isMounted = true;
      const loadHistory = async () => {
         if (!isMounted) return;
         setError(null);
         try {
-            const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`;
+            const historyUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`);
             const historyData = await fetchData(historyUrl);
+            
+            // DEBUG: Log what data we actually got
+            console.log('📊 [loadHistory] Response:', {
+              period: selectedTimeRange,
+              accountFilter: selectedAccountFilter,
+              dataPoints: historyData?.equity?.length || 0,
+              firstValue: historyData?.equity?.[0],
+              lastValue: historyData?.equity?.[historyData?.equity?.length - 1],
+              dataSource: historyData?.data_source,
+              timestamps: historyData?.timestamp?.length || 0
+            });
+            
             if (isMounted) setPortfolioHistory(historyData);
         } catch (err: any) {
             if (isMounted) {
@@ -502,14 +701,39 @@ export default function PortfolioPage() {
         }
      };
 
-     if (selectedTimeRange === 'MAX' && allTimeHistory) {
-        setPortfolioHistory(allTimeHistory);
-     } else {
-        loadHistory();
-     }
+     // Always call loadHistory for time period changes (don't use cached allTimeHistory)
+     loadHistory();
 
      return () => { isMounted = false; };
-  }, [accountId, selectedTimeRange, allTimeHistory]);
+  }, [accountId, portfolioMode, userId, selectedTimeRange, selectedAccountFilter, allTimeHistory]);
+
+  // Load available accounts for account filtering
+  useEffect(() => {
+    if (portfolioMode === 'aggregation' && userId) {
+      const loadAvailableAccounts = async () => {
+        try {
+          const response = await fetch('/api/portfolio/account-breakdown');
+          if (response.ok) {
+            const result = await response.json();
+            setAvailableAccounts(result.account_breakdown || []);
+          }
+        } catch (err) {
+          console.error('Error loading available accounts:', err);
+        }
+      };
+      
+      loadAvailableAccounts();
+    }
+  }, [portfolioMode, userId]);
+
+  // Trigger allocation chart refresh when account filter changes
+  useEffect(() => {
+    if (selectedAccountFilter) {
+      // Force re-fetch of allocation charts with new filter
+      setAllocationChartRefreshKey(Date.now());
+      console.log(`📊 Account filter changed to: ${selectedAccountFilter}`);
+    }
+  }, [selectedAccountFilter]);
 
   const allTimePerformance = useMemo(() => {
     if (!allTimeHistory || !allTimeHistory.equity || allTimeHistory.equity.length === 0) {
@@ -549,7 +773,7 @@ export default function PortfolioPage() {
     );
   }
 
-  if (error && !isLoading && !accountId) {
+  if (error && !isLoading && !accountId && portfolioMode !== 'aggregation') {
     return (
      <div className="p-4">
        <Alert variant="destructive">
@@ -561,8 +785,45 @@ export default function PortfolioPage() {
    );
   }
 
-  // Define the overlay style for locked sections
-  const lockedSectionStyle = !hasTradeHistory ? {
+  // Empty portfolio state - no accounts connected
+  if (!isLoading && positions.length === 0 && portfolioMode !== 'brokerage' && !error) {
+    return (
+      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
+          <div className="text-center space-y-6 max-w-2xl">
+            <div className="mx-auto w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+              <DollarSign className="h-10 w-10 text-primary" />
+            </div>
+            
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold tracking-tight">Connect Your First Brokerage</h2>
+              <p className="text-muted-foreground text-lg">
+                Link your external investment accounts to view your complete portfolio and get AI-powered insights.
+              </p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+              <Link href="/dashboard">
+                <Button size="lg" className="w-full sm:w-auto">
+                  <BarChart2 className="mr-2 h-5 w-5" />
+                  Connect Brokerage Account
+                </Button>
+              </Link>
+            </div>
+            
+            <div className="pt-6 border-t">
+              <p className="text-sm text-muted-foreground">
+                Supported brokerages include: Robinhood, Fidelity, Charles Schwab, TD Ameritrade, E*TRADE, and 20+ more
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Define the overlay style for locked sections (brokerage mode only)
+  const lockedSectionStyle = !hasTradeHistory && portfolioMode === 'brokerage' ? {
     position: 'relative',
     filter: 'blur(2px)',
     opacity: 0.6,
@@ -585,7 +846,7 @@ export default function PortfolioPage() {
               className="h-8 px-3 text-sm sm:h-9 sm:px-4"
               disabled={isLoading}
               onClick={() => {
-                if (accountId) {
+                if (accountId || (portfolioMode === 'aggregation' && userId)) {
                   setIsLoading(true);
                   
                   // Clear any existing state to force fresh data
@@ -603,9 +864,6 @@ export default function PortfolioPage() {
                       
                       // Add cache-busting timestamp to all requests
                       const cacheBuster = `_cb=${Date.now()}`;
-                      const positionsUrl = `/api/portfolio/positions?accountId=${accountId}&${cacheBuster}`;
-                      const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true&${cacheBuster}`;
-                      const analyticsUrl = `/api/portfolio/analytics?accountId=${accountId}&${cacheBuster}`;
                       
                       // Use fetch with cache-busting headers to ensure fresh data
                       const fetchWithCacheBusting = async (url: string) => {
@@ -618,11 +876,24 @@ export default function PortfolioPage() {
                         });
                       };
                       
-                      const [positionsData, ordersData, analyticsData] = await Promise.all([
-                        fetchWithCacheBusting(positionsUrl),
-                        fetchWithCacheBusting(ordersUrl),
-                        fetchWithCacheBusting(analyticsUrl),
-                      ]);
+                      // Fetch positions (works for both modes) - with account filter
+                      const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`, cacheBuster);
+                      const positionsRaw = await fetchWithCacheBusting(positionsUrl);
+                      // Handle aggregation mode response format: { positions: [...], summary: {...} }
+                      const positionsData = (positionsRaw && typeof positionsRaw === 'object' && 'positions' in positionsRaw) 
+                          ? positionsRaw.positions 
+                          : (Array.isArray(positionsRaw) ? positionsRaw : []);
+                      
+                      // Fetch analytics (works for both modes) - with account filter
+                      const analyticsUrl = buildFilteredUrl(`/api/portfolio/analytics?accountId=${accountId}`, cacheBuster);
+                      const analyticsData = await fetchWithCacheBusting(analyticsUrl).catch(() => null);
+                      
+                      // Fetch orders only for brokerage mode (aggregation has no orders) - with account filter
+                      let ordersData = [];
+                      if (accountId && portfolioMode === 'brokerage') {
+                        const ordersUrl = buildFilteredUrl(`/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`, cacheBuster);
+                        ordersData = await fetchWithCacheBusting(ordersUrl).catch(() => []);
+                      }
                       
                       // Set analytics data first and log the fresh values
                       setAnalytics(analyticsData);
@@ -630,8 +901,8 @@ export default function PortfolioPage() {
                       // Initialize combinedTransactions with ordersData
                       let combinedTransactions = Array.isArray(ordersData) ? [...ordersData] : [];
 
-                      // Only try to load activities if previously determined to be available
-                      if (activitiesEndpointAvailable.current === true) {
+                      // Only try to load activities for brokerage mode (Alpaca-specific)
+                      if (portfolioMode === 'brokerage' && activitiesEndpointAvailable.current === true) {
                         try {
                           const activitiesUrl = `/api/portfolio/activities?accountId=${accountId}&limit=100&${cacheBuster}`;
                           const activitiesData = await fetchWithCacheBusting(activitiesUrl);
@@ -656,7 +927,7 @@ export default function PortfolioPage() {
                       // Force fresh asset details fetch for each position
                       const enrichedPositions = Array.isArray(positionsData) ? await Promise.all(positionsData.map(async (pos: any) => {
                         // Force fresh asset details fetch by bypassing cache
-                        const details = await fetchAssetDetails(pos.symbol, true); // true = bypass cache
+                        const details = await fetchAssetDetails(pos.symbol, true, userId || undefined); // true = bypass cache
                         const marketValue = safeParseFloat(pos.market_value);
                         const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
                         return {
@@ -668,8 +939,8 @@ export default function PortfolioPage() {
                       
                       setPositions(enrichedPositions);
                       
-                      // Also refresh the history with the current selected time range
-                      const historyUrl = `/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}&${cacheBuster}`;
+                      // Also refresh the history with the current selected time range - with account filter
+                      const historyUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`, cacheBuster);
                       const historyData = await fetchWithCacheBusting(historyUrl);
                       setPortfolioHistory(historyData);
                       
@@ -695,14 +966,17 @@ export default function PortfolioPage() {
               <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
               {isLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
-            <AddFundsButton accountId={accountId} />
+            {/* Add Funds button only for brokerage mode */}
+            {portfolioMode === 'brokerage' && accountId && (
+              <AddFundsButton accountId={accountId} />
+            )}
           </div>
         </div>
         
 
 
-        {/* Notification for new users */}
-        {!hasTradeHistory && accountId && (
+        {/* Notification for new brokerage users without trade history */}
+        {!hasTradeHistory && accountId && portfolioMode === 'brokerage' && (
           <Alert variant="default" className="bg-primary/10 border-primary text-foreground">
             <AlertTitle className="flex items-center gap-2 text-base md:text-lg">
               <LockIcon size={18} className="text-primary" /> 
@@ -732,16 +1006,23 @@ export default function PortfolioPage() {
                 ? '2xl:col-span-2' // When chat is open, take 2/3 of the 3-column grid
                 : 'lg:col-span-3 xl:col-span-2' // When chat is closed, use original spans
             }`}>
-              {accountId && (
+              {/* Show portfolio summary for both brokerage (accountId) and aggregation (userId) modes */}
+              {(accountId || (portfolioMode === 'aggregation' && userId)) && (
                 <PortfolioSummaryWithAssist
-                  accountId={accountId}
+                  accountId={accountId || null}
                   portfolioHistory={portfolioHistory}
                   selectedTimeRange={selectedTimeRange}
                   setSelectedTimeRange={setSelectedTimeRange}
                   isLoading={isLoading}
-                  disabled={!hasTradeHistory}
+                  disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
                   allTimeReturnAmount={null}
                   allTimeReturnPercent={null}
+                  portfolioMode={portfolioMode}
+                  userId={userId || undefined}
+                  hasHistoricalData={hasHistoricalData}
+                  selectedAccountFilter={selectedAccountFilter}
+                  onAccountFilterChange={setSelectedAccountFilter}
+                  availableAccounts={availableAccounts}
                 />
               )}
             </div>
@@ -759,7 +1040,7 @@ export default function PortfolioPage() {
                     accountId={accountId}
                     initialData={analytics}
                     isLoading={true}
-                    disabled={!hasTradeHistory}
+                    disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
                     skeletonContent={
                       <div className="space-y-2 lg:space-y-3">
                         <Skeleton className="h-14 lg:h-16 w-full" />
@@ -771,14 +1052,14 @@ export default function PortfolioPage() {
                   <RiskDiversificationScoresWithAssist
                     accountId={accountId}
                     initialData={analytics}
-                    disabled={!hasTradeHistory}
+                    disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
                   />
                 ) : (
                   <RiskDiversificationScoresWithAssist
                     accountId={accountId}
                     initialData={analytics}
-                    disabled={!hasTradeHistory}
-                    error={`Could not load analytics scores. ${error}`}
+                    disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
+                    error={`Could not load analytics scores. ${error || 'Unknown error'}`}
                   />
                 )}
               </div>
@@ -790,7 +1071,9 @@ export default function PortfolioPage() {
                     positions={positions}
                     accountId={accountId}
                     refreshTimestamp={allocationChartRefreshKey}
-                    disabled={!hasTradeHistory}
+                    selectedAccountFilter={selectedAccountFilter}
+                    userId={userId || undefined}
+                    disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
                     error="No positions available to display allocation."
                   />
                 ) : isLoading && positions.length === 0 ? (
@@ -798,8 +1081,10 @@ export default function PortfolioPage() {
                     positions={positions}
                     accountId={accountId}
                     refreshTimestamp={allocationChartRefreshKey}
+                    selectedAccountFilter={selectedAccountFilter}
+                    userId={userId || undefined}
                     isLoading={true}
-                    disabled={!hasTradeHistory}
+                    disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
                     skeletonContent={<Skeleton className="h-[220px] w-full" />}
                   />
                 ) : positions.length > 0 ? (
@@ -807,15 +1092,19 @@ export default function PortfolioPage() {
                     positions={positions}
                     accountId={accountId}
                     refreshTimestamp={allocationChartRefreshKey}
-                    disabled={!hasTradeHistory}
+                    selectedAccountFilter={selectedAccountFilter}
+                    userId={userId || undefined}
+                    disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
                   />
                 ) : (
                   <AssetAllocationPieWithAssist
                     positions={positions}
                     accountId={accountId}
                     refreshTimestamp={allocationChartRefreshKey}
-                    disabled={!hasTradeHistory}
-                    error={`Could not load position data. ${error}`}
+                    selectedAccountFilter={selectedAccountFilter}
+                    userId={userId || undefined}
+                    disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
+                    error={`Could not load position data. ${error || 'Unknown error'}`}
                   />
                 )}
               </div>
@@ -827,7 +1116,7 @@ export default function PortfolioPage() {
             <InvestmentGrowthWithAssist
               currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)}
               isLoading={isLoading && positions.length === 0}
-              disabled={!hasTradeHistory}
+              disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
             />
           </div>
 
@@ -836,7 +1125,12 @@ export default function PortfolioPage() {
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
                 <TabsTrigger value="holdings" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Your Holdings</TabsTrigger>
-                <TabsTrigger value="transactions" className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md">Pending Orders</TabsTrigger>
+                <TabsTrigger 
+                  value="transactions" 
+                  className="py-2 data-[state=active]:bg-card data-[state=active]:shadow-md relative"
+                >
+                  Pending Orders
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="holdings">
@@ -850,7 +1144,7 @@ export default function PortfolioPage() {
                   <HoldingsTableWithAssist 
                     positions={positions} 
                     isLoading={isLoading}
-                    disabled={!hasTradeHistory}
+                    disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
                     onInvestClick={handleInvestClick}
                     onSellClick={handleSellClick}
                     accountId={accountId}
@@ -891,7 +1185,9 @@ export default function PortfolioPage() {
         </div>
 
         {/* Order Modal for Trade Actions */}
-        {selectedSymbolForTrade && accountId && (
+        {/* PRODUCTION-GRADE: OrderModal works in both aggregation and brokerage mode */}
+        {/* In aggregation mode, accountId may be null - modal fetches trade-enabled accounts */}
+        {selectedSymbolForTrade && (
           <OrderModal
             isOpen={isOrderModalOpen}
             onClose={handleOrderModalClose}

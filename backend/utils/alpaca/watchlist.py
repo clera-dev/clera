@@ -18,8 +18,7 @@ logger = logging.getLogger("alpaca-watchlist-utils")
 # SPY - S&P 500 ETF (broad market exposure)
 # AGG - Aggregate Bond ETF (fixed income exposure)  
 # DIA - Dow Jones Industrial Average ETF (blue chip exposure)
-# QQQ - NASDAQ-100 ETF (technology exposure)
-DEFAULT_WATCHLIST_SYMBOLS = ["SPY", "AGG", "DIA", "QQQ"]
+DEFAULT_WATCHLIST_SYMBOLS = ["SPY", "AGG", "DIA"]
 
 def get_watchlist_for_account(account_id: str, watchlist_id: str = None, broker_client: BrokerClient = None) -> Optional[Watchlist]:
     """

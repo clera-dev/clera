@@ -9,6 +9,7 @@ import BankConnectionsCard from "@/components/dashboard/BankConnectionsCard";
 import OrderHistory from "@/components/dashboard/OrderHistory";
 import DocumentsAndStatements from "@/components/dashboard/DocumentsAndStatements";
 import DangerZone from "@/components/account/DangerZone";
+import TradingPreferences from "@/components/dashboard/TradingPreferences";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { getAlpacaAccountId } from "@/lib/utils"; // Import reliable account ID utility
 import TransferHistory from "@/components/funding/TransferHistory";
 import GoalsSection from "@/components/dashboard/GoalsSection";
+import AddConnectionButton from "@/components/dashboard/AddConnectionButton";
 
 // Define a more accurate type for account details based on Supabase fetch
 interface FetchedAccountDetails {
@@ -32,13 +34,57 @@ export default function DashboardPage() {
   const [userData, setUserData] = useState<{ 
     firstName: string; 
     lastName: string;
+    personalizationFirstName?: string;  // First name from personalization (aggregation mode)
   } | null>(null);
   const [accountDetails, setAccountDetails] = useState<FetchedAccountDetails | null>(null);
   const [alpacaAccountId, setAlpacaAccountId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  
+  // Portfolio mode detection for conditional component rendering
+  const [portfolioMode, setPortfolioMode] = useState<string>('loading');
+  const [showBrokerageComponents, setShowBrokerageComponents] = useState<boolean>(true);
+
+  // Fetch portfolio mode to determine component visibility
+  const fetchPortfolioMode = async () => {
+    try {
+      const response = await fetch('/api/portfolio/connection-status');
+      if (response.ok) {
+        const data = await response.json();
+        const mode = data.portfolio_mode || 'brokerage';
+        setPortfolioMode(mode);
+        setShowBrokerageComponents(mode === 'brokerage' || mode === 'hybrid');
+      }
+    } catch (error) {
+      console.error('Error fetching portfolio mode:', error);
+      // Default to showing brokerage components on error
+      setPortfolioMode('brokerage');
+      setShowBrokerageComponents(true);
+    }
+  };
 
   useEffect(() => {
+    const initializeDashboard = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        // Always fetch portfolio mode first to determine what data we need
+        await fetchPortfolioMode();
+      } catch (error) {
+        console.error('Error fetching portfolio mode:', error);
+        setPortfolioMode('brokerage');  // Safe fallback
+        setShowBrokerageComponents(true);
+      }
+    };
+
+    initializeDashboard();
+  }, []);
+
+  // Separate effect for data fetching after portfolio mode is determined
+  useEffect(() => {
+    if (portfolioMode === 'loading') return;
+
     const fetchDashboardData = async () => {
       setLoading(true);
       setError(null);
@@ -57,14 +103,30 @@ export default function DashboardPage() {
         setUserEmail(user.email || null);
         setUserId(user.id);
         
-        // 2. Get user first/last name and alpaca account ID from user_onboarding
+        // 2. Get user first/last name (always needed for display)
         let firstName = "User";
         let lastName = "";
-        let alpacaId = null;
+        let personalizationFirstName: string | undefined = undefined;
+        
+        // Fetch personalization data (for aggregation mode)
+        try {
+          const { data: personalizationData } = await supabase
+            .from('user_personalization')
+            .select('first_name')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          
+          if (personalizationData?.first_name) {
+            personalizationFirstName = personalizationData.first_name;
+          }
+        } catch (err) {
+          console.warn("Warning fetching personalization data:", err);
+        }
+        
         try {
           const { data: onboardingData, error: onboardingError } = await supabase
             .from('user_onboarding')
-            .select('onboarding_data, alpaca_account_id') 
+            .select('onboarding_data' + (showBrokerageComponents ? ', alpaca_account_id' : ''))
             .eq('user_id', user.id)
             .maybeSingle();
           
@@ -72,99 +134,108 @@ export default function DashboardPage() {
             console.warn("Warning fetching onboarding data:", onboardingError.message);
           }
 
-          if (onboardingData) {
-            if (onboardingData.onboarding_data) {
-              const parsedData = typeof onboardingData.onboarding_data === 'string' 
-                ? JSON.parse(onboardingData.onboarding_data) 
-                : onboardingData.onboarding_data;
+          if (onboardingData && !onboardingError) {
+            // Type assertion to handle Supabase query result types
+            const data = onboardingData as any;
+            
+            if (data.onboarding_data) {
+              const parsedData = typeof data.onboarding_data === 'string' 
+                ? JSON.parse(data.onboarding_data) 
+                : data.onboarding_data;
               
               firstName = parsedData?.firstName || firstName;
               lastName = parsedData?.lastName || lastName;
             }
             
-            alpacaId = onboardingData.alpaca_account_id;
-            if (alpacaId) {
-              setAlpacaAccountId(alpacaId);
-              
-              // RELIABILITY FIX: Removed localStorage caching - Supabase is the source of truth
+            // Only process Alpaca account ID for brokerage mode
+            if (showBrokerageComponents && data.alpaca_account_id) {
+              setAlpacaAccountId(data.alpaca_account_id);
             } else {
-              console.warn("No Alpaca account ID found in onboarding data");
+              setAlpacaAccountId(null);  // Clear Alpaca account ID in aggregation mode
             }
           }
-          setUserData({ firstName, lastName });
+          setUserData({ firstName, lastName, personalizationFirstName });
 
         } catch (err) {
           console.error("Error processing onboarding data:", err);
           setUserData({ firstName: "User", lastName: "" });
         }
 
-        // 3. Fetch latest bank connection details
+        // 3-5. Fetch brokerage-specific data only when needed (OPTIMIZATION)
         let bankName: string | null = null;
         let bankAccountLast4: string | null = null;
-        try {
-            const { data: bankData, error: bankError } = await supabase
-                .from('user_bank_connections')
-                .select('bank_name, last_4')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-            if (bankError) {
-                console.warn("Warning fetching bank connection:", bankError.message);
-            }
-            if (bankData) {
-                bankName = bankData.bank_name;
-                bankAccountLast4 = bankData.last_4;
-            } else {
-                 
-                 // Try to get from localStorage as fallback
-                 try {
-                   const storedBankName = localStorage.getItem('bankName');
-                   const storedLast4 = localStorage.getItem('bankLast4');
-                   if (storedBankName) bankName = storedBankName;
-                   if (storedLast4) bankAccountLast4 = storedLast4;
-                 } catch (e) {
-                   console.error("Error reading bank data from localStorage:", e);
-                 }
-            }
-        } catch (err) {
-             console.error("Error fetching bank connection details:", err);
-        }
-
-        // 4. Fetch latest transfer details
         let latestTransferAmount: number | null = null;
         let latestTransferStatus: string | null = null;
-        try {
-            const { data: transferData, error: transferError } = await supabase
-                .from('user_transfers')
-                .select('amount, status')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-            
-            if (transferError) {
-                 console.warn("Warning fetching transfer data:", transferError.message);
-            }
-            if (transferData) {
-                latestTransferAmount = transferData.amount;
-                latestTransferStatus = transferData.status;
-            } else {
-                 
-                 // Try to get from localStorage as fallback
-                 try {
-                   const storedAmount = localStorage.getItem('transferAmount');
-                   if (storedAmount) {
-                     latestTransferAmount = parseFloat(storedAmount);
-                     latestTransferStatus = "PENDING"; // Default status for localStorage data
+
+        if (showBrokerageComponents) {
+          console.log("🏦 Brokerage mode: Fetching bank and transfer details");
+          
+          // 3. Fetch latest bank connection details
+          try {
+              const { data: bankData, error: bankError } = await supabase
+                  .from('user_bank_connections')
+                  .select('bank_name, last_4')
+                  .eq('user_id', user.id)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+
+              if (bankError) {
+                  console.warn("Warning fetching bank connection:", bankError.message);
+              }
+              if (bankData) {
+                  bankName = bankData.bank_name;
+                  bankAccountLast4 = bankData.last_4;
+              } else {
+                   
+                   // Try to get from localStorage as fallback
+                   try {
+                     const storedBankName = localStorage.getItem('bankName');
+                     const storedLast4 = localStorage.getItem('bankLast4');
+                     if (storedBankName) bankName = storedBankName;
+                     if (storedLast4) bankAccountLast4 = storedLast4;
+                   } catch (e) {
+                     console.error("Error reading bank data from localStorage:", e);
                    }
-                 } catch (e) {
-                   console.error("Error reading transfer data from localStorage:", e);
-                 }
-            }
-        } catch (err) {
-            console.error("Error fetching transfer details:", err);
+              }
+          } catch (err) {
+               console.error("Error fetching bank connection details:", err);
+          }
+
+          // 4. Fetch latest transfer details
+          try {
+              const { data: transferData, error: transferError } = await supabase
+                  .from('user_transfers')
+                  .select('amount, status')
+                  .eq('user_id', user.id)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+              
+              if (transferError) {
+                   console.warn("Warning fetching transfer data:", transferError.message);
+              }
+              if (transferData) {
+                  latestTransferAmount = transferData.amount;
+                  latestTransferStatus = transferData.status;
+              } else {
+                   
+                   // Try to get from localStorage as fallback
+                   try {
+                     const storedAmount = localStorage.getItem('transferAmount');
+                     if (storedAmount) {
+                       latestTransferAmount = parseFloat(storedAmount);
+                       latestTransferStatus = "PENDING"; // Default status for localStorage data
+                     }
+                   } catch (e) {
+                     console.error("Error reading transfer data from localStorage:", e);
+                   }
+              }
+          } catch (err) {
+              console.error("Error fetching transfer details:", err);
+          }
+        } else {
+          console.log("📊 Aggregation mode: Skipping bank and transfer data fetching");
         }
 
         // 5. Set the combined account details state
@@ -209,7 +280,7 @@ export default function DashboardPage() {
     };
     
     fetchDashboardData();
-  }, []);
+  }, [portfolioMode, showBrokerageComponents]);
   
   if (loading) {
     return (
@@ -271,32 +342,43 @@ export default function DashboardPage() {
 
         {/* Main Content Grid */}
         <div className="space-y-6">
-          {/* Row 1: Personal Info and Bank Details */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          {/* Row 1: Personal Info and Account Details */}
+          <div className={`grid grid-cols-1 gap-6 ${showBrokerageComponents ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
+            <div className={showBrokerageComponents ? 'lg:col-span-2' : 'lg:col-span-1'}>
               <UserDashboard
                 firstName={userData.firstName}
                 lastName={userData.lastName}
+                personalizationFirstName={userData.personalizationFirstName}
                 email={userEmail || ""}
                 accountDetails={accountDetails || {}}
                 alpacaAccountId={alpacaAccountId}
+                showBrokerageData={showBrokerageComponents}
               />
             </div>
-            <div className="space-y-1.5">
-              <BankAccountDetails accountDetails={accountDetails || {}} />
-              <BankConnectionsCard
-                alpacaAccountId={alpacaAccountId || undefined}
-                email={userEmail || undefined}
-                userName={userData.firstName}
-              />
+            <div className={`space-y-1.5 ${showBrokerageComponents ? '' : 'lg:col-span-1'}`}>
+              {/* Conditional rendering based on portfolio mode */}
+              {showBrokerageComponents ? (
+                <>
+                  <BankAccountDetails accountDetails={accountDetails || {}} />
+                  <BankConnectionsCard
+                    alpacaAccountId={alpacaAccountId || undefined}
+                    email={userEmail || undefined}
+                    userName={userData.firstName}
+                  />
+                </>
+              ) : (
+                <AddConnectionButton userName={userData?.firstName} />
+              )}
             </div>
           </div>
 
-          {/* Row 2: Order History and Transfer History */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <OrderHistory />
-            <TransferHistory />
-          </div>
+          {/* Row 2: Order History and Transfer History - Hidden in aggregation mode */}
+          {showBrokerageComponents && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <OrderHistory />
+              <TransferHistory />
+            </div>
+          )}
 
           {/* Row 3: Goals Section */}
           <div className="grid grid-cols-1 gap-6">
@@ -306,9 +388,10 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* Row 4: Documents and Disclosures */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <DocumentsAndStatements />
+          {/* Row 4: Documents and Disclosures (only for brokerage mode) */}
+          {showBrokerageComponents && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <DocumentsAndStatements />
             <div className="bg-card border border-border rounded-lg p-6">
               <h3 className="text-lg font-semibold mb-4">Required Disclosures</h3>
               <p className="text-sm text-muted-foreground mb-4">
@@ -329,10 +412,16 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+            </div>
+          )}
+
+          {/* Row 5: Trading Preferences (for all users with trade-enabled accounts) */}
+          <div className="mt-8">
+            <TradingPreferences />
           </div>
 
-          {/* Row 5: Account Management */}
-          {alpacaAccountId && (
+          {/* Row 6: Account Management (only for brokerage mode) */}
+          {showBrokerageComponents && alpacaAccountId && (
             <div className="mt-8">
               <DangerZone
                 accountId={alpacaAccountId}

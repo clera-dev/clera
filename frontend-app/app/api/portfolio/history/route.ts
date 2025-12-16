@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { verifyAlpacaAccountOwnership } from '@/utils/api/route-middleware';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const accountId = searchParams.get('accountId');
     const period = searchParams.get('period'); // e.g., 1D, 1W, 1M, 1Y, MAX
+    const filterAccount = searchParams.get('filter_account'); // Account filtering parameter
     // Optional params: timeframe, date_end, extended_hours
     const timeframe = searchParams.get('timeframe');
     const date_end = searchParams.get('date_end');
@@ -34,28 +36,9 @@ export async function GET(request: NextRequest) {
     console.log('Portfolio History API: Processing portfolio history request');
 
     // =================================================================
-    // CRITICAL SECURITY FIX: Verify account ownership before querying
+    // PORTFOLIO MODE AWARE: Check mode to determine validation and routing
     // =================================================================
     
-    // Verify that the authenticated user owns the accountId
-    const { data: onboardingData, error: onboardingError } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', user.id)
-      .eq('alpaca_account_id', accountId)
-      .single();
-    
-    if (onboardingError || !onboardingData) {
-      console.error('Portfolio History API: Account ownership verification failed - access denied');
-      return NextResponse.json(
-        { error: 'Account not found or access denied' },
-        { status: 403 }
-      );
-    }
-    
-    console.log('Portfolio History API: Account ownership verified successfully');
-
-    // --- Fetch from actual backend ---
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
 
@@ -64,23 +47,80 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
     }
 
-    // Construct the target URL with query parameters
+    // Get portfolio mode first (following positions route pattern)
+    const portfolioModeUrl = `${backendUrl}/api/portfolio/connection-status`;
+    
+    const modeHeaders: HeadersInit = {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`
+    };
+    
+    if (backendApiKey) {
+      modeHeaders['X-API-Key'] = backendApiKey;
+    }
+    
+    let portfolioMode = 'brokerage'; // Default to brokerage for backward compatibility
+    
+    try {
+      const modeResponse = await fetch(portfolioModeUrl, {
+        method: 'GET',
+        headers: modeHeaders,
+        cache: 'no-store'
+      });
+      
+      if (modeResponse.ok) {
+        const modeData = await modeResponse.json();
+        portfolioMode = modeData.portfolio_mode || 'brokerage';
+        console.log(`Portfolio History API: Portfolio mode for user ${user.id}: ${portfolioMode}`);
+      }
+    } catch (error) {
+      console.warn('Portfolio History API: Could not determine portfolio mode, defaulting to brokerage');
+    }
+
+    // Only validate Alpaca account ownership for brokerage/hybrid mode
+    if (portfolioMode !== 'aggregation') {
+      console.log('Portfolio History API: Validating Alpaca account ownership...');
+      
+      // REFACTOR: Use centralized ownership verification utility
+      try {
+        await verifyAlpacaAccountOwnership(user.id, accountId);
+        console.log('Portfolio History API: Account ownership verified successfully');
+      } catch (error: any) {
+        console.error('Portfolio History API: Account ownership verification failed - access denied');
+        return NextResponse.json(
+          { error: error.message || 'Account not found or access denied' },
+          { status: error.status || 403 }
+        );
+      }
+    } else {
+      console.log('Portfolio History API: Aggregation mode - skipping Alpaca account validation');
+    }
+
+    // Construct the target URL with query parameters + user_id for backend mode detection
     const targetUrl = new URL(`${backendUrl}/api/portfolio/${accountId}/history`);
     targetUrl.searchParams.append('period', period);
+    targetUrl.searchParams.append('user_id', user.id); // CRITICAL: Add user_id for backend mode detection
+    if (filterAccount) targetUrl.searchParams.append('filter_account', filterAccount); // CRITICAL: Add account filter for X-ray vision
     if (timeframe) targetUrl.searchParams.append('timeframe', timeframe);
     if (date_end) targetUrl.searchParams.append('date_end', date_end);
-    if (extended_hours !== null) targetUrl.searchParams.append('extended_hours', extended_hours); // Pass boolean as string
+    if (extended_hours !== null) targetUrl.searchParams.append('extended_hours', extended_hours);
 
-    console.log(`Proxying request to: ${targetUrl.toString()}`);
+    console.log(`Proxying request to: ${targetUrl.toString()} ${filterAccount ? `[FILTERED TO: ${filterAccount}]` : '[TOTAL PORTFOLIO]'}`);
 
-    // Prepare headers
+    // PRODUCTION-GRADE: Prepare headers with both JWT and API key
+    const session = await supabase.auth.getSession();
     const headers: HeadersInit = {
       'Accept': 'application/json'
     };
     
-    // Add API key if available
+    // CRITICAL: Add JWT token for user authentication
+    if (session.data.session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.data.session.access_token}`;
+    }
+    
+    // Add API key for service authentication
     if (backendApiKey) {
-      headers['x-api-key'] = backendApiKey;
+      headers['X-API-Key'] = backendApiKey;
     }
     
     const backendResponse = await fetch(targetUrl.toString(), {

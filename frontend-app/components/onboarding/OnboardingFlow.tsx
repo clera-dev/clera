@@ -14,6 +14,7 @@ import DisclosuresStep from "./DisclosuresStep";
 import AgreementsStep from "./AgreementsStep";
 import OnboardingSuccessLoading from "./OnboardingSuccessLoading";
 import PersonalizationSuccess from "./PersonalizationSuccess";
+import SnapTradeConnectionStep from "./SnapTradeConnectionStep";
 import { getPersonalizationData } from "@/utils/api/personalization-client";
 import { createAlpacaAccount } from "@/utils/api/alpaca";
 import { saveOnboardingData } from "@/utils/api/onboarding-client";
@@ -26,18 +27,20 @@ import {
 import { initialPersonalizationData } from "@/utils/services/personalization-data";
 
 // Define the Step type
-type Step = "welcome" | "personalization" | "personalization_success" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";
+type Step = "welcome" | "personalization" | "personalization_success" | "plaid_connection" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";
 
 // Single source of truth for step sequence
+// NOTE: In hybrid mode, brokerage (KYC) comes FIRST, then Plaid connection
 const ONBOARDING_STEPS: Step[] = [
   "welcome",
   "personalization",
   "personalization_success",
-  "contact", 
+  "contact",        // KYC steps come first in hybrid mode
   "personal",
   "financial",
   "disclosures",
   "agreements",
+  "plaid_connection",  // Plaid comes AFTER brokerage setup in hybrid mode
   "loading",
   "success"
 ];
@@ -47,6 +50,7 @@ const STEP_DISPLAY_NAMES: Record<Step, string> = {
   "welcome": "Welcome",
   "personalization": "Personalize Experience",
   "personalization_success": "Personalization Saved",
+  "plaid_connection": "Connect Accounts",
   "contact": "Contact Info",
   "personal": "Personal Info", 
   "financial": "Financial Profile",
@@ -66,8 +70,9 @@ enum StepIndex {
   Financial = 5,
   Disclosures = 6,
   Agreements = 7,
-  Loading = 8,
-  Success = 9
+  PlaidConnection = 8,  // Plaid comes AFTER KYC in the sequence
+  Loading = 9,
+  Success = 10
 }
 
 interface OnboardingFlowProps {
@@ -97,6 +102,10 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   const [personalizationTotalSteps, setPersonalizationTotalSteps] = useState(7);
   const [hasPersonalization, setHasPersonalization] = useState<boolean>(false);
   const [personalizationChecked, setPersonalizationChecked] = useState<boolean>(false);
+  
+  // Portfolio mode detection for conditional flow routing
+  const [portfolioMode, setPortfolioMode] = useState<string>('loading');
+  const [modeChecked, setModeChecked] = useState<boolean>(false);
 
   // Map for converting step string to numeric index (derived from ONBOARDING_STEPS)
   const stepToIndex: Record<Step, number> = ONBOARDING_STEPS.reduce((acc, step, index) => {
@@ -152,6 +161,9 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
         setPersonalizationChecked(true);
       }
     })();
+    
+    // Fetch portfolio mode to determine onboarding flow
+    fetchPortfolioMode();
 
     // Set a cookie to capture any intended redirect if the user tries to navigate away
     const path = window.location.pathname;
@@ -178,11 +190,36 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     }
   };
 
-  const nextStep = () => {
+  // Fetch portfolio mode to determine onboarding flow
+  const fetchPortfolioMode = async () => {
+    try {
+      const response = await fetch('/api/portfolio/connection-status');
+      if (response.ok) {
+        const data = await response.json();
+        setPortfolioMode(data.portfolio_mode || 'brokerage');  // Default to brokerage if unset
+      } else {
+        // ARCHITECTURE FIX: Fail closed - default to brokerage mode which requires KYC
+        // Defaulting to aggregation would skip compliance checks for brokerage/hybrid users
+        // This ensures all users go through proper onboarding unless explicitly in aggregation
+        console.warn('Portfolio mode API call failed, defaulting to brokerage for safety');
+        setPortfolioMode('brokerage');
+      }
+    } catch (error) {
+      console.error('Error fetching portfolio mode in onboarding:', error);
+      // ARCHITECTURE FIX: Fail closed - default to brokerage mode on error
+      // This ensures compliance checks are not bypassed during transient failures
+      setPortfolioMode('brokerage');
+    } finally {
+      setModeChecked(true);
+    }
+  };
+
+  const nextStep = async () => {
     const currentIndex = ONBOARDING_STEPS.indexOf(currentStep);
     
     if (currentIndex < ONBOARDING_STEPS.length - 1) {
       let next = ONBOARDING_STEPS[currentIndex + 1];
+      
       // If personalization already exists, skip personalization steps
       if (hasPersonalization) {
         while (next === "personalization" || next === "personalization_success") {
@@ -190,6 +227,48 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           next = ONBOARDING_STEPS[Math.min(idx + 1, ONBOARDING_STEPS.length - 1)];
         }
       }
+      
+      // FEATURE FLAG ROUTING:
+      // - Aggregation mode: Skip KYC, jump to plaid_connection
+      // - Brokerage mode: Do KYC, skip plaid_connection
+      // - Hybrid mode: Do KYC first, then plaid_connection
+      
+      if (portfolioMode === 'aggregation') {
+        // In aggregation mode: skip ALL KYC steps, jump directly to plaid_connection
+        if (next === "contact" || next === "personal" || next === "financial" || next === "disclosures" || next === "agreements") {
+          setCurrentStep("plaid_connection");
+          return;
+        }
+        // After plaid_connection, when trying to go to "loading"
+        if (currentStep === "plaid_connection" && next === "loading") {
+          // Save onboarding as completed with Plaid timestamp
+          await submitOnboardingData();
+          return; // submitOnboardingData will set currentStep to "loading"
+        }
+      } else if (portfolioMode === 'brokerage') {
+        // In brokerage mode: skip plaid_connection, go straight to loading after agreements
+        if (next === "plaid_connection") {
+          next = ONBOARDING_STEPS[ONBOARDING_STEPS.indexOf(next) + 1]; // Skip to loading
+        }
+      } else if (portfolioMode === 'hybrid') {
+        // In hybrid mode: After plaid_connection, save plaid completion and navigate to /invest
+        if (currentStep === "plaid_connection" && next === "loading") {
+          console.log('[OnboardingFlow] Hybrid mode - saving Plaid completion and navigating to /invest');
+          // Save Plaid completion timestamp
+          await saveOnboardingData(
+            userId,
+            onboardingData,
+            'submitted', // Keep status as submitted (already set from brokerage)
+            undefined, // No new Alpaca data
+            'plaid' // Set plaid_connection_completed_at timestamp
+          );
+          // Navigate directly to /invest (don't show loading screen again)
+          router.push('/invest');
+          return;
+        }
+      }
+      // Natural sequence follows for remaining steps
+      
       setCurrentStep(next);
     }
   };
@@ -205,6 +284,17 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           const idx = ONBOARDING_STEPS.indexOf(prev);
           prev = ONBOARDING_STEPS[Math.max(idx - 1, 0)];
         }
+      }
+      // In aggregation mode, skip back over KYC steps if going back from plaid_connection
+      if (portfolioMode === 'aggregation' && currentStep === 'plaid_connection') {
+        // Jump back to personalization_success
+        setCurrentStep('personalization_success');
+        return;
+      }
+      // In brokerage mode, skip plaid_connection when going back
+      if (prev === "plaid_connection" && portfolioMode === 'brokerage') {
+        const idx = ONBOARDING_STEPS.indexOf(prev);
+        prev = ONBOARDING_STEPS[Math.max(idx - 1, 0)];
       }
       setCurrentStep(prev);
     }
@@ -226,7 +316,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     if (currentStep === "agreements") {
       await submitOnboardingData();
     } else {
-      nextStep();
+      await nextStep();
     }
   };
 
@@ -243,7 +333,26 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       setSubmitting(true);
       setSubmissionError(null);
       
-      // Create the Alpaca account
+      // Skip Alpaca account creation in aggregation mode (Plaid-only onboarding)
+      if (portfolioMode === 'aggregation') {
+        console.log('🎯 [Aggregation Mode] Saving onboarding completion with plaid timestamp');
+        // Save onboarding status as completed with Plaid completion timestamp
+        await saveOnboardingData(
+          userId,
+          onboardingData,
+          'submitted', // Mark as completed for aggregation mode
+          undefined, // No Alpaca data
+          'plaid' // Set plaid_connection_completed_at timestamp
+        );
+        
+        console.log('✅ [Aggregation Mode] Onboarding saved, navigating to /invest');
+        setAccountCreated(true);
+        setSubmitting(false);
+        handleLoadingComplete();
+        return;
+      }
+      
+      // Create the Alpaca account (brokerage/hybrid mode)
       const result = await createAlpacaAccount(onboardingData);
       
       if (result.error) {
@@ -284,7 +393,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
         return;
       }
       
-      // Save onboarding status to mark as completed
+      // Save onboarding status to mark as completed with Brokerage completion timestamp
       await saveOnboardingData(
         userId,
         onboardingData,
@@ -293,7 +402,8 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           accountId: result.data?.id,
           accountNumber: result.data?.account_number,
           accountStatus: result.data?.status
-        }
+        },
+        'brokerage' // Set brokerage_account_completed_at timestamp
       );
       
       setAccountCreated(true);
@@ -309,18 +419,19 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const handleLoadingComplete = () => {
-    // After onboarding completion, force refresh to reload with new status
-    // Since we're already on /protected, router.push won't refresh the data
-    console.log('[OnboardingFlow] handleLoadingComplete called, forcing page refresh');
+    // After onboarding completion, determine next step based on mode
+    console.log('[OnboardingFlow] handleLoadingComplete called, portfolioMode:', portfolioMode);
     
-    // Check if we're already on /protected
-    if (window.location.pathname === '/protected') {
-      console.log('[OnboardingFlow] Already on /protected, forcing refresh to update status');
-      window.location.reload();
-    } else {
-      console.log('[OnboardingFlow] Navigating to /protected');
-      router.push('/protected');
+    // In hybrid mode, after brokerage account is created, show Plaid connection
+    if (portfolioMode === 'hybrid') {
+      console.log('[OnboardingFlow] Hybrid mode - proceeding to Plaid connection');
+      setCurrentStep('plaid_connection');
+      return;
     }
+    
+    // In aggregation or brokerage mode, go straight to /invest
+    console.log('[OnboardingFlow] Navigating to /invest');
+    router.push('/invest');
   };
 
   const handleLoadingError = (error: string) => {
@@ -331,8 +442,8 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const renderCurrentStep = () => {
-    // Block rendering until personalization check completes to avoid flicker
-    if (!personalizationChecked) {
+    // Block rendering until both personalization and portfolio mode checks complete to avoid flicker
+    if (!personalizationChecked || !modeChecked) {
       return null;
     }
     switch (currentStep) {
@@ -352,6 +463,13 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
         );
       case "personalization_success":
         return <PersonalizationSuccess onComplete={nextStep} />;
+      case "plaid_connection":
+        return (
+          <SnapTradeConnectionStep 
+            onComplete={nextStep}
+            onBack={prevStep}
+          />
+        );
       case "contact":
         return (
           <ContactInfoStep 
@@ -437,8 +555,9 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   return (
     <div className="flex flex-col w-full">
       <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
-        {/* Progress bar - show for personalization steps and KYC steps */}
-        {(currentStep === "personalization" || (currentStep !== "personalization_success" && currentStep !== "welcome" && currentStep !== "loading" && currentStep !== "success")) && (
+        {/* Progress bar - ONLY show for personalization and KYC steps (not plaid_connection) */}
+        {(currentStep === "personalization" || 
+          (currentStep === "contact" || currentStep === "personal" || currentStep === "financial" || currentStep === "disclosures" || currentStep === "agreements")) && (
           <div className="mb-3 sm:mb-6">
             <ProgressBar 
               currentStep={currentStep === "personalization" ? (personalizationStep + 1) : (stepToIndex[currentStep] - 2)} // 1-based for display
@@ -446,7 +565,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
               stepNames={currentStep === "personalization" 
                 ? ["Name", "Goals", "Risk", "Timeline", "Experience", "Monthly Goal", "Interests"] // Personalization step names
                 : ONBOARDING_STEPS
-                    .filter(step => step !== "personalization" && step !== "personalization_success" && step !== "welcome" && step !== "loading" && step !== "success")
+                    .filter(step => step !== "personalization" && step !== "personalization_success" && step !== "welcome" && step !== "loading" && step !== "success" && step !== "plaid_connection")
                     .map(step => STEP_DISPLAY_NAMES[step])
               }
               percentComplete={currentStep === "personalization" 

@@ -19,14 +19,14 @@ export interface ChatState {
 export interface SecureChatClient {
   readonly state: ChatState;
   handleInterrupt: (threadId: string, runId: string, response: any) => Promise<void>;
-  startStream: (threadId: string, input: any, userId: string, accountId: string) => Promise<void>;
+  startStream: (threadId: string, input: any, userId: string, accountId?: string) => Promise<void>;
   clearError: () => void;
   clearErrorOnChatLoad: () => void; // PRODUCTION FIX: Clear errors when loading existing chat
   clearModelProviderError: () => void;
   setMessages: (messages: Message[]) => void;
   addMessagesWithStatus: (userMessage: Message) => void;
   mergePersistedToolActivities: (activities: ToolActivity[]) => void;
-  fetchAndHydrateToolActivities: (threadId: string, accountId: string) => Promise<string[]>;
+  fetchAndHydrateToolActivities: (threadId: string, accountId: string | undefined) => Promise<string[]>;
   subscribe: (listener: () => void) => () => void;
   setLongProcessingCallback: (callback: () => void) => void; // ARCHITECTURE FIX: Proper separation of concerns
   clearLongProcessingCallback: () => void; // MEMORY LEAK FIX: Clear callback on unmount
@@ -130,7 +130,7 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   // Fetch persisted tool activities for a thread and merge into state. Returns sorted runIds.
-  async fetchAndHydrateToolActivities(threadId: string, accountId: string): Promise<string[]> {
+  async fetchAndHydrateToolActivities(threadId: string, accountId: string | undefined): Promise<string[]> {
     return this.toolActivityManager.fetchAndHydrateToolActivities(threadId, accountId);
   }
 
@@ -341,7 +341,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     }
   }
 
-  async startStream(threadId: string, input: any, userId: string, accountId: string): Promise<void> {
+  async startStream(threadId: string, input: any, userId: string, accountId?: string): Promise<void> {
     // Create immutable per-stream context to avoid relying on mutable instance state
     const streamContext = { userId };
     // PRODUCTION FIX: Declare timeout variables outside try block for proper scoping

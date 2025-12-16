@@ -22,6 +22,7 @@ export default function ProtectedPageClient() {
   const [user, setUser] = useState<any>(null);
   const [fundingStep, setFundingStep] = useState<FundingStep>('welcome');
   const [hasFunding, setHasFunding] = useState<boolean>(false);
+  const [portfolioMode, setPortfolioMode] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -47,22 +48,70 @@ export default function ProtectedPageClient() {
           .maybeSingle();
         setProfile(profileData);
 
-        // Check funding status for completed onboarding users
-        const { data: transfers } = await supabase
-          .from('user_transfers')
-          .select('amount, status')
-          .eq('user_id', user.id)
-          .gte('amount', 1);
-        
-        const funded = !!(transfers && transfers.length > 0 && 
-          transfers.some((transfer: any) => 
-            transfer.status === 'QUEUED' ||
-            transfer.status === 'SUBMITTED' ||
-            transfer.status === 'COMPLETED' || 
-            transfer.status === 'SETTLED'
-          ));
-        
-        setHasFunding(funded);
+        // Check if user has ANY connected accounts (SnapTrade, Plaid, or funded Alpaca)
+        // This determines if they should be redirected to /portfolio or stay on /protected
+        try {
+          const modeResponse = await fetch('/api/portfolio/connection-status');
+          if (modeResponse.ok) {
+            const modeData = await modeResponse.json();
+            const mode = modeData.portfolio_mode || 'aggregation';
+            const snaptradeAccounts = modeData.snaptrade_accounts || [];
+            const plaidAccounts = modeData.plaid_accounts || [];
+            const alpacaAccount = modeData.alpaca_account;
+            setPortfolioMode(mode);
+            
+            // Production-grade check: Does user have ANY connected accounts?
+            const hasSnapTrade = snaptradeAccounts.length > 0;
+            const hasPlaid = plaidAccounts.length > 0;
+            const hasAlpaca = !!alpacaAccount;
+            
+            if (hasSnapTrade || hasPlaid) {
+              // SnapTrade or Plaid users have external accounts - they're "ready"
+              console.log('User has connected accounts (SnapTrade or Plaid) - redirecting to portfolio');
+              setHasFunding(true);
+            } else if (hasAlpaca) {
+              // Alpaca users need to check actual funding status
+              console.log('User has Alpaca account - checking funding status');
+              const { data: transfers } = await supabase
+                .from('user_transfers')
+                .select('amount, status')
+                .eq('user_id', user.id)
+                .gte('amount', 1);
+              
+              const funded = !!(transfers && transfers.length > 0 && 
+                transfers.some((transfer: any) => 
+                  transfer.status === 'QUEUED' ||
+                  transfer.status === 'SUBMITTED' ||
+                  transfer.status === 'COMPLETED' || 
+                  transfer.status === 'SETTLED'
+                ));
+              
+              setHasFunding(funded);
+            } else {
+              // No connected accounts - user needs to connect something
+              console.log('User has no connected accounts - staying on /protected');
+              setHasFunding(false);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching connection status:', error);
+          // Fallback: Check for Alpaca funding only
+          const { data: transfers } = await supabase
+            .from('user_transfers')
+            .select('amount, status')
+            .eq('user_id', user.id)
+            .gte('amount', 1);
+          
+          const funded = !!(transfers && transfers.length > 0 && 
+            transfers.some((transfer: any) => 
+              transfer.status === 'QUEUED' ||
+              transfer.status === 'SUBMITTED' ||
+              transfer.status === 'COMPLETED' || 
+              transfer.status === 'SETTLED'
+            ));
+          
+          setHasFunding(funded);
+        }
       }
       
       setLoading(false);

@@ -125,35 +125,75 @@ export class AuthService {
       throw new AuthError('Authentication failed - no user or token available', 401);
     }
 
-    // Verify user owns this account (same logic for both auth patterns)
-    const { data: onboardingData, error: onboardingError } = await supabase
-      .from('user_onboarding')
-      .select('alpaca_account_id')
-      .eq('user_id', user.id)
-      .single();
+    // Verify user owns this account
+    // Support both Alpaca and SnapTrade accounts
+    
+    // Check if this is a SnapTrade account (UUID format or prefixed with 'snaptrade_')
+    const isSnapTradeAccount = accountId.startsWith('snaptrade_') || 
+                               (accountId.length === 36 && accountId.includes('-'));
+    
+    if (isSnapTradeAccount) {
+      // SnapTrade account - check user_investment_accounts table
+      const cleanAccountId = accountId.replace('snaptrade_', '');
+      
+      const { data: snaptradeAccount, error: snaptradeError } = await supabase
+        .from('user_investment_accounts')
+        .select('provider_account_id, user_id')
+        .eq('user_id', user.id)
+        .eq('provider', 'snaptrade')
+        .eq('provider_account_id', cleanAccountId)
+        .single();
+      
+      if (snaptradeError) {
+        // Database/server error
+        throw new AuthError(
+          `Database error checking SnapTrade account: ${snaptradeError.message || 'Unknown error'}`,
+          500
+        );
+      }
+      
+      if (!snaptradeAccount) {
+        // SnapTrade account not found for this user
+        throw new AuthError('Account not found', 404);
+      }
+      
+      // Account ownership verified - return auth context
+      return {
+        user,
+        accountId: accountId, // Keep original format (with snaptrade_ prefix if present)
+        authToken: accessToken
+      };
+    } else {
+      // Alpaca account - check user_onboarding table (existing logic)
+      const { data: onboardingData, error: onboardingError } = await supabase
+        .from('user_onboarding')
+        .select('alpaca_account_id')
+        .eq('user_id', user.id)
+        .single();
 
-    if (onboardingError) {
-      // Database/server error: propagate as 500 Internal Server Error
-      throw new AuthError(
-        `Database error: ${onboardingError.message || 'Unknown error'}`,
-        500
-      );
+      if (onboardingError) {
+        // Database/server error: propagate as 500 Internal Server Error
+        throw new AuthError(
+          `Database error: ${onboardingError.message || 'Unknown error'}`,
+          500
+        );
+      }
+
+      if (!onboardingData?.alpaca_account_id) {
+        // Account not found for this user
+        throw new AuthError('Account not found', 404);
+      }
+
+      if (onboardingData.alpaca_account_id !== accountId) {
+        throw new AuthError('Unauthorized access to account', 403);
+      }
+
+      return {
+        user,
+        accountId,
+        authToken: accessToken
+      };
     }
-
-    if (!onboardingData?.alpaca_account_id) {
-      // Account not found for this user
-      throw new AuthError('Account not found', 404);
-    }
-
-    if (onboardingData.alpaca_account_id !== accountId) {
-      throw new AuthError('Unauthorized access to account', 403);
-    }
-
-    return {
-      user,
-      accountId,
-      authToken: accessToken
-    };
   }
 
   /**

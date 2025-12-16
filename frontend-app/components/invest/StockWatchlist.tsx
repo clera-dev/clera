@@ -15,7 +15,7 @@ import { useWatchlistData, type WatchlistItem } from "@/hooks/useWatchlistData";
 import { useMarketPercentages } from "@/hooks/useMarketPercentages";
 
 interface StockWatchlistProps {
-  accountId: string | null;
+  accountId: string | null; // Kept for backwards compatibility, but not required
   onStockSelect?: (symbol: string) => void;
   watchlistSymbols?: Set<string>;
   onWatchlistChange?: () => void;
@@ -121,21 +121,24 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
         </div>
         
         <div className="flex items-center justify-center w-20 flex-shrink-0 mr-3">
-          {item.isLoading ? (
-            <div className="w-16 h-4 bg-muted animate-pulse rounded flex items-center justify-center">
-              <span className="text-xs text-muted-foreground">...</span>
-            </div>
-          ) : hasCalculatedPercentage ? (
+          {hasCalculatedPercentage ? (
             <div className={`text-sm font-semibold transition-all duration-300 ${getReturnColor(dayChangePercent!)}`}>
               {formatReturnPercent(dayChangePercent!)}
             </div>
-          ) : isCalculating ? (
+          ) : item.dayChangePercent !== undefined ? (
+            // Show last known value during recalculation - no flicker
+            <div className={`text-sm font-semibold transition-all duration-300 ${getReturnColor(item.dayChangePercent)}`}>
+              {formatReturnPercent(item.dayChangePercent)}
+            </div>
+          ) : item.isLoading && isInitialLoading ? (
+            // Only show loading animation during initial load, not background refresh
             <div className="w-16 h-4 bg-muted animate-pulse rounded flex items-center justify-center">
               <span className="text-xs text-muted-foreground">...</span>
             </div>
           ) : (
-            <div className="w-16 h-4 bg-muted animate-pulse rounded flex items-center justify-center">
-              <span className="text-xs text-muted-foreground">---</span>
+            // No data available - show placeholder without animation
+            <div className="text-sm text-muted-foreground">
+              ---
             </div>
           )}
         </div>
@@ -150,26 +153,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
     );
   };
 
-  if (!accountId) {
-    return (
-      <Card className="h-full flex flex-col">
-        <CardHeader className="flex flex-row items-center justify-between py-3 px-4 flex-shrink-0">
-          <CardTitle className="flex items-center text-lg">
-            Stock Watchlist
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 flex-1 flex items-center justify-center">
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Please complete account setup to use the watchlist feature.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
+  // Watchlist works for all users (aggregation and brokerage mode)
   return (
     <>
       <Card className="h-full flex flex-col">

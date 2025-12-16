@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import logging
+import hmac
 from typing import List, Dict, Any, Optional
 from enum import Enum, auto
 import asyncio
@@ -50,6 +51,9 @@ from utils.alpaca.account_closure import (
 from utils.authentication import verify_account_ownership, get_authenticated_user_id
 from utils.supabase.db_client import get_supabase_client
 
+# User Watchlist Service (Supabase-based, works for both aggregation and brokerage)
+from utils.supabase.user_watchlist_service import UserWatchlistService
+
 # Watchlist imports
 from utils.alpaca.watchlist import (
     get_watchlist_for_account,
@@ -71,6 +75,17 @@ from utils.alpaca.account_status_service import (
 
 # Purchase History imports
 from clera_agents.tools.purchase_history import get_comprehensive_account_activities, get_comprehensive_account_activities_async
+
+# Portfolio imports
+from utils.portfolio.portfolio_service import get_portfolio_service
+from utils.portfolio.abstract_provider import ProviderError
+from utils.portfolio.aggregated_portfolio_service import get_aggregated_portfolio_service
+from utils.portfolio.sector_allocation_service import get_sector_allocation_service
+
+# Portfolio History imports (Phase 1-3)
+from services.portfolio_reconstruction_manager import get_portfolio_reconstruction_manager
+from services.daily_portfolio_snapshot_service import get_daily_portfolio_service
+from services.intraday_portfolio_tracker import get_intraday_portfolio_tracker
 
 # Configure logging (ensure this is done early)
 logger = logging.getLogger("clera-api-server")
@@ -185,6 +200,48 @@ async def lifespan(app: FastAPI):
     # Initialize conversation state tracking
     app.state.conversation_states = {}
     
+    # ═══════════════════════════════════════════════════════════════════════
+    # START BACKGROUND PORTFOLIO SERVICES (WITH LEADER ELECTION)
+    # ═══════════════════════════════════════════════════════════════════════
+    
+    from services.background_service_manager import (
+        get_background_service_manager,
+        BackgroundServiceConfig
+    )
+    from services.intraday_portfolio_tracker import get_intraday_portfolio_tracker
+    from services.daily_portfolio_snapshot_service import DailyPortfolioScheduler
+    
+    bg_manager = None
+    try:
+        bg_manager = get_background_service_manager()
+        
+        # Configure Intraday Portfolio Tracker
+        intraday_config = BackgroundServiceConfig(
+            service_name="Intraday Portfolio Tracker",
+            service_func=lambda: get_intraday_portfolio_tracker().start_live_update_loop(),
+            leader_key="portfolio:background_services:leader"
+        )
+        
+        # Configure Daily Scheduler
+        scheduler_config = BackgroundServiceConfig(
+            service_name="Daily Portfolio Scheduler",
+            service_func=lambda: DailyPortfolioScheduler().start_daily_scheduler(),
+            leader_key="portfolio:daily_scheduler:leader"
+        )
+        
+        # Start background services with leader election
+        bg_manager.create_task(intraday_config)
+        bg_manager.create_task(scheduler_config)
+        
+        logger.info("✅ Background services configured with leader election")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to configure background services: {e}")
+        startup_errors.append(f"Background services configuration failed: {str(e)}")
+        bg_manager = None
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    
     # Log completion of startup
     logger.info(f"API server startup process complete with {len(startup_errors)} errors/warnings.")
     
@@ -192,6 +249,15 @@ async def lifespan(app: FastAPI):
     
     # Shutdown logic
     logger.info("Shutting down API server...")
+    
+    # Gracefully shutdown all background services (if initialized)
+    if bg_manager is not None:
+        try:
+            await bg_manager.shutdown_all()
+        except Exception as e:
+            logger.error(f"Error shutting down background services: {e}")
+    else:
+        logger.warning("Background service manager was not initialized - skipping shutdown")
 
 # Create FastAPI app with lifespan
 app = FastAPI(
@@ -200,6 +266,12 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Register modular route modules (keep api_server.py clean)
+from routes.account_filtering_routes import router as account_filtering_router
+from routes.snaptrade_routes import router as snaptrade_router
+app.include_router(account_filtering_router)
+app.include_router(snaptrade_router)
 
 # Add CORS middleware with restricted origins
 app.add_middleware(
@@ -265,6 +337,8 @@ except ImportError as e:
     PortfolioPosition = None
     AssetClass = None
     SecurityType = None
+    OrderResponse = None
+    PositionResponse = None
 
 # Import Alpaca broker client - fail gracefully
 try:
@@ -642,11 +716,21 @@ class WatchlistSymbolCheckResponse(BaseModel):
     in_watchlist: bool
 
 @app.post("/api/trade")
-async def execute_trade(request: TradeRequest):
-    """Execute a market order trade."""
+async def execute_trade(
+    request: TradeRequest,
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Execute a market order trade via Alpaca or SnapTrade.
+    
+    PRODUCTION-GRADE: Automatically routes to correct brokerage based on account_id.
+    For SnapTrade accounts, uses the new SnapTradeTradingService for proper order placement.
+    """
+    # #region agent log
+    import json;open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:718","message":"execute_trade entry","data":{"user_id":user_id,"account_id":request.account_id,"ticker":request.ticker,"side":request.side},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1,H4,H5"})+'\n')
+    # #endregion
     try:
-        # Log the request
-        logger.info(f"Received trade request: {request}")
+        logger.info(f"Received trade request: {request} for user {user_id}")
         
         # Validate the side
         if request.side.upper() not in ["BUY", "SELL"]:
@@ -654,19 +738,127 @@ async def execute_trade(request: TradeRequest):
         
         # Determine order side
         order_side = OrderSide.BUY if request.side.upper() == "BUY" else OrderSide.SELL
+        action = "BUY" if order_side == OrderSide.BUY else "SELL"
         
-        # Execute the trade
-        result = _submit_market_order(
-            account_id=request.account_id, 
-            ticker=request.ticker, 
-            notional_amount=request.notional_amount, 
-            side=order_side
-        )
+        # PRODUCTION-GRADE: Determine provider by querying database instead of relying on account ID format
+        # This prevents UUID-format Alpaca accounts from being incorrectly routed to SnapTrade
+        clean_account_id = request.account_id.replace('snaptrade_', '')
         
-        return JSONResponse({
-            "success": True,
-            "message": result
-        })
+        # #region agent log
+        import json;supabase_defined=False;
+        try:
+            supabase;supabase_defined=True
+        except NameError:
+            supabase_defined=False
+        open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:745","message":"before supabase query","data":{"supabase_defined":supabase_defined,"clean_account_id":clean_account_id,"user_id":user_id},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1,H2,H5"})+'\n')
+        # #endregion
+        
+        # Initialize Supabase client
+        supabase = get_supabase_client()
+        
+        # Query database to determine the account provider
+        # First try to match by provider_account_id
+        account_result = supabase.table('user_investment_accounts')\
+            .select('provider, provider_account_id')\
+            .eq('user_id', user_id)\
+            .eq('provider_account_id', clean_account_id)\
+            .execute()
+        
+        # If not found, try matching by UUID (id field)
+        if not account_result.data or len(account_result.data) == 0:
+            # #region agent log
+            import json;open('/Users/cristian_mendoza/Desktop/clera/.cursor/debug.log','a').write(json.dumps({"location":"api_server.py:753","message":"first query returned empty, trying UUID match","data":{"first_query_result_count":len(account_result.data) if account_result.data else 0},"timestamp":int(time.time()*1000),"sessionId":"debug-session","runId":"initial","hypothesisId":"H1"})+'\n')
+            # #endregion
+            account_result = supabase.table('user_investment_accounts')\
+                .select('provider, provider_account_id')\
+                .eq('user_id', user_id)\
+                .eq('id', clean_account_id)\
+                .execute()
+        
+        is_snaptrade_account = False
+        if account_result.data and len(account_result.data) > 0:
+            account_provider = account_result.data[0]['provider']
+            is_snaptrade_account = (account_provider == 'snaptrade')
+            logger.info(f"Account {request.account_id} provider: {account_provider}")
+        else:
+            # If not found in user_investment_accounts, check if it's the legacy Alpaca account ID
+            logger.info(f"Account {request.account_id} not found in user_investment_accounts, assuming Alpaca")
+        
+        if is_snaptrade_account:
+            # SnapTrade account - use SnapTrade trading service
+            logger.info(f"Routing trade to SnapTrade for account {request.account_id}")
+            
+            from services.snaptrade_trading_service import get_snaptrade_trading_service
+            trading_service = get_snaptrade_trading_service()
+            
+            # Clean account ID (remove our prefix if present)
+            clean_account_id = request.account_id.replace('snaptrade_', '')
+            
+            # Place order directly (force order without impact check)
+            # For production, you could add an optional impact check step here
+            result = trading_service.place_order(
+                user_id=user_id,
+                account_id=clean_account_id,
+                symbol=request.ticker.upper(),
+                action=action,
+                order_type='Market',  # Market order for notional trades
+                time_in_force='Day',
+                notional_value=float(request.notional_amount)
+            )
+            
+            if not result['success']:
+                return JSONResponse({
+                    "success": False,
+                    "message": result.get('error', 'Failed to place order'),
+                    "error": result.get('error')
+                }, status_code=400)
+            
+            # PRODUCTION-GRADE: Handle both executed orders and queued orders
+            if result.get('queued'):
+                # Order was queued (market closed)
+                return JSONResponse({
+                    "success": True,
+                    "queued": True,
+                    "message": result.get('message', f"Order queued for market open: {action} ${request.notional_amount:.2f} of {request.ticker}"),
+                    "order": result.get('order', {})
+                })
+            else:
+                # Order was executed immediately
+                order = result['order']
+                success_message = (
+                    f"✅ {action} order placed successfully via SnapTrade: "
+                    f"${request.notional_amount:.2f} of {request.ticker}. "
+                    f"Order ID: {order['brokerage_order_id']}"
+                )
+                
+                return JSONResponse({
+                    "success": True,
+                    "message": success_message,
+                    "order": order
+                })
+        
+        else:
+            # Alpaca account - use existing Alpaca trade execution
+            logger.info(f"Routing trade to Alpaca for account {request.account_id}")
+            
+            if not _submit_market_order:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Alpaca trading service unavailable"
+                )
+            
+            result = _submit_market_order(
+                account_id=request.account_id, 
+                ticker=request.ticker, 
+                notional_amount=request.notional_amount, 
+                side=order_side
+            )
+            
+            return JSONResponse({
+                "success": True,
+                "message": result
+            })
+        
     except Exception as e:
         logger.error(f"Error executing trade: {e}", exc_info=True)
         return JSONResponse({
@@ -1743,7 +1935,9 @@ def get_trading_client():
 @app.get("/api/portfolio/{account_id}/history", response_model=PortfolioHistoryResponse)
 async def get_portfolio_history(
     account_id: str,
+    request: Request,
     period: Optional[str] = '1M',
+    filter_account: Optional[str] = Query(None, description="Filter to specific account UUID for account-specific view"),
     timeframe: Optional[str] = None,
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
@@ -1753,6 +1947,43 @@ async def get_portfolio_history(
     broker_client = Depends(get_broker_client), # Use BrokerClient instead of TradingClient
     api_key: str = Depends(verify_api_key)
 ):
+    # SECURITY FIX: Get user_id from authentication only (not from query params)
+    # For aggregation mode, user_id is required. For brokerage mode, account_id is sufficient.
+    authenticated_user_id = None
+    try:
+        auth_header = request.headers.get("Authorization")
+        authenticated_user_id = get_authenticated_user_id(request, api_key, auth_header)
+    except HTTPException:
+        # No authenticated user - this is OK for brokerage mode (uses account_id)
+        # Aggregation mode will not work without authentication
+        pass
+    
+    # CRITICAL FIX: Portfolio mode aware history
+    if authenticated_user_id:
+        feature_flags = get_feature_flags()
+        portfolio_mode = feature_flags.get_portfolio_mode(authenticated_user_id)
+        
+        logger.info(f"Portfolio history request for user {authenticated_user_id}, account {account_id}, mode: {portfolio_mode}")
+        
+        # Handle aggregation mode - construct history from snapshots
+        if portfolio_mode == 'aggregation':
+            if filter_account:
+                logger.info(f"Aggregation mode: Building account-specific portfolio history for user {authenticated_user_id}, account {filter_account}")
+            else:
+                logger.info(f"Aggregation mode: Building portfolio history from snapshots for user {authenticated_user_id}")
+            aggregated_service = get_aggregated_portfolio_service()
+            return await aggregated_service.get_portfolio_history(authenticated_user_id, period, filter_account)
+    
+    # PRODUCTION-GRADE: If account_id is 'null' (string) but no authenticated user,
+    # this means frontend is trying to use aggregation mode without proper auth
+    if account_id == 'null' and not authenticated_user_id:
+        logger.error("Portfolio history requested with account_id='null' but no authentication provided")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required for aggregated portfolio history"
+        )
+    
+    # Handle brokerage/hybrid mode - use Alpaca history
     if not broker_client:
         raise HTTPException(status_code=503, detail="Broker service unavailable")
     if not GetPortfolioHistoryRequest: # Check if the class was imported successfully
@@ -1849,13 +2080,69 @@ async def get_account_positions(
         logger.error(f"Error fetching positions for {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error fetching positions.")
 
+# CRITICAL: Define specific route BEFORE parameterized route to avoid conflicts
+@app.get("/api/portfolio/aggregated/analytics", response_model=PortfolioAnalyticsResponse)
+async def get_aggregated_portfolio_analytics(
+    user_id: str = Depends(get_authenticated_user_id),
+    filter_account: Optional[str] = Query(None, description="Filter to specific account UUID for account-level analytics"),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get portfolio analytics (risk & diversification scores) for aggregation mode users.
+    
+    Calculates scores from Plaid aggregated holdings data using the same analytics
+    engine as brokerage mode for consistency.
+    
+    Supports account-level filtering for X-Ray Vision into individual accounts.
+    
+    Args:
+        user_id: User ID to calculate analytics for
+        filter_account: Optional account ID to filter to specific account
+        api_key: API key for authentication
+    """
+    try:
+        logger.info(f"📊 Portfolio analytics request for user {user_id}, filter={filter_account}")
+        
+        # Use account filtering service for clean separation of concerns
+        from utils.portfolio.account_filtering_service import get_account_filtering_service
+        filter_service = get_account_filtering_service()
+        
+        # Get filtered holdings
+        filtered_holdings = await filter_service.filter_holdings_by_account(user_id, filter_account)
+        
+        # Calculate analytics on filtered holdings
+        from utils.portfolio.aggregated_calculations import calculate_portfolio_analytics
+        analytics_result = calculate_portfolio_analytics(filtered_holdings, user_id)
+        
+        logger.info(f"✅ Analytics calculated for {len(filtered_holdings)} holdings: risk={analytics_result['risk_score']}, diversification={analytics_result['diversification_score']}")
+        
+        # Return in standard format
+        return PortfolioAnalyticsResponse(
+            risk_score=Decimal(analytics_result['risk_score']),
+            diversification_score=Decimal(analytics_result['diversification_score'])
+        )
+        
+    except Exception as e:
+        logger.error(f"Error calculating aggregated portfolio analytics for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to calculate analytics: {str(e)}"
+        )
+
 @app.get("/api/portfolio/{account_id}/analytics", response_model=PortfolioAnalyticsResponse)
 async def get_portfolio_analytics(
     account_id: str,
+    user_id: str = Depends(get_authenticated_user_id),
     client = Depends(get_broker_client), # Original: client: BrokerClient
     api_key: str = Depends(verify_api_key) # Add authentication
 ):
-    """Endpoint to calculate risk and diversification scores for an account."""
+    """
+    Production-grade endpoint to calculate risk and diversification scores.
+    
+    Supports:
+    - Alpaca brokerage accounts (using live positions)
+    - Plaid aggregated portfolios (using aggregated holdings)
+    """
     # Check if necessary types were imported successfully
     if not PortfolioAnalyticsEngine or not PortfolioPosition:
          logger.error("Portfolio analytics module (PortfolioAnalyticsEngine, PortfolioPosition) not available due to import error.")
@@ -1866,9 +2153,31 @@ async def get_portfolio_analytics(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid account_id format. Must be a UUID.")
 
-    logger.info(f"Calculating analytics for account {account_id}")
+    logger.info(f"Calculating analytics for account {account_id}, user {user_id}")
+    
     try:
-        # 1. Fetch positions
+        # Determine portfolio mode for this user
+        feature_flags = get_feature_flags()
+        portfolio_mode = feature_flags.get_portfolio_mode(user_id)
+        
+        logger.info(f"Portfolio analytics request: mode={portfolio_mode}")
+        
+        # Handle aggregation mode - use Plaid aggregated data
+        if portfolio_mode == 'aggregation':
+            logger.info(f"Aggregation mode: Calculating analytics from aggregated holdings for user {user_id}")
+            aggregated_service = get_aggregated_portfolio_service()
+            analytics_result = await aggregated_service.get_portfolio_analytics(user_id)
+            
+            # Convert to response model
+            return PortfolioAnalyticsResponse(
+                risk_score=Decimal(analytics_result['risk_score']),
+                diversification_score=Decimal(analytics_result['diversification_score'])
+            )
+        
+        # Handle brokerage/hybrid mode - use existing Alpaca logic
+        logger.info(f"Brokerage mode: Calculating analytics from Alpaca positions for account {account_id}")
+        
+        # 1. Fetch positions from Alpaca
         alpaca_positions = client.get_all_positions_for_account(account_id=account_uuid)
 
         if not alpaca_positions:
@@ -1935,41 +2244,104 @@ async def get_portfolio_analytics(
 @app.get("/api/assets/{symbol_or_asset_id}", response_model=AssetDetailsResponse)
 async def get_asset_details(
     symbol_or_asset_id: str,
+    request: Request,
     client = Depends(get_broker_client), # Original: client: BrokerClient
     api_key: str = Depends(verify_api_key) # Add API key validation
 ):
-    """Endpoint to fetch details for a specific asset."""
+    """
+    PRODUCTION-GRADE multi-source asset details endpoint.
+    
+    Supports:
+    - Alpaca brokerage assets (tradable securities)
+    - Plaid external securities with rich metadata (mutual funds, bonds, etc.)
+    - Intelligent fallback details for unknown securities
+    
+    For Plaid securities, provides rich details including sector, industry, 
+    and proper security names from the Investment API.
+    
+    SECURITY: User ID is now obtained from authentication only (not query params).
+    If no authenticated user, falls back to Alpaca-only lookup.
+    """
     logger.info(f"Fetching asset details for {symbol_or_asset_id}")
+    
+    # SECURITY FIX: Get user_id from authentication only (not from query params)
+    authenticated_user_id = None
     try:
-        asset = client.get_asset(symbol_or_asset_id)
-        if not asset:
-            raise HTTPException(status_code=404, detail="Asset not found.")
-
-        # Map Alpaca Asset model to our response model
+        auth_header = request.headers.get("Authorization")
+        authenticated_user_id = get_authenticated_user_id(request, api_key, auth_header)
+    except HTTPException:
+        # No authenticated user - will use Alpaca-only lookup or fallback
+        pass
+    
+    try:
+        # CRITICAL FIX: Use production-grade asset details service
+        from utils.portfolio.asset_details_service import get_asset_details_service
+        asset_service = get_asset_details_service()
+        
+        # Use multi-source lookup (requires user_id for Plaid securities)
+        if authenticated_user_id:
+            asset_details = await asset_service.get_asset_details_multi_source(symbol_or_asset_id, authenticated_user_id, client)
+        else:
+            # Backward compatibility: Try Alpaca first, then fallback
+            try:
+                asset = client.get_asset(symbol_or_asset_id)
+                if asset:
+                    logger.info(f"Found Alpaca asset details for {symbol_or_asset_id}")
+                    asset_details = {
+                        "id": str(asset.id),
+                        "symbol": asset.symbol,
+                        "name": asset.name,
+                        "asset_class": str(asset.asset_class.value),
+                        "exchange": asset.exchange,
+                        "status": str(asset.status.value),
+                        "tradable": asset.tradable,
+                        "marginable": asset.marginable,
+                        "shortable": asset.shortable,
+                        "easy_to_borrow": asset.easy_to_borrow,
+                        "fractionable": asset.fractionable,
+                        "maintenance_margin_requirement": float(asset.maintenance_margin_requirement) if asset.maintenance_margin_requirement else None,
+                        "data_source": "alpaca"
+                    }
+                else:
+                    raise Exception("Asset not found in Alpaca")
+            except:
+                logger.info(f"Asset {symbol_or_asset_id} not found in Alpaca, using fallback")
+                asset_details = asset_service.create_fallback_asset_details(symbol_or_asset_id)
+        
+        # Convert to response model
         return AssetDetailsResponse(
-            id=asset.id,
-            asset_class=str(asset.asset_class.value), # Convert enum
-            exchange=asset.exchange,
-            symbol=asset.symbol,
-            name=asset.name,
-            status=str(asset.status.value), # Convert enum
-            tradable=asset.tradable,
-            marginable=asset.marginable,
-            shortable=asset.shortable,
-            easy_to_borrow=asset.easy_to_borrow,
-            fractionable=asset.fractionable,
-            maintenance_margin_requirement=float(asset.maintenance_margin_requirement) if asset.maintenance_margin_requirement else None,
-            # industry=getattr(asset, 'industry', None), # Add if available in model
-            # sector=getattr(asset, 'sector', None),     # Add if available in model
+            id=uuid.UUID(asset_details["id"]) if isinstance(asset_details["id"], str) else asset_details["id"],
+            asset_class=asset_details.get("asset_class", "us_equity"),
+            exchange=asset_details.get("exchange", "UNKNOWN"),
+            symbol=asset_details.get("symbol", symbol_or_asset_id),
+            name=asset_details.get("name", symbol_or_asset_id),
+            status=asset_details.get("status", "active"),
+            tradable=asset_details.get("tradable", False),
+            marginable=asset_details.get("marginable", False),
+            shortable=asset_details.get("shortable", False),
+            easy_to_borrow=asset_details.get("easy_to_borrow", False),
+            fractionable=asset_details.get("fractionable", False),
+            maintenance_margin_requirement=asset_details.get("maintenance_margin_requirement")
         )
-    except requests.exceptions.HTTPError as e:
-         logger.error(f"Alpaca API HTTP error fetching asset {symbol_or_asset_id}: {e.response.status_code} - {e.response.text}")
-         if e.response.status_code == 404:
-             raise HTTPException(status_code=404, detail=f"Asset '{symbol_or_asset_id}' not found.")
-         raise HTTPException(status_code=e.response.status_code, detail=f"Alpaca error: {e.response.text}")
+        
     except Exception as e:
         logger.error(f"Error fetching asset details for {symbol_or_asset_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error fetching asset details.")
+        
+        # Robust fallback to prevent any crashes
+        return AssetDetailsResponse(
+            id=uuid.uuid4(),
+            asset_class="us_equity",
+            exchange="UNKNOWN",
+            symbol=symbol_or_asset_id,
+            name=symbol_or_asset_id,
+            status="active",
+            tradable=False,
+            marginable=False,
+            shortable=False,
+            easy_to_borrow=False,
+            fractionable=False,
+            maintenance_margin_requirement=None
+        )
 
 @app.get("/api/portfolio/{account_id}/orders")
 async def get_account_orders(
@@ -2104,14 +2476,32 @@ async def cancel_order_for_account(
         )
 
 @app.get("/api/portfolio/value")
-async def get_portfolio_value(accountId: str = Query(..., description="Alpaca account ID")):
+async def get_portfolio_value(
+    accountId: str = Query(..., description="Account ID (Alpaca or aggregated)"),
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
     """
     Get current portfolio value and today's return for an account.
     
     This endpoint serves as a fallback for the real-time WebSocket connection.
+    Supports both Alpaca brokerage accounts and Plaid aggregated portfolios.
     """
     positions = None  # Use None as a sentinel for fetch failure
     try:
+        # Determine portfolio mode for this user
+        feature_flags = get_feature_flags()
+        portfolio_mode = feature_flags.get_portfolio_mode(user_id)
+        
+        logger.info(f"Portfolio value request for user {user_id}, account {accountId}, mode: {portfolio_mode}")
+        
+        # Handle aggregation mode users
+        if portfolio_mode == 'aggregation':
+            logger.info(f"Aggregation mode: Getting portfolio value from aggregated holdings for user {user_id}")
+            aggregated_service = get_aggregated_portfolio_service()
+            return await aggregated_service.get_portfolio_value(user_id)
+        
+        # Handle brokerage/hybrid mode users - use existing Alpaca logic
         # Get portfolio value from Redis if available
         redis_client = await get_redis_client()
         if redis_client:
@@ -2119,9 +2509,11 @@ async def get_portfolio_value(accountId: str = Query(..., description="Alpaca ac
             last_portfolio_data = await redis_client.get(last_portfolio_key)
             
             if last_portfolio_data:
+                logger.info(f"Returning cached portfolio value for Alpaca account {accountId}")
                 return json.loads(last_portfolio_data)
         
         # If not in Redis, calculate using broker client
+        logger.info(f"Calculating live portfolio value for Alpaca account {accountId}")
         broker_client = get_broker_client()
         
         # Get account information
@@ -2335,12 +2727,33 @@ def get_sync_redis_client(): # Renamed from get_redis_client
 # You'll need to integrate it into your existing `api_server.py` structure.
 
 @app.get("/api/portfolio/sector-allocation") # Or router.get if using APIRouter
-async def get_sector_allocation(request: Request, account_id: str = Query(..., description="The account ID")):
+async def get_sector_allocation(
+    request: Request, 
+    account_id: str = Query(..., description="The account ID"),
+    user_id: str = Depends(get_authenticated_user_id),
+    filter_account: Optional[str] = Query(None, description="Filter to specific account for account-level sector allocation"),
+    api_key: str = Depends(verify_api_key)
+):
     """
     Get sector allocation for a specific account.
     Combines the account position data with sector information from Redis.
+    Supports aggregation mode with Plaid sector data and brokerage mode with FMP data.
+    Supports account-level filtering for X-Ray Vision into individual accounts.
     """
     try:
+        # CRITICAL FIX: Support aggregation mode with Plaid sector data
+        feature_flags = get_feature_flags()
+        portfolio_mode = feature_flags.get_portfolio_mode(user_id)
+        
+        logger.info(f"Sector allocation request for user {user_id}, account {account_id}, mode: {portfolio_mode}, filter: {filter_account}")
+        
+        # Handle aggregation mode - use Plaid sector data with account filtering
+        if portfolio_mode == 'aggregation':
+            logger.info(f"Aggregation mode: Getting sector allocation from Plaid metadata for user {user_id}")
+            sector_service = get_sector_allocation_service()
+            return await sector_service.get_plaid_sector_allocation(user_id, filter_account)
+        
+        # Handle brokerage/hybrid mode - use existing FMP logic
         # Attempt to get Redis from app state first (common FastAPI pattern)
         if hasattr(request.app.state, 'redis') and request.app.state.redis:
             redis_client = request.app.state.redis
@@ -2441,10 +2854,513 @@ async def get_sector_allocation(request: Request, account_id: str = Query(..., d
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
 
-# Add logging import if not present
-import logging
-import os # ensure os is imported for get_redis_client
-logger = logging.getLogger(__name__) # Or use existing logger from the file
+
+
+# ===============================================
+# PORTFOLIO HISTORY RECONSTRUCTION ENDPOINTS (PHASE 1)
+# ===============================================
+
+@app.post("/api/portfolio/reconstruction/request")
+async def request_portfolio_reconstruction(
+    user_id: str = Depends(get_authenticated_user_id),
+    priority: str = Query('normal', description="Priority: high, normal, low"),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Request portfolio history reconstruction for a user.
+    
+    This triggers the complete historical timeline construction from Plaid
+    transaction data and FMP price data. Typically takes 2-3 minutes.
+    
+    Called automatically when user first connects Plaid accounts.
+    """
+    try:
+        logger.info(f"📥 Portfolio reconstruction requested for user {user_id} (priority: {priority})")
+        
+        reconstruction_manager = get_portfolio_reconstruction_manager()
+        result = await reconstruction_manager.request_reconstruction_for_user(user_id, priority)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error requesting portfolio reconstruction: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to request reconstruction: {str(e)}")
+
+@app.get("/api/portfolio/reconstruction/status")
+async def get_portfolio_reconstruction_status(
+    request: Request,
+    user_id: Optional[str] = Query(None, description="User ID for reconstruction status (backward compatibility)"),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get portfolio reconstruction status for a user.
+    
+    Used by frontend to show progress, completion status, and error handling.
+    Provides real-time updates during the 2-3 minute reconstruction process.
+    
+    SECURITY: Accepts user_id via query param for backward compatibility with current frontend.
+    If Authorization header is present, validates it matches the query param user_id.
+    """
+    try:
+        # Try to get authenticated user ID from JWT token (if provided)
+        authenticated_user_id = None
+        try:
+            auth_header = request.headers.get("Authorization")
+            authenticated_user_id = get_authenticated_user_id(request, api_key, auth_header)
+        except HTTPException:
+            # No valid JWT token - fall back to query param for backward compatibility
+            pass
+        
+        # Use authenticated user ID if available, otherwise fall back to query param
+        final_user_id = authenticated_user_id or user_id
+        
+        if not final_user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required (either via query parameter or Authorization header)"
+            )
+        
+        # Security: If both are provided, they must match
+        if authenticated_user_id and user_id and authenticated_user_id != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Authenticated user ID does not match provided user_id"
+            )
+        
+        reconstruction_manager = get_portfolio_reconstruction_manager()
+        status = await reconstruction_manager.get_reconstruction_status_for_user(final_user_id)
+        
+        return status
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting reconstruction status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get reconstruction status: {str(e)}")
+
+@app.get("/api/portfolio/history-data/{period}")
+async def get_portfolio_history_data(
+    period: str,
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get portfolio history data for charts (Phase 1).
+    
+    Returns reconstructed historical data for chart display.
+    Supports periods: 1W, 1M, 3M, 6M, 1Y, 2Y
+    
+    This replaces the Alpaca-only portfolio history for aggregation users.
+    """
+    try:
+        logger.info(f"📊 Portfolio history data requested for user {user_id}, period: {period}")
+        
+        # Check if reconstruction is complete
+        reconstruction_manager = get_portfolio_reconstruction_manager()
+        status = await reconstruction_manager.get_reconstruction_status_for_user(user_id)
+        
+        if status['status'] != 'completed':
+            return {
+                'error': f"Portfolio history not ready. Status: {status['status']}",
+                'reconstruction_status': status
+            }
+        
+        # Get historical data from database
+        from utils.supabase.db_client import get_supabase_client
+        supabase = get_supabase_client()
+        
+        # Calculate date range based on period
+        end_date = datetime.now().date()
+        period_mapping = {
+            '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365, '2Y': 730
+        }
+        days_back = period_mapping.get(period, 30)
+        start_date = end_date - timedelta(days=days_back)
+        
+        # Get portfolio history data
+        result = supabase.table('user_portfolio_history')\
+            .select('value_date, total_value, total_gain_loss, total_gain_loss_percent, account_breakdown')\
+            .eq('user_id', user_id)\
+            .eq('snapshot_type', 'reconstructed')\
+            .gte('value_date', start_date.isoformat())\
+            .lte('value_date', end_date.isoformat())\
+            .order('value_date')\
+            .execute()
+        
+        if not result.data:
+            return {
+                'error': 'No portfolio history data found for the requested period',
+                'period': period,
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat()
+            }
+        
+        # Convert to chart-compatible format
+        timeline_data = {
+            'timestamp': [],
+            'equity': [],
+            'profit_loss': [],
+            'profit_loss_pct': [],
+            'account_breakdown': [],
+            'base_value': 0.0,
+            'timeframe': '1D',
+            'period': period,
+            'data_source': 'plaid_reconstructed'
+        }
+        
+        for row in result.data:
+            # Convert date to timestamp (milliseconds for frontend charts)
+            value_date = datetime.fromisoformat(row['value_date'])
+            timestamp_ms = int(value_date.timestamp() * 1000)
+            
+            timeline_data['timestamp'].append(timestamp_ms)
+            timeline_data['equity'].append(float(row['total_value']))
+            timeline_data['profit_loss'].append(float(row['total_gain_loss']))
+            timeline_data['profit_loss_pct'].append(float(row['total_gain_loss_percent']))
+            
+            # Parse account breakdown for future filtering
+            account_breakdown_raw = row['account_breakdown']
+            if isinstance(account_breakdown_raw, str):
+                account_breakdown = json.loads(account_breakdown_raw) if account_breakdown_raw else {}
+            else:
+                account_breakdown = account_breakdown_raw if account_breakdown_raw else {}
+            timeline_data['account_breakdown'].append(account_breakdown)
+        
+        # Calculate base value (oldest value in timeline)
+        if timeline_data['equity']:
+            timeline_data['base_value'] = timeline_data['equity'][0]
+        
+        logger.info(f"📈 Returning {len(timeline_data['timestamp'])} data points for {period} period")
+        
+        return timeline_data
+        
+    except Exception as e:
+        logger.error(f"Error getting portfolio history data: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get portfolio history: {str(e)}")
+
+@app.get("/api/portfolio/reconstruction/metrics")
+async def get_reconstruction_metrics(
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get global reconstruction metrics for monitoring and optimization.
+    
+    Used for system monitoring, cost tracking, and performance optimization.
+    Provides insights into reconstruction system health.
+    """
+    try:
+        reconstruction_manager = get_portfolio_reconstruction_manager()
+        metrics = await reconstruction_manager.get_global_reconstruction_metrics()
+        
+        return metrics
+        
+    except Exception as e:
+        logger.error(f"Error getting reconstruction metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
+
+@app.post("/api/portfolio/reconstruction/trigger-daily")
+async def trigger_daily_reconstruction(
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Trigger daily reconstruction for all aggregation users.
+    
+    Called by cron at 4:30 AM EST (after market close) to reconstruct
+    yesterday's portfolio values using actual transaction data.
+    
+    This ensures historical timelines stay up-to-date automatically.
+    """
+    try:
+        logger.info("🔄 Daily reconstruction triggered by cron")
+        
+        # Get all aggregation users
+        supabase = get_supabase_client()
+        result = supabase.table('user_investment_accounts')\
+            .select('user_id')\
+            .eq('provider', 'plaid')\
+            .eq('is_active', True)\
+            .execute()
+        
+        if not result.data:
+            logger.info("No aggregation users found for reconstruction")
+            return {
+                'success': True,
+                'users_processed': 0,
+                'message': 'No aggregation users to process'
+            }
+        
+        # Get unique user IDs
+        user_ids = list(set(user['user_id'] for user in result.data))
+        
+        logger.info(f"📊 Triggering reconstruction for {len(user_ids)} users")
+        
+        # Queue reconstruction for each user (low priority for automated runs)
+        reconstruction_manager = get_portfolio_reconstruction_manager()
+        queued_count = 0
+        
+        for user_id in user_ids:
+            try:
+                await reconstruction_manager.request_reconstruction_for_user(
+                    user_id, 
+                    priority='low'  # Low priority for automated runs
+                )
+                queued_count += 1
+            except Exception as e:
+                logger.error(f"Failed to queue reconstruction for user {user_id}: {e}")
+                continue
+        
+        logger.info(f"✅ Queued {queued_count}/{len(user_ids)} users for daily reconstruction")
+        
+        return {
+            'success': True,
+            'users_found': len(user_ids),
+            'users_queued': queued_count,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in daily reconstruction trigger: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger reconstruction: {str(e)}")
+
+# ===============================================
+# DAILY SNAPSHOT ENDPOINTS (PHASE 2)
+# ===============================================
+
+@app.post("/api/portfolio/daily-snapshots/capture")
+async def trigger_daily_eod_capture(
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Trigger daily end-of-day snapshot capture for all aggregation users.
+    
+    Called by cron job at 4 AM EST or manually for testing.
+    Extends historical timelines forward with current portfolio values.
+    """
+    try:
+        logger.info("📅 Daily EOD snapshot capture triggered")
+        
+        daily_service = get_daily_portfolio_service()
+        result = await daily_service.capture_all_users_eod_snapshots()
+        
+        return {
+            'success': True,
+            'users_processed': result.total_users_processed,
+            'successful_snapshots': result.successful_snapshots,
+            'failed_snapshots': result.failed_snapshots,
+            'total_portfolio_value': result.total_portfolio_value,
+            'processing_duration_seconds': result.processing_duration_seconds,
+            'error_count': len(result.errors)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error triggering daily EOD capture: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger daily capture: {str(e)}")
+
+# ===============================================
+# LIVE PORTFOLIO TRACKING ENDPOINTS (PHASE 3)
+# ===============================================
+
+@app.post("/api/portfolio/live-tracking/start")
+async def start_live_portfolio_tracking(
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    # user_id now comes from authenticated JWT token, not query parameter
+    # This prevents IDOR attacks where callers could start tracking for other users
+    """
+    Start real-time portfolio tracking for a user.
+    
+    Called when user opens portfolio page in aggregation mode.
+    Initializes live tracking and returns initial portfolio state.
+    """
+    try:
+        logger.info(f"📡 Starting live tracking for user {user_id}")
+        
+        intraday_tracker = get_intraday_portfolio_tracker()
+        result = await intraday_tracker.start_live_tracking_for_user(user_id)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error starting live tracking: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start live tracking: {str(e)}")
+
+@app.delete("/api/portfolio/live-tracking/stop")
+async def stop_live_portfolio_tracking(
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    # user_id now comes from authenticated JWT token, not query parameter
+    """
+    Stop real-time portfolio tracking for a user.
+    
+    Called when user closes portfolio page or disconnects.
+    """
+    try:
+        intraday_tracker = get_intraday_portfolio_tracker()
+        await intraday_tracker.stop_live_tracking_for_user(user_id)
+        
+        return {
+            'success': True,
+            'message': f'Live tracking stopped for user {user_id}'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error stopping live tracking: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stop live tracking: {str(e)}")
+
+@app.get("/api/portfolio/live-tracking/status")
+async def get_live_tracking_status(
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    # user_id now comes from authenticated JWT token, not query parameter
+    """
+    Get live tracking status and current portfolio value.
+    
+    Returns real-time portfolio data for display.
+    """
+    try:
+        intraday_tracker = get_intraday_portfolio_tracker()
+        
+        if user_id not in intraday_tracker.active_users:
+            return {
+                'tracking_active': False,
+                'message': 'Live tracking not active for this user'
+            }
+        
+        # Get current live data
+        live_update = await intraday_tracker._calculate_current_portfolio_value(user_id)
+        
+        return {
+            'tracking_active': True,
+            'total_value': live_update.total_value,
+            'intraday_change': live_update.intraday_change,
+            'intraday_change_percent': live_update.intraday_change_percent,
+            'today_high': live_update.today_high,
+            'today_low': live_update.today_low,
+            'account_breakdown': live_update.account_breakdown,
+            'last_update': live_update.timestamp.isoformat(),
+            'market_hours': intraday_tracker._is_market_hours()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting live tracking status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get tracking status: {str(e)}")
+
+@app.get("/api/portfolio/account-breakdown")
+async def get_portfolio_account_breakdown(
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get detailed per-account portfolio breakdown for filtering UI.
+    
+    Returns portfolio value broken down by individual accounts
+    (401k vs IRA vs brokerage, etc.) for the filtering dropdown.
+    """
+    try:
+        # CRITICAL FIX: Always calculate LIVE account breakdown from current holdings
+        # Historical snapshots are stale and don't include cash
+        from utils.supabase.db_client import get_supabase_client
+        supabase = get_supabase_client()
+        
+        # Get all current holdings with account contributions
+        result = supabase.table('user_aggregated_holdings')\
+            .select('symbol, security_type, total_market_value, account_contributions')\
+            .eq('user_id', user_id)\
+            .execute()
+        
+        account_breakdown = {}
+        
+        if result.data:
+            import json
+            for holding in result.data:
+                market_value = float(holding.get('total_market_value', 0))
+                contributions = holding.get('account_contributions', [])
+                
+                # Parse JSON if needed
+                if isinstance(contributions, str):
+                    contributions = json.loads(contributions) if contributions else []
+                
+                # Add each account's portion
+                for contrib in contributions:
+                    account_id = contrib.get('account_id', 'unknown')
+                    contrib_value = float(contrib.get('market_value', 0))
+                    account_breakdown[account_id] = account_breakdown.get(account_id, 0) + contrib_value
+        
+        logger.info(f"Account Breakdown API: Calculated live breakdown for {len(account_breakdown)} accounts")
+        
+        # Enhance account breakdown with account type information
+        enhanced_breakdown = await _enhance_account_breakdown(user_id, account_breakdown)
+        
+        return {
+            'account_breakdown': enhanced_breakdown,
+            'total_accounts': len(enhanced_breakdown),
+            'data_source': 'live_aggregated'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting account breakdown: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get account breakdown: {str(e)}")
+
+async def _enhance_account_breakdown(user_id: str, account_breakdown: Dict[str, float]) -> List[Dict[str, Any]]:
+    """
+    Enhance account breakdown with account type and institution information.
+    """
+    try:
+        from utils.supabase.db_client import get_supabase_client
+        supabase = get_supabase_client()
+        
+        # Get account information
+        result = supabase.table('user_investment_accounts')\
+            .select('id, provider_account_id, account_name, account_type, account_subtype, institution_name')\
+            .eq('user_id', user_id)\
+            .eq('provider', 'plaid')\
+            .eq('is_active', True)\
+            .execute()
+        
+        account_info = {}
+        uuid_to_plaid_map = {}  # Map UUIDs to plaid IDs for lookup
+        if result.data:
+            for account in result.data:
+                account_id = f"plaid_{account['provider_account_id']}"
+                account_uuid = account['id']
+                
+                # Store both mappings
+                uuid_to_plaid_map[account_uuid] = account_id
+                account_info[account_id] = {
+                    'uuid': account_uuid,  # CRITICAL: Include UUID for frontend filtering
+                    'account_name': account['account_name'],
+                    'account_type': account['account_type'],
+                    'account_subtype': account['account_subtype'],
+                    'institution_name': account['institution_name']
+                }
+        
+        # Enhance breakdown with account information
+        enhanced_breakdown = []
+        for account_id, value in account_breakdown.items():
+            if value > 0:
+                info = account_info.get(account_id, {})
+                enhanced_breakdown.append({
+                    'account_id': account_id,  # Still include plaid_XXXX for backwards compat
+                    'uuid': info.get('uuid'),  # CRITICAL: UUID for filtering
+                    'account_name': info.get('account_name', 'Unknown Account'),
+                    'account_type': info.get('account_type', 'unknown'),
+                    'account_subtype': info.get('account_subtype', 'unknown'),
+                    'institution_name': info.get('institution_name', 'Unknown Institution'),
+                    'portfolio_value': value,
+                    'percentage': 0.0  # Will be calculated by frontend
+                })
+        
+        # Sort by value descending
+        enhanced_breakdown.sort(key=lambda x: x['portfolio_value'], reverse=True)
+        
+        return enhanced_breakdown
+        
+    except Exception as e:
+        logger.error(f"Error enhancing account breakdown: {e}")
+        return []
 
 # If `app` is not defined here, this code should be placed where `app` (FastAPI instance) is accessible.
 # For example, inside a function that creates the app, or in a file that defines routes for a specific module.
@@ -3130,6 +4046,230 @@ async def check_symbol_in_watchlist(
             detail=f"Failed to check symbol in watchlist: {str(e)}"
         )
 
+
+# === USER PREFERENCES ENDPOINTS ===
+
+@app.get("/api/user/preferences")
+async def get_user_preferences(
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Get user's trading preferences.
+    
+    PRODUCTION-GRADE: Returns user preferences for trading behavior.
+    """
+    try:
+        supabase = get_supabase_client()
+        
+        result = supabase.table('user_preferences')\
+            .select('buying_power_display')\
+            .eq('user_id', user_id)\
+            .execute()
+        
+        # Return default if no preferences exist yet
+        if not result.data or len(result.data) == 0:
+            return {
+                'success': True,
+                'preferences': {
+                    'buying_power_display': 'cash_only'
+                }
+            }
+        
+        return {
+            'success': True,
+            'preferences': {
+                'buying_power_display': result.data[0].get('buying_power_display', 'cash_only')
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching user preferences: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/user/preferences/buying-power")
+async def update_buying_power_preference(
+    request: Request,
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Update user's buying power display preference.
+    
+    PRODUCTION-GRADE: Allows users to choose between cash_only (safer, default)
+    or cash_and_margin (includes margin for experienced traders).
+    
+    Body:
+        {
+            "buying_power_display": "cash_only" | "cash_and_margin"
+        }
+    """
+    try:
+        body = await request.json()
+        buying_power_display = body.get('buying_power_display')
+        
+        # Validate input
+        if buying_power_display not in ['cash_only', 'cash_and_margin']:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid value. Must be 'cash_only' or 'cash_and_margin'"
+            )
+        
+        supabase = get_supabase_client()
+        
+        # Upsert user preference (insert if doesn't exist, update if it does)
+        supabase.table('user_preferences')\
+            .upsert({
+                'user_id': user_id,
+                'buying_power_display': buying_power_display,
+                'updated_at': datetime.now().isoformat()
+            }, on_conflict='user_id')\
+            .execute()
+        
+        logger.info(f"Updated buying power preference for user {user_id}: {buying_power_display}")
+        
+        return {
+            'success': True,
+            'message': f'Buying power display updated to: {buying_power_display}',
+            'preference': buying_power_display
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating buying power preference: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# === USER-BASED WATCHLIST ENDPOINTS (Aggregation & Brokerage Mode) ===
+# These endpoints work for all users regardless of having an Alpaca account
+
+@app.get("/api/user/watchlist", response_model=WatchlistResponse)
+async def get_user_watchlist(
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get user's watchlist (works for both aggregation and brokerage modes).
+    Stores watchlist in Supabase, independent of Alpaca accounts.
+    
+    SECURITY: user_id is derived from JWT token to prevent IDOR attacks.
+    """
+    try:
+        logger.info(f"Getting watchlist for user {user_id}")
+        
+        symbols = UserWatchlistService.get_user_watchlist(user_id)
+        watchlist_details = UserWatchlistService.get_watchlist_details(user_id)
+        
+        return WatchlistResponse(**watchlist_details)
+        
+    except Exception as e:
+        logger.error(f"Error getting watchlist for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get watchlist: {str(e)}"
+        )
+
+
+@app.post("/api/user/watchlist/add")
+async def add_symbol_to_user_watchlist(
+    request: AddToWatchlistRequest,
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Add a symbol to user's watchlist (works for both aggregation and brokerage modes).
+    
+    SECURITY: user_id is derived from JWT token to prevent IDOR attacks.
+    """
+    try:
+        symbol = request.symbol.upper().strip()
+        logger.info(f"Adding symbol {symbol} to watchlist for user {user_id}")
+        
+        # Check if already in watchlist
+        already_exists = UserWatchlistService.is_symbol_in_watchlist(user_id, symbol)
+        
+        if already_exists:
+            return {
+                "success": True,
+                "message": f"Symbol {symbol} is already in watchlist",
+                "symbol": symbol,
+                "added": False
+            }
+        
+        # Add to watchlist
+        success = UserWatchlistService.add_symbol_to_watchlist(user_id, symbol)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Successfully added {symbol} to watchlist",
+                "symbol": symbol,
+                "added": True
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to add {symbol} to watchlist"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error adding symbol {request.symbol} to watchlist for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to add symbol to watchlist: {str(e)}"
+        )
+
+
+@app.delete("/api/user/watchlist/remove")
+async def remove_symbol_from_user_watchlist(
+    request: RemoveFromWatchlistRequest,
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Remove a symbol from user's watchlist (works for both aggregation and brokerage modes).
+    
+    SECURITY: user_id is derived from JWT token to prevent IDOR attacks.
+    """
+    try:
+        symbol = request.symbol.upper().strip()
+        logger.info(f"Removing symbol {symbol} from watchlist for user {user_id}")
+        
+        # Check if in watchlist
+        exists = UserWatchlistService.is_symbol_in_watchlist(user_id, symbol)
+        
+        if not exists:
+            return {
+                "success": True,
+                "message": f"Symbol {symbol} is not in watchlist",
+                "symbol": symbol,
+                "removed": False
+            }
+        
+        # Remove from watchlist
+        success = UserWatchlistService.remove_symbol_from_watchlist(user_id, symbol)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Successfully removed {symbol} from watchlist",
+                "symbol": symbol,
+                "removed": True
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to remove {symbol} from watchlist"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error removing symbol {request.symbol} from watchlist for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to remove symbol from watchlist: {str(e)}"
+        )
+
+
 # Add PII management endpoints after the existing account-related endpoints
 
 @app.get("/api/account/{account_id}/pii", response_model=dict)
@@ -3442,6 +4582,8 @@ from utils.asset_classification import calculate_allocation, get_allocation_pie_
 async def get_cash_stock_bond_allocation(
     request: Request,
     account_id: str = Query(..., description="The account ID"),
+    user_id: str = Depends(get_authenticated_user_id),
+    filter_account: Optional[str] = Query(None, description="Filter to specific account for account-level allocation"),
     api_key: str = Depends(verify_api_key)
 ):
     """
@@ -3450,6 +4592,8 @@ async def get_cash_stock_bond_allocation(
     This endpoint provides a more accurate allocation breakdown compared to 
     the simple asset_class grouping, specifically identifying bond ETFs as bonds
     rather than equities.
+    
+    Supports account-level filtering for X-Ray Vision into individual accounts.
     
     Returns:
         {
@@ -3461,6 +4605,28 @@ async def get_cash_stock_bond_allocation(
         }
     """
     try:
+        # CRITICAL FIX: Support aggregation mode for asset allocation
+        feature_flags = get_feature_flags()
+        portfolio_mode = feature_flags.get_portfolio_mode(user_id)
+        
+        logger.info(f"Asset allocation request for user {user_id}, account {account_id}, mode: {portfolio_mode}, filter: {filter_account}")
+        
+        # Handle aggregation mode - use Plaid aggregated data with optional filtering
+        if portfolio_mode == 'aggregation':
+            logger.info(f"Aggregation mode: Getting asset allocation from aggregated holdings for user {user_id}")
+            
+            # Use account filtering service for clean separation of concerns
+            from utils.portfolio.account_filtering_service import get_account_filtering_service
+            filter_service = get_account_filtering_service()
+            
+            # Get filtered holdings
+            filtered_holdings = await filter_service.filter_holdings_by_account(user_id, filter_account)
+            
+            # Calculate allocation on filtered holdings
+            from utils.portfolio.aggregated_calculations import calculate_asset_allocation
+            return calculate_asset_allocation(filtered_holdings, user_id)
+        
+        # Handle brokerage/hybrid mode - use existing Alpaca logic
         # Initialize broker_client to prevent NameError
         broker_client = None
         
@@ -3596,6 +4762,580 @@ async def get_cash_stock_bond_allocation(
     except Exception as e:
         logger.error(f"Error calculating cash/stock/bond allocation for account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# ===== PORTFOLIO AGGREGATION TEST ENDPOINTS =====
+# These endpoints test the new Plaid Investment API integration
+
+
+@app.post("/api/test/plaid/create-link-token")
+async def test_create_plaid_link_token(
+    request: dict,
+    api_key: str = Header(None, alias="X-API-Key")
+):
+    """Test endpoint to create Plaid Link token for investment accounts."""
+    try:
+        logger.info(f"📋 Plaid link token request received: {request}")
+        
+        # Validate API key (following existing pattern)
+        expected_api_key = os.getenv("BACKEND_API_KEY")
+        if not api_key or not expected_api_key or not hmac.compare_digest(api_key, expected_api_key):
+            logger.error("❌ Invalid API key for Plaid link token")
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        
+        # Get user_id from request body (following chat API pattern)
+        user_id = request.get('user_id')
+        if not user_id:
+            logger.error("❌ Missing user_id in request")
+            raise HTTPException(status_code=400, detail="user_id is required")
+        
+        user_email = request.get('email', 'test@example.com')
+        logger.info(f"🔗 Creating Plaid link token for user {user_id} with email {user_email}")
+        
+        portfolio_service = get_portfolio_service()
+        logger.info("✅ Portfolio service retrieved")
+        
+        link_token = await portfolio_service.connect_plaid_account(user_id, user_email)
+        logger.info(f"✅ Link token created successfully: {link_token[:20]}...")
+        
+        return {
+            "success": True,
+            "link_token": link_token,
+            "user_id": user_id
+        }
+        
+    except ProviderError as e:
+        logger.error(f"❌ Provider error creating link token: {e}")
+        return JSONResponse(
+            status_code=400,
+            content=e.to_dict()
+        )
+    except Exception as e:
+        logger.error(f"❌ Error creating Plaid link token: {e}")
+        logger.error(f"❌ Error details: {repr(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create link token: {str(e)}")
+
+@app.post("/api/test/plaid/exchange-token")
+async def test_exchange_plaid_token(
+    request: dict,
+    api_key: str = Header(None, alias="X-API-Key")
+):
+    """Test endpoint to exchange Plaid public token for access token."""
+    try:
+        # Validate API key (following existing pattern)
+        expected_api_key = os.getenv("BACKEND_API_KEY")
+        if not api_key or not expected_api_key or not hmac.compare_digest(api_key, expected_api_key):
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        
+        # Get user_id from request body (following chat API pattern)
+        user_id = request.get('user_id')
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required")
+        
+        public_token = request.get('public_token')
+        institution_name = request.get('institution_name', 'Test Institution')
+        
+        if not public_token:
+            raise HTTPException(status_code=400, detail="public_token is required")
+        
+        portfolio_service = get_portfolio_service()
+        result = await portfolio_service.complete_plaid_connection(
+            user_id, public_token, institution_name
+        )
+        
+        return result
+        
+    except ProviderError as e:
+        logger.error(f"Provider error exchanging token: {e}")
+        return JSONResponse(
+            status_code=400,
+            content=e.to_dict()
+        )
+    except Exception as e:
+        logger.error(f"Error exchanging Plaid token: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to exchange token: {str(e)}")
+
+@app.post("/api/test/portfolio/aggregated")
+async def test_get_aggregated_portfolio(
+    request: dict,
+    api_key: str = Header(None, alias="X-API-Key")
+):
+    """Test endpoint to get aggregated portfolio data from all connected accounts."""
+    try:
+        # Validate API key (following existing pattern)
+        expected_api_key = os.getenv("BACKEND_API_KEY")
+        if not api_key or not expected_api_key or not hmac.compare_digest(api_key, expected_api_key):
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        
+        # Get user_id from request body (following chat API pattern)
+        user_id = request.get('user_id')
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required")
+        
+        # PRODUCTION GRADE: Support force refresh and flexible cache control
+        force_refresh = request.get('force_refresh', False)
+        max_age_minutes = request.get('max_age_minutes', 30)
+        
+        logger.info(f"📊 Portfolio request for user {user_id}: force_refresh={force_refresh}, max_age={max_age_minutes}min")
+        
+        # Use sync service for production-ready data loading
+        from utils.portfolio.sync_service import sync_service
+        portfolio_data = await sync_service.ensure_user_portfolio_fresh(
+            user_id, 
+            max_age_minutes=max_age_minutes,
+            force_refresh=force_refresh
+        )
+        
+        return {
+            "success": True,
+            "data": portfolio_data
+        }
+        
+    except ProviderError as e:
+        logger.error(f"Provider error getting portfolio: {e}")
+        return JSONResponse(
+            status_code=400,
+            content=e.to_dict()
+        )
+    except Exception as e:
+        logger.error(f"Error getting aggregated portfolio: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get portfolio: {str(e)}")
+
+@app.get("/api/test/portfolio/health")
+async def test_portfolio_health():
+    """Test endpoint to check health of all portfolio providers."""
+    try:
+        portfolio_service = get_portfolio_service()
+        health_status = await portfolio_service.get_provider_health()
+        
+        return health_status
+        
+    except Exception as e:
+        logger.error(f"Error checking portfolio health: {e}")
+        return {
+            "overall_status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@app.post("/api/test/user/investment-accounts")
+async def test_get_user_investment_accounts(
+    request: dict,
+    api_key: str = Header(None, alias="X-API-Key")
+):
+    """Test endpoint to get user's connected investment accounts from database."""
+    try:
+        # Validate API key (following existing pattern)
+        expected_api_key = os.getenv("BACKEND_API_KEY")
+        if not api_key or not expected_api_key or not hmac.compare_digest(api_key, expected_api_key):
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        
+        # Get user_id from request body (following chat API pattern)
+        user_id = request.get('user_id')
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required")
+        
+        from utils.supabase.db_client import get_supabase_client
+        
+        supabase = get_supabase_client()
+        result = supabase.table('user_investment_accounts')\
+            .select('*')\
+            .eq('user_id', user_id)\
+            .eq('is_active', True)\
+            .execute()
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "accounts": result.data or [],
+            "count": len(result.data or [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting user investment accounts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get accounts: {str(e)}")
+
+# ===== PRODUCTION PORTFOLIO API ENDPOINTS =====
+# These endpoints provide portfolio data for the main /portfolio page
+
+from utils.feature_flags import get_feature_flags, FeatureFlagKey
+
+@app.get("/api/portfolio/aggregated")
+async def get_aggregated_portfolio_positions(
+    user_id: str = Depends(get_authenticated_user_id),
+    filter_account: Optional[str] = Query(None, description="Filter to specific account UUID for account-specific view"),
+    include_clera: bool = Query(False, description="Include Clera brokerage positions (future hybrid mode)"),
+    source_filter: Optional[str] = Query(None, description="Filter by source: 'clera', 'external', or None for all")
+):
+    """
+    Get aggregated portfolio positions with future-ready hybrid mode support and account filtering.
+    
+    This endpoint transforms Plaid aggregated data into PositionData format and
+    is ready for future hybrid mode combining Clera + external account data.
+    Supports account-level filtering for X-Ray Vision into individual accounts.
+    
+    Args:
+        user_id: Authenticated user ID
+        filter_account: Optional account UUID to filter to specific account
+        include_clera: If True, includes Clera brokerage positions (future feature)
+        source_filter: Filter positions by source ('clera', 'external', None)
+    """
+    try:
+        feature_flags = get_feature_flags()
+        portfolio_mode = feature_flags.get_portfolio_mode(user_id)
+        
+        logger.info(f"📊 Portfolio aggregated request for user {user_id}, mode: {portfolio_mode}")
+        
+        if portfolio_mode == "disabled":
+            return []
+        
+        # FUTURE-READY: Collect positions from multiple sources
+        all_positions = []
+        external_positions = []
+        clera_positions = []
+        
+        # Get external account data (SnapTrade/Plaid aggregated holdings) - CURRENT IMPLEMENTATION
+        if portfolio_mode in ['aggregation', 'hybrid']:
+            # CRITICAL: Query user_aggregated_holdings directly for SnapTrade/Plaid data
+            # This table is populated by snaptrade_sync_service and plaid background sync
+            from utils.supabase.db_client import get_supabase_client
+            supabase = get_supabase_client()
+            
+            logger.info(f"📊 Fetching aggregated holdings from database for user {user_id}")
+            holdings_result = supabase.table('user_aggregated_holdings')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .execute()
+            
+            if holdings_result.data:
+                logger.info(f"✅ Found {len(holdings_result.data)} aggregated holdings for user {user_id}")
+                
+                # CRITICAL: Enrich with live market prices using production-grade enrichment service
+                # Uses FMP API (10x cheaper than Alpaca) with 60-second caching
+                from utils.portfolio.live_enrichment_service import get_enrichment_service
+                enrichment_service = get_enrichment_service()
+                
+                # Enrich holdings with live prices
+                enriched_holdings = enrichment_service.enrich_holdings(holdings_result.data, user_id)
+                
+                # Transform to position format
+                external_positions = []
+                for h in enriched_holdings:
+                    symbol = h['symbol']
+                    quantity = float(h['total_quantity'])
+                    cost_basis = float(h['total_cost_basis'])
+                    market_value = float(h['total_market_value'])
+                    unrealized_pl = float(h['unrealized_gain_loss'])
+                    
+                    # CRITICAL: enrichment service returns percentage as decimal already
+                    # Frontend expects DECIMAL (0.7641) and will multiply by 100 for display
+                    # PRODUCTION-GRADE: Use safe .get() to prevent KeyError if enrichment fails
+                    unrealized_pl_percent = float(h.get('unrealized_gain_loss_percent', 0)) / 100 if not h.get('price_is_live') else (unrealized_pl / cost_basis) if cost_basis > 0 else 0
+                    
+                    current_price = (market_value / quantity) if quantity > 0 else 0
+                    
+                    external_positions.append({
+                        'symbol': symbol,
+                        'total_quantity': quantity,
+                        'market_value': market_value,
+                        'total_market_value': market_value,
+                        'cost_basis': cost_basis,
+                        'total_cost_basis': cost_basis,
+                        'average_cost_basis': float(h['average_cost_basis']),
+                        'current_price': current_price,
+                        'unrealized_gain_loss': unrealized_pl,
+                        'unrealized_gain_loss_percent': unrealized_pl_percent,
+                        'security_name': h.get('security_name'),
+                        'security_type': h.get('security_type'),
+                        'data_source': 'external',
+                        'account_id': 'aggregated',
+                        'account_contributions': h.get('account_contributions', [])
+                    })
+                
+                logger.info(f"💰 Total portfolio value: ${sum(p['market_value'] for p in external_positions):,.2f}")
+            else:
+                logger.warning(f"⚠️  No aggregated holdings found for user {user_id}")
+                external_positions = []
+        
+        # Get Clera brokerage data (when include_clera=True or brokerage mode)
+        if include_clera and portfolio_mode in ['brokerage', 'hybrid']:
+            logger.info(f"🏦 Including Clera brokerage positions for user {user_id}")
+            from utils.portfolio.alpaca_provider import get_clera_positions_aggregated
+            clera_positions = await get_clera_positions_aggregated(user_id)
+        
+        # Combine positions based on source filter
+        if source_filter == 'external':
+            filtered_positions = external_positions
+        elif source_filter == 'clera':
+            filtered_positions = clera_positions  # Future implementation
+        else:
+            # Default: combine all sources (or just external for now)
+            filtered_positions = external_positions + clera_positions
+        
+        # CRITICAL: Filter positions by account if filter_account is specified
+        if filter_account and filter_account != 'total':
+            logger.info(f"🔍 Filtering positions to account: {filter_account}")
+            from utils.portfolio.account_filtering_service import get_account_filtering_service
+            filter_service = get_account_filtering_service()
+            
+            # Get filtered holdings from the aggregated holdings table
+            filtered_holdings = await filter_service.filter_holdings_by_account(user_id, filter_account)
+            
+            # Convert filtered holdings back to the positions format
+            filtered_positions = filtered_holdings
+            logger.info(f"✅ Filtered {len(filtered_positions)} positions for account {filter_account}")
+        
+        # Transform to PositionData format expected by frontend components
+        positions = []
+        total_portfolio_value = 0
+        
+        # CRITICAL: Calculate total portfolio value INCLUDING cash
+        # Cash is excluded from holdings display, but MUST be included in portfolio value
+        if filtered_positions:
+            total_portfolio_value = sum(pos.get('total_market_value', 0) for pos in filtered_positions)
+        
+        # Transform each position to PositionData format with SOURCE ATTRIBUTION
+        for position in filtered_positions:
+            # CRITICAL: Filter out cash positions from portfolio holdings TABLE display
+            # Cash should NOT appear in the holdings table, but IS included in total portfolio value
+            if (position.get('security_type') == 'cash' or 
+                position.get('symbol') == 'U S Dollar' or
+                position.get('symbol') == 'USD'):
+                continue  # Skip cash positions in holdings TABLE (cash is still in total_portfolio_value)
+            # Determine position source for filtering capabilities
+            institution_info = position.get('institutions', ['Unknown'])
+            
+            # Detect Clera positions vs external positions
+            if 'Clera' in institution_info:
+                position_source = 'clera'
+            else:
+                position_source = 'external'
+            position_data = {
+                # Standard PositionData fields
+                "asset_id": f"{position_source}_{position['symbol']}",  # Source-attributed ID
+                "symbol": position['symbol'],
+                "exchange": "AGGREGATED" if position_source == 'external' else "CLERA",
+                "asset_class": _map_security_type_to_asset_class(position.get('security_type', '')),
+                "avg_entry_price": str(position.get('average_cost_basis', 0)),
+                "qty": str(position.get('total_quantity', 0)),
+                "side": position.get('side', 'long') if position_source == 'clera' else "long",  # Clera may have short positions
+                "market_value": str(position.get('total_market_value', 0)),
+                "cost_basis": str(position.get('total_cost_basis', 0)),
+                "unrealized_pl": str(position.get('unrealized_gain_loss', 0)),
+                "unrealized_plpc": (
+                    "N/A" if (
+                        position.get('unrealized_gain_loss_percent') is None or 
+                        position.get('unrealized_gain_loss_percent') <= -999999
+                    )
+                    else str(position.get('unrealized_gain_loss_percent', 0))
+                ),
+                # Conditional data based on source (Clera has more real-time data)
+                "unrealized_intraday_pl": str(position.get('change_today', 0)) if position_source == 'clera' else "0",
+                "unrealized_intraday_plpc": str(position.get('change_today_percent', 0)) if position_source == 'clera' else "0",
+                "current_price": str(
+                    position.get('current_price', 0) if position_source == 'clera' else
+                    (position.get('total_market_value', 0) / position.get('total_quantity', 1)
+                     if position.get('total_quantity', 0) > 0 else 0)
+                ),
+                "lastday_price": str(
+                    position.get('current_price', 0) if position_source == 'clera' else
+                    (position.get('total_market_value', 0) / position.get('total_quantity', 1)
+                     if position.get('total_quantity', 0) > 0 else 0)
+                ),
+                "change_today": str(position.get('change_today', 0)) if position_source == 'clera' else "0",
+                "asset_marginable": position.get('is_marginable', False) if position_source == 'clera' else False,
+                "asset_shortable": position.get('is_shortable', False) if position_source == 'clera' else False,
+                "asset_easy_to_borrow": position.get('is_easy_to_borrow', False) if position_source == 'clera' else False,
+                
+                # Frontend-specific additions
+                "name": position.get('security_name', position['symbol']),
+                "weight": (
+                    (position.get('total_market_value', 0) / total_portfolio_value * 100)
+                    if total_portfolio_value > 0 else 0
+                ),
+                
+                # FUTURE-READY: Enhanced source attribution and per-account insights
+                "data_source": position_source,  # 'external' or 'clera' for filtering
+                "institutions": institution_info,
+                "account_count": len(position.get('accounts', [])),
+                "account_breakdown": position.get('accounts', []),
+                
+                # FUTURE-READY: Source-specific metadata
+                "source_metadata": {
+                    "provider": "plaid" if position_source == 'external' else "alpaca",
+                    "aggregated_across_accounts": len(position.get('accounts', [])) > 1,
+                    "can_trade": position_source == 'clera',  # Only Clera positions are tradeable
+                    "is_external": position_source == 'external'
+                }
+            }
+            positions.append(position_data)
+        
+        # Sort by market value (descending) to match existing behavior
+        positions.sort(key=lambda x: float(x.get('market_value', 0)), reverse=True)
+        
+        # FUTURE-READY: Provide source summary for filtering UI
+        external_count = len([p for p in positions if p.get('data_source') == 'external'])
+        clera_count = len([p for p in positions if p.get('data_source') == 'clera'])
+        external_value = sum(float(p.get('market_value', 0)) for p in positions if p.get('data_source') == 'external')
+        clera_value = sum(float(p.get('market_value', 0)) for p in positions if p.get('data_source') == 'clera')
+        
+        filter_msg = f", filtered to account: {filter_account}" if filter_account and filter_account != 'total' else ""
+        logger.info(f"📊 Portfolio composition: {external_count} external positions (${external_value:,.2f}), {clera_count} Clera positions (${clera_value:,.2f}){filter_msg}")
+        logger.info(f"💰 TOTAL PORTFOLIO VALUE (incl. cash): ${total_portfolio_value:,.2f}")
+        
+        # Return structured response for frontend
+        return {
+            "positions": positions,  # Holdings table (excludes cash)
+            "summary": {
+                "total_value": total_portfolio_value,  # INCLUDES cash for accurate portfolio value
+                "total_positions": len(positions),  # Number of holdings displayed (excludes cash)
+                "portfolio_mode": portfolio_mode
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting aggregated portfolio for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get aggregated portfolio: {str(e)}")
+
+def _map_security_type_to_asset_class(security_type: str) -> str:
+    """
+    Map Plaid security types to Alpaca asset classes for frontend compatibility.
+    
+    Args:
+        security_type: Plaid security type (equity, mutual_fund, etf, etc.)
+        
+    Returns:
+        Alpaca-compatible asset class string
+    """
+    mapping = {
+        'equity': 'us_equity',
+        'etf': 'us_equity',  # ETFs are treated as equities
+        'mutual_fund': 'us_equity',  # Mutual funds treated as equities for allocation
+        'bond': 'fixed_income',
+        'cash': 'cash',
+        'crypto': 'crypto',
+        'option': 'option',
+        'other': 'us_equity'  # Default to equity for unknown types
+    }
+    
+    return mapping.get(security_type.lower(), 'us_equity')
+
+@app.get("/api/portfolio/connection-status")
+async def get_portfolio_connection_status(
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """Get portfolio connection status for account management."""
+    try:
+        feature_flags = get_feature_flags()
+        portfolio_mode = feature_flags.get_portfolio_mode(user_id)
+        
+        # Check connected accounts
+        from utils.supabase.db_client import get_supabase_client
+        supabase = get_supabase_client()
+        
+        # Get Plaid connections
+        plaid_accounts = []
+        if feature_flags.is_enabled(FeatureFlagKey.AGGREGATION_MODE.value, user_id):
+            result = supabase.table('user_investment_accounts')\
+                .select('id, institution_name, account_name, is_active, last_synced')\
+                .eq('user_id', user_id)\
+                .eq('provider', 'plaid')\
+                .execute()
+            plaid_accounts = result.data or []
+        
+        # Get SnapTrade connections
+        snaptrade_accounts = []
+        try:
+            snaptrade_result = supabase.table('user_investment_accounts')\
+                .select('id, institution_name, account_name, brokerage_name, connection_type, is_active, last_synced')\
+                .eq('user_id', user_id)\
+                .eq('provider', 'snaptrade')\
+                .eq('is_active', True)\
+                .execute()
+            snaptrade_accounts = snaptrade_result.data or []
+        except Exception as snaptrade_error:
+            logger.warning(f"Error fetching SnapTrade accounts for user {user_id}: {snaptrade_error}")
+        
+        # Get Alpaca connection (if enabled)
+        alpaca_account = None
+        if feature_flags.is_enabled(FeatureFlagKey.BROKERAGE_MODE.value, user_id):
+            result = supabase.table('user_onboarding')\
+                .select('alpaca_account_id, alpaca_account_status')\
+                .eq('user_id', user_id)\
+                .single()
+            
+            if result.data and result.data.get('alpaca_account_id'):
+                alpaca_account = {
+                    'account_id': result.data['alpaca_account_id'],
+                    'status': result.data.get('alpaca_account_status', 'unknown'),
+                    'provider': 'alpaca'
+                }
+        
+        total_accounts = len(plaid_accounts) + len(snaptrade_accounts) + (1 if alpaca_account else 0)
+        
+        return {
+            'portfolio_mode': portfolio_mode,
+            'plaid_accounts': plaid_accounts,
+            'snaptrade_accounts': snaptrade_accounts,
+            'alpaca_account': alpaca_account,
+            'total_connected_accounts': total_accounts
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting connection status for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get connection status: {str(e)}")
+
+# ===== PLAID WEBHOOK HANDLER FOR PRODUCTION =====
+
+from utils.portfolio.webhook_handler import webhook_handler
+
+@app.post("/webhook/plaid")
+async def plaid_webhook_endpoint(
+    request: Request,
+    api_key: str = Header(None, alias="X-API-Key"),
+    plaid_signature: str = Header(None, alias="X-Plaid-Signature")
+):
+    """
+    Production webhook endpoint for Plaid Investment API updates.
+    
+    Supports:
+    - HOLDINGS.DEFAULT_UPDATE: Holdings quantity or price changes
+    - INVESTMENTS_TRANSACTIONS.DEFAULT_UPDATE: New transactions detected
+    
+    Security:
+    - API key validation
+    - Webhook signature verification (production)
+    - Request logging and monitoring
+    """
+    try:
+        # Get raw request body for signature verification
+        request_body = await request.body()
+        
+        # Parse JSON from body
+        try:
+            webhook_data = json.loads(request_body.decode('utf-8'))
+        except json.JSONDecodeError as json_err:
+            raise json.JSONDecodeError("Invalid JSON in webhook payload", request_body.decode('utf-8'), 0)
+        
+        logger.info(f"📨 Plaid webhook endpoint called: {webhook_data.get('webhook_type', 'UNKNOWN')}.{webhook_data.get('webhook_code', 'UNKNOWN')}")
+        
+        # Process webhook with full security features
+        result = await webhook_handler.handle_webhook(
+            webhook_data, 
+            api_key,
+            request_body,
+            plaid_signature
+        )
+        
+        return result
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in Plaid webhook: {e}")
+        return {"acknowledged": False, "error": "Invalid JSON payload"}
+    except Exception as e:
+        logger.error(f"Error in Plaid webhook endpoint: {e}")
+        return {"acknowledged": False, "error": str(e)}
+
+# ===== END PORTFOLIO AGGREGATION TEST ENDPOINTS =====
 
 if __name__ == "__main__":
     import uvicorn

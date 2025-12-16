@@ -90,7 +90,9 @@ const HoldingsTable: React.FC<HoldingsTableProps> = ({
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
 
   // Check if trade actions are available
-  const hasTradeActions = onInvestClick && onSellClick && accountId;
+  // PRODUCTION-GRADE: Trade actions are available if handlers exist
+  // (accountId check removed - aggregation mode users don't have accountId but can still trade via SnapTrade)
+  const hasTradeActions = onInvestClick && onSellClick;
 
   if (isLoading) {
     return (

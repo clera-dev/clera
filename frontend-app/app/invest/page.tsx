@@ -19,7 +19,7 @@ import { useCleraAssist } from "@/components/ui/clera-assist-provider";
 import { useWeeklyStockPicks } from "@/hooks/useWeeklyStockPicks";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, X, Lock } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,7 @@ import {
   DialogTitle,
   DialogClose
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // React DevTools might be causing the floating icon
 // This ensures any dev tools elements are properly handled
@@ -60,6 +61,10 @@ export default function InvestPage() {
   const [isLoadingAccountId, setIsLoadingAccountId] = useState(true);
   const [watchlistSymbols, setWatchlistSymbols] = useState<Set<string>>(new Set());
   const [watchlistVersion, setWatchlistVersion] = useState(0);
+  
+  // Portfolio mode detection for conditional invest functionality
+  const [portfolioMode, setPortfolioMode] = useState<string>('loading');
+  const [tradingEnabled, setTradingEnabled] = useState<boolean>(true);
   
   // Weekly stock picks data using the new hook
   const { 
@@ -119,8 +124,54 @@ export default function InvestPage() {
   // When chat is open, we need higher breakpoints to prevent squishing
   const shouldUseStackedLayout = sideChatVisible;
   
+  // Fetch portfolio mode to determine trading functionality availability
+  const fetchPortfolioMode = async () => {
+    try {
+      const response = await fetch('/api/portfolio/connection-status');
+      if (response.ok) {
+        const data = await response.json();
+        const mode = data.portfolio_mode || 'aggregation';
+        setPortfolioMode(mode);
+        // PRODUCTION-GRADE: Trading is ALWAYS enabled with SnapTrade
+        // Aggregation mode users can trade via SnapTrade connected accounts
+        // Brokerage mode users can trade via Alpaca
+        // Hybrid mode users can trade via both
+        setTradingEnabled(true);
+      } else {
+        // Default to aggregation mode - most users use SnapTrade now
+        // Let OrderModal handle account detection
+        console.log('Portfolio connection-status returned non-OK, defaulting to aggregation mode');
+        setPortfolioMode('aggregation');
+        setTradingEnabled(true);
+      }
+    } catch (error) {
+      console.error('Error fetching portfolio mode:', error);
+      // Default to aggregation mode - most users use SnapTrade now
+      // Let OrderModal handle account detection
+      setPortfolioMode('aggregation');
+      setTradingEnabled(true);
+    }
+  };
+  
+  // Fetch portfolio mode on mount
+  useEffect(() => {
+    fetchPortfolioMode();
+  }, []);
+  
+  // Fetch account ID after portfolio mode is determined
   useEffect(() => {
     const fetchAndSetAccountId = async () => {
+      // PRODUCTION-GRADE: With SnapTrade, we don't need Alpaca account in aggregation mode
+      // Skip Alpaca setup entirely for aggregation users
+      if (portfolioMode === 'aggregation') {
+        setIsLoadingAccountId(false);
+        setAccountId(null);  // No Alpaca account needed
+        setAvailableBalance(null);  // OrderModal fetches SnapTrade accounts
+        setBalanceError(null);  // Clear any errors
+        return;
+      }
+
+      // Only fetch Alpaca account for brokerage/hybrid mode
       setIsLoadingAccountId(true);
       setBalanceError(null);
       try {
@@ -128,7 +179,7 @@ export default function InvestPage() {
         if (fetchedAccountId) {
           setAccountId(fetchedAccountId);
         } else {
-          console.warn("Alpaca Account ID not found. Cannot fetch balance or place trades.");
+          console.warn("Alpaca Account ID not found for brokerage mode.");
           setBalanceError("Alpaca account ID not found. Please complete onboarding or check your connection.");
         }
       } catch (error) {
@@ -139,11 +190,14 @@ export default function InvestPage() {
       }
     };
 
-    fetchAndSetAccountId();
-  }, []);
+    // Only fetch account ID after portfolio mode is determined
+    if (portfolioMode !== 'loading') {
+      fetchAndSetAccountId();
+    }
+  }, [portfolioMode]);
 
   useEffect(() => {
-    if (!accountId || isLoadingAccountId) return;
+    if (!accountId || isLoadingAccountId || !tradingEnabled) return;
 
     const fetchBalance = async () => {
         setIsLoadingBalance(true);
@@ -171,7 +225,7 @@ export default function InvestPage() {
     };
 
     fetchBalance();
-  }, [accountId, isLoadingAccountId]);
+  }, [accountId, isLoadingAccountId, tradingEnabled]);
 
 
 
@@ -182,9 +236,63 @@ export default function InvestPage() {
   };
 
   const handleOpenModal = () => {
-    if (selectedSymbol && accountId && !isLoadingAccountId && !isLoadingBalance) {
+    // PRODUCTION-GRADE: Open modal if symbol is selected and trading is enabled
+    // Modal handles account selection and balance checks internally
+    if (selectedSymbol && tradingEnabled) {
       setIsModalOpen(true);
     }
+  };
+
+  // Wrapper component for locked invest button with tooltip
+  const LockedInvestButton = ({ 
+    children, 
+    size = "lg", 
+    className = "", 
+    disabled = false 
+  }: { 
+    children: React.ReactNode; 
+    size?: "default" | "lg"; 
+    className?: string;
+    disabled?: boolean;
+  }) => {
+    // PRODUCTION-GRADE: Trading is always enabled with SnapTrade
+    // Modal handles account selection and balance checks
+    if (tradingEnabled) {
+      return (
+        <Button 
+          size={size} 
+          className={className}
+          onClick={handleOpenModal}
+          disabled={disabled}
+        >
+          {children}
+        </Button>
+      );
+    }
+
+    // Locked state for aggregation mode
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button 
+              size={size} 
+              className={`${className} opacity-50 cursor-not-allowed`}
+              disabled={true}
+            >
+              <Lock className="h-4 w-4 mr-2" />
+              {children}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs">
+            <p className="text-sm">
+              <strong>Brokerage capabilities coming soon!</strong><br />
+              You can view your external investment accounts now, and trading features will be available soon.
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
   };
 
   const handleCloseModal = () => {
@@ -248,7 +356,9 @@ export default function InvestPage() {
     );
   }
 
-  if (!accountId && balanceError) {
+  // PRODUCTION-GRADE: Only show account error for brokerage mode
+  // Aggregation mode users don't need Alpaca accounts - they use SnapTrade
+  if (!accountId && balanceError && portfolioMode === 'brokerage') {
      return (
         <div className="flex items-center justify-center h-full p-4">
             <Alert variant="destructive" className="max-w-md">
@@ -396,7 +506,7 @@ export default function InvestPage() {
             </div>
             
             {/* Bottom Row: Investment Ideas (2/3) + Research Sources (1/3) */}
-            <div className={`grid grid-cols-1 gap-6 ${
+            <div className={`grid grid-cols-1 gap-6 items-stretch ${
               sideChatVisible 
                 ? '2xl:grid-cols-3' // When chat is open, only go horizontal on 2xl+ screens
                 : 'xl:grid-cols-3' // When chat is closed, use standard xl breakpoint
@@ -450,69 +560,46 @@ export default function InvestPage() {
               )}
             </div>
             
-            {/* Desktop Action Footer - Fixed at bottom */}
-            {selectedSymbol && (
+            {/* Desktop Action Footer - Fixed at bottom (hidden when trading disabled) */}
+            {/* PRODUCTION-GRADE: Always show Invest button - modal handles account selection */}
+            {selectedSymbol && tradingEnabled && (
               <div className="hidden lg:flex flex-shrink-0 bg-background border-t border-border p-4 items-center justify-between shadow-md">
                 <div className="text-left">
-                  {isLoadingBalance || isLoadingAccountId ? (
-                    <Skeleton className="h-6 w-32 mb-1" />
-                  ) : balanceError ? (
-                    <>
-                      <p className="text-lg font-bold text-amber-600">Account info unavailable</p>
-                      <p className="text-sm text-muted-foreground">Cash available</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-lg font-bold">{formatCurrency(availableBalance?.cash)}</p>
-                      <p className="text-sm text-muted-foreground">Cash available</p>
-                    </>
-                  )}
+                  <p className="text-lg font-bold">Select Brokerage Account</p>
+                  <p className="text-sm text-muted-foreground">Choose account in next step</p>
                 </div>
-                <Button 
+                <LockedInvestButton 
                   size="lg" 
                   className="font-semibold text-lg px-8 py-3"
-                  onClick={handleOpenModal}
-                  disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
                 >
                   $ Invest
-                </Button>
+                </LockedInvestButton>
               </div>
             )}
 
-            {/* Mobile Action Footer - Sticky bottom positioning */}
-            {selectedSymbol && (
+            {/* Mobile Action Footer - Sticky bottom positioning (hidden when trading disabled) */}
+            {/* PRODUCTION-GRADE: Always show Invest button - modal handles account selection */}
+            {selectedSymbol && tradingEnabled && (
               <div className="lg:hidden sticky bottom-0 left-0 right-0 mt-auto bg-background border-t border-border p-3 flex items-center justify-between shadow-md z-10">
                 <div className="text-left min-w-0 flex-1">
-                  {isLoadingBalance || isLoadingAccountId ? (
-                    <Skeleton className="h-5 w-24 mb-1" />
-                  ) : balanceError ? (
-                    <>
-                      <p className="text-base font-bold text-amber-600">Account info unavailable</p>
-                      <p className="text-xs text-muted-foreground">Cash available</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-base font-bold">{formatCurrency(availableBalance?.cash)}</p>
-                      <p className="text-xs text-muted-foreground">Cash available</p>
-                    </>
-                  )}
+                  <p className="text-base font-bold">Select Account</p>
+                  <p className="text-xs text-muted-foreground">Choose in next step</p>
                 </div>
-                <Button 
+                <LockedInvestButton 
                   size="default" 
                   className="font-semibold text-base px-6 py-2 ml-3 flex-shrink-0"
-                  onClick={handleOpenModal}
-                  disabled={!accountId || isLoadingAccountId || isLoadingBalance || !!balanceError || !availableBalance || availableBalance.cash <= 0}
                 >
                   $ Invest
-                </Button>
+                </LockedInvestButton>
               </div>
             )}
 
           </DialogContent>
         </Dialog>
 
-        {/* Order Modal */}
-        {selectedSymbol && accountId && (
+        {/* Order Modal - works in both aggregation and brokerage mode */}
+        {/* PRODUCTION-GRADE: Modal handles account selection internally */}
+        {selectedSymbol && tradingEnabled && (
           <OrderModal 
               isOpen={isModalOpen} 
               onClose={handleCloseModal} 

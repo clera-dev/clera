@@ -289,20 +289,68 @@ export async function GET(request: Request) {
     // This approach is appropriate for cron jobs that need to perform admin-level operations
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
     
-    const { data: users, error: usersError } = await supabase
+    // PORTFOLIO MODE AWARE: Get users with EITHER Plaid OR Alpaca accounts
+    // First get all users with Alpaca accounts (brokerage mode)
+    const { data: alpacaUsers, error: alpacaError } = await supabase
       .from('user_onboarding') 
       .select('user_id, alpaca_account_id')
       .not('alpaca_account_id', 'is', null);
-
-    if (usersError) {
-      console.error('CRON: Error fetching users:', usersError);
-      return NextResponse.json({ error: 'Failed to fetch users', details: usersError.message }, { status: 500 });
+    
+    // ARCHITECTURE FIX: Restore error handling to prevent silent failures during outages
+    // Without this, a backend outage returns 200 OK with no summaries instead of failing fast
+    if (alpacaError) {
+      console.error('Database error fetching Alpaca users:', alpacaError);
+      return NextResponse.json({
+        success: false,
+        error: 'Database error fetching brokerage users',
+        details: alpacaError.message
+      }, { status: 500 });
     }
-    if (!users || users.length === 0) {
-      console.log('CRON: No users found for summary generation.');
+    
+    // Then get all users with Plaid accounts (aggregation mode)
+    const { data: plaidUsers, error: plaidError } = await supabase
+      .from('user_investment_accounts')
+      .select('user_id')
+      .eq('provider', 'plaid')
+      .eq('is_active', true);
+    
+    // ARCHITECTURE FIX: Check for errors in Plaid query too
+    if (plaidError) {
+      console.error('Database error fetching Plaid users:', plaidError);
+      return NextResponse.json({
+        success: false,
+        error: 'Database error fetching aggregation users',
+        details: plaidError.message
+      }, { status: 500 });
+    }
+    
+    // Combine and deduplicate users
+    const userSet = new Set<string>();
+    const users: Array<{ user_id: string; alpaca_account_id?: string }> = [];
+    
+    if (alpacaUsers) {
+      for (const user of alpacaUsers) {
+        if (!userSet.has(user.user_id)) {
+          userSet.add(user.user_id);
+          users.push(user);
+        }
+      }
+    }
+    
+    if (plaidUsers) {
+      for (const user of plaidUsers) {
+        if (!userSet.has(user.user_id)) {
+          userSet.add(user.user_id);
+          users.push({ user_id: user.user_id });  // No alpaca_account_id
+        }
+      }
+    }
+    
+    if (users.length === 0) {
+      console.log('CRON: No users found for summary generation (checked both Plaid and Alpaca).');
       return NextResponse.json({ message: 'No users to process' }, { status: 200 });
     }
-    console.log(`CRON: Found ${users.length} users to process.`);
+    console.log(`CRON: Found ${users.length} users to process (${alpacaUsers?.length || 0} Alpaca, ${plaidUsers?.length || 0} Plaid).`);
 
     for (const user of users) {
       try {
@@ -316,41 +364,79 @@ export async function GET(request: Request) {
         const userGoals = NewsPersonalizationService.getUserGoalsSummary(personalizationData);
         const financialLiteracy = NewsPersonalizationService.getFinancialLiteracyLevel(personalizationData);
         
-        // Attempt to fetch actual positions for this user's Alpaca account from backend API
-        let portfolioString = '';
+        // PORTFOLIO MODE AWARE: Fetch from Plaid AND/OR Alpaca
+        let positions: Array<{ symbol: string; qty: string; [key: string]: any }> = [];
+        
+        // Strategy 1: Try Plaid aggregated holdings (aggregation mode)
         try {
-          const backendUrl = process.env.BACKEND_API_URL;
-          const backendApiKey = process.env.BACKEND_API_KEY;
-          if (!backendUrl) {
-            throw new Error('BACKEND_API_URL not configured');
+          const plaidHoldings = await supabase
+            .from('user_aggregated_holdings')
+            .select('symbol, total_quantity, security_type')
+            .eq('user_id', user.user_id)
+            .neq('security_type', 'cash')
+            .neq('symbol', 'U S Dollar');
+          
+          if (plaidHoldings.data && plaidHoldings.data.length > 0) {
+            positions = plaidHoldings.data.map(h => ({
+              symbol: h.symbol,
+              qty: h.total_quantity.toString(),
+              source: 'plaid'
+            }));
+            console.log(`CRON: ✅ Found ${positions.length} Plaid holdings for user ${user.user_id}`);
           }
-          // SECURITY: Never concatenate user-controlled IDs directly into URLs
-          // Validate and encode the alpaca_account_id before use
-          const rawAccountId = String(user.alpaca_account_id || '').trim();
-          if (!/^[-a-zA-Z0-9_]+$/.test(rawAccountId)) {
-            throw new Error('Invalid alpaca_account_id format');
-          }
-          const safeAccountId = encodeURIComponent(rawAccountId);
-          const targetUrl = `${backendUrl}/api/portfolio/${safeAccountId}/positions`;
-          const headers: Record<string, string> = { 'Accept': 'application/json' };
-          if (backendApiKey) headers['x-api-key'] = backendApiKey;
-          const resp = await fetch(targetUrl, { method: 'GET', headers, cache: 'no-store' });
-          if (resp.ok) {
-            const positions: Array<{ symbol: string; qty: string }> = await resp.json();
-            if (positions && positions.length > 0) {
-              portfolioString = positions.map(p => `${p.symbol} (${p.qty} shares)`).join(', ');
-            }
-          } else {
-            const errText = await resp.text();
-            console.warn(`CRON: Positions fetch failed for user ${user.user_id} (${user.alpaca_account_id}). Status ${resp.status}. Resp: ${errText}`);
-          }
-        } catch (posErr: any) {
-          console.warn(`CRON: Error fetching positions from backend for user ${user.user_id}: ${posErr.message}`);
+        } catch (plaidError) {
+          console.log(`CRON: No Plaid holdings for user ${user.user_id}`);
         }
-
-        if (!portfolioString) {
-          // Use sentinel value to trigger general market overview behavior in prompt
+        
+        // Strategy 2: Try Alpaca positions (brokerage mode)
+        if (user.alpaca_account_id) {
+          try {
+            const backendUrl = process.env.BACKEND_API_URL;
+            const backendApiKey = process.env.BACKEND_API_KEY;
+            
+            if (backendUrl) {
+              const rawAccountId = String(user.alpaca_account_id).trim();
+              if (/^[-a-zA-Z0-9_]+$/.test(rawAccountId)) {
+                const safeAccountId = encodeURIComponent(rawAccountId);
+                const targetUrl = `${backendUrl}/api/portfolio/${safeAccountId}/positions`;
+                const headers: Record<string, string> = { 'Accept': 'application/json' };
+                if (backendApiKey) headers['x-api-key'] = backendApiKey;
+                
+                const resp = await fetch(targetUrl, { method: 'GET', headers, cache: 'no-store' });
+                if (resp.ok) {
+                  const alpacaPositions = await resp.json();
+                  if (alpacaPositions && alpacaPositions.length > 0) {
+                    // Add Alpaca positions (avoid duplicates)
+                    const existingSymbols = new Set(positions.map(p => p.symbol));
+                    for (const p of alpacaPositions) {
+                      if (!existingSymbols.has(p.symbol)) {
+                        positions.push({...p, source: 'alpaca'});
+                      }
+                    }
+                    console.log(`CRON: ✅ Added ${alpacaPositions.length} Alpaca positions (total: ${positions.length})`);
+                  }
+                }
+              }
+            }
+          } catch (alpacaError) {
+            console.log(`CRON: Could not fetch Alpaca positions for user ${user.user_id}`);
+          }
+        }
+        
+        // Build portfolio string (limit to top 15 to keep prompt concise)
+        let portfolioString: string;
+        if (positions.length > 0) {
+          const topHoldings = positions.slice(0, 15);
+          portfolioString = topHoldings.map(p => `${p.symbol} (${parseFloat(p.qty).toFixed(2)} shares)`).join(', ');
+          if (positions.length > 15) {
+            portfolioString += ` and ${positions.length - 15} other holdings`;
+          }
+          // SECURITY FIX: Remove detailed portfolio logging to prevent sensitive data leaks in server logs
+          // Logging user holdings and share counts creates confidentiality risk
+          console.log(`CRON: ✅ Portfolio data collected for user ${user.user_id}: ${positions.length} holdings`);
+        } else {
           portfolioString = 'No positions found in portfolio.';
+          console.log(`CRON: No holdings found - using general market overview`);
         }
         const currentDate = new Date().toISOString().split('T')[0];
 

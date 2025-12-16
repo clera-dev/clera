@@ -37,6 +37,8 @@ interface AssetAllocationPieWithAssistProps {
   error?: string | null;
   skeletonContent?: React.ReactNode;
   disabled?: boolean; // Disable when no trade history
+  selectedAccountFilter?: 'total' | string;  // Account filter
+  userId?: string;  // User ID for aggregation mode
 }
 
 const AssetAllocationPieWithAssist: React.FC<AssetAllocationPieWithAssistProps> = ({
@@ -46,7 +48,9 @@ const AssetAllocationPieWithAssist: React.FC<AssetAllocationPieWithAssistProps> 
   isLoading = false,
   error = null,
   skeletonContent,
-  disabled = false
+  disabled = false,
+  selectedAccountFilter = 'total',
+  userId
 }) => {
   const { openChatWithPrompt, isEnabled, sideChatVisible } = useCleraAssist();
   
@@ -103,6 +107,8 @@ const AssetAllocationPieWithAssist: React.FC<AssetAllocationPieWithAssistProps> 
         accountId={accountId}
         refreshTimestamp={refreshTimestamp}
         sideChatVisible={sideChatVisible}
+        selectedAccountFilter={selectedAccountFilter}
+        userId={userId}
       />
     </CleraAssistCard>
   );

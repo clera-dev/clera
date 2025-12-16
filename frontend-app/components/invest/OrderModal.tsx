@@ -13,9 +13,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Terminal, TrendingUp, TrendingDown, XCircle } from "lucide-react";
+import { Loader2, Terminal, TrendingUp, TrendingDown, XCircle, Building2, Wallet, Clock } from "lucide-react";
 import toast from 'react-hot-toast';
 import { formatCurrency } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { getMarketStatus } from "@/utils/market-hours";
+
+// Webull requires a minimum of $5 for fractional share orders
+const MINIMUM_ORDER_AMOUNT = 5;
 
 interface OrderModalProps {
   isOpen: boolean;
@@ -26,6 +39,17 @@ interface OrderModalProps {
   currentQuantity?: string; // For sell orders, to show max sellable
   currentMarketValue?: string; // For sell orders, to show current value
   onTradeSuccess?: () => void; // Callback for successful trades
+}
+
+interface TradeAccount {
+  id: string;
+  account_id: string;
+  institution_name: string;
+  account_name: string;
+  cash: number;
+  buying_power: number;
+  type: 'snaptrade' | 'alpaca';
+  is_trade_enabled: boolean;
 }
 
 export default function OrderModal({ 
@@ -44,9 +68,54 @@ export default function OrderModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  
+  // Brokerage account selection
+  const [tradeAccounts, setTradeAccounts] = useState<TradeAccount[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
 
   const isBuyOrder = orderType === 'BUY';
   const isSellOrder = orderType === 'SELL';
+
+  // Check market status
+  const marketStatus = getMarketStatus();
+
+  // Fetch trade-enabled accounts
+  const fetchTradeAccounts = useCallback(async () => {
+    setIsLoadingAccounts(true);
+    try {
+      const response = await fetch('/api/snaptrade/trade-enabled-accounts');
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error('Failed to fetch trade accounts');
+      }
+
+      const allAccounts = [];
+      
+      // Add Alpaca account if it exists (future hybrid mode)
+      if (result.alpaca_account) {
+        allAccounts.push(result.alpaca_account);
+      }
+      
+      // Add SnapTrade accounts
+      if (result.accounts && result.accounts.length > 0) {
+        allAccounts.push(...result.accounts);
+      }
+
+      setTradeAccounts(allAccounts);
+      
+      // Auto-select first account if available
+      if (allAccounts.length > 0) {
+        setSelectedAccount(allAccounts[0].account_id);
+      }
+    } catch (error) {
+      console.error('Error fetching trade accounts:', error);
+      toast.error('Failed to load brokerage accounts');
+    } finally {
+      setIsLoadingAccounts(false);
+    }
+  }, []);
 
   const fetchMarketPrice = useCallback(async () => {
     if (!symbol) return;
@@ -74,14 +143,15 @@ export default function OrderModal({
     }
   }, [symbol]);
 
-  // Fetch price when modal opens or symbol changes
+  // Fetch price and accounts when modal opens
   useEffect(() => {
     if (isOpen) {
       fetchMarketPrice();
+      fetchTradeAccounts();
       setAmount(''); // Reset amount on open
       setSubmitError(null);
     }
-  }, [isOpen, fetchMarketPrice]);
+  }, [isOpen, fetchMarketPrice, fetchTradeAccounts]);
 
   const handleNumberPadInput = (value: string) => {
     if (value === '⌫') {
@@ -117,9 +187,15 @@ export default function OrderModal({
     return null;
   };
 
+  // Check if amount meets minimum order requirement
+  const parsedAmount = parseFloat(amount) || 0;
+  const isBelowMinimum = parsedAmount > 0 && parsedAmount < MINIMUM_ORDER_AMOUNT;
+  const meetsMinimum = parsedAmount >= MINIMUM_ORDER_AMOUNT;
+
   const handlePlaceOrder = async () => {
-    if (!accountId) {
-      setSubmitError("Account ID not found. Please ensure you are logged in.");
+    // Validate brokerage account selection
+    if (!selectedAccount) {
+      setSubmitError("Please select a brokerage account.");
       return;
     }
     
@@ -127,6 +203,15 @@ export default function OrderModal({
     if (isNaN(notionalAmount) || notionalAmount <= 0) {
       setSubmitError("Please enter a valid amount greater than $0.");
       return;
+    }
+
+    // Check if user has sufficient buying power for buy orders
+    const selectedAccountData = tradeAccounts.find(acc => acc.account_id === selectedAccount);
+    if (isBuyOrder && selectedAccountData) {
+      if (notionalAmount > selectedAccountData.buying_power) {
+        setSubmitError(`Insufficient buying power. Available: ${formatCurrency(selectedAccountData.buying_power)}`);
+        return;
+      }
     }
 
     // Validate sell order constraints
@@ -139,10 +224,11 @@ export default function OrderModal({
     setIsSubmitting(true);
     setSubmitError(null);
     const orderAction = isBuyOrder ? 'BUY' : 'SELL';
+    const accountName = selectedAccountData?.institution_name || 'your account';
     // More specific loading message for different order types
     const loadingMessage = isSellOrder 
-      ? `Selling $${notionalAmount.toFixed(2)} worth of ${symbol} from your portfolio...`
-      : `Submitting ${orderAction} order for $${notionalAmount.toFixed(2)} of ${symbol}...`;
+      ? `Selling $${notionalAmount.toFixed(2)} worth of ${symbol} from ${accountName}...`
+      : `Submitting ${orderAction} order for $${notionalAmount.toFixed(2)} of ${symbol} via ${accountName}...`;
     const toastId = toast.loading(loadingMessage);
 
     try {
@@ -152,7 +238,7 @@ export default function OrderModal({
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                account_id: accountId,
+                account_id: selectedAccount, // Use selected brokerage account
                 ticker: symbol,
                 notional_amount: notionalAmount,
                 side: orderAction
@@ -242,6 +328,9 @@ export default function OrderModal({
     ? formatCurrency(marketPrice)
     : "N/A";
 
+  // Get selected account data for display
+  const selectedAccountData = tradeAccounts.find(acc => acc.account_id === selectedAccount);
+
   // Dynamic styling based on order type
   const orderTypeColor = isBuyOrder ? 'text-green-600' : 'text-red-600';
   const buttonColorClasses = isBuyOrder 
@@ -268,16 +357,78 @@ export default function OrderModal({
         
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 min-h-0">
           <div className="space-y-3">
-            <div className="flex justify-between items-center bg-muted p-3 rounded-md">
-              <span className="text-sm font-medium text-muted-foreground">Order Type:</span>
-              <Badge variant="outline" className={orderTypeColor}>
-                {isBuyOrder ? 'BUY (Market)' : 'SELL (Market)'}
-              </Badge>
+            {/* Market Closed Banner */}
+            {!marketStatus.isOpen && (
+              <Alert className="border-amber-500/50 bg-amber-500/10">
+                <Clock className="h-4 w-4 text-amber-600" />
+                <AlertDescription className="text-sm text-amber-700 dark:text-amber-400">
+                  {marketStatus.message}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* SPACE OPTIMIZATION: Order Type and Market Price side-by-side */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-muted p-3 rounded-md">
+                <div className="text-xs font-medium text-muted-foreground mb-1">Order Type</div>
+                <Badge variant="outline" className={`${orderTypeColor} text-xs`}>
+                  {isBuyOrder ? 'BUY (Market)' : 'SELL (Market)'}
+                </Badge>
+              </div>
+              
+              <div className="bg-muted p-3 rounded-md">
+                <div className="text-xs font-medium text-muted-foreground mb-1">Market Price</div>
+                <div className={`font-semibold text-sm ${priceError ? 'text-destructive' : ''}`}>{displayMarketPrice}</div>
+              </div>
             </div>
-           
-            <div className="flex justify-between items-center bg-muted p-3 rounded-md">
-              <span className="text-sm font-medium text-muted-foreground">Market Price:</span>
-              <span className={`font-semibold ${priceError ? 'text-destructive' : ''}`}>{displayMarketPrice}</span>
+
+            {/* Brokerage Account Selector - Removed redundant Building2 icon */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                Trading Account
+              </label>
+              {isLoadingAccounts ? (
+                <div className="h-10 bg-muted animate-pulse rounded-md" />
+              ) : tradeAccounts.length === 0 ? (
+                <Alert variant="destructive" className="py-2">
+                  <AlertDescription className="text-sm">
+                    No trade-enabled accounts connected. Please connect a brokerage account first.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                  <SelectTrigger className="w-full bg-background">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {selectedAccountData && (
+                        <SelectLabel className="text-xs text-muted-foreground px-2 py-1 flex items-center gap-1">
+                          <Wallet className="h-3 w-3" />
+                          Available: {formatCurrency(selectedAccountData.buying_power)}
+                        </SelectLabel>
+                      )}
+                      {tradeAccounts.map((account) => (
+                        <SelectItem key={account.account_id} value={account.account_id}>
+                          <div className="flex items-center justify-between gap-3 w-full">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="h-4 w-4 text-muted-foreground" />
+                              <div>
+                                <div className="font-medium">{account.institution_name}</div>
+                                <div className="text-xs text-muted-foreground">{account.account_name}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Wallet className="h-3 w-3" />
+                              {formatCurrency(account.buying_power)}
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             {/* Show current holdings for sell orders - compact layout for mobile */}
@@ -358,6 +509,15 @@ export default function OrderModal({
                 <AlertDescription className="text-sm">{submitError}</AlertDescription>
               </Alert>
             )}
+
+            {/* Minimum order amount warning */}
+            {isBelowMinimum && (
+              <Alert className="mt-4 border-amber-500/50 bg-amber-500/10">
+                <AlertDescription className="text-sm text-amber-600 dark:text-amber-400">
+                  Minimum order amount is ${MINIMUM_ORDER_AMOUNT}. Please enter at least ${MINIMUM_ORDER_AMOUNT} to place an order.
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
         </div>
 
@@ -365,12 +525,16 @@ export default function OrderModal({
           <Button 
             type="button"
             size="lg"
-            className={`w-full ${buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
+            className={`w-full ${!marketStatus.isOpen ? 'bg-gray-400 hover:bg-gray-400' : buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || isLoadingPrice || !amount || parseFloat(amount) <= 0}
+            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || !marketStatus.isOpen}
           >
             {isSubmitting ? (
               <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> Placing Order...</>
+            ) : !marketStatus.isOpen ? (
+              <><Clock className="mr-2 h-4 w-4" /> Market Closed</>
+            ) : isBelowMinimum ? (
+              `Minimum $${MINIMUM_ORDER_AMOUNT} required`
             ) : (
               `Place ${isBuyOrder ? 'Buy' : 'Sell'} Order`
             )}

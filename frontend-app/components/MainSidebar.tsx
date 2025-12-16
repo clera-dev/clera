@@ -62,7 +62,6 @@ export default function MainSidebar({
     const handleStorageChange = () => {
       const updatedState = localStorage.getItem('sidebarCollapsed');
       const newCollapsedState = updatedState === 'true';
-      console.log('MainSidebar: Received storage change event, updating collapsed state to:', newCollapsedState);
       setIsCollapsed(newCollapsedState);
     };
     

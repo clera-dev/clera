@@ -22,7 +22,7 @@ import {
 import ChatHistoryItem from './ChatHistoryItem';
 
 interface ChatSidebarProps {
-  accountId: string;
+  accountId?: string; // Optional - only needed for brokerage mode
   currentSessionId?: string;
   onNewChat: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -50,7 +50,8 @@ export default function ChatSidebar({
     const loadSessions = async () => {
       setIsLoading(true);
       try {
-        const chatSessions = await getChatSessions(accountId);
+        // If no accountId (aggregation mode), use empty string or skip
+        const chatSessions = await getChatSessions(accountId || '');
         setSessions(chatSessions);
       } catch (error) {
         console.error('[ChatSidebar] Error loading chat sessions:', error);

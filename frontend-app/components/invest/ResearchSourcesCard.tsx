@@ -17,14 +17,14 @@ export default function ResearchSourcesCard({ citations, isLoading = false, isNe
   // New user loading state - only show when no citations are available
   if (isNewUser && citations.length === 0) {
     return (
-      <Card className="h-fit">
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Research Sources</CardTitle>
           <p className="text-sm text-muted-foreground">
             Sources used to generate your personalized investment analysis
           </p>
         </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8">
+        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8 flex-1">
           <div className="animate-spin h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
           <div className="text-center space-y-2">
             <p className="text-sm font-medium text-foreground">Gathering Research Sources</p>
@@ -40,14 +40,14 @@ export default function ResearchSourcesCard({ citations, isLoading = false, isNe
   // Loading state - show skeleton while data is being fetched
   if (isLoading) {
     return (
-      <Card className="h-fit">
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Research Sources</CardTitle>
           <p className="text-sm text-muted-foreground">
             Sources used to generate your personalized investment analysis
           </p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {Array.from({ length: 8 }).map((_, index) => (
               <div key={index} className="h-16 bg-muted animate-pulse rounded-lg" />
@@ -61,14 +61,14 @@ export default function ResearchSourcesCard({ citations, isLoading = false, isNe
   // Production-grade: Show proper empty state when no citations available and not loading
   if (citations.length === 0) {
     return (
-      <Card className="h-fit">
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Research Sources</CardTitle>
           <p className="text-sm text-muted-foreground">
             Sources used to generate your personalized investment analysis
           </p>
         </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8">
+        <CardContent className="flex flex-col items-center justify-center space-y-4 py-8 flex-1">
           <div className="text-center space-y-2">
             <p className="text-sm font-medium text-foreground">No Sources to Display</p>
             <p className="text-xs text-muted-foreground max-w-sm">
@@ -81,15 +81,15 @@ export default function ResearchSourcesCard({ citations, isLoading = false, isNe
   }
 
   return (
-    <Card className="h-fit">
+    <Card className="h-full flex flex-col">
       <CardHeader>
         <CardTitle className="text-xl font-semibold">Research Sources</CardTitle>
         <p className="text-sm text-muted-foreground">
           Sources used to generate your personalized investment themes and stock picks
         </p>
       </CardHeader>
-      <CardContent>
-        <div className="relative">
+      <CardContent className="flex-1 flex flex-col">
+        <div className="relative flex-1">
           <div className="max-h-80 overflow-y-auto border rounded-lg bg-gray-50 dark:bg-gray-900/50 p-4 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {citations.map((citation, index) => (

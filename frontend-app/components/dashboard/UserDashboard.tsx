@@ -16,6 +16,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 interface UserDashboardProps {
   firstName: string;
   lastName: string;
+  personalizationFirstName?: string;  // First name from personalization (aggregation mode)
   email: string;
   accountDetails: {
     bankName?: string | null; 
@@ -24,14 +25,17 @@ interface UserDashboardProps {
     latestTransferStatus?: string | null;
   } | null;
   alpacaAccountId: string | null;
+  showBrokerageData?: boolean;  // NEW: Controls whether to fetch Alpaca data
 }
 
 export default function UserDashboard({
   firstName,
   lastName,
+  personalizationFirstName,
   email,
   accountDetails,
-  alpacaAccountId
+  alpacaAccountId,
+  showBrokerageData = true
 }: UserDashboardProps) {
   const supabase = createClient();
   const router = useRouter();
@@ -40,11 +44,15 @@ export default function UserDashboard({
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
   
-  // Fetch account status from API
+  // Fetch account status from API (only in brokerage mode)
   const fetchAccountStatus = useCallback(async () => {
-    if (!alpacaAccountId) {
-      setStatusError("No account ID available");
+    if (!alpacaAccountId || !showBrokerageData) {
       setIsLoadingStatus(false);
+      if (!showBrokerageData) {
+        setAccountStatus('aggregation_mode');  // Special status for aggregation mode
+      } else {
+        setStatusError("No account ID available");
+      }
       return;
     }
 
@@ -74,7 +82,7 @@ export default function UserDashboard({
     } finally {
       setIsLoadingStatus(false);
     }
-  }, [alpacaAccountId]);
+  }, [alpacaAccountId, showBrokerageData]);
 
   // Get account created date
   useEffect(() => {
@@ -91,14 +99,14 @@ export default function UserDashboard({
     fetchAccountCreated();
   }, []);
 
-  // Set up account status monitoring
+  // Set up account status monitoring (only for brokerage mode)
   useEffect(() => {
-    if (!alpacaAccountId) return;
+    if (!alpacaAccountId || !showBrokerageData) return;
 
     // Initial fetch
     fetchAccountStatus();
 
-    // Set up real-time subscription for account status changes
+    // Set up real-time subscription for account status changes (only for brokerage mode)
     const subscription = supabase
       .channel('account-status-changes')
       .on(
@@ -126,7 +134,7 @@ export default function UserDashboard({
     return () => {
       subscription.unsubscribe();
     };
-  }, [alpacaAccountId, fetchAccountStatus]);
+  }, [alpacaAccountId, showBrokerageData, fetchAccountStatus]);
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return 'N/A';
@@ -154,86 +162,100 @@ export default function UserDashboard({
 
       {/* Personal Information Section */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
             Personal Information
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Name */}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-1">Full Name</p>
+            {/* Name - conditional label and display based on mode */}
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-muted-foreground mb-0.5">
+                {showBrokerageData ? 'Full Name' : 'First Name'}
+              </p>
               <p className="text-base font-medium">
-                {firstName} {lastName}
+                {showBrokerageData 
+                  ? `${firstName} ${lastName}` 
+                  : (personalizationFirstName || firstName)
+                }
               </p>
             </div>
 
-            {/* Email */}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-1">Email Address</p>
-              <p className="text-base font-medium flex items-center gap-2">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                {email}
-              </p>
-            </div>
-
-            {/* Account Number */}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-1">Account Number</p>
-              <p className="text-base font-medium font-mono">
-                {alpacaAccountId || 'Loading...'}
-              </p>
-            </div>
-
-            {/* Account Status */}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-1">Account Status</p>
-              <div className="flex items-center gap-2">
-                {isLoadingStatus ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    <span className="text-base font-medium">Loading...</span>
-                  </div>
-                ) : (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex items-center gap-2 cursor-help">
-                        <span className={`inline-block h-2 w-2 rounded-full ${getAccountStatusColor(accountStatus)}`} />
-                        <p className="text-base font-medium flex items-center gap-2">
-                          <Shield className="h-4 w-4 text-muted-foreground" />
-                          {formatAccountStatus(accountStatus)}
-                        </p>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {getAccountStatusTooltip(accountStatus)}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+            {/* Email - with overflow protection */}
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-muted-foreground mb-0.5">Email Address</p>
+              <div className="flex items-center gap-2 min-w-0">
+                <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <p className="text-base font-medium truncate">
+                  {email}
+                </p>
               </div>
             </div>
 
+            {/* Account Number and Status (only for brokerage mode) */}
+            {showBrokerageData && (
+              <>
+                {/* Account Number */}
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-0.5">Account Number</p>
+                  <p className="text-base font-medium font-mono">
+                    {alpacaAccountId || 'Loading...'}
+                  </p>
+                </div>
+
+                {/* Account Status */}
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-0.5">Account Status</p>
+                  <div className="flex items-center gap-2">
+                    {isLoadingStatus ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        <span className="text-base font-medium">Loading...</span>
+                      </div>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-2 cursor-help">
+                            <span className={`inline-block h-2 w-2 rounded-full ${getAccountStatusColor(accountStatus)}`} />
+                            <p className="text-base font-medium flex items-center gap-2">
+                              <Shield className="h-4 w-4 text-muted-foreground" />
+                              {formatAccountStatus(accountStatus)}
+                            </p>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {getAccountStatusTooltip(accountStatus)}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
             {/* Account Created */}
             <div>
-              <p className="text-sm font-medium text-muted-foreground mb-1">Account Created</p>
+              <p className="text-sm font-medium text-muted-foreground mb-0.5">Account Created</p>
               <p className="text-base font-medium flex items-center gap-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 {formatDate(accountCreated)}
               </p>
             </div>
 
-            {/* Update Information Button - aligned with right column */}
-            <div>
-              <Button 
-                variant="outline" 
-                onClick={() => router.push('/account/update-information')}
-                className="w-full"
-              >
-                Update Information
-              </Button>
-            </div>
+            {/* Update Information Button (only for brokerage mode - KYC updates) */}
+            {showBrokerageData && (
+              <div className="mt-1">
+                <Button 
+                  variant="outline" 
+                  onClick={() => router.push('/account/update-information')}
+                  className="w-full"
+                >
+                  Update Information
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

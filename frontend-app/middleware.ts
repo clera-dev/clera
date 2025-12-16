@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'crypto';
+// Edge runtime: Avoid Node 'crypto'. Implement constant-time compare via Web Crypto.
 import { createServerClient } from "@supabase/ssr";
 import { 
   getRouteConfig, 
@@ -9,6 +9,7 @@ import {
   hasCompletedOnboarding,
   getFundingStatus,
   hasCompletedFunding,
+  hasConnectedAccounts,
   isPendingClosure,
   isAccountClosed,
   shouldRestartOnboarding
@@ -22,7 +23,9 @@ const publicPaths = [
   '/auth/confirm', 
   '/protected/reset-password', 
   '/ingest',
-  '/.well-known'
+  '/.well-known',
+  '/api/test', // Portfolio aggregation test endpoints
+  '/api/stripe/webhook', // Stripe webhooks use signature verification, not user auth
 ];
 
 // Auth pages that authenticated users should not access
@@ -183,7 +186,7 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    // Handle /protected page specifically - redirect funded users to portfolio
+    // Handle /protected page specifically - redirect users with connected accounts to portfolio
     if (path === '/protected' && user) {
       console.log(`[Middleware] Processing /protected page for user ${user.id}`);
       try {
@@ -191,53 +194,71 @@ export async function middleware(request: NextRequest) {
         console.log(`[Middleware] Onboarding status for user ${user.id}: ${onboardingStatus}`);
         
         if (hasCompletedOnboarding(onboardingStatus)) {
-          console.log(`[Middleware] User ${user.id} has completed onboarding, checking funding status`);
-          const fundingStatus = await getFundingStatus(supabase, user.id);
-          console.log(`[Middleware] Funding status for user ${user.id}: ${fundingStatus}`);
+          console.log(`[Middleware] User ${user.id} has completed onboarding, checking connected accounts`);
+          // Check if user has ANY connected accounts (SnapTrade, Plaid, or funded Alpaca)
+          const hasAccounts = await hasConnectedAccounts(supabase, user.id);
+          console.log(`[Middleware] Connected accounts status for user ${user.id}: ${hasAccounts}`);
           
-          if (hasCompletedFunding(fundingStatus)) {
-            console.log(`[Middleware] User ${user.id} has completed funding, redirecting to portfolio`);
+          if (hasAccounts) {
+            console.log(`[Middleware] User ${user.id} has connected accounts, redirecting to portfolio`);
             const redirectUrl = new URL('/portfolio', request.url);
             return NextResponse.redirect(redirectUrl);
           } else {
-            console.log(`[Middleware] User ${user.id} has not completed funding, staying on /protected`);
+            console.log(`[Middleware] User ${user.id} has no connected accounts, staying on /protected`);
           }
         } else {
           console.log(`[Middleware] User ${user.id} has not completed onboarding, staying on /protected`);
         }
       } catch (dbError) {
-        console.error('Database error checking funding status for /protected redirect:', dbError);
+        console.error('Database error checking connected accounts for /protected redirect:', dbError);
         // Continue to normal processing if there's an error
       }
     }
 
     // Centralized auth for cron endpoints
     if (path.startsWith('/api/cron/')) {
-      const providedHeader = request.headers.get('authorization') || request.headers.get('Authorization');
-      const cronSecret = process.env.CRON_SECRET;
-      if (!cronSecret) {
-        return new NextResponse(
-          JSON.stringify({ error: 'Cron misconfigured: missing secret' }),
-          { status: 500, headers: { 'Content-Type': 'application/json' } }
-        );
-      }
-      const expectedHeader = `Bearer ${cronSecret}`;
-      const isValid = (() => {
-        if (!providedHeader || providedHeader.length !== expectedHeader.length) return false;
-        try {
-          return timingSafeEqual(Buffer.from(providedHeader, 'utf8'), Buffer.from(expectedHeader, 'utf8'));
-        } catch {
-          return false;
+      // Bypass auth in development mode for easier manual triggering
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      if (!isDevelopment) {
+        const providedHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+        const cronSecret = process.env.CRON_SECRET;
+        if (!cronSecret) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Cron misconfigured: missing secret' }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+          );
         }
-      })();
-      if (!isValid) {
-        return new NextResponse(
-          JSON.stringify({ error: 'Unauthorized' }),
-          { status: 401, headers: { 'Content-Type': 'application/json' } }
-        );
+        const expectedHeader = `Bearer ${cronSecret}`;
+        const isValid = (() => {
+          if (!providedHeader) return false;
+          // Constant-time comparison using Web Crypto subtle.digest
+          const encoder = new TextEncoder();
+          const aBytes = encoder.encode(providedHeader);
+          const bBytes = encoder.encode(expectedHeader);
+          if (aBytes.length !== bBytes.length) return false;
+          let diff = 0;
+          for (let i = 0; i < aBytes.length; i++) {
+            diff |= aBytes[i] ^ bBytes[i];
+          }
+          return diff === 0;
+        })();
+        if (!isValid) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Unauthorized' }),
+            { status: 401, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
       }
-      // Authorized cron request: allow through without user/session checks
+      // Authorized cron request (or development mode): allow through without user/session checks
       return response;
+    }
+
+    // Centralized auth for admin endpoints (uses query param for easier curl access)
+    if (path.startsWith('/api/admin/')) {
+      // Admin endpoints use query param secret for easier manual triggering
+      // This is acceptable since these are admin operations, not user-facing
+      return response; // Let the individual admin endpoint handle its own auth
     }
 
     // Check if the route is public (no auth needed)
@@ -305,6 +326,31 @@ export async function middleware(request: NextRequest) {
             return redirectResponse;
           }
         }
+        
+        // CRITICAL: For portfolio-related routes, also check if user has connected accounts
+        // Even if onboarding is "complete", they shouldn't access portfolio without accounts
+        const portfolioRoutes = ['/portfolio', '/invest', '/dashboard', '/api/portfolio'];
+        const isPortfolioRoute = portfolioRoutes.some(route => path.startsWith(route));
+        
+        if (isPortfolioRoute) {
+          const hasAccounts = await hasConnectedAccounts(supabase, user.id);
+          
+          if (!hasAccounts) {
+            console.log(`[Middleware] User ${user.id} has completed onboarding but no connected accounts`);
+            
+            if (path.startsWith('/api/')) {
+              return new NextResponse(
+                JSON.stringify({ error: 'No portfolio accounts connected' }),
+                { status: 403, headers: { 'Content-Type': 'application/json' } }
+              );
+            } else {
+              // Redirect to /protected where they can connect accounts
+              const redirectUrl = new URL('/protected', request.url);
+              return NextResponse.redirect(redirectUrl);
+            }
+          }
+        }
+        
       } catch (dbError) {
         console.error('Database connection error in middleware:', dbError);
         if (path.startsWith('/api/')) {

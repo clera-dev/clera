@@ -8,6 +8,7 @@ import { createClient } from '@/utils/supabase/client'; // Import Supabase clien
 
 interface LivePortfolioValueProps {
     accountId: string;
+    portfolioMode?: string; // Add portfolio mode to determine connection type
 }
 
 interface TimerRefs {
@@ -20,18 +21,23 @@ const WEBSOCKET_URL_TEMPLATE = process.env.NODE_ENV === 'development'
   ? (process.env.NEXT_PUBLIC_WEBSOCKET_URL_DEV || 'ws://localhost:8001/ws/portfolio/{accountId}') // Template includes placeholder
   : (process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD || 'wss://ws.askclera.com/ws/portfolio/{accountId}'); // Template includes placeholder
 
-const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) => {
+const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, portfolioMode = 'brokerage' }) => {
     const [totalValue, setTotalValue] = useState<string>("$0.00");
     const [todayReturn, setTodayReturn] = useState<string>("+$0.00 (0.00%)");
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [isConnected, setIsConnected] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [connectionAttempts, setConnectionAttempts] = useState<number>(0);
-    const [useFallback, setUseFallback] = useState<boolean>(false);
+    const [useFallback, setUseFallback] = useState<boolean>(portfolioMode === 'aggregation');
     
     const timeoutRef = useRef<TimerRefs>({});
     const intervalRef = useRef<TimerRefs>({});
     const supabase = useMemo(() => createClient(), []); // Create supabase client instance once
+    
+    // For aggregation mode, always use fallback API (no real-time websockets)
+    const shouldUseWebSocket = useMemo(() => {
+        return portfolioMode === 'brokerage' || portfolioMode === 'hybrid';
+    }, [portfolioMode]);
 
     // Refs to hold the latest values of state for intervals/timeouts
     const socketRef = useRef<WebSocket | null>(socket);
@@ -66,8 +72,74 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
     };
 
     const fetchPortfolioData = async () => {
-        if (!accountId || accountId === 'undefined') {
-            console.error('No valid account ID provided for fetching portfolio data');
+        // For aggregation mode, use aggregated endpoint + calculate today's return from history
+        if (portfolioMode === 'aggregation') {
+            try {
+                // Fetch both current value and 1W history in parallel to calculate today's return
+                const [positionsRes, historyRes] = await Promise.all([
+                    fetch(`/api/portfolio/aggregated`),
+                    fetch(`/api/portfolio/history?accountId=null&period=1W`)
+                ]);
+                
+                if (positionsRes.ok && historyRes.ok) {
+                    const positionsData = await positionsRes.json();
+                    const historyData = await historyRes.json();
+                    
+                    // CRITICAL: Use summary.total_value which includes cash
+                    // The positions array excludes cash (for holdings table display)
+                    // but the summary includes cash for accurate total portfolio value
+                    const totalValue = positionsData.summary?.total_value || 0;
+                    
+                    setTotalValue(`$${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+                    
+                    // Calculate today's return from history data
+                    // Backend returns { timestamp: [], equity: [], profit_loss: [], profit_loss_pct: [] } format
+                    const equityValues = historyData?.equity || [];
+                    const profitLoss = historyData?.profit_loss || [];
+                    const profitLossPct = historyData?.profit_loss_pct || [];
+                    
+                    // PRODUCTION-GRADE: Use backend's calculated P/L (handles weekends/holidays correctly)
+                    // Backend sets profit_loss[last] = 0.0 on weekends/holidays
+                    if (equityValues.length >= 2 && profitLoss.length > 0) {
+                        // Get today's P/L from backend (last element in profit_loss array)
+                        const todayReturn = parseFloat(profitLoss[profitLoss.length - 1]) || 0;
+                        const returnPercent = parseFloat(profitLossPct[profitLossPct.length - 1]) || 0;
+                        
+                        // Check if market is closed (weekend/holiday) - backend returns 0.0
+                        const isMarketClosed = todayReturn === 0 && returnPercent === 0;
+                        
+                        // Format with correct signs (both dollar and percent must match)
+                        const sign = todayReturn >= 0 ? '+' : '-';
+                        const absReturn = Math.abs(todayReturn);
+                        const absPercent = Math.abs(returnPercent);
+                        
+                        if (isMarketClosed) {
+                            // Market closed (weekend/holiday) - show $0.00 explicitly
+                            setTodayReturn("$0.00 (0.00%)");
+                        } else {
+                            // Market open - show actual return
+                            setTodayReturn(`${sign}$${absReturn.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${sign}${absPercent.toFixed(2)}%)`);
+                        }
+                    } else {
+                        // Fallback if not enough history
+                        setTodayReturn("$0.00 (0.00%)");
+                    }
+                    
+                    setIsLoading(false);
+                    return true;
+                } else {
+                    console.error(`Failed to fetch aggregation data: positions=${positionsRes.status}, history=${historyRes.status}`);
+                }
+            } catch (error) {
+                console.error('Error fetching aggregated portfolio data:', error);
+            }
+            setIsLoading(false);
+            return false;
+        }
+        
+        // For brokerage/hybrid mode, use the existing endpoint
+        if (!accountId || accountId === 'undefined' || accountId === 'null') {
+            console.error('No valid account ID provided for fetching brokerage portfolio data');
             setIsLoading(false);
             return false;
         }
@@ -81,10 +153,10 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
                 setIsLoading(false);
                 return true;
             } else {
-                console.error(`Failed to fetch portfolio data: ${response.status} ${response.statusText}`);
+                console.error(`Failed to fetch brokerage portfolio data: ${response.status} ${response.statusText}`);
             }
         } catch (error) {
-            console.error('Error fetching portfolio data:', error);
+            console.error('Error fetching brokerage portfolio data:', error);
         }
         
         setIsLoading(false); // Ensure loading is set to false even on error
@@ -263,13 +335,18 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         setIsLoading(true);
         setConnectionAttempts(0);
 
-        console.log("Running effect for accountId:", accountId, "Calculated websocketUrl:", websocketUrl);
+        console.log("Running effect for accountId:", accountId, "Portfolio mode:", portfolioMode, "Calculated websocketUrl:", websocketUrl);
 
-        if (websocketUrl && !useFallbackRef.current) {
-            console.log("Effect triggered: Valid URL found, attempting WebSocket connection", websocketUrl);
+        // Skip websockets for aggregation mode - use fallback API
+        if (portfolioMode === 'aggregation') {
+            console.log("Aggregation mode: Skipping WebSocket, using fallback API for portfolio value");
+            setUseFallback(true);
+            fetchPortfolioData();
+        } else if (websocketUrl && !useFallbackRef.current && shouldUseWebSocket) {
+            console.log("Brokerage/Hybrid mode: Attempting WebSocket connection", websocketUrl);
             connectWebSocket(websocketUrl); // Pass the generated base URL (token added inside connectWebSocket)
         } else {
-            console.log("Effect triggered: No valid WebSocket URL or already in fallback mode, using API fetch.", { accountId, websocketUrl, useFallback: useFallbackRef.current });
+            console.log("Effect triggered: No valid WebSocket URL or fallback mode active, using API fetch.", { accountId, websocketUrl, useFallback: useFallbackRef.current });
             setUseFallback(true); // Ensure fallback state is set
             fetchPortfolioData();
         }
@@ -287,6 +364,11 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
         
         let lastReconnectCheckTime = Date.now();
         intervalRef.current.reconnectCheck = setInterval(() => {
+            // Skip reconnection attempts for aggregation mode
+            if (portfolioMode === 'aggregation' || !shouldUseWebSocket) {
+                return;
+            }
+            
             if (!useFallbackRef.current && !isConnectedRef.current) {
                  const socketObj = socketRef.current;
                  const socketPhysicallyNotConnected = !socketObj || 
@@ -338,8 +420,16 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
     // We don't include connectWebSocket directly as it causes loops
     }, [accountId, websocketUrl, supabase]); // Add supabase to dependency array
 
-    const isPositiveReturn = !todayReturn.startsWith('-');
-    const returnColor = isPositiveReturn ? 'text-[#22c55e]' : 'text-[#ef4444]';
+    // PRODUCTION-GRADE: Color logic for Today's Return
+    // Grey for $0.00 (market closed), Green for positive, Red for negative
+    const isZeroReturn = todayReturn.startsWith('$0.00') || todayReturn.startsWith('+$0.00');
+    const isPositiveReturn = todayReturn.startsWith('+') && !isZeroReturn;
+    const isNegativeReturn = todayReturn.startsWith('-');
+    
+    const returnColor = isZeroReturn ? 'text-gray-500' : 
+                       isPositiveReturn ? 'text-[#22c55e]' : 
+                       isNegativeReturn ? 'text-[#ef4444]' : 
+                       'text-gray-500'; // Fallback to grey
 
     return (
         <div className="space-y-4">
@@ -364,11 +454,10 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId }) =>
             {process.env.NODE_ENV === 'development' && (
                 <div className="text-xs text-gray-400 mt-2">
                     {isLoading ? 'Loading data...' :  
+                     portfolioMode === 'aggregation' ? 'Portfolio API (aggregated holdings)' :
                      useFallback ? 'Using fallback API (WebSocket unavailable)' : 
                      isConnected ? 'Live updates connected' : 
                      `Connecting (${connectionAttempts})...`}
-                     {/* Removed attempt count display for connecting state to simplify */}
-                     {/* `Connecting to live updates... ${connectionAttempts > 0 ? `(Attempt ${connectionAttempts})` : ''}` */} 
                 </div>
             )}
         </div>

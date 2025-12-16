@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
 import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
 import LivePortfolioValue from './LivePortfolioValue';
+import StaticPortfolioValue from './StaticPortfolioValue';
 import PortfolioHistoryChart from './PortfolioHistoryChart';
 
 interface PortfolioHistoryData {
@@ -27,6 +28,14 @@ interface PortfolioSummaryWithAssistProps {
   disabled?: boolean;
   allTimeReturnAmount?: number | null;
   allTimeReturnPercent?: number | null;
+  portfolioMode?: string;
+  onReturnRefresh?: () => void;
+  refreshTimestamp?: number;
+  userId?: string;
+  hasHistoricalData?: boolean;
+  selectedAccountFilter?: 'total' | string;
+  onAccountFilterChange?: (accountId: 'total' | string) => void;
+  availableAccounts?: any[];
 }
 
 const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
@@ -37,7 +46,15 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
   isLoading,
   disabled = false,
   allTimeReturnAmount,
-  allTimeReturnPercent
+  allTimeReturnPercent,
+  portfolioMode = 'brokerage',
+  onReturnRefresh,
+  refreshTimestamp,
+  userId,
+  hasHistoricalData = false,
+  selectedAccountFilter = 'total',
+  onAccountFilterChange,
+  availableAccounts = []
 }) => {
   const { openChatWithPrompt, isEnabled } = useCleraAssist();
   
@@ -81,7 +98,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
   };
 
   const getTriggerText = () => {
-    if (!accountId || disabled) return "Learn about tracking";
+    if (!accountId || disabled) return "Analyze my progress";
     if (!hasHistoryData) return "Understanding performance";
     return "Analyze my progress";
   };
@@ -100,13 +117,29 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
           <CardTitle className="text-base md:text-lg font-medium">Portfolio Summary</CardTitle>
         </CardHeader>
         <CardContent className="pb-0">
-          {accountId && <LivePortfolioValue accountId={accountId} />}
+          {/* For aggregation mode: accountId can be null, that's OK */}
+          {(accountId || portfolioMode === 'aggregation') && (
+            portfolioMode === 'aggregation' ? (
+              // Aggregation mode: Always show LivePortfolioValue
+              <LivePortfolioValue 
+                accountId={accountId || 'aggregated'}
+                portfolioMode={portfolioMode}
+              />
+            ) : (
+              // Brokerage mode: Requires valid accountId
+              <LivePortfolioValue 
+                accountId={accountId!} 
+                portfolioMode={portfolioMode}
+              />
+            )
+          )}
           
           {!portfolioHistory && isLoading ? (
             <Skeleton className="h-80 w-full mt-6" />
           ) : portfolioHistory ? (
             <div className="mt-4">
               <PortfolioHistoryChart
+                key={`chart-${selectedAccountFilter || 'total'}-${selectedTimeRange}`}
                 data={portfolioHistory}
                 timeRange={selectedTimeRange}
                 setTimeRange={setSelectedTimeRange}
@@ -124,7 +157,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
 
   return (
     <CleraAssistCard
-      title="Portfolio Summary"
+      title="Portfolio Value"
       content="Portfolio value and performance tracking"
       context="portfolio_summary"
       prompt={getContextualPrompt()}
@@ -135,13 +168,30 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
       className="bg-card shadow-lg"
     >
       <div className="pb-0">
-        {accountId && <LivePortfolioValue accountId={accountId} />}
+        {(accountId || (portfolioMode === 'aggregation' && userId)) && (
+          portfolioMode === 'aggregation' ? (
+            // Aggregation mode: Always show if userId exists
+            userId ? (
+              <LivePortfolioValue 
+                accountId={accountId || 'aggregated'}
+                portfolioMode={portfolioMode}
+              />
+            ) : null
+          ) : accountId ? (
+            // Brokerage mode: Requires accountId
+            <LivePortfolioValue 
+              accountId={accountId} 
+              portfolioMode={portfolioMode}
+            />
+          ) : null
+        )}
         
         {!portfolioHistory && isLoading ? (
           <Skeleton className="h-80 w-full mt-6" />
         ) : portfolioHistory ? (
           <div className="mt-4">
             <PortfolioHistoryChart
+              key={`chart-${selectedAccountFilter || 'total'}-${selectedTimeRange}`}
               data={portfolioHistory}
               timeRange={selectedTimeRange}
               setTimeRange={setSelectedTimeRange}

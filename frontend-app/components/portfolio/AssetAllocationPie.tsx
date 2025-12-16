@@ -13,26 +13,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CardDescription } from "@/components/ui/card";
 import SectorAllocationPie from './SectorAllocationPie';
 import { Skeleton } from "@/components/ui/skeleton";
-
-// Define the structure for the fetched sector data
-interface SectorAllocationEntry {
-  sector: string;
-  value: number;
-  percentage: number;
-}
-interface SectorAllocationData {
-  sectors: SectorAllocationEntry[];
-  total_portfolio_value: number;
-  last_data_update_timestamp?: string;
-}
-
-// Define the structure for cash/stock/bond allocation data from API
-interface CashStockBondAllocationItem {
-  name: string;
-  value: number;
-  rawValue: number;
-  category: 'cash' | 'stock' | 'bond';
-}
+import { useAllocationData } from '@/hooks/useAllocationData';
+import type { 
+    SectorAllocationData, 
+    CashStockBondAllocationItem 
+} from '@/hooks/useAllocationData';
 
 // Assuming PositionData interface is defined in parent or a shared types file
 // We only need a subset for this component
@@ -49,6 +34,8 @@ export interface AssetAllocationPieProps {
     accountId: string | null;
     refreshTimestamp?: number;
     sideChatVisible?: boolean; // Add prop to detect when chat sidebar is open
+    selectedAccountFilter?: 'total' | string;  // NEW: Account filter for X-ray vision
+    userId?: string;  // NEW: User ID for aggregation mode
 }
 
 // Define color palettes - harmonious with sector colors for professional consistency
@@ -83,110 +70,51 @@ const CustomTooltip = ({ active, payload }: any) => {
     return null;
 };
 
-const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId, refreshTimestamp, sideChatVisible = false }) => {
+const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, accountId, refreshTimestamp, sideChatVisible = false, selectedAccountFilter = 'total', userId }) => {
     const [viewType, setViewType] = useState<'assetClass' | 'sector'>('assetClass');
     // Add mobile detection (measured post-mount to avoid SSR hydration issues)
     const [isMobile, setIsMobile] = useState(false);
     const [hasMeasured, setHasMeasured] = useState(false);
-    // State for sector allocation data
-    const [sectorData, setSectorData] = useState<SectorAllocationData | null>(null);
-    const [isSectorLoading, setIsSectorLoading] = useState<boolean>(false);
-    const [sectorError, setSectorError] = useState<string | null>(null);
 
     // Use compact layout when chat sidebar is visible (splits screen in half).
     // Avoid using isMobile on initial render to prevent SSR hydration flicker.
     const useCompactLayout = sideChatVisible || (hasMeasured && isMobile);
 
-    // Fetch sector data when the sector tab is active and accountId is available
+    // ========================================================================
+    // OPTIMIZATION: Use smart prefetching hook for instant tab switching
+    // ========================================================================
+    const {
+        assetClassData,
+        assetClassLoading,
+        assetClassError,
+        sectorData,
+        sectorLoading,
+        sectorError,
+        refresh: refreshAllocationData,
+    } = useAllocationData({
+        accountId,
+        selectedAccountFilter,
+        userId,
+        enabled: true,
+        cacheTTL: 5 * 60 * 1000, // 5 minute cache
+    });
+
+    // ========================================================================
+    // OPTIMIZATION: Trigger manual refresh when parent component requests it
+    // ========================================================================
     useEffect(() => {
-        if (viewType === 'sector' && accountId && !isSectorLoading) {
-            const fetchSectorData = async () => {
-                setIsSectorLoading(true);
-                setSectorError(null);
-                try {
-                    // If a refresh is triggered, we might want to clear existing sectorData
-                    // or ensure the fetch happens regardless of current sectorData state
-                    // For now, changing refreshTimestamp will trigger this if it's in deps.
-                    const response = await fetch(`/api/portfolio/sector-allocation?account_id=${accountId}`);
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ detail: "Failed to fetch sector allocation data." }));
-                        throw new Error(errorData.detail || `HTTP error ${response.status}`);
-                    }
-                    const data: SectorAllocationData = await response.json();
-                    setSectorData(data);
-                } catch (err: any) {
-                    console.error('Error fetching sector allocation data:', err);
-                    setSectorError(err.message || 'Could not load sector allocation data.');
-                } finally {
-                    setIsSectorLoading(false);
-                }
-            };
-            
-            // Fetch if sectorData is not present OR if refreshTimestamp has changed
-            // (assuming refreshTimestamp implies a need to refetch)
-            // The check for !sectorData is to load initially.
-            // The change in refreshTimestamp is for subsequent refreshes.
-            fetchSectorData();
+        if (refreshTimestamp) {
+            console.log('🔄 [AssetAllocationPie] Manual refresh triggered');
+            refreshAllocationData();
         }
-        // No explicit cleanup needed, fetch is triggered by state change
-    }, [viewType, accountId, refreshTimestamp]); // Re-run if viewType, accountId, or refreshTimestamp changes. REMOVED isSectorLoading from deps.
+    }, [refreshTimestamp, refreshAllocationData]);
 
-    const [cashStockBondData, setCashStockBondData] = useState<CashStockBondAllocationItem[]>([]);
-    const [isCashStockBondLoading, setIsCashStockBondLoading] = useState<boolean>(false);
-    const [cashStockBondError, setCashStockBondError] = useState<string | null>(null);
-
-    // Clear cash/stock/bond data when not relevant
-    useEffect(() => {
-        if (viewType !== 'assetClass' || !accountId) {
-            setCashStockBondData([]);
-            setCashStockBondError(null);
-            setIsCashStockBondLoading(false);
-        }
-    }, [viewType, accountId]);
-
-    // Fetch cash/stock/bond allocation data
-    useEffect(() => {
-        if (viewType === 'assetClass' && accountId) {
-            const fetchCashStockBondData = async () => {
-                const currentAccountId = accountId; // Capture accountId for validation
-                setIsCashStockBondLoading(true);
-                setCashStockBondError(null);
-                try {
-                    const response = await fetch(`/api/portfolio/cash-stock-bond-allocation?accountId=${currentAccountId}`);
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ detail: "Failed to fetch cash/stock/bond allocation data." }));
-                        throw new Error(errorData.detail || `HTTP error ${response.status}`);
-                    }
-                    const data = await response.json();
-                    
-                    // Validate response is still for current account before updating state
-                    if (currentAccountId === accountId) {
-                        setCashStockBondData(data.pie_data || []);
-                    }
-                } catch (err: any) {
-                    console.error('Error fetching cash/stock/bond allocation data:', err);
-                    
-                    // Only update error state if still for current account
-                    if (currentAccountId === accountId) {
-                        setCashStockBondError(err.message || 'Could not load allocation data.');
-                        // Fallback to old logic if new endpoint fails
-                        setCashStockBondData([]);
-                    }
-                } finally {
-                    // Only update loading state if still for current account
-                    if (currentAccountId === accountId) {
-                        setIsCashStockBondLoading(false);
-                    }
-                }
-            };
-            
-            fetchCashStockBondData();
-        }
-    }, [viewType, accountId, refreshTimestamp]);
-
+    // ========================================================================
+    // OPTIMIZATION: Use memoized allocation data from hook
+    // ========================================================================
     const allocationDataByClass = useMemo(() => {
-        // Use new cash/stock/bond data if available
-        if (cashStockBondData.length > 0) {
+        // Use hook data if available
+        if (assetClassData && assetClassData.length > 0) {
             // Apply frontend colors to backend data
             const colors = {
                 'cash': '#87CEEB',    // Sky Blue
@@ -194,14 +122,14 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                 'bond': '#2E5BBA'     // Deep Blue
             };
             
-            return cashStockBondData.map(item => ({
+            return assetClassData.map(item => ({
                 ...item,
                 color: colors[item.category as keyof typeof colors] || '#8884d8'
             }));
         }
         
-        // Fallback to original asset_class grouping
-        const totalValue = positions.reduce((sum, pos) => sum + safeParseFloat(pos.market_value), 0);
+        // Fallback to original asset_class grouping (for backward compatibility)
+        const totalValue = positions.reduce((sum, pos) => safeParseFloat(pos.market_value), 0);
         if (totalValue === 0) return [];
 
         const groupedData: Record<string, number> = {};
@@ -222,7 +150,7 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             };
         }).sort((a, b) => b.rawValue - a.rawValue);
 
-    }, [positions, cashStockBondData]);
+    }, [positions, assetClassData]);
 
     // Add effect to detect mobile (client-only)
     useEffect(() => {
@@ -235,11 +163,13 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
-    // Conditional rendering based on viewType
+    // ========================================================================
+    // OPTIMIZATION: Conditional rendering with instant loading states
+    // ========================================================================
     const renderContent = () => {
         if (viewType === 'assetClass') {
             // Show loading state while fetching cash/stock/bond data
-            if (isCashStockBondLoading) {
+            if (assetClassLoading && !assetClassData) {
                 return (
                     <div className="h-[280px] w-full">
                         <Skeleton className="h-full w-full rounded-md" />
@@ -248,17 +178,17 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             }
             
             // Show error state if cash/stock/bond fetch failed and no fallback data
-            if (cashStockBondError && allocationDataByClass.length === 0) {
+            if (assetClassError && allocationDataByClass.length === 0) {
                 return (
                     <div className="h-[280px] flex items-center justify-center">
                         <CardDescription className="text-center p-4">
-                            Could not load allocation data: {cashStockBondError}
+                            Could not load allocation data: {assetClassError}
                         </CardDescription>
                     </div>
                 );
             }
             
-             if (positions.length === 0 && cashStockBondData.length === 0) {
+             if (positions.length === 0 && (!assetClassData || assetClassData.length === 0)) {
                  return (
                      <div className="h-[240px] flex items-center justify-center">
                          <CardDescription className="text-center p-4">No position data available.</CardDescription>
@@ -328,10 +258,10 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
                 </div>
             );
         } else if (viewType === 'sector') {
-             // Wrap Skeleton and SectorAllocationPie in a div with fixed height - matches asset class height
+             // OPTIMIZATION: Instant sector view with prefetched data
             return (
                 <div className="h-[240px] w-full">
-                    {isSectorLoading ? (
+                    {sectorLoading && !sectorData ? (
                         <Skeleton className="h-full w-full rounded-md" />
                     ) : (
                         <SectorAllocationPie 
