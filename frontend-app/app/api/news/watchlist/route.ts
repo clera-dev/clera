@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import redisClient from '@/utils/redis';
+import redisClient from '@/utils/redis-aws';
 
 // Type for our watchlist news item
 interface WatchlistNewsItem {
@@ -69,11 +69,8 @@ async function shouldRefreshCache(metadata: WatchlistNewsMetadata): Promise<bool
 // Function to acquire a Redis lock
 async function acquireLock(lockKey: string, ttlSeconds: number): Promise<boolean> {
   try {
-    // Use Upstash Redis set with NX option (only set if key doesn't exist)
-    const result = await redisClient.set(lockKey, '1', {
-      nx: true,
-      ex: ttlSeconds
-    });
+    // Use ioredis set with NX option (only set if key doesn't exist)
+    const result = await redisClient.set(lockKey, '1', 'EX', ttlSeconds, 'NX');
     return result === 'OK';
   } catch (redisError: any) {
     // PRODUCTION-GRADE: Only log Redis errors if they're not connection issues
@@ -107,7 +104,7 @@ async function triggerCacheRefresh(): Promise<void> {
   // Check if last refresh was within the last 10 minutes
   let lastRefreshTimeStr: string | null = null;
   try {
-    lastRefreshTimeStr = await redisClient.get(WATCHLIST_LAST_REFRESH) as string | null;
+    lastRefreshTimeStr = await redisClient.get(WATCHLIST_LAST_REFRESH);
   } catch (redisError: any) {
     // PRODUCTION-GRADE: Only log Redis errors if they're not connection issues
     if (redisError?.code !== 'ENOTFOUND' && redisError?.code !== 'ECONNREFUSED') {

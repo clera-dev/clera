@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import redisClient from '@/utils/redis';
+import redisClient from '@/utils/redis-aws';
 
 // Type for our cached news format
 interface CachedNewsItem {
@@ -61,12 +61,9 @@ async function shouldRefreshCache(metadata: TrendingNewsMetadata): Promise<boole
 // Function to acquire a Redis lock
 async function acquireLock(lockKey: string, ttlSeconds: number): Promise<boolean> {
   try {
-    // Use Upstash Redis set with NX option (only set if key doesn't exist)
-    // Upstash Redis returns "OK" if the key was set (lock acquired)
-    const result = await redisClient.set(lockKey, '1', {
-      nx: true,
-      ex: ttlSeconds
-    });
+    // Use ioredis set with NX option (only set if key doesn't exist)
+    // ioredis returns "OK" if the key was set (lock acquired)
+    const result = await redisClient.set(lockKey, '1', 'EX', ttlSeconds, 'NX');
     
     return result === "OK";
   } catch (redisError) {
@@ -93,7 +90,7 @@ async function triggerCacheRefresh(): Promise<void> {
   // Check if last refresh was within the last 5 minutes
   let lastRefreshTimeStr: string | null = null;
   try {
-    lastRefreshTimeStr = await redisClient.get(TRENDING_LAST_REFRESH) as string | null;
+    lastRefreshTimeStr = await redisClient.get(TRENDING_LAST_REFRESH);
   } catch (redisError) {
     console.warn('Redis read error for last refresh time:', redisError);
     // Continue without cache check
