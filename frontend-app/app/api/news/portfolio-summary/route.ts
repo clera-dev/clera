@@ -301,7 +301,8 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
 
   try {
     // PORTFOLIO MODE AWARE: Check for both Plaid (aggregation) and Alpaca (brokerage) holdings
-    let positions: Array<{ symbol: string; qty: string; [key: string]: any }> = [];
+    // Include market value to calculate portfolio weights for better news prioritization
+    let positions: Array<{ symbol: string; qty: string; marketValue: number; [key: string]: any }> = [];
     
     // Strategy 1: Try Plaid aggregated holdings first (works for aggregation & hybrid modes)
     try {
@@ -309,7 +310,7 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       // The query auto-executes when awaited
       const { data: plaidHoldingsData, error: plaidError } = await supabase
         .from('user_aggregated_holdings')
-        .select('symbol, total_quantity, security_type, security_name')
+        .select('symbol, total_quantity, total_market_value, security_type, security_name')
         .eq('user_id', userId)
         .neq('security_type', 'cash')  // Exclude cash
         .neq('symbol', 'U S Dollar');  // Exclude USD
@@ -317,10 +318,11 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       if (plaidError) {
         console.log(`Error fetching Plaid holdings for user ${userId}:`, plaidError);
       } else if (plaidHoldingsData && plaidHoldingsData.length > 0) {
-        // Convert Plaid format to position format
+        // Convert Plaid format to position format with market value
         positions = plaidHoldingsData.map((h: any) => ({
           symbol: h.symbol,
           qty: h.total_quantity.toString(),
+          marketValue: parseFloat(h.total_market_value) || 0,
           name: h.security_name,
           source: 'plaid'
         }));
@@ -363,7 +365,12 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
               const existingSymbols = new Set(positions.map(p => p.symbol));
               for (const p of alpacaPositions) {
                 if (!existingSymbols.has(p.symbol)) {
-                  positions.push({...p, source: 'alpaca'});
+                  // Alpaca positions have market_value field
+                  positions.push({
+                    ...p, 
+                    marketValue: parseFloat(p.market_value) || 0,
+                    source: 'alpaca'
+                  });
                 }
               }
               console.log(`✅ Added ${alpacaPositions.length} Alpaca positions (total now: ${positions.length})`);
@@ -377,17 +384,40 @@ async function generateSummaryForUser(userId: string, supabase: any, requestUrl:
       console.log(`No Alpaca account found for user ${userId}:`, alpacaError);
     }
     
-    // Build portfolio string from combined positions
+    // Build portfolio string from combined positions with weight information
+    // PRODUCTION FIX: Include portfolio weights so Perplexity prioritizes news for larger holdings
     if (positions.length > 0) {
-      // Limit to top 15 holdings to keep prompt concise
-      const topHoldings = positions.slice(0, 15);
-      portfolioString = topHoldings.map(p => `${p.symbol} (${parseFloat(p.qty).toFixed(2)} shares)`).join(', ');
+      // Calculate total portfolio value for weight percentages
+      const totalPortfolioValue = positions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
       
-      if (positions.length > 15) {
-        portfolioString += ` and ${positions.length - 15} other holdings`;
+      // Sort by market value (largest holdings first) for better prioritization
+      const sortedPositions = [...positions].sort((a, b) => (b.marketValue || 0) - (a.marketValue || 0));
+      
+      // Limit to top 15 holdings to keep prompt concise
+      const topHoldings = sortedPositions.slice(0, 15);
+      
+      // Build portfolio string with weights
+      // Format: "AAPL (45% of portfolio), MSFT (25% of portfolio), ..."
+      // This helps Perplexity understand which holdings matter most
+      if (totalPortfolioValue > 0) {
+        portfolioString = topHoldings.map(p => {
+          const weight = ((p.marketValue || 0) / totalPortfolioValue * 100);
+          if (weight >= 1) {
+            return `${p.symbol} (${weight.toFixed(1)}% of portfolio)`;
+          } else {
+            return `${p.symbol} (<1% of portfolio)`;
+          }
+        }).join(', ');
+      } else {
+        // Fallback if market values aren't available - just use symbols
+        portfolioString = topHoldings.map(p => p.symbol).join(', ');
       }
       
-      console.log(`✅ Portfolio string for news summary (${positions.length} total holdings): ${portfolioString}`);
+      if (positions.length > 15) {
+        portfolioString += ` and ${positions.length - 15} other smaller holdings`;
+      }
+      
+      console.log(`✅ Portfolio string for news summary (${positions.length} total holdings, sorted by weight)`);
     } else {
       portfolioString = 'No positions found in portfolio.';
       console.log(`No holdings found from Plaid or Alpaca - using general market overview.`);
@@ -419,6 +449,13 @@ Avoid speculative language or personal opinions. Do NOT use in-text citations li
 The user's financial literacy is ${financialLiteracy}. Tailor the language complexity accordingly.
 Focus on information directly impacting their investments or stated goals.
 Current date: ${currentDate}.
+
+IMPORTANT - PORTFOLIO WEIGHT PRIORITIZATION:
+The user's portfolio will show holdings with their percentage weights (e.g., "AAPL (45% of portfolio)").
+- PRIORITIZE news about the user's LARGEST holdings (highest percentages) as they have the most impact on returns
+- However, if there is significant news about a smaller holding that could materially affect its price, include that too
+- Do NOT mention specific portfolio weights or percentages in your response - that's private financial data
+- Focus on what the news means for the companies they own, not their allocation decisions
 
 When gathering information for this summary, endeavor to consult at least 4-6 distinct news articles from various reputable sources. (MAKE SURE THEY ARE RECENT AND CREDIBLE SOURCES, such as CNBC, Bloomberg, Reuters, Wall Street Journal, etc. Specifically search for those and other Wall Street sources.)
 

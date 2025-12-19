@@ -58,6 +58,12 @@ export const routeConfigs: Record<string, RouteConfig> = {
 
   // Cron routes - secured via CRON_SECRET header, should not require user auth
   "/api/cron": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "system" },
+  
+  // News API routes - public cached data, no auth required
+  // The data is pre-cached from external APIs and doesn't contain user-specific information
+  "/api/news/watchlist": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "public" },
+  "/api/news/trending": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "public" },
+  "/api/news/portfolio-summary": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {
