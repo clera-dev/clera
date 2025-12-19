@@ -1,6 +1,6 @@
 {   
   "dockerfile_lines": [
-    "RUN pip install --force-reinstall --no-cache-dir langchain>=0.3.26 langchain-openai>=0.3.28 langchain-core>=0.3.69",
+    "RUN pip install --force-reinstall --no-cache-dir langchain>=0.3.26 langchain-openai>=0.3.28 langchain-core>=0.3.69 langgraph>=1.0.2 langgraph-supervisor>=0.0.31",
     "COPY ./backend/requirements.txt /tmp/requirements.txt",
     "RUN pip install --no-cache-dir -r /tmp/requirements.txt",
     "ENV PYTHONPATH=/deps/backend:$PYTHONPATH"
