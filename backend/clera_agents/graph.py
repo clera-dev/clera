@@ -134,7 +134,7 @@ trade_execution_tools = [
 # other llms: llama-3.1-8b-instant, llama-3.3-70b-versatile (using ChatGroq)
 main_llm = ChatAnthropic(
     anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
-    model="claude-sonnet-4-20250514",
+    model="claude-sonnet-4-5-20250929",
     temperature=0.1,  # Research shows lower temp prevents function calling errors
     max_retries=3,
     timeout=120,  # Anthropic uses 'timeout' not 'request_timeout'
@@ -145,7 +145,7 @@ main_llm = ChatAnthropic(
 
 financial_analyst_llm = ChatAnthropic(
     anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
-    model="claude-3-5-haiku-20241022",  
+    model="claude-haiku-4-5-20251001",  
     temperature=0.1,  # Lower temp for reliable function calling
     max_retries=3,
     timeout=120,  # Anthropic uses 'timeout' not 'request_timeout'
@@ -156,7 +156,7 @@ financial_analyst_llm = ChatAnthropic(
 # Use the more reliable llama-3.3-70b-versatile model for function calling
 rebalance_llm = ChatAnthropic(
     anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
-    model="claude-3-5-haiku-20241022",
+    model="claude-haiku-4-5-20251001",
     temperature=0.2,
     max_retries=3,
     timeout=120,
@@ -176,7 +176,7 @@ rebalance_llm = ChatAnthropic(
 
 trade_llm = ChatAnthropic(
     anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
-    model="claude-3-5-haiku-20241022",
+    model="claude-haiku-4-5-20251001",
     temperature=0.2,
     max_retries=3,
     timeout=60,
@@ -433,6 +433,22 @@ When user asks about specific securities (e.g., "Is PLTR a good investment?"):
 3. **Provide personalized guidance**: Based on their specific situation, not generic advice
 
 **Example**: "Is Palantir a good buy?" → get_portfolio_summary() first to check current PLTR position and portfolio context
+
+## CRITICAL CONSTRAINTS - DO NOT VIOLATE
+
+**NEVER say you cannot execute trades!** Trade execution is handled by a different specialized agent.
+Your job is ONLY portfolio analysis and recommendations. When you finish your analysis:
+- Present your findings about the portfolio
+- Provide your recommendation based on the analysis
+- Transfer back to the supervisor - DO NOT mention anything about trade execution capabilities
+
+**DO NOT include phrases like:**
+- "I can't execute trades"
+- "I don't have the ability to trade"
+- "You'll need to place this order through your brokerage"
+- "I cannot buy/sell stocks"
+
+Simply provide your analysis and let the system handle trade execution through the proper channels.
 
 Focus on personalized portfolio management that considers their unique financial situation.""",
     name="portfolio_management_agent",

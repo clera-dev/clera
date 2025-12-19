@@ -314,30 +314,43 @@ class PortfolioDataProvider:
             return False
     
     def _get_snaptrade_holdings(self) -> List[PortfolioHolding]:
-        """Fetch holdings from SnapTrade aggregated data (same table as Plaid)."""
+        """Fetch holdings from SnapTrade aggregated data (same table as Plaid).
+        
+        IMPORTANT: For SnapTrade-only users (no Plaid), we fetch ALL holdings from
+        user_aggregated_holdings since they're all from SnapTrade. The filtering by
+        'snaptrade_' prefix is only needed for hybrid users to separate sources.
+        """
         try:
             # SnapTrade holdings are stored in the same aggregated_holdings table
-            # We filter by checking if any accounts in the 'accounts' JSONB array are SnapTrade
             result = self.supabase.table('user_aggregated_holdings')\
                 .select('*')\
                 .eq('user_id', self.user_id)\
                 .execute()
             
             if not result.data:
+                logger.info(f"[PortfolioDataProvider] No holdings found in user_aggregated_holdings for user {self.user_id}")
                 return []
             
             holdings = []
+            mode = self.get_user_mode()
+            
+            # For SnapTrade-only users (no Plaid), include ALL holdings
+            # since they must all be from SnapTrade
+            snaptrade_only = mode.has_snaptrade and not mode.has_plaid
+            
             for h in result.data:
                 try:
-                    # Check if this holding has SnapTrade accounts
-                    accounts_list = h.get('accounts', [])
-                    has_snaptrade = any(
-                        acc.get('account_id', '').startswith('snaptrade_') 
-                        for acc in accounts_list
-                    )
-                    
-                    if not has_snaptrade:
-                        continue  # Skip non-SnapTrade holdings
+                    # For hybrid users (SnapTrade + Plaid), filter by snaptrade_ prefix
+                    # For SnapTrade-only users, include all holdings
+                    if not snaptrade_only:
+                        accounts_list = h.get('accounts', [])
+                        has_snaptrade_account = any(
+                            acc.get('account_id', '').startswith('snaptrade_') 
+                            for acc in accounts_list
+                        )
+                        
+                        if not has_snaptrade_account:
+                            continue  # Skip non-SnapTrade holdings in hybrid mode
                     
                     # Handle sentinel value for unreliable returns
                     unrealized_plpc = h.get('unrealized_gain_loss_percent')

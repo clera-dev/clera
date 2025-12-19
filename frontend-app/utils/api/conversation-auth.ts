@@ -4,7 +4,7 @@ import { type AuthUser } from '@supabase/supabase-js';
 
 /**
  * Authentication context for conversation endpoints
- * accountId is optional to support aggregation-only (Plaid) users
+ * accountId is optional to support aggregation-only (SnapTrade/Plaid) users
  */
 export interface ConversationAuthContext {
   user: AuthUser;
@@ -35,12 +35,13 @@ export class ConversationAuthService {
   /**
    * Authenticate user and authorize account access for conversation endpoints
    * 
-   * HYBRID MODE SUPPORT: Now supports both brokerage (Alpaca) and aggregation (Plaid) users
-   * - Brokerage users: accountId is required and validated against Alpaca account
-   * - Aggregation users: accountId can be null, authentication via user_id only
+   * HYBRID MODE SUPPORT: Supports SnapTrade, Plaid, and Alpaca users
+   * - SnapTrade users: accountId is null, uses aggregated portfolio data
+   * - Plaid users: accountId is null, uses aggregated portfolio data
+   * - Alpaca users: accountId can be validated against Alpaca account
    * 
    * @param request - The incoming request
-   * @param accountId - The account ID to authorize (optional for aggregation-only users)
+   * @param accountId - The account ID to authorize (optional - not required for SnapTrade/Plaid users)
    * @returns Authentication result with context or error response
    */
   static async authenticateAndAuthorize(
@@ -86,6 +87,22 @@ export class ConversationAuthService {
 
       const hasAlpaca = !!onboardingData?.alpaca_account_id;
       const hasPlaid = !!onboardingData?.plaid_connection_completed_at;
+      
+      // Check for SnapTrade connections
+      let hasSnaptrade = false;
+      try {
+        const { data: snaptradeAccounts, error: snaptradeError } = await supabase
+          .from('snaptrade_brokerage_connections')
+          .select('authorization_id')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .limit(1);
+        
+        hasSnaptrade = !snaptradeError && snaptradeAccounts && snaptradeAccounts.length > 0;
+      } catch (err) {
+        // SnapTrade check failed, continue with other methods
+        console.log('SnapTrade connection check failed, continuing...');
+      }
 
       // If accountId is provided, validate it matches the user's Alpaca account
       if (accountId) {
@@ -109,12 +126,12 @@ export class ConversationAuthService {
           };
         }
       } else {
-        // No accountId provided - this is OK for aggregation-only users
-        if (!hasPlaid && !hasAlpaca) {
+        // No accountId provided - this is OK for aggregation-only users (SnapTrade/Plaid)
+        if (!hasSnaptrade && !hasPlaid && !hasAlpaca) {
           return {
             success: false,
             error: NextResponse.json(
-              { error: 'User has no connected accounts (Plaid or Alpaca)' },
+              { error: 'User has no connected accounts' },
               { status: 404 }
             )
           };
