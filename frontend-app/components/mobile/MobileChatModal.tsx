@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import Chat from '@/components/chat/Chat';
 import MobileChatHistory from '@/components/mobile/MobileChatHistory';
 import { createClient } from '@/utils/supabase/client';
-import { cn, getAlpacaAccountId } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { useMobileNavHeight } from '@/hooks/useMobileNavHeight';
 import { queryLimitService } from '@/utils/services/QueryLimitService';
 import { DAILY_QUERY_LIMIT } from '@/lib/constants';
@@ -26,7 +26,7 @@ export default function MobileChatModal({
 }: MobileChatModalProps) {
   const { navHeight, viewportHeight } = useMobileNavHeight();
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [accountId, setAccountId] = useState<string | null>(null);
+  const [accountId, setAccountId] = useState<string | undefined>(undefined); // Optional - not required for SnapTrade users
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -102,17 +102,8 @@ export default function MobileChatModal({
           setIsLimitReached(false);
         }
 
-        // Get Alpaca Account ID using the same method as SideBySideLayout
-        const fetchedAccountId = await getAlpacaAccountId();
-        if (!fetchedAccountId) {
-          console.error("Alpaca Account ID not found");
-          setError("Account not found. Please complete onboarding first.");
-          setIsLoading(false);
-          clearTimeout(timeoutId);
-          return;
-        }
-        
-        setAccountId(fetchedAccountId);
+        // Account ID is optional for SnapTrade users - chat works in aggregation mode
+        setAccountId(undefined);
         clearTimeout(timeoutId);
       } catch (error) {
         console.error("Error initializing user data:", error);
@@ -243,7 +234,7 @@ export default function MobileChatModal({
 
         {/* Chat content area */}
         <div className="flex-1 min-h-0 bg-background">
-          {!isLoading && accountId && userId ? (
+          {!isLoading && userId ? (
             <Chat
               accountId={accountId}
               userId={userId}
