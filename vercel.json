@@ -13,8 +13,16 @@
       "schedule": "0 12 * * *"
     },
     {
+      "path": "/api/cron/update-watchlist-news-batch2",
+      "schedule": "5 12 * * *"
+    },
+    {
+      "path": "/api/cron/update-watchlist-news-batch3",
+      "schedule": "10 12 * * *"
+    },
+    {
       "path": "/api/cron/run-daily-reconstruction",
       "schedule": "30 9 * * 1-5"
     }
   ]
-} 
+}

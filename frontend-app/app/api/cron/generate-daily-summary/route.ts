@@ -365,13 +365,14 @@ export async function GET(request: Request) {
         const financialLiteracy = NewsPersonalizationService.getFinancialLiteracyLevel(personalizationData);
         
         // PORTFOLIO MODE AWARE: Fetch from Plaid AND/OR Alpaca
-        let positions: Array<{ symbol: string; qty: string; [key: string]: any }> = [];
+        // Include market value to calculate portfolio weights for better news prioritization
+        let positions: Array<{ symbol: string; qty: string; marketValue: number; [key: string]: any }> = [];
         
         // Strategy 1: Try Plaid aggregated holdings (aggregation mode)
         try {
           const plaidHoldings = await supabase
             .from('user_aggregated_holdings')
-            .select('symbol, total_quantity, security_type')
+            .select('symbol, total_quantity, total_market_value, security_type')
             .eq('user_id', user.user_id)
             .neq('security_type', 'cash')
             .neq('symbol', 'U S Dollar');
@@ -380,6 +381,7 @@ export async function GET(request: Request) {
             positions = plaidHoldings.data.map(h => ({
               symbol: h.symbol,
               qty: h.total_quantity.toString(),
+              marketValue: parseFloat(h.total_market_value) || 0,
               source: 'plaid'
             }));
             console.log(`CRON: ✅ Found ${positions.length} Plaid holdings for user ${user.user_id}`);
@@ -410,7 +412,12 @@ export async function GET(request: Request) {
                     const existingSymbols = new Set(positions.map(p => p.symbol));
                     for (const p of alpacaPositions) {
                       if (!existingSymbols.has(p.symbol)) {
-                        positions.push({...p, source: 'alpaca'});
+                        // Alpaca positions have market_value field
+                        positions.push({
+                          ...p, 
+                          marketValue: parseFloat(p.market_value) || 0,
+                          source: 'alpaca'
+                        });
                       }
                     }
                     console.log(`CRON: ✅ Added ${alpacaPositions.length} Alpaca positions (total: ${positions.length})`);
@@ -423,17 +430,42 @@ export async function GET(request: Request) {
           }
         }
         
-        // Build portfolio string (limit to top 15 to keep prompt concise)
+        // Build portfolio string with weight information for better news prioritization
+        // PRODUCTION FIX: Include portfolio weights so Perplexity prioritizes news for larger holdings
         let portfolioString: string;
         if (positions.length > 0) {
-          const topHoldings = positions.slice(0, 15);
-          portfolioString = topHoldings.map(p => `${p.symbol} (${parseFloat(p.qty).toFixed(2)} shares)`).join(', ');
-          if (positions.length > 15) {
-            portfolioString += ` and ${positions.length - 15} other holdings`;
+          // Calculate total portfolio value for weight percentages
+          const totalPortfolioValue = positions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
+          
+          // Sort by market value (largest holdings first) for better prioritization
+          const sortedPositions = [...positions].sort((a, b) => (b.marketValue || 0) - (a.marketValue || 0));
+          
+          // Limit to top 15 holdings to keep prompt concise
+          const topHoldings = sortedPositions.slice(0, 15);
+          
+          // Build portfolio string with weights
+          // Format: "AAPL (45% of portfolio), MSFT (25% of portfolio), ..."
+          // This helps Perplexity understand which holdings matter most
+          if (totalPortfolioValue > 0) {
+            portfolioString = topHoldings.map(p => {
+              const weight = ((p.marketValue || 0) / totalPortfolioValue * 100);
+              if (weight >= 1) {
+                return `${p.symbol} (${weight.toFixed(1)}% of portfolio)`;
+              } else {
+                return `${p.symbol} (<1% of portfolio)`;
+              }
+            }).join(', ');
+          } else {
+            // Fallback if market values aren't available - just use symbols
+            portfolioString = topHoldings.map(p => p.symbol).join(', ');
           }
+          
+          if (positions.length > 15) {
+            portfolioString += ` and ${positions.length - 15} other smaller holdings`;
+          }
+          
           // SECURITY FIX: Remove detailed portfolio logging to prevent sensitive data leaks in server logs
-          // Logging user holdings and share counts creates confidentiality risk
-          console.log(`CRON: ✅ Portfolio data collected for user ${user.user_id}: ${positions.length} holdings`);
+          console.log(`CRON: ✅ Portfolio data collected for user ${user.user_id}: ${positions.length} holdings (sorted by weight)`);
         } else {
           portfolioString = 'No positions found in portfolio.';
           console.log(`CRON: No holdings found - using general market overview`);
@@ -446,6 +478,13 @@ export async function GET(request: Request) {
 Your goal is to write a clear, easy-to-read, logically connected summary in a bullet/section format that is easy to scan. Avoid choppy, headline-style fragments — each bullet must be a complete sentence that naturally connects to the next. Do NOT use speculative language or personal opinions. Do NOT use in-text citations like [1] or [Source A].
 
 The user's financial literacy is ${financialLiteracy} — match the language to this level. Focus on events that matter for the user's portfolio or goals. Consult at least 4–6 recent, credible financial news sources (WSJ, Bloomberg, Reuters, Financial Times, etc.). Current date: ${currentDate}.
+
+IMPORTANT - PORTFOLIO WEIGHT PRIORITIZATION:
+The user's portfolio will show holdings with their percentage weights (e.g., "AAPL (45% of portfolio)").
+- PRIORITIZE news about the user's LARGEST holdings (highest percentages) as they have the most impact on returns
+- However, if there is significant news about a smaller holding that could materially affect its price, include that too
+- Do NOT mention specific portfolio weights or percentages in your response - that's private financial data
+- Focus on what the news means for the companies they own, not their allocation decisions
 
 Output format rules (STRICT):
 - Return a single valid JSON object only. No extra text or markdown.

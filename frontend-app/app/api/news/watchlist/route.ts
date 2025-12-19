@@ -1,6 +1,26 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import redisClient from '@/utils/redis-aws';
+
+/**
+ * Create a Supabase client for reading public cached data
+ * Uses anon key with RLS policies configured for public reads
+ * 
+ * SECURITY: We use the anon key (not service role) because:
+ * 1. This is a public API endpoint - no auth required
+ * 2. The watchlist_cached_news table has RLS allowing public reads
+ * 3. Principle of least privilege - anon key can only read public data
+ */
+function createPublicCacheClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Missing Supabase configuration for public cache');
+  }
+  
+  return createClient(supabaseUrl, supabaseAnonKey);
+}
 
 // Type for our watchlist news item
 interface WatchlistNewsItem {
@@ -232,8 +252,8 @@ async function triggerCacheRefresh(): Promise<void> {
 // Main API route handler
 export async function GET(request: Request) {
   try {
-    // Initialize Supabase client
-    const supabase = await createClient();
+    // Use public cache client (service role) since watchlist news is public data
+    const supabase = createPublicCacheClient();
     
     // Get query parameters
     const url = new URL(request.url);
