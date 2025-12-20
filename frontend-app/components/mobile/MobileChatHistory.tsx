@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 interface MobileChatHistoryProps {
   isOpen: boolean;
   onClose: () => void;
-  accountId: string | null;
+  accountId?: string; // Optional - not required for SnapTrade/aggregation mode
   currentSessionId: string | null;
   onNewChat: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -74,17 +74,15 @@ export default function MobileChatHistory({
             isOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          {accountId && (
-            <ChatSidebar
-              accountId={accountId}
-              currentSessionId={currentSessionId || undefined}
-              onNewChat={onNewChat}
-              onSelectSession={onSelectSession}
-              onClose={onClose}
-              refreshKey={refreshKey}
-              isMobile={true}
-            />
-          )}
+          <ChatSidebar
+            accountId={accountId}
+            currentSessionId={currentSessionId || undefined}
+            onNewChat={onNewChat}
+            onSelectSession={onSelectSession}
+            onClose={onClose}
+            refreshKey={refreshKey}
+            isMobile={true}
+          />
         </div>
 
         {/* Clickable area to close - 1/3 width */}

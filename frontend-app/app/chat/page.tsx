@@ -15,7 +15,6 @@ import Chat from '@/components/chat/Chat';
 import ChatSidebar from '@/components/chat/history/ChatSidebar';
 import { Button } from '@/components/ui/button';
 import { createClient } from "@/utils/supabase/client"; // Import Supabase client
-import { getAlpacaAccountId } from "@/lib/utils"; // Import our utility
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
 
@@ -24,7 +23,7 @@ const CURRENT_SESSION_KEY = 'cleraCurrentChatSession';
 
 export default function ChatPage() {
   const router = useRouter();
-  const [accountId, setAccountId] = useState<string | null>(null); // Can be null initially
+  const [accountId, setAccountId] = useState<string | undefined>(undefined); // Optional - not required for SnapTrade users
   const [userId, setUserId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Changed to false by default
@@ -55,12 +54,10 @@ export default function ChatPage() {
         currentUserId = user.id; // Assign to temp variable
         setUserId(currentUserId);
 
-        // 2. Fetch Alpaca Account ID using utility (checks localStorage then Supabase)
-        const fetchedAccountId = await getAlpacaAccountId();
-        if (!fetchedAccountId) {
-          throw new Error("Alpaca Account ID not found. Please complete onboarding.");
-        }
-        setAccountId(fetchedAccountId);
+        // 2. Account ID is optional - SnapTrade users don't have Alpaca accounts
+        // The chat will work in "aggregation mode" for portfolio queries
+        // Account ID is only needed for direct brokerage operations
+        setAccountId(undefined);
 
         // 3. Fetch initial query count for the user
         if (currentUserId) { // Check if user ID was successfully fetched
@@ -118,7 +115,7 @@ export default function ChatPage() {
       } catch (err: any) {
         console.error("Error initializing chat page:", err);
         setError(err.message || "An unexpected error occurred while loading chat data.");
-        setAccountId(null); // Clear account ID on error
+        setAccountId(undefined); // Clear account ID on error
         setUserId(null); // Clear user ID on error
       } finally {
         setIsLoading(false);
@@ -222,12 +219,12 @@ export default function ChatPage() {
      );
   }
   
-  // Ensure accountId and userId are available before rendering Chat
-  if (!accountId || !userId) {
+  // Ensure userId is available before rendering Chat (accountId is optional for SnapTrade users)
+  if (!userId) {
       // This case should theoretically be covered by the error state, but as a safeguard:
       return (
         <div className="flex items-center justify-center h-[calc(100vh-64px)]">
-          <p className="text-muted-foreground">Missing critical user or account data.</p>
+          <p className="text-muted-foreground">Missing user data. Please sign in.</p>
         </div>
       );
   }
@@ -311,19 +308,17 @@ export default function ChatPage() {
           transition: 'right 300ms ease-in-out'
         }}
       >
-        {accountId && (
-          <ChatSidebar 
-            accountId={accountId}
-            currentSessionId={currentSessionId}
-            onNewChat={handleNewChat}
-            onSelectSession={(sessionId) => {
-              handleSelectSession(sessionId);
-              setIsSidebarOpen(false);
-            }}
-            onClose={() => setIsSidebarOpen(false)}
-            refreshKey={refreshTrigger}
-          />
-        )}
+        <ChatSidebar 
+          accountId={accountId}
+          currentSessionId={currentSessionId}
+          onNewChat={handleNewChat}
+          onSelectSession={(sessionId) => {
+            handleSelectSession(sessionId);
+            setIsSidebarOpen(false);
+          }}
+          onClose={() => setIsSidebarOpen(false)}
+          refreshKey={refreshTrigger}
+        />
       </div>
     </div>
   );

@@ -19,6 +19,7 @@ Features:
 """
 
 import os
+import asyncio
 import logging
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Any, Optional
@@ -128,7 +129,10 @@ class DailySnapTradeSnapshotService:
     
     async def _capture_user_snapshot(self, user_id: str) -> bool:
         """
-        Capture a single EOD snapshot for a user using SnapTrade reporting API.
+        Capture a single EOD snapshot for a user using LIVE price enrichment.
+        
+        PRODUCTION-GRADE FIX: Uses live market prices instead of stale reconstructed values.
+        This ensures each day's snapshot reflects actual market prices, not duplicated values.
         
         Args:
             user_id: User ID to capture snapshot for
@@ -152,50 +156,53 @@ class DailySnapTradeSnapshotService:
                 logger.debug(f"Snapshot already exists for user {user_id} on {today}")
                 return False
             
-            # Fetch today's portfolio value from SnapTrade reporting API
-            # This gives us the EOD value including all deposits/withdrawals/dividends
-            from services.snaptrade_reporting_service import get_snaptrade_reporting_service
-            reporting_service = get_snaptrade_reporting_service()
-            
-            # Fetch last 2 days to get today's value
-            result = await reporting_service.fetch_portfolio_history(user_id, lookback_days=2)
-            
-            if not result['success']:
-                logger.warning(f"Failed to fetch reporting data for user {user_id}: {result.get('error')}")
-                return False
-            
-            # Get today's value from the fetched data
-            # SnapTrade returns snapshots in the database, we need to query them
-            snapshot_result = supabase.table('user_portfolio_history')\
-                .select('total_value')\
+            # PRODUCTION-GRADE: Get LIVE portfolio value using enrichment service
+            # This fetches current holdings and enriches with live market prices
+            holdings_result = supabase.table('user_aggregated_holdings')\
+                .select('*')\
                 .eq('user_id', user_id)\
-                .eq('value_date', today.isoformat())\
-                .eq('snapshot_type', 'reconstructed')\
-                .single()\
                 .execute()
             
-            if snapshot_result.data:
-                portfolio_value = float(snapshot_result.data['total_value'])
-                
-                # Create EOD snapshot
-                snapshot = {
-                    'user_id': user_id,
-                    'value_date': today.isoformat(),
-                    'total_value': portfolio_value,
-                    'total_cost_basis': portfolio_value,  # Not provided by reporting API
-                    'total_gain_loss': 0.0,
-                    'total_gain_loss_percent': 0.0,
-                    'snapshot_type': 'daily_eod',  # Mark as daily EOD (different from reconstructed)
-                    'data_source': 'snaptrade',
-                    'securities_count': 0  # Not provided
-                }
-                
-                supabase.table('user_portfolio_history').insert(snapshot).execute()
-                logger.info(f"✅ Created snapshot for user {user_id}: ${portfolio_value:,.2f}")
-                return True
-            else:
-                logger.warning(f"No reporting data found for user {user_id} on {today}")
+            if not holdings_result.data:
+                logger.warning(f"No holdings found for user {user_id}")
                 return False
+            
+            # Enrich with live prices
+            # Use asyncio.to_thread to avoid blocking the event loop (enrich_holdings uses sync requests)
+            from utils.portfolio.live_enrichment_service import get_enrichment_service
+            enrichment_service = get_enrichment_service()
+            enriched_holdings = await asyncio.to_thread(
+                enrichment_service.enrich_holdings, holdings_result.data, user_id
+            )
+            
+            # Calculate portfolio value from enriched data
+            # Use `or 0` pattern to handle NULL database values (get() default only applies when key is missing)
+            total_value = sum(float(h.get('total_market_value') or 0) for h in enriched_holdings)
+            total_cost_basis = sum(float(h.get('total_cost_basis') or 0) for h in enriched_holdings)
+            total_gain_loss = total_value - total_cost_basis
+            total_gain_loss_percent = (total_gain_loss / total_cost_basis * 100) if total_cost_basis > 0 else 0
+            
+            if total_value <= 0:
+                logger.warning(f"No portfolio value for user {user_id}")
+                return False
+            
+            # Create EOD snapshot with accurate values
+            snapshot = {
+                'user_id': user_id,
+                'value_date': today.isoformat(),
+                'total_value': total_value,
+                'total_cost_basis': total_cost_basis,
+                'total_gain_loss': total_gain_loss,
+                'total_gain_loss_percent': min(max(total_gain_loss_percent, -999.99), 999.99),  # Cap for DB
+                'snapshot_type': 'daily_eod',
+                'data_source': 'snaptrade_live',
+                'data_quality_score': 100.0,  # Live prices = high quality
+                'securities_count': len(enriched_holdings)
+            }
+            
+            supabase.table('user_portfolio_history').insert(snapshot).execute()
+            logger.info(f"✅ Created snapshot for user {user_id}: ${total_value:,.2f} (P/L: ${total_gain_loss:+,.2f})")
+            return True
             
         except Exception as e:
             logger.error(f"Error capturing snapshot for user {user_id}: {e}")

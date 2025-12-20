@@ -413,6 +413,29 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         supabase.table('snaptrade_orders').insert(order_data).execute()
         logger.info(f"[Trade Agent] Order stored in database")
         
+        # PRODUCTION-GRADE: Immediately trigger a portfolio sync after trade
+        # SnapTrade webhooks can be delayed, so sync holdings now
+        try:
+            from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
+            import asyncio
+            
+            # Run sync in background task to not block the response
+            async def delayed_sync():
+                # Small delay to let brokerage process the order
+                await asyncio.sleep(3)
+                result = await trigger_full_user_sync(user_id, force_rebuild=True)
+                if result.get('success'):
+                    logger.info(f"[Trade Agent] Post-trade sync completed: {result.get('positions_synced', 0)} positions")
+                else:
+                    logger.warning(f"[Trade Agent] Post-trade sync failed: {result.get('error')}")
+            
+            # Schedule the sync but don't wait for it
+            asyncio.create_task(delayed_sync())
+            logger.info(f"[Trade Agent] Scheduled post-trade holdings sync for user {user_id}")
+        except Exception as sync_error:
+            # Don't fail the trade response if sync scheduling fails
+            logger.warning(f"[Trade Agent] Failed to schedule post-trade sync: {sync_error}")
+        
         # Build success message
         if order_units is not None:
             return f"✅ Trade submitted successfully via SnapTrade: {action} {int(order_units)} shares of {ticker}. Monitor status in your Portfolio page."
