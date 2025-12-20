@@ -19,6 +19,7 @@ Features:
 """
 
 import os
+import asyncio
 import logging
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Any, Optional
@@ -167,9 +168,12 @@ class DailySnapTradeSnapshotService:
                 return False
             
             # Enrich with live prices
+            # Use asyncio.to_thread to avoid blocking the event loop (enrich_holdings uses sync requests)
             from utils.portfolio.live_enrichment_service import get_enrichment_service
             enrichment_service = get_enrichment_service()
-            enriched_holdings = enrichment_service.enrich_holdings(holdings_result.data, user_id)
+            enriched_holdings = await asyncio.to_thread(
+                enrichment_service.enrich_holdings, holdings_result.data, user_id
+            )
             
             # Calculate portfolio value from enriched data
             # Use `or 0` pattern to handle NULL database values (get() default only applies when key is missing)
