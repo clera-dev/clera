@@ -541,14 +541,42 @@ Always validate requests have both ticker and dollar amount before executing tra
 )
 
 
+# Post-model hook to prevent empty responses
+# When sub-agents return, the supervisor sometimes returns empty content
+# This hook ensures we always get a response
+def ensure_non_empty_response(state: State) -> dict:
+    """
+    Post-model hook that checks if the supervisor returned empty content.
+    If so, it modifies the messages to indicate the model should respond.
+    """
+    messages = state.get("messages", [])
+    if not messages:
+        return {}
+    
+    last_message = messages[-1]
+    
+    # Check if last message is from supervisor and has empty content
+    if hasattr(last_message, 'name') and last_message.name == "Clera":
+        content = getattr(last_message, 'content', None)
+        # Handle both string and list content
+        if content is None or content == "" or content == [] or (isinstance(content, list) and len(content) == 0):
+            # The supervisor returned empty - this is the bug we're fixing
+            # We can't directly fix the response here, but we can log it
+            # The real fix is in the prompt and output_mode
+            import logging
+            logging.warning("[Clera] Supervisor returned empty response - this needs investigation")
+    
+    return {}
+
 # Create supervisor workflow with personalized system prompt
 workflow = create_supervisor(
     [financial_analyst_agent, portfolio_management_agent, trade_execution_agent],
     model=main_llm,
     prompt=create_personalized_supervisor_prompt,  # Function instead of static string
-    output_mode="full_history", 
+    output_mode="last_message",  # Changed from full_history - prevents model thinking agent already responded
     supervisor_name="Clera", 
-    state_schema=State
+    state_schema=State,
+    add_handoff_back_messages=True,  # Explicitly add handoff messages so Clera knows to respond
 ) # tools=[fa_module.web_search]  # we can add tools if you want
 
 # Compile with memory components

@@ -836,6 +836,22 @@ async def execute_trade(
             else:
                 # Order was executed immediately
                 order = result['order']
+                
+                # PRODUCTION-GRADE: Trigger post-trade sync (SnapTrade webhooks can be delayed)
+                try:
+                    from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
+                    
+                    async def delayed_sync():
+                        import asyncio
+                        await asyncio.sleep(3)  # Small delay for brokerage processing
+                        sync_result = await trigger_full_user_sync(user_id, force_rebuild=True)
+                        logger.info(f"Post-trade sync result: {sync_result}")
+                    
+                    asyncio.create_task(delayed_sync())
+                    logger.info(f"Scheduled post-trade holdings sync for user {user_id}")
+                except Exception as sync_error:
+                    logger.warning(f"Failed to schedule post-trade sync: {sync_error}")
+                
                 success_message = (
                     f"✅ {action} order placed successfully via SnapTrade: "
                     f"{order_desc}. "
