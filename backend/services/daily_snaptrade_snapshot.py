@@ -172,8 +172,9 @@ class DailySnapTradeSnapshotService:
             enriched_holdings = enrichment_service.enrich_holdings(holdings_result.data, user_id)
             
             # Calculate portfolio value from enriched data
-            total_value = sum(float(h.get('total_market_value', 0)) for h in enriched_holdings)
-            total_cost_basis = sum(float(h.get('total_cost_basis', 0)) for h in enriched_holdings)
+            # Use `or 0` pattern to handle NULL database values (get() default only applies when key is missing)
+            total_value = sum(float(h.get('total_market_value') or 0) for h in enriched_holdings)
+            total_cost_basis = sum(float(h.get('total_cost_basis') or 0) for h in enriched_holdings)
             total_gain_loss = total_value - total_cost_basis
             total_gain_loss_percent = (total_gain_loss / total_cost_basis * 100) if total_cost_basis > 0 else 0
             
