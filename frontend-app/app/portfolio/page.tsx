@@ -879,6 +879,20 @@ export default function PortfolioPage() {
                         });
                       };
                       
+                      // CRITICAL: For aggregation mode, sync from SnapTrade FIRST before fetching data
+                      // This ensures we have the latest position data after trades
+                      if (portfolioMode === 'aggregation') {
+                        try {
+                          console.log('[Refresh Button] Triggering SnapTrade sync before data fetch...');
+                          const syncResponse = await fetch('/api/portfolio/sync', { method: 'POST' });
+                          const syncResult = await syncResponse.json();
+                          console.log(`[Refresh Button] Sync completed: ${syncResult.positions_synced} positions synced`);
+                        } catch (syncError) {
+                          console.warn('[Refresh Button] Sync failed, fetching cached data:', syncError);
+                          // Continue with fetching cached data even if sync fails
+                        }
+                      }
+                      
                       // Fetch positions (works for both modes) - with account filter
                       const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`, cacheBuster);
                       const positionsRaw = await fetchWithCacheBusting(positionsUrl);

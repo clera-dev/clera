@@ -4994,6 +4994,68 @@ async def test_get_user_investment_accounts(
 
 from utils.feature_flags import get_feature_flags, FeatureFlagKey
 
+@app.post("/api/portfolio/sync")
+async def sync_portfolio_holdings(
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Trigger a full sync of portfolio holdings from SnapTrade/external brokerages.
+    
+    This endpoint fetches the latest position data from connected brokerages
+    and updates the user_aggregated_holdings table.
+    
+    Called by:
+    - Frontend refresh button
+    - Post-trade completion
+    - Manual user action
+    
+    Returns:
+        Dict with sync results including positions_synced count
+    """
+    try:
+        logger.info(f"🔄 Portfolio sync requested for user {user_id}")
+        
+        # Check if user has SnapTrade connections
+        from utils.supabase.db_client import get_supabase_client
+        supabase = get_supabase_client()
+        
+        snaptrade_check = supabase.table('user_investment_accounts')\
+            .select('id')\
+            .eq('user_id', user_id)\
+            .eq('provider', 'snaptrade')\
+            .eq('is_active', True)\
+            .limit(1)\
+            .execute()
+        
+        if not snaptrade_check.data:
+            logger.info(f"User {user_id} has no active SnapTrade connections")
+            return {
+                "success": True,
+                "message": "No external brokerage connections to sync",
+                "positions_synced": 0
+            }
+        
+        # Trigger the sync
+        from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
+        sync_result = await trigger_full_user_sync(user_id, force_rebuild=True)
+        
+        logger.info(f"✅ Portfolio sync completed for user {user_id}: {sync_result}")
+        
+        return {
+            "success": sync_result.get('success', False),
+            "positions_synced": sync_result.get('positions_synced', 0),
+            "message": sync_result.get('message', 'Sync completed'),
+            "timestamp": sync_result.get('timestamp')
+        }
+        
+    except Exception as e:
+        logger.error(f"Error syncing portfolio for user {user_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to sync portfolio: {str(e)}"
+        )
+
 @app.get("/api/portfolio/aggregated")
 async def get_aggregated_portfolio_positions(
     user_id: str = Depends(get_authenticated_user_id),

@@ -429,34 +429,46 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         supabase.table('snaptrade_orders').insert(order_data).execute()
         logger.info(f"[Trade Agent] Order stored in database")
         
-        # PRODUCTION-GRADE: Immediately trigger a portfolio sync after trade
+        # PRODUCTION-GRADE: Trigger portfolio sync after trade
         # SnapTrade webhooks can be delayed, so sync holdings now
+        # NOTE: We run the sync synchronously to ensure data is updated before the user sees the success message
         try:
             from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
             import asyncio
+            import time
             
-            # Run sync in background task to not block the response
-            async def delayed_sync():
-                # Small delay to let brokerage process the order
-                await asyncio.sleep(3)
-                result = await trigger_full_user_sync(user_id, force_rebuild=True)
-                if result.get('success'):
-                    logger.info(f"[Trade Agent] Post-trade sync completed: {result.get('positions_synced', 0)} positions")
+            # Small delay to let brokerage process the order
+            time.sleep(2)
+            
+            # Run the async sync in the current thread's event loop
+            # This ensures the sync actually runs rather than being lost in a task
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If there's already a running loop, use nest_asyncio or schedule in thread
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, trigger_full_user_sync(user_id, force_rebuild=True))
+                        result = future.result(timeout=30)  # 30 second timeout
                 else:
-                    logger.warning(f"[Trade Agent] Post-trade sync failed: {result.get('error')}")
+                    result = asyncio.run(trigger_full_user_sync(user_id, force_rebuild=True))
+            except RuntimeError:
+                # No event loop - create one
+                result = asyncio.run(trigger_full_user_sync(user_id, force_rebuild=True))
             
-            # Schedule the sync but don't wait for it
-            asyncio.create_task(delayed_sync())
-            logger.info(f"[Trade Agent] Scheduled post-trade holdings sync for user {user_id}")
+            if result.get('success'):
+                logger.info(f"[Trade Agent] Post-trade sync completed: {result.get('positions_synced', 0)} positions")
+            else:
+                logger.warning(f"[Trade Agent] Post-trade sync failed: {result.get('error')}")
         except Exception as sync_error:
-            # Don't fail the trade response if sync scheduling fails
-            logger.warning(f"[Trade Agent] Failed to schedule post-trade sync: {sync_error}")
+            # Don't fail the trade response if sync fails - user can refresh manually
+            logger.warning(f"[Trade Agent] Post-trade sync failed: {sync_error}. User should refresh portfolio.")
         
-        # Build success message
+        # Build success message with refresh hint
         if order_units is not None:
-            return f"✅ Trade submitted successfully via SnapTrade: {action} {int(order_units)} shares of {ticker}. Monitor status in your Portfolio page."
+            return f"✅ Trade submitted successfully via SnapTrade: {action} {int(order_units)} shares of {ticker}. Click 'Refresh' on the Portfolio page to see updated holdings."
         else:
-            return f"✅ Trade submitted successfully via SnapTrade: {action} order for ${notional_amount:.2f} of {ticker}. Monitor status in your Portfolio page."
+            return f"✅ Trade submitted successfully via SnapTrade: {action} order for ${notional_amount:.2f} of {ticker}. Click 'Refresh' on the Portfolio page to see updated holdings."
     
     except SnapTradeApiException as e:
         error_str = str(e)
