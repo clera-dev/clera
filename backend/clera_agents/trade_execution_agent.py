@@ -3,6 +3,7 @@
 # Import necessary libraries
 from langchain_core.tools import tool
 from langgraph.types import interrupt
+from langgraph.errors import GraphInterrupt  # CRITICAL: This is the actual exception raised by interrupt()
 from langgraph.pregel import Pregel # Import if needed to understand config structure
 from langgraph.config import get_config # Import get_config
 from langchain_core.runnables.config import RunnableConfig
@@ -148,11 +149,19 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
             
             logger.info(f"[Trade Agent] BUY order result: {result}")
             return result
+        except GraphInterrupt:
+            # CRITICAL: Re-raise GraphInterrupt exceptions so LangGraph can handle them
+            # The interrupt() call raises GraphInterrupt to pause execution and request user confirmation
+            raise
         except Exception as e:
             error_msg = str(e)
             logger.error(f"[Trade Agent] Error executing BUY order: {e}", exc_info=True)
             return f"❌ Error executing BUY order: {error_msg}. Please verify the ticker symbol is correct and the amount is valid, then try again."
             
+    except GraphInterrupt:
+        # CRITICAL: Re-raise GraphInterrupt exceptions so LangGraph can handle them properly
+        # This allows the graph to pause and show the confirmation UI to the user
+        raise
     except Exception as e:
         error_msg = str(e)
         logger.error(f"[Trade Agent] Unexpected error in BUY order: {e}", exc_info=True)
@@ -253,11 +262,18 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
             
             logger.info(f"[Trade Agent] SELL order result: {result}")
             return result
+        except GraphInterrupt:
+            # CRITICAL: Re-raise GraphInterrupt exceptions so LangGraph can handle them
+            raise
         except Exception as e:
             error_msg = str(e)
             logger.error(f"[Trade Agent] Error executing SELL order: {e}", exc_info=True)
             return f"❌ Error executing SELL order: {error_msg}. Please verify the ticker symbol is correct and the user has sufficient shares to sell."
             
+    except GraphInterrupt:
+        # CRITICAL: Re-raise GraphInterrupt exceptions so LangGraph can handle them properly
+        # This allows the graph to pause and show the confirmation UI to the user
+        raise
     except Exception as e:
         error_msg = str(e)
         logger.error(f"[Trade Agent] Unexpected error in SELL order: {e}", exc_info=True)
