@@ -343,7 +343,9 @@ class PortfolioDataProvider:
                     # For hybrid users (SnapTrade + Plaid), filter by snaptrade_ prefix
                     # For SnapTrade-only users, include all holdings
                     if not snaptrade_only:
-                        accounts_list = h.get('accounts', [])
+                        # CRITICAL FIX: Use 'account_contributions' column, not 'accounts'
+                        # This matches the database schema in 002_create_aggregated_holdings.sql
+                        accounts_list = h.get('account_contributions', [])
                         has_snaptrade_account = any(
                             acc.get('account_id', '').startswith('snaptrade_') 
                             for acc in accounts_list
