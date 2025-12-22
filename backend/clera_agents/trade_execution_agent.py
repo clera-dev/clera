@@ -516,7 +516,23 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         if 'permission' in error_str.lower():
             return "❌ The user's brokerage account does not have permission for this type of order. They may need to enable trading permissions in their brokerage account settings."
         
-        return f"❌ Brokerage error: {error_str}. Please verify the order details with the user and try again."
+        # Handle symbol not available error (1063)
+        if '1063' in error_str or 'Unable to obtain symbol' in error_str:
+            return f"❌ Sorry, {ticker} is not available for trading through the user's brokerage (Webull). This stock may not be supported by their broker, or trading may be restricted. Please suggest a different stock - ETFs like VTI, SPY, or QQQ are usually widely supported."
+        
+        # Generic brokerage error - clean up the technical details for user
+        # Extract just the meaningful part of the error
+        if "'detail':" in error_str:
+            try:
+                import re
+                detail_match = re.search(r"'detail':\s*'([^']+)'", error_str)
+                if detail_match:
+                    clean_error = detail_match.group(1)
+                    return f"❌ Brokerage error: {clean_error}. Please try a different stock or check with the user if this stock is available on their brokerage."
+            except:
+                pass
+        
+        return f"❌ Brokerage error occurred while placing the order. Please try a different stock or ask the user to check if {ticker} is available on their brokerage platform."
     except Exception as e:
         logger.error(f"[Trade Agent] SnapTrade order error: {e}", exc_info=True)
         raise e

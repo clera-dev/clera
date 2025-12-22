@@ -920,15 +920,45 @@ export class SecureChatClientImpl implements SecureChatClient {
     if (chunk.type === 'message_token' && chunk.data) {
       // console.log('[SecureChatClient] Received message_token');
       
-      // Process token content
+      // Process token content - handle multiple formats from LangGraph
       let tokenContent = '';
+      
       if (typeof chunk.data === 'string') {
+        // Direct string token
         tokenContent = chunk.data;
+      } else if (Array.isArray(chunk.data)) {
+        // messages-tuple format: array of message objects or tuples
+        // Extract content only from AI messages from Clera
+        for (const item of chunk.data) {
+          if (item && typeof item === 'object') {
+            // Check if it's an AI message from Clera
+            if (item.type === 'ai' && item.name === 'Clera' && item.content) {
+              // Extract text content
+              if (typeof item.content === 'string') {
+                tokenContent += item.content;
+              } else if (Array.isArray(item.content)) {
+                for (const c of item.content) {
+                  if (typeof c === 'string') tokenContent += c;
+                  else if (c?.text) tokenContent += c.text;
+                }
+              }
+            }
+            // Also handle direct content property
+            else if (item.content && !item.name) {
+              if (typeof item.content === 'string') {
+                tokenContent += item.content;
+              }
+            }
+          }
+        }
       } else if (chunk.data.content) {
-        tokenContent = chunk.data.content;
+        // Object with content property
+        tokenContent = typeof chunk.data.content === 'string' 
+          ? chunk.data.content 
+          : JSON.stringify(chunk.data.content);
       }
 
-        if (tokenContent) {
+      if (tokenContent) {
         const currentMessages = [...this._state.messages];
         
         // First token: Remove status message and start building response
