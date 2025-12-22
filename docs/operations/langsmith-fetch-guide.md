@@ -1,8 +1,101 @@
 # LangSmith Fetch CLI Guide
 
+## Quick Reference
+
+**TL;DR - Fastest Way to Get Started:**
+
+```bash
+# From project root - that's it!
+./backend/scripts/fetch_langsmith_traces.sh traces 10
+./backend/scripts/fetch_langsmith_traces.sh threads 5
+```
+
+**Manual Command:**
+```bash
+cd backend
+source venv/bin/activate
+export LANGSMITH_API_KEY="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"
+langsmith-fetch traces ./output --limit 10 --project-uuid d0c6d2c8-b5de-4e18-80f9-d66dc66d7ed4
+```
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Installation](#installation)
+3. [Authentication Setup](#authentication-setup)
+4. [Project Information](#project-information)
+5. [Common Usage Patterns](#common-usage-patterns)
+6. [Quick Start Workflow](#quick-start-workflow)
+7. [Real Examples from Clera](#real-examples-from-clera)
+8. [Troubleshooting](#troubleshooting)
+9. [Helper Script](#helper-script)
+10. [Best Practices](#best-practices)
+
+---
+
 ## Overview
 
 `langsmith-fetch` is a CLI tool for retrieving and analyzing LangSmith traces and threads from your LangGraph/LangChain applications. This tool is essential for debugging agent workflows, understanding conversation flows, and analyzing production issues.
+
+### Workflow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    LangSmith Fetch Workflow                  │
+└─────────────────────────────────────────────────────────────┘
+
+1. Setup Environment
+   ┌────────────────────────────────────────┐
+   │ Option A: Helper Script (Automatic)    │
+   │ ./backend/scripts/fetch_langsmith_     │
+   │    traces.sh traces 10                 │
+   │                                        │
+   │ Option B: Manual                       │
+   │ • cd backend                           │
+   │ • source venv/bin/activate             │
+   │ • export LANGSMITH_API_KEY="..."       │
+   └────────────────────────────────────────┘
+                    ↓
+2. Fetch Data
+   ┌────────────────────────────────────────┐
+   │ langsmith-fetch traces ./output        │
+   │   --limit 10                           │
+   │   --project-uuid <uuid>                │
+   └────────────────────────────────────────┘
+                    ↓
+3. Output Created
+   ┌────────────────────────────────────────┐
+   │ docs/langsmith-samples/                │
+   │ ├── 019b4756-...-8d67.json ← Trace 1  │
+   │ ├── 019b4757-...-8d01.json ← Trace 2  │
+   │ └── 019b4759-...-64b3.json ← Trace 3  │
+   └────────────────────────────────────────┘
+                    ↓
+4. Analyze Traces
+   ┌────────────────────────────────────────┐
+   │ • View with jq                         │
+   │ • Parse with Python                    │
+   │ • Analyze agent behavior               │
+   │ • Debug production issues              │
+   └────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                    Trace Contents                            │
+├─────────────────────────────────────────────────────────────┤
+│ User Message → Agent Response → Tool Call → Tool Result    │
+│                                                             │
+│ Example Flow:                                               │
+│ 1. User: "Buy $5 of stock"                                 │
+│ 2. Clera: transfer_to_portfolio_management_agent()         │
+│ 3. Portfolio Agent: get_portfolio_summary()                │
+│ 4. Tool Result: {"holdings": [...], "cash": 325.98}       │
+│ 5. Portfolio Agent: "Based on your holdings..."           │
+│ 6. Portfolio Agent: transfer_back_to_clera()              │
+│ 7. Clera: "I recommend JNJ for diversification..."        │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Installation
 
@@ -146,7 +239,34 @@ The tool supports three output formats:
 
 ## Quick Start Workflow
 
-### For Engineers
+### Option 1: Using the Helper Script (Easiest)
+
+We've created a helper script that handles all the setup automatically:
+
+```bash
+# Fetch recent traces (default: 10)
+./backend/scripts/fetch_langsmith_traces.sh traces 10
+
+# Fetch recent threads (default: 5)
+./backend/scripts/fetch_langsmith_traces.sh threads 5
+
+# Fetch specific trace by ID
+./backend/scripts/fetch_langsmith_traces.sh trace 019b4756-e7e2-78f0-a11c-966f3b1e8d67
+
+# Fetch specific thread by ID
+./backend/scripts/fetch_langsmith_traces.sh thread 03da1ced-e62c-429f-8323-4a59220aabb8
+
+# View help
+./backend/scripts/fetch_langsmith_traces.sh --help
+```
+
+The helper script automatically:
+- Activates the virtual environment
+- Loads the API key from `backend/.env`
+- Sets up the correct project UUID
+- Creates output directories as needed
+
+### Option 2: Manual Setup (For Engineers)
 
 ```bash
 # 1. Set up environment (do this once per terminal session)
@@ -263,6 +383,18 @@ Each trace file contains:
 - `outputs`: Final output from the agent
 - `steps`: Individual agent steps/tool calls
 
+**Example viewing a trace:**
+```bash
+# Pretty print with jq
+cat docs/langsmith-samples/019b4756-e7e2-78f0-a11c-966f3b1e8d67.json | jq '.'
+
+# Extract just the messages
+cat docs/langsmith-samples/019b4756-e7e2-78f0-a11c-966f3b1e8d67.json | jq '.messages'
+
+# Find tool calls
+cat docs/langsmith-samples/*.json | jq '.messages[] | select(.tool_calls) | .tool_calls'
+```
+
 ### Thread JSON Structure
 
 Each thread file contains:
@@ -270,6 +402,68 @@ Each thread file contains:
 - `messages`: Full conversation history
 - `metadata`: Thread-level metadata
 - Multiple traces may belong to one thread
+
+### Analyzing Traces with Python
+
+```python
+import json
+from pathlib import Path
+
+# Load all traces
+traces_dir = Path("docs/langsmith-samples")
+traces = []
+
+for trace_file in traces_dir.glob("*.json"):
+    with open(trace_file) as f:
+        traces.append(json.load(f))
+
+# Analyze tool usage
+tool_usage = {}
+for trace in traces:
+    for message in trace.get("messages", []):
+        if "tool_calls" in message:
+            for tool_call in message["tool_calls"]:
+                tool_name = tool_call["function"]["name"]
+                tool_usage[tool_name] = tool_usage.get(tool_name, 0) + 1
+
+print("Tool Usage Statistics:")
+for tool, count in sorted(tool_usage.items(), key=lambda x: x[1], reverse=True):
+    print(f"  {tool}: {count}")
+```
+
+## Clera-Specific Agent Insights
+
+When analyzing Clera's agent workflow traces, you'll see:
+
+### Agent Types
+- **Supervisor Agent**: Routes tasks between specialized agents
+- **Financial Analyst Agent**: Handles research and market analysis
+- **Portfolio Management Agent**: Manages portfolio analysis and recommendations
+- **Trade Execution Agent**: Handles order placement and execution
+
+### Common Tool Calls
+- `get_portfolio_data`: Fetches user portfolio information
+- `get_market_data`: Retrieves market prices and data
+- `analyze_stock`: Performs stock analysis
+- `execute_trade`: Places trades via SnapTrade
+- `search_news`: Searches for financial news
+- `calculate_metrics`: Computes portfolio metrics
+
+### Message Flow
+1. User input → Supervisor Agent
+2. Supervisor routes to specialized agent(s)
+3. Agent uses tools (portfolio data, market data, etc.)
+4. Agent formulates response
+5. Supervisor consolidates and returns to user
+
+**Example trace analysis:**
+```bash
+# Find all portfolio data fetches
+cat docs/langsmith-samples/*.json | jq '.messages[] | select(.tool_calls[]?.function.name == "get_portfolio_data")'
+
+# Find all trade executions
+cat docs/langsmith-samples/*.json | jq '.messages[] | select(.tool_calls[]?.function.name == "execute_trade")'
+```
 
 ## Integration with Development Workflow
 
@@ -321,8 +515,30 @@ diff <(cat before-changes/*.json) <(cat after-changes/*.json)
 5. **Organize output directories** by date or purpose (e.g., `./debug-2025-12-22/`)
 6. **Include project UUID** for thread fetching (required)
 
+## Helper Script
+
+A convenience script is available at `backend/scripts/fetch_langsmith_traces.sh` that automates the entire process.
+
+**Features:**
+- Automatic environment setup
+- API key loading from `.env`
+- Organized output directory structure
+- Colored terminal output
+- Error handling
+
+**Location:** `backend/scripts/fetch_langsmith_traces.sh`
+
+**Usage Examples:**
+```bash
+# From project root
+./backend/scripts/fetch_langsmith_traces.sh traces 20
+./backend/scripts/fetch_langsmith_traces.sh threads 10
+./backend/scripts/fetch_langsmith_traces.sh trace <trace-id>
+```
+
 ## Related Files
 
+- Helper Script: `backend/scripts/fetch_langsmith_traces.sh`
 - API Key: `backend/.env` → `LANGSMITH_API_KEY`
 - Project Config: `backend/.env` → `LANGSMITH_PROJECT`
 - LangGraph Config: `langgraph.json`

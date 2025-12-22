@@ -322,29 +322,48 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         snaptrade_user_id = credentials['user_id']
         user_secret = credentials['user_secret']
         
-        # Get symbol's universal ID from SnapTrade
-        logger.info(f"[Trade Agent] Looking up universal symbol ID for {ticker}")
-        symbol_response = snaptrade_client.reference_data.get_symbols_by_ticker(
-            query=ticker
+        # Clean account ID (remove our prefix) - needed for all SnapTrade API calls
+        clean_account_id = account_id.replace('snaptrade_', '')
+        
+        # Get symbol's universal ID from SnapTrade using account-specific lookup
+        # CRITICAL: Use symbol_search_user_account to get the correct exchange symbol
+        # (e.g., NYSE JNJ instead of German SWB JNJ)
+        logger.info(f"[Trade Agent] Looking up tradeable symbol ID for {ticker} on account {clean_account_id}")
+        
+        # Use symbol_search_user_account to get symbols actually tradeable on this account
+        symbol_response = snaptrade_client.reference_data.symbol_search_user_account(
+            user_id=snaptrade_user_id,
+            user_secret=user_secret,
+            account_id=clean_account_id,
+            substring=ticker
         )
         
         if not symbol_response.body:
-            return f"❌ Error: Symbol '{ticker}' not found. This stock may not be available for trading through the user's brokerage. Please verify the ticker symbol is correct (e.g., 'AAPL' for Apple, 'GOOGL' for Google)."
+            return f"❌ Error: Symbol '{ticker}' is not available for trading on the user's brokerage. Please verify the ticker symbol is correct (e.g., 'AAPL' for Apple, 'GOOGL' for Google), or try a different stock."
         
-        # PRODUCTION-GRADE: Handle both dict and list responses from SnapTrade API
-        # The API may return a single symbol dict or a list depending on version
-        if isinstance(symbol_response.body, dict) and 'id' in symbol_response.body:
-            universal_symbol_id = symbol_response.body['id']
-        elif isinstance(symbol_response.body, list) and len(symbol_response.body) > 0:
-            first_symbol = symbol_response.body[0]
-            universal_symbol_id = first_symbol.get('id') if isinstance(first_symbol, dict) else first_symbol['id']
+        # Find exact match for the ticker, prioritizing US exchanges
+        us_exchanges = {'NYSE', 'NASDAQ', 'ARCA', 'BATS', 'AMEX', 'NYSEARCA'}
+        universal_symbol_id = None
+        exact_match = None
+        us_match = None
+        
+        for symbol_data in symbol_response.body:
+            if symbol_data.get('symbol') == ticker:
+                exchange_code = symbol_data.get('exchange', {}).get('code', '')
+                # Prefer US exchanges
+                if exchange_code in us_exchanges:
+                    us_match = symbol_data
+                    break  # Found US match, use it
+                elif exact_match is None:
+                    exact_match = symbol_data
+        
+        best_match = us_match or exact_match
+        if best_match:
+            universal_symbol_id = best_match.get('id')
+            exchange_code = best_match.get('exchange', {}).get('code', 'Unknown')
+            logger.info(f"[Trade Agent] Found tradeable symbol ID for {ticker} on {exchange_code}: {universal_symbol_id}")
         else:
-            return f"❌ Error: Symbol '{ticker}' not found. This stock may not be available for trading through the user's brokerage. Please verify the ticker symbol is correct (e.g., 'AAPL' for Apple, 'GOOGL' for Google)."
-        
-        logger.info(f"[Trade Agent] Found universal symbol ID: {universal_symbol_id}")
-        
-        # Clean account ID (remove our prefix)
-        clean_account_id = account_id.replace('snaptrade_', '')
+            return f"❌ Error: Symbol '{ticker}' is not available for trading on the user's brokerage. Please verify the ticker symbol is correct, or try a different stock - ETFs like VTI, SPY, or QQQ are usually widely supported."
         
         # Determine order parameters based on action type
         # For SELL orders, we need to use units (whole shares) instead of notional_value

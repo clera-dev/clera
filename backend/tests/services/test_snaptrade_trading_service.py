@@ -90,6 +90,63 @@ class TestSnapTradeTradingService:
         assert result is None
     
     @patch('supabase.create_client')
+    def test_get_universal_symbol_id_for_account_success(self, mock_create_client):
+        """Test account-specific symbol lookup returns correct US exchange symbol."""
+        # Setup mock for credentials
+        mock_supabase = Mock()
+        mock_create_client.return_value = mock_supabase
+        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+            data={
+                'snaptrade_user_id': 'test-user-123',
+                'snaptrade_user_secret': 'test-secret-456'
+            }
+        )
+        
+        service = SnapTradeTradingService()
+        
+        # Mock symbol_search_user_account response with multiple exchanges
+        # JNJ exists on both German SWB and US NYSE - we should pick NYSE
+        mock_response = Mock()
+        mock_response.body = [
+            {'id': 'german-jnj-uuid', 'symbol': 'JNJ', 'exchange': {'code': 'SWB'}},
+            {'id': 'nyse-jnj-uuid', 'symbol': 'JNJ', 'exchange': {'code': 'NYSE'}},
+            {'id': 'other-symbol', 'symbol': 'JNJX', 'exchange': {'code': 'NYSE'}},
+        ]
+        service.client.reference_data.symbol_search_user_account = Mock(return_value=mock_response)
+        
+        result = service.get_universal_symbol_id_for_account('JNJ', 'user-123', 'account-456')
+        
+        # Should return the NYSE symbol, not the German one
+        assert result == 'nyse-jnj-uuid'
+    
+    @patch('supabase.create_client')
+    def test_get_universal_symbol_id_for_account_fallback_to_any_exact_match(self, mock_create_client):
+        """Test that if no US exchange found, falls back to any exact ticker match."""
+        # Setup mock for credentials
+        mock_supabase = Mock()
+        mock_create_client.return_value = mock_supabase
+        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+            data={
+                'snaptrade_user_id': 'test-user-123',
+                'snaptrade_user_secret': 'test-secret-456'
+            }
+        )
+        
+        service = SnapTradeTradingService()
+        
+        # Mock response with only non-US exchange
+        mock_response = Mock()
+        mock_response.body = [
+            {'id': 'german-symbol-uuid', 'symbol': 'XYZ', 'exchange': {'code': 'SWB'}},
+        ]
+        service.client.reference_data.symbol_search_user_account = Mock(return_value=mock_response)
+        
+        result = service.get_universal_symbol_id_for_account('XYZ', 'user-123', 'account-456')
+        
+        # Should return the German symbol as fallback since it's an exact match
+        assert result == 'german-symbol-uuid'
+    
+    @patch('supabase.create_client')
     def test_place_order_force_mode(self, mock_create_client):
         """Test force placing an order (without trade_id)."""
         # Setup mocks
@@ -105,10 +162,20 @@ class TestSnapTradeTradingService:
         
         service = SnapTradeTradingService()
         
-        # Mock symbol lookup
+        # Mock account-specific symbol lookup (new method)
         mock_symbol_response = Mock()
-        mock_symbol_response.body = [{'id': 'symbol-uuid-123', 'symbol': 'AAPL'}]
-        service.client.reference_data.get_symbols_by_ticker = Mock(return_value=mock_symbol_response)
+        mock_symbol_response.body = [{'id': 'symbol-uuid-123', 'symbol': 'AAPL', 'exchange': {'code': 'NASDAQ'}}]
+        service.client.reference_data.symbol_search_user_account = Mock(return_value=mock_symbol_response)
+        
+        # Mock order impact (validation step)
+        mock_impact_response = Mock()
+        mock_impact_response.body = {
+            'trade': {'id': 'trade-id-123', 'price': 150.0},
+            'estimated_cost': 1000.0,
+            'estimated_commission': 0.0,
+            'estimated_units': 6.67
+        }
+        service.client.trading.get_order_impact = Mock(return_value=mock_impact_response)
         
         # Mock order placement
         mock_order_response = Mock()
@@ -123,7 +190,7 @@ class TestSnapTradeTradingService:
             'order_type': 'Market',
             'time_placed': '2025-10-28T12:00:00Z'
         }
-        service.client.trading.place_force_order = Mock(return_value=mock_order_response)
+        service.client.trading.place_order = Mock(return_value=mock_order_response)
         
         result = service.place_order(
             user_id='platform-user-123',
