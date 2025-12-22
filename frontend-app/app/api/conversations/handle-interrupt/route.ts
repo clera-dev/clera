@@ -17,10 +17,11 @@ async function handleInterruptLogic(
   thread_id: string,
   run_id: string,
   response: any,
-  account_id: string,
+  account_id: string | null,  // CRITICAL FIX: account_id is optional for SnapTrade/aggregation mode
   request: NextRequest
 ): Promise<NextResponse> {
   // Use centralized authentication and authorization service
+  // Note: account_id can be null for SnapTrade/aggregation mode users
   const authResult = await ConversationAuthService.authenticateAndAuthorize(request, account_id);
   if (!authResult.success) {
     // Convert NextResponse to streaming error response
@@ -44,6 +45,7 @@ async function handleInterruptLogic(
   console.log(`Handling interrupt for thread.`);
 
   // Create streaming response using the service
+  // Note: account_id can be null for SnapTrade/aggregation mode - backend handles routing
   return streamingService.createStreamingResponse({
     threadId: thread_id,
     streamConfig: {
@@ -72,12 +74,13 @@ export async function GET(request: NextRequest) {
     const run_id = url.searchParams.get('run_id');
     const responseParam = url.searchParams.get('response');
     
-    // Extract account ID from query parameters
+    // Extract account ID from query parameters - can be null for SnapTrade/aggregation mode
     const account_id = ConversationAuthService.extractAccountIdFromQuery(url, 'account_id');
 
-    if (!thread_id || !run_id || !responseParam || !account_id) {
+    // CRITICAL FIX: account_id is OPTIONAL for SnapTrade/aggregation mode users
+    if (!thread_id || !run_id || !responseParam) {
       return NextResponse.json(
-        { error: 'Thread ID, run ID, response, and account ID are required' },
+        { error: 'Thread ID, run ID, and response are required' },
         { status: 400 }
       );
     }
@@ -109,12 +112,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { thread_id, run_id, response } = body;
 
-    // Extract account ID from request body
+    // Extract account ID from request body - can be null for SnapTrade/aggregation mode
     const account_id = ConversationAuthService.extractAccountId(body, 'account_id');
 
-    if (!thread_id || !run_id || response === undefined || !account_id) {
+    // CRITICAL FIX: account_id is OPTIONAL for SnapTrade/aggregation mode users
+    // The backend's TradeRoutingService handles account routing based on user's connected accounts
+    if (!thread_id || !run_id || response === undefined) {
       return NextResponse.json(
-        { error: 'Thread ID, run ID, response, and account ID are required' },
+        { error: 'Thread ID, run ID, and response are required' },
         { status: 400 }
       );
     }

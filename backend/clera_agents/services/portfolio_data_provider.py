@@ -345,7 +345,8 @@ class PortfolioDataProvider:
                     if not snaptrade_only:
                         # CRITICAL FIX: Use 'account_contributions' column, not 'accounts'
                         # This matches the database schema in 002_create_aggregated_holdings.sql
-                        accounts_list = h.get('account_contributions', [])
+                        # Use 'or []' to handle NULL values from database (column has no NOT NULL constraint)
+                        accounts_list = h.get('account_contributions') or []
                         has_snaptrade_account = any(
                             acc.get('account_id', '').startswith('snaptrade_') 
                             for acc in accounts_list
