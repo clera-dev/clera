@@ -413,7 +413,7 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         supabase = get_supabase_client()
         order_data = {
             'user_id': user_id,
-            'account_id': account_id,
+            'account_id': clean_account_id,  # CRITICAL FIX: Use clean UUID without 'snaptrade_' prefix
             'brokerage_order_id': order_response.body.get('brokerage_order_id', ''),
             'symbol': ticker,
             'universal_symbol_id': universal_symbol_id,
