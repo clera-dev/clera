@@ -581,8 +581,13 @@ class SnapTradeTradingService:
                                     logger.info(f"SELL order: Converted notional ${notional_value} to {order_units} whole shares (raw: {raw_units:.4f}) at ${current_price}/share")
                                 else:
                                     # For BUY orders, fractional shares are usually supported
-                                    order_units = round(raw_units, 4)
-                                    logger.info(f"BUY order: Converted notional ${notional_value} to {order_units} units at ${current_price}/share")
+                                    # PRODUCTION-GRADE FIX: Round UP to ensure we meet minimum order amounts
+                                    # Some brokerages (like Webull) have a strict $5 minimum and rounding down
+                                    # can cause the final amount to be $4.999 which fails
+                                    import math
+                                    # Round up to 4 decimal places to ensure we meet the minimum
+                                    order_units = math.ceil(raw_units * 10000) / 10000
+                                    logger.info(f"BUY order: Converted notional ${notional_value} to {order_units} units (rounded UP) at ${current_price}/share")
                             else:
                                 logger.warning(f"Could not get price for {symbol}, using notional_value directly")
                     except Exception as price_error:
@@ -648,6 +653,12 @@ class SnapTradeTradingService:
                             price=price,
                             stop_price=stop
                         )
+                    # Handle symbol not tradeable on this brokerage (code 1063)
+                    elif '1063' in error_str or 'failed to obtain symbol' in error_str.lower() or 'unable to obtain symbol' in error_str.lower():
+                        return {
+                            'success': False,
+                            'error': f"The symbol '{symbol}' is not available for trading on your connected brokerage. This stock may not be supported by Webull. Try trading ETFs like VTI, SPY, or QQQ instead."
+                        }
                     elif 'insufficient' in error_str.lower() or 'buying power' in error_str.lower():
                         return {
                             'success': False,
@@ -714,6 +725,20 @@ class SnapTradeTradingService:
                 return {
                     'success': False,
                     'error': 'This brokerage requires selling whole shares only. Please adjust your sell amount to at least 1 full share.'
+                }
+            
+            # Handle minimum order amount error (code 1119 - Webull fractional share minimum)
+            if '1119' in error_str or 'minimum order amount' in error_str.lower() or 'FRACT_AMOUNT_GREAT_5' in error_str:
+                return {
+                    'success': False,
+                    'error': 'The minimum order amount for fractional shares is $5. Please increase your order amount slightly above $5 to account for price fluctuations.'
+                }
+            
+            # Handle symbol not tradeable on this brokerage (code 1063)
+            if '1063' in error_str or 'failed to obtain symbol' in error_str.lower() or 'unable to obtain symbol' in error_str.lower():
+                return {
+                    'success': False,
+                    'error': f"This symbol is not available for trading on your connected brokerage. Try trading ETFs like VTI, SPY, or QQQ instead."
                 }
             
             # Simplify technical errors for user display
