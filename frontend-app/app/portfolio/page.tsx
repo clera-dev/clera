@@ -22,6 +22,7 @@ import LivePortfolioValue from '@/components/portfolio/LivePortfolioValue';
 import PortfolioSummaryWithAssist from '@/components/portfolio/PortfolioSummaryWithAssist';
 import InvestmentGrowthWithAssist from '@/components/portfolio/InvestmentGrowthWithAssist';
 import HoldingsTableWithAssist from '@/components/portfolio/HoldingsTableWithAssist';
+import AccountBreakdownSelector from '@/components/portfolio/AccountBreakdownSelector';
 import OrderModal from '@/components/invest/OrderModal';
 import { Toaster } from 'react-hot-toast';
 import { getAlpacaAccountId } from "@/lib/utils";
@@ -729,14 +730,66 @@ export default function PortfolioPage() {
     }
   }, [portfolioMode, userId]);
 
-  // Trigger allocation chart refresh when account filter changes
+  // CRITICAL: Auto-refresh ALL data when account filter changes (not just allocation chart)
+  // This ensures the entire page updates when user selects a different brokerage
   useEffect(() => {
-    if (selectedAccountFilter) {
+    if (selectedAccountFilter && accountId) {
       // Force re-fetch of allocation charts with new filter
       setAllocationChartRefreshKey(Date.now());
-      console.log(`📊 Account filter changed to: ${selectedAccountFilter}`);
+      console.log(`📊 Account filter changed to: ${selectedAccountFilter} - REFRESHING ALL DATA`);
+      
+      const refreshAllDataForNewFilter = async () => {
+        setIsLoading(true);
+        try {
+          const cacheBuster = `t=${Date.now()}`;
+          
+          // Refresh positions with new filter
+          const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`, cacheBuster);
+          console.log(`📊 Reloading positions: ${positionsUrl}`);
+          const positionsRaw = await fetchData(positionsUrl);
+          const positionsData = (positionsRaw && typeof positionsRaw === 'object' && 'positions' in positionsRaw) 
+            ? positionsRaw.positions 
+            : (Array.isArray(positionsRaw) ? positionsRaw : []);
+          
+          // Enrich positions
+          const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
+            const details = await fetchAssetDetails(pos.symbol, false);
+            return { ...pos, name: details?.name || pos.security_name || pos.symbol };
+          }));
+          setPositions(enrichedPositions);
+          
+          // Refresh analytics with new filter (FORCE FRESH - no cache)
+          const analyticsUrl = buildFilteredUrl(`/api/portfolio/analytics?accountId=${accountId}`, cacheBuster);
+          console.log(`📊 Reloading analytics: ${analyticsUrl}`);
+          const analyticsData = await fetchData(analyticsUrl);
+          setAnalytics(analyticsData);
+          console.log(`✅ Analytics loaded:`, analyticsData);
+          
+          // Refresh history with new filter
+          const historyUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`, cacheBuster);
+          console.log(`📊 Reloading history: ${historyUrl}`);
+          const historyData = await fetchData(historyUrl);
+          setPortfolioHistory(historyData);
+          
+          // Also refresh all-time history for the growth projection
+          if (selectedTimeRange !== 'MAX') {
+            const allTimeUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=MAX`, cacheBuster);
+            const allTimeData = await fetchData(allTimeUrl);
+            setAllTimeHistory(allTimeData);
+          } else {
+            setAllTimeHistory(historyData);
+          }
+          
+        } catch (err) {
+          console.error('Error refreshing data for new filter:', err);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      refreshAllDataForNewFilter();
     }
-  }, [selectedAccountFilter]);
+  }, [selectedAccountFilter, accountId]);
 
   const allTimePerformance = useMemo(() => {
     if (!allTimeHistory || !allTimeHistory.equity || allTimeHistory.equity.length === 0) {
@@ -789,7 +842,11 @@ export default function PortfolioPage() {
   }
 
   // Empty portfolio state - no accounts connected
-  if (!isLoading && positions.length === 0 && portfolioMode !== 'brokerage' && !error) {
+  // CRITICAL: Don't show "Connect Brokerage" if user has accounts but is filtering to empty account
+  const hasConnectedAccounts = availableAccounts && availableAccounts.length > 0;
+  const isFilteringAccount = selectedAccountFilter && selectedAccountFilter !== 'total';
+  
+  if (!isLoading && positions.length === 0 && portfolioMode !== 'brokerage' && !error && !hasConnectedAccounts) {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
@@ -842,7 +899,15 @@ export default function PortfolioPage() {
             <h1 className="text-2xl lg:text-3xl font-bold">Your Portfolio</h1>
             <p className="text-lg text-muted-foreground mt-1">Track your investments and performance</p>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {/* Account Breakdown Selector - only show in aggregation mode with multiple accounts */}
+            {portfolioMode === 'aggregation' && availableAccounts.length > 1 && (
+              <AccountBreakdownSelector
+                selectedFilter={selectedAccountFilter}
+                onFilterChange={setSelectedAccountFilter}
+                accounts={availableAccounts}
+              />
+            )}
             <Button 
               variant="outline" 
               size="sm"

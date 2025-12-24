@@ -451,7 +451,7 @@ export default function OrderModal({
                   <SelectTrigger className="w-full bg-background">
                     <SelectValue placeholder="Select account" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[200]">
                     <SelectGroup>
                       {selectedAccountData && (
                         <SelectLabel className="text-xs text-muted-foreground px-2 py-1 flex items-center gap-1">

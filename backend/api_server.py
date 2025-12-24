@@ -3342,54 +3342,80 @@ async def get_portfolio_account_breakdown(
 async def _enhance_account_breakdown(user_id: str, account_breakdown: Dict[str, float]) -> List[Dict[str, Any]]:
     """
     Enhance account breakdown with account type and institution information.
+    Supports both Plaid and SnapTrade accounts.
     """
     try:
         from utils.supabase.db_client import get_supabase_client
         supabase = get_supabase_client()
         
-        # Get account information
+        account_info = {}
+        
+        # Get ALL active accounts (both Plaid and SnapTrade)
         result = supabase.table('user_investment_accounts')\
-            .select('id, provider_account_id, account_name, account_type, account_subtype, institution_name')\
+            .select('id, provider, provider_account_id, account_name, account_type, account_subtype, institution_name')\
             .eq('user_id', user_id)\
-            .eq('provider', 'plaid')\
             .eq('is_active', True)\
             .execute()
         
-        account_info = {}
-        uuid_to_plaid_map = {}  # Map UUIDs to plaid IDs for lookup
         if result.data:
             for account in result.data:
-                account_id = f"plaid_{account['provider_account_id']}"
+                provider = account.get('provider', 'unknown')
+                provider_account_id = account['provider_account_id']
                 account_uuid = account['id']
                 
-                # Store both mappings
-                uuid_to_plaid_map[account_uuid] = account_id
-                account_info[account_id] = {
-                    'uuid': account_uuid,  # CRITICAL: Include UUID for frontend filtering
-                    'account_name': account['account_name'],
-                    'account_type': account['account_type'],
-                    'account_subtype': account['account_subtype'],
-                    'institution_name': account['institution_name']
+                info_obj = {
+                    'uuid': account_uuid,  # UUID for filtering
+                    'provider': provider,
+                    'account_name': account.get('account_name', 'Investment Account'),
+                    'account_type': account.get('account_type', 'investment'),
+                    'account_subtype': account.get('account_subtype', 'investment'),
+                    'institution_name': account.get('institution_name', 'Unknown Institution')
                 }
+                
+                # Build multiple account_id keys to handle different formats in account_contributions
+                # Format 1: provider_accountId (e.g., "plaid_abc123" or "snaptrade_xyz456")
+                prefixed_id = f"{provider}_{provider_account_id}"
+                account_info[prefixed_id] = info_obj
+                
+                # Format 2: Just the provider_account_id (legacy format)
+                account_info[provider_account_id] = info_obj
+                
+                # Format 3: UUID (in case contributions use the database UUID)
+                account_info[account_uuid] = info_obj
+                
+                logger.debug(f"Mapped account: {prefixed_id} -> {account.get('institution_name')}")
         
         # Enhance breakdown with account information
         enhanced_breakdown = []
+        total_value = sum(account_breakdown.values())
+        
         for account_id, value in account_breakdown.items():
             if value > 0:
                 info = account_info.get(account_id, {})
+                
+                # If we couldn't find info by account_id, it might be because
+                # SnapTrade stores account contributions differently
+                if not info:
+                    logger.warning(f"No account info found for account_id: {account_id}")
+                
                 enhanced_breakdown.append({
-                    'account_id': account_id,  # Still include plaid_XXXX for backwards compat
-                    'uuid': info.get('uuid'),  # CRITICAL: UUID for filtering
+                    'account_id': account_id,
+                    'uuid': info.get('uuid'),
+                    'provider': info.get('provider', 'unknown'),
                     'account_name': info.get('account_name', 'Unknown Account'),
-                    'account_type': info.get('account_type', 'unknown'),
-                    'account_subtype': info.get('account_subtype', 'unknown'),
+                    'account_type': info.get('account_type', 'investment'),
+                    'account_subtype': info.get('account_subtype', 'investment'),
                     'institution_name': info.get('institution_name', 'Unknown Institution'),
-                    'portfolio_value': value,
-                    'percentage': 0.0  # Will be calculated by frontend
+                    'total_value': value,  # Renamed from portfolio_value for consistency
+                    'portfolio_value': value,  # Keep for backwards compat
+                    'percentage': (value / total_value * 100) if total_value > 0 else 0.0,
+                    'holdings_count': None  # Could be populated if needed
                 })
         
         # Sort by value descending
-        enhanced_breakdown.sort(key=lambda x: x['portfolio_value'], reverse=True)
+        enhanced_breakdown.sort(key=lambda x: x['total_value'], reverse=True)
+        
+        logger.info(f"Enhanced account breakdown: {len(enhanced_breakdown)} accounts for user {user_id}")
         
         return enhanced_breakdown
         

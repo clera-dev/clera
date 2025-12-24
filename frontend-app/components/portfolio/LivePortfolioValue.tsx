@@ -9,6 +9,7 @@ import { createClient } from '@/utils/supabase/client'; // Import Supabase clien
 interface LivePortfolioValueProps {
     accountId: string;
     portfolioMode?: string; // Add portfolio mode to determine connection type
+    filterAccount?: string | null; // Account filter for per-account views (e.g., 'snaptrade_xxx')
 }
 
 interface TimerRefs {
@@ -21,7 +22,7 @@ const WEBSOCKET_URL_TEMPLATE = process.env.NODE_ENV === 'development'
   ? (process.env.NEXT_PUBLIC_WEBSOCKET_URL_DEV || 'ws://localhost:8001/ws/portfolio/{accountId}') // Template includes placeholder
   : (process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD || 'wss://ws.askclera.com/ws/portfolio/{accountId}'); // Template includes placeholder
 
-const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, portfolioMode = 'brokerage' }) => {
+const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, portfolioMode = 'brokerage', filterAccount = null }) => {
     const [totalValue, setTotalValue] = useState<string>("$0.00");
     const [todayReturn, setTodayReturn] = useState<string>("+$0.00 (0.00%)");
     const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -75,10 +76,15 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         // For aggregation mode, use aggregated endpoint + calculate today's return from history
         if (portfolioMode === 'aggregation') {
             try {
+                // Build URLs with optional filter_account parameter
+                const filterParam = filterAccount && filterAccount !== 'total' 
+                    ? `&filter_account=${encodeURIComponent(filterAccount)}` 
+                    : '';
+                
                 // Fetch both current value and 1W history in parallel to calculate today's return
                 const [positionsRes, historyRes] = await Promise.all([
-                    fetch(`/api/portfolio/aggregated`),
-                    fetch(`/api/portfolio/history?accountId=null&period=1W`)
+                    fetch(`/api/portfolio/aggregated${filterParam ? `?${filterParam.substring(1)}` : ''}`),
+                    fetch(`/api/portfolio/history?accountId=null&period=1W${filterParam}`)
                 ]);
                 
                 if (positionsRes.ok && historyRes.ok) {
@@ -335,7 +341,7 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         setIsLoading(true);
         setConnectionAttempts(0);
 
-        console.log("Running effect for accountId:", accountId, "Portfolio mode:", portfolioMode, "Calculated websocketUrl:", websocketUrl);
+        console.log("Running effect for accountId:", accountId, "Portfolio mode:", portfolioMode, "filterAccount:", filterAccount, "Calculated websocketUrl:", websocketUrl);
 
         // Skip websockets for aggregation mode - use fallback API
         if (portfolioMode === 'aggregation') {
@@ -418,7 +424,8 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         };
     // Main effect depends on accountId (to recalculate URL) and websocketUrl (to trigger connection)
     // We don't include connectWebSocket directly as it causes loops
-    }, [accountId, websocketUrl, supabase]); // Add supabase to dependency array
+    // filterAccount triggers re-fetch when user switches between accounts in the dropdown
+    }, [accountId, websocketUrl, supabase, filterAccount]); // Add supabase, filterAccount to dependency array
 
     // PRODUCTION-GRADE: Color logic for Today's Return
     // Grey for $0.00 (market closed), Green for positive, Red for negative

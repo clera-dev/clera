@@ -72,16 +72,22 @@ class AccountFilteringService:
                 logger.info(f"Returning all {len(all_holdings)} holdings for user {user_id}")
                 return all_holdings
             
-            # CRITICAL FIX: Convert UUID to plaid_XXXX format if needed
-            # Frontend now sends UUIDs, but account_contributions uses plaid_XXXX format
-            plaid_account_id = filter_account
-            if not filter_account.startswith('plaid_'):
-                # This is a UUID, need to convert
-                plaid_account_id = self.get_account_id_from_uuid(filter_account)
-                if not plaid_account_id:
-                    logger.error(f"Could not convert UUID {filter_account} to Plaid account ID")
-                    return []
-                logger.info(f"Converted UUID {filter_account} to Plaid ID {plaid_account_id}")
+            # CRITICAL FIX: Handle different account ID formats
+            # account_contributions uses prefixed format: plaid_XXXX or snaptrade_XXXX
+            account_id_for_filter = filter_account
+            
+            # If already prefixed (plaid_ or snaptrade_), use as-is
+            if filter_account.startswith('plaid_') or filter_account.startswith('snaptrade_'):
+                account_id_for_filter = filter_account
+                logger.info(f"Using prefixed account ID directly: {account_id_for_filter}")
+            else:
+                # This might be a UUID, try to convert
+                converted_id = self.get_prefixed_account_id_from_uuid(filter_account)
+                if converted_id:
+                    account_id_for_filter = converted_id
+                    logger.info(f"Converted UUID {filter_account} to prefixed ID {account_id_for_filter}")
+                else:
+                    logger.warning(f"Could not convert {filter_account}, using as-is")
             
             # Filter to specific account
             filtered_holdings = []
@@ -97,7 +103,7 @@ class AccountFilteringService:
                 
                 # Find contribution from specific account
                 for contrib in contributions:
-                    if contrib.get('account_id') == plaid_account_id:
+                    if contrib.get('account_id') == account_id_for_filter:
                         # Create holding with account-specific values
                         filtered_holding = {
                             **holding,  # Copy all fields
@@ -111,7 +117,7 @@ class AccountFilteringService:
                         filtered_holdings.append(filtered_holding)
                         break
             
-            logger.info(f"Filtered {len(all_holdings)} holdings to {len(filtered_holdings)} for account {plaid_account_id} (UUID: {filter_account})")
+            logger.info(f"Filtered {len(all_holdings)} holdings to {len(filtered_holdings)} for account {account_id_for_filter}")
             
             return filtered_holdings
             
@@ -119,28 +125,30 @@ class AccountFilteringService:
             logger.error(f"Error filtering holdings for user {user_id}, account {filter_account}: {e}")
             return []
     
-    def get_account_id_from_uuid(self, account_uuid: str) -> str:
+    def get_prefixed_account_id_from_uuid(self, account_uuid: str) -> Optional[str]:
         """
-        Convert account UUID to Plaid account ID format.
+        Convert account UUID to prefixed account ID format (plaid_ or snaptrade_).
         
         Args:
             account_uuid: UUID from frontend (e.g., '94ae8733-dce6...')
             
         Returns:
-            Plaid account ID (e.g., 'plaid_Lkparr7yQXuyXPqm6nEMIRMm8BXrLNckKb6xo')
+            Prefixed account ID (e.g., 'plaid_xxx' or 'snaptrade_xxx')
         """
         try:
             supabase = self._get_supabase_client()
             
             # Look up account by UUID
             result = supabase.table('user_investment_accounts')\
-                .select('provider_account_id')\
+                .select('provider, provider_account_id')\
                 .eq('id', account_uuid)\
                 .single()\
                 .execute()
             
             if result.data:
-                return f"plaid_{result.data['provider_account_id']}"
+                provider = result.data.get('provider', 'unknown')
+                provider_account_id = result.data['provider_account_id']
+                return f"{provider}_{provider_account_id}"
             
             logger.warning(f"Could not find account for UUID {account_uuid}")
             return None
@@ -148,6 +156,11 @@ class AccountFilteringService:
         except Exception as e:
             logger.error(f"Error converting account UUID {account_uuid}: {e}")
             return None
+    
+    # Keep legacy method name for backwards compatibility
+    def get_account_id_from_uuid(self, account_uuid: str) -> Optional[str]:
+        """Legacy method - use get_prefixed_account_id_from_uuid instead."""
+        return self.get_prefixed_account_id_from_uuid(account_uuid)
 
 
 # Global service instance

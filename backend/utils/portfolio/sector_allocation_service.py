@@ -101,13 +101,59 @@ class SectorAllocationService:
             enrichment_service = get_enrichment_service()
             enriched_holdings = enrichment_service.enrich_holdings(all_holdings, user_id)
             
-            # Filter to ONLY equity stocks and ETFs for sector allocation
+            # Use comprehensive crypto detection from asset_classification module
+            from utils.asset_classification import classify_asset, AssetClassification
+            
+            def is_crypto_holding(h):
+                """Check if a holding is a cryptocurrency using comprehensive detection."""
+                security_type = h.get('security_type', '')
+                # Direct security_type check
+                if security_type in ['crypto', 'cryptocurrency']:
+                    return True
+                # Symbol-based classification for comprehensive detection (BTC, ETH, ADA, etc.)
+                symbol = h.get('symbol', '').upper()
+                name = h.get('security_name', '')
+                classification = classify_asset(symbol, name, None)
+                return classification == AssetClassification.CRYPTO
+            
+            # CRITICAL FIX: Filter out crypto holdings BEFORE sector allocation
+            # Crypto assets don't have traditional sectors and should not be processed
+            crypto_holdings = [h for h in enriched_holdings if is_crypto_holding(h)]
+            non_crypto_holdings = [h for h in enriched_holdings if not is_crypto_holding(h)]
+            
+            # Filter to ONLY equity stocks and ETFs for sector allocation (excluding crypto)
             equity_holdings = [
-                h for h in enriched_holdings 
-                if h.get('security_type') in ['equity', 'etf']
+                h for h in non_crypto_holdings 
+                if h.get('security_type') in ['equity', 'etf', 'equity', 'et']
             ]
             
+            # Log for debugging
+            logger.info(f"Sector allocation breakdown: {len(enriched_holdings)} total, {len(crypto_holdings)} crypto, {len(equity_holdings)} equity for filter: {filter_account}")
+            
+            # Check if portfolio is crypto-only or crypto-dominant
+            if not equity_holdings and crypto_holdings:
+                # Portfolio is entirely crypto - return "N/A" sector allocation
+                crypto_total_value = sum(float(h.get('total_market_value', 0)) for h in crypto_holdings)
+                logger.info(f"✅ Portfolio is 100% crypto for user {user_id}, filter: {filter_account}. Total crypto: ${crypto_total_value:.2f}")
+                return {
+                    'sectors': [{
+                        'sector': 'N/A (Cryptocurrency)',
+                        'value': round(crypto_total_value, 2),
+                        'percentage': 100.0
+                    }],
+                    'total_portfolio_value': round(crypto_total_value, 2),
+                    'last_data_update_timestamp': datetime.now(timezone.utc).isoformat(),
+                    'data_source': 'crypto_only',
+                    'note': 'Cryptocurrencies do not have traditional sector classifications'
+                }
+            
+            if not equity_holdings and not crypto_holdings:
+                # No equity and no crypto - might be cash only
+                logger.warning(f"No equity or crypto holdings found for user {user_id}, filter: {filter_account}")
+                return self._empty_sector_allocation_response()
+            
             if not equity_holdings:
+                # Has crypto but no equity - should have been caught above, but just in case
                 logger.warning(f"No equity holdings found for user {user_id}, filter: {filter_account}")
                 return self._empty_sector_allocation_response()
             

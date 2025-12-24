@@ -18,6 +18,7 @@ class AssetClassification:
     CASH = "cash"
     STOCK = "stock" 
     BOND = "bond"
+    CRYPTO = "crypto"  # Cryptocurrency assets (BTC, ETH, ADA, etc.)
 
 # Comprehensive list of bond ETFs and fixed income instruments
 # Updated as of 2025 with major bond ETFs available on Alpaca
@@ -128,9 +129,85 @@ def classify_asset(symbol: str, asset_name: Optional[str] = None, asset_class: O
     
     symbol = symbol.upper().strip()
     
-    # Handle crypto assets
+    # Handle crypto assets - classify them as crypto, not stock
+    # Check by asset_class first
     if asset_class == 'crypto' or '/' in symbol:
-        return AssetClassification.STOCK  # Treat crypto as stock-like for allocation
+        return AssetClassification.CRYPTO
+    
+    # Comprehensive cryptocurrency symbols list (for when asset_class isn't 'crypto')
+    # Includes: Major cryptos, stablecoins, DeFi tokens, L1/L2 chains, meme coins, gaming tokens
+    CRYPTO_SYMBOLS = {
+        # === MAJOR CRYPTOCURRENCIES (Top 50 by market cap) ===
+        'BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'DOGE', 'ADA', 'TRX', 'AVAX', 'LINK',
+        'TON', 'SHIB', 'DOT', 'BCH', 'NEAR', 'LTC', 'XLM', 'UNI', 'ATOM', 'HBAR',
+        'APT', 'FIL', 'ETC', 'IMX', 'ARB', 'MATIC', 'VET', 'OP', 'INJ', 'MKR',
+        'ALGO', 'GRT', 'FTM', 'THETA', 'RUNE', 'LDO', 'SAND', 'AAVE', 'AXS', 'MANA',
+        'FLOW', 'XTZ', 'EOS', 'GALA', 'NEO', 'KAVA', 'IOTA', 'CAKE', 'ZEC', 'DASH',
+        
+        # === STABLECOINS ===
+        'USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'USDP', 'USDD', 'FRAX', 'GUSD',
+        'LUSD', 'SUSD', 'MIM', 'UST', 'FDUSD', 'PYUSD', 'EURC', 'EURS', 'EURT',
+        'PAXG', 'XAUT',  # Gold-backed stablecoins
+        
+        # === DEFI TOKENS ===
+        'UNI', 'AAVE', 'MKR', 'COMP', 'SNX', 'CRV', 'SUSHI', 'YFI', 'BAL', '1INCH',
+        'DYDX', 'GMX', 'LIDO', 'RPL', 'FXS', 'SPELL', 'CVX', 'ALCX', 'BTRFLY',
+        'REN', 'KNC', 'ZRX', 'BADGER', 'ALPHA', 'PERP', 'QUICK', 'JOE', 'VELO',
+        
+        # === LAYER 2 / SCALING ===
+        'MATIC', 'ARB', 'OP', 'IMX', 'LRC', 'METIS', 'BOBA', 'SKL', 'CELR', 'ZKS',
+        'STRK', 'MANTA', 'BLAST', 'MODE', 'SCROLL', 'LINEA', 'BASE', 'ZKSYNC',
+        
+        # === MEME COINS ===
+        'DOGE', 'SHIB', 'PEPE', 'FLOKI', 'BONK', 'WIF', 'MEME', 'ELON', 'BABYDOGE',
+        'SAMO', 'MYRO', 'BOME', 'SLERF', 'BRETT', 'POPCAT', 'MOG', 'COQ', 'TURBO',
+        
+        # === GAMING / METAVERSE ===
+        'AXS', 'SAND', 'MANA', 'GALA', 'ENJ', 'ILV', 'IMX', 'GODS', 'GMT', 'APE',
+        'ALICE', 'TLM', 'ATLAS', 'POLIS', 'HERO', 'MAGIC', 'PRIME', 'PIXEL', 'PORTAL',
+        'YGG', 'MC', 'SUPER', 'AUDIO', 'HIGH', 'RARE', 'LOOKS', 'BLUR', 'X2Y2',
+        
+        # === EXCHANGE TOKENS ===
+        'BNB', 'CRO', 'OKB', 'KCS', 'GT', 'HT', 'LEO', 'FTT', 'MX', 'BGB',
+        
+        # === AI / DATA ===
+        'FET', 'AGIX', 'OCEAN', 'RNDR', 'TAO', 'ARKM', 'WLD', 'JASMY', 'ORAI',
+        'AIOZ', 'NMR', 'GRT', 'CTSI', 'LPT', 'GLM', 'STORJ', 'AR', 'SC', 'FIL',
+        
+        # === PRIVACY COINS ===
+        'XMR', 'ZEC', 'DASH', 'SCRT', 'DERO', 'BEAM', 'GRIN', 'FIRO', 'ARRR',
+        
+        # === ORACLES / INFRASTRUCTURE ===
+        'LINK', 'BAND', 'API3', 'DIA', 'TRB', 'UMA', 'PYTH',
+        
+        # === CROSS-CHAIN / BRIDGES ===
+        'RUNE', 'REN', 'MULTI', 'STG', 'SYN', 'HOP', 'AXL', 'CCIP', 'WORMHOLE',
+        
+        # === WRAPPED / SYNTHETIC ===
+        'WBTC', 'WETH', 'STETH', 'RETH', 'CBETH', 'FRXETH', 'SFRXETH', 'WSTETH',
+        'RENBTC', 'TBTC', 'HBTC', 'SBTC',
+        
+        # === OTHER NOTABLE TOKENS ===
+        'QNT', 'CHZ', 'EGLD', 'XDC', 'KAS', 'SUI', 'SEI', 'TIA', 'OSMO', 'JUNO',
+        'EVMOS', 'INJ', 'KLAY', 'ROSE', 'ZIL', 'ONE', 'CKB', 'HNT', 'MOBILE', 'IOT',
+        'BONK', 'JUP', 'PYTH', 'RENDER', 'HNT', 'MOBILE', 'IOT', 'DIMO', 'HONEY',
+        'RAY', 'MNDE', 'MSOL', 'JSOL', 'BSOL',  # Solana ecosystem
+        
+        # === FULL NAME VARIANTS (for name-based matching) ===
+        'BITCOIN', 'ETHEREUM', 'CARDANO', 'SOLANA', 'DOGECOIN', 'RIPPLE', 'POLKADOT',
+        'AVALANCHE', 'CHAINLINK', 'POLYGON', 'LITECOIN', 'STELLAR', 'COSMOS', 'TETHER',
+    }
+    if symbol in CRYPTO_SYMBOLS:
+        return AssetClassification.CRYPTO
+    
+    # Also check for crypto name keywords in asset_name
+    if asset_name:
+        crypto_keywords = ['bitcoin', 'ethereum', 'crypto', 'blockchain', 'defi', 'token', 
+                          'coin', 'stablecoin', 'nft', 'web3', 'dao']
+        asset_name_lower = asset_name.lower()
+        if any(keyword in asset_name_lower for keyword in crypto_keywords):
+            logger.debug(f"Classified {symbol} as crypto via name keyword: {asset_name}")
+            return AssetClassification.CRYPTO
     
     # Check if it's a known bond ETF by symbol
     if symbol in BOND_ETFS:
@@ -176,7 +253,8 @@ def calculate_allocation(positions: List[Dict], cash_balance: Decimal) -> Dict[s
     allocations = {
         AssetClassification.CASH: Decimal('0'),
         AssetClassification.STOCK: Decimal('0'),
-        AssetClassification.BOND: Decimal('0')
+        AssetClassification.BOND: Decimal('0'),
+        AssetClassification.CRYPTO: Decimal('0')  # Cryptocurrency assets
     }
     
     # Add cash balance (safely handle NaN or invalid values)
@@ -231,7 +309,8 @@ def calculate_allocation(positions: List[Dict], cash_balance: Decimal) -> Dict[s
     logger.info(f"Allocation calculated - Total: ${total_value}, "
                f"Cash: {result['cash']['percentage']}%, "
                f"Stock: {result['stock']['percentage']}%, "
-               f"Bond: {result['bond']['percentage']}%")
+               f"Bond: {result['bond']['percentage']}%, "
+               f"Crypto: {result['crypto']['percentage']}%")
     
     return result
 
@@ -247,7 +326,7 @@ def get_allocation_pie_data(allocation: Dict[str, Dict]) -> List[Dict]:
     """
     pie_data = []
     
-    for category in [AssetClassification.CASH, AssetClassification.STOCK, AssetClassification.BOND]:
+    for category in [AssetClassification.CASH, AssetClassification.STOCK, AssetClassification.BOND, AssetClassification.CRYPTO]:
         if category in allocation and allocation[category]['percentage'] > 0:
             display_name = category.title()
             percentage = allocation[category]['percentage']
