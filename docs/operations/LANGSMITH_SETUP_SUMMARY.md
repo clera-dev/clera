@@ -67,7 +67,7 @@ This document summarizes the complete setup of the `langsmith-fetch` CLI tool fo
 ```bash
 LANGSMITH_TRACING=true
 LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
-LANGSMITH_API_KEY="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"
+LANGSMITH_API_KEY="<YOUR_LANGSMITH_API_KEY>"  # Get from backend/.env
 LANGSMITH_PROJECT="clera-agent-workflow"
 ```
 
@@ -98,7 +98,7 @@ cd /Users/cristian_mendoza/Desktop/clera
 # Set up environment
 cd /Users/cristian_mendoza/Desktop/clera/backend
 source venv/bin/activate
-export LANGSMITH_API_KEY="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"
+export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
 
 # Fetch traces
 langsmith-fetch traces ../docs/langsmith-samples --limit 10 --project-uuid d0c6d2c8-b5de-4e18-80f9-d66dc66d7ed4

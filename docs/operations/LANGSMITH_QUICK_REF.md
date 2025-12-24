@@ -21,7 +21,8 @@ cd /Users/cristian_mendoza/Desktop/clera
 ```bash
 cd /Users/cristian_mendoza/Desktop/clera/backend
 source venv/bin/activate
-export LANGSMITH_API_KEY="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"
+# Load API key from .env file (never hardcode!)
+export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
 ```
 
 ## 🔍 Analyzing Traces

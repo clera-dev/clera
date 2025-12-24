@@ -14,7 +14,7 @@
 ```bash
 cd backend
 source venv/bin/activate
-export LANGSMITH_API_KEY="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"
+export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
 langsmith-fetch traces ./output --limit 10 --project-uuid d0c6d2c8-b5de-4e18-80f9-d66dc66d7ed4
 ```
 
@@ -118,8 +118,8 @@ The LangSmith API key is stored in `backend/.env` but needs to be explicitly exp
 cd backend
 source venv/bin/activate
 
-# Export the API key from .env
-export LANGSMITH_API_KEY="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"
+# Export the API key from .env (never hardcode the actual key!)
+export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
 
 # Now you can use langsmith-fetch commands
 langsmith-fetch traces ./output --limit 10
@@ -142,7 +142,7 @@ nano ~/.langsmith-cli/config.yaml
 Add the following to the config file:
 
 ```yaml
-api-key: "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"
+api-key: "<YOUR_LANGSMITH_API_KEY>"  # Copy from backend/.env
 project-uuid: "d0c6d2c8-b5de-4e18-80f9-d66dc66d7ed4"
 project-name: "clera-agent-workflow"
 base-url: "https://api.smith.langchain.com"
@@ -163,7 +163,7 @@ langsmith-fetch config show
 
 This information is also available in `backend/.env`:
 - `LANGSMITH_PROJECT="clera-agent-workflow"`
-- `LANGSMITH_API_KEY="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"`
+- `LANGSMITH_API_KEY` (stored in `.env` - never commit to git!)
 
 ## Common Usage Patterns
 
@@ -272,7 +272,7 @@ The helper script automatically:
 # 1. Set up environment (do this once per terminal session)
 cd /Users/cristian_mendoza/Desktop/clera/backend
 source venv/bin/activate
-export LANGSMITH_API_KEY="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"
+export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
 
 # 2. Fetch recent traces for debugging
 langsmith-fetch traces ~/Desktop/debug-traces --limit 10
@@ -290,8 +290,8 @@ When an AI agent needs to analyze LangSmith data:
 cd /Users/cristian_mendoza/Desktop/clera/backend
 source venv/bin/activate
 
-# 2. Export API key
-export LANGSMITH_API_KEY="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"
+# 2. Export API key from .env (never hardcode!)
+export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
 
 # 3. Fetch to a structured directory (RECOMMENDED)
 langsmith-fetch traces ./analysis-output --limit 15 --project-uuid d0c6d2c8-b5de-4e18-80f9-d66dc66d7ed4
@@ -309,7 +309,7 @@ langsmith-fetch traces ./analysis-output --limit 15 --project-uuid d0c6d2c8-b5de
 ```bash
 cd /Users/cristian_mendoza/Desktop/clera/backend
 source venv/bin/activate
-export LANGSMITH_API_KEY="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"
+export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
 
 # Fetch 5 most recent traces
 langsmith-fetch traces /Users/cristian_mendoza/Desktop/clera/docs/langsmith-samples --limit 5 --project-uuid d0c6d2c8-b5de-4e18-80f9-d66dc66d7ed4
@@ -349,7 +349,8 @@ Found 3 thread(s). Saving to /Users/cristian_mendoza/Desktop/clera/docs/langsmit
 **Solution:** Export the API key in your current terminal session:
 
 ```bash
-export LANGSMITH_API_KEY="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"
+# From the backend directory:
+export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
 ```
 
 Or set up the permanent config file as described in the Authentication Setup section.

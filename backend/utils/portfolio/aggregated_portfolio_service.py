@@ -903,7 +903,8 @@ class AggregatedPortfolioService:
                 if isinstance(account_breakdown_raw, str):
                     try:
                         account_breakdown = json.loads(account_breakdown_raw) if account_breakdown_raw else {}
-                    except:
+                    except (json.JSONDecodeError, ValueError) as e:
+                        logger.debug(f"Failed to parse account_breakdown JSON: {e}")
                         account_breakdown = {}
                 else:
                     account_breakdown = account_breakdown_raw or {}

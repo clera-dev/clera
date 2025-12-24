@@ -197,17 +197,33 @@ def classify_asset(symbol: str, asset_name: Optional[str] = None, asset_class: O
         'BITCOIN', 'ETHEREUM', 'CARDANO', 'SOLANA', 'DOGECOIN', 'RIPPLE', 'POLKADOT',
         'AVALANCHE', 'CHAINLINK', 'POLYGON', 'LITECOIN', 'STELLAR', 'COSMOS', 'TETHER',
     }
-    if symbol in CRYPTO_SYMBOLS:
+    
+    # CRITICAL FIX: Don't classify US equity stocks as crypto even if symbol matches
+    # Symbols like ONE (Harmony crypto vs ONE Gas Inc stock), FLOW, RARE, NEAR, MC exist in both markets
+    if asset_class != 'us_equity' and symbol in CRYPTO_SYMBOLS:
         return AssetClassification.CRYPTO
     
     # Also check for crypto name keywords in asset_name
-    if asset_name:
-        crypto_keywords = ['bitcoin', 'ethereum', 'crypto', 'blockchain', 'defi', 'token', 
-                          'coin', 'stablecoin', 'nft', 'web3', 'dao']
+    # CRITICAL FIX: Use more specific matching to avoid false positives
+    # e.g., 'coin' should NOT match 'Coinbase Global Inc' (which is a stock)
+    if asset_name and asset_class != 'us_equity':
         asset_name_lower = asset_name.lower()
-        if any(keyword in asset_name_lower for keyword in crypto_keywords):
+        
+        # Specific crypto terms that are unambiguous
+        specific_crypto_terms = ['bitcoin', 'ethereum', 'cryptocurrency', 'blockchain', 
+                                 'defi', 'stablecoin', 'nft', 'web3', 'decentralized']
+        if any(term in asset_name_lower for term in specific_crypto_terms):
             logger.debug(f"Classified {symbol} as crypto via name keyword: {asset_name}")
             return AssetClassification.CRYPTO
+        
+        # Generic terms only if they're standalone words (not substrings)
+        # Avoid: 'coin' matching 'Coinbase', 'token' matching 'BeyondToken Inc'
+        import re
+        generic_patterns = [r'\bcrypto\b', r'\btoken\b', r'\bcoin\b', r'\bdao\b']
+        for pattern in generic_patterns:
+            if re.search(pattern, asset_name_lower):
+                logger.debug(f"Classified {symbol} as crypto via name pattern: {asset_name}")
+                return AssetClassification.CRYPTO
     
     # Check if it's a known bond ETF by symbol
     if symbol in BOND_ETFS:

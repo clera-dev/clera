@@ -36,8 +36,9 @@ export async function GET(request: NextRequest) {
     }
 
     // PRODUCTION-GRADE: Pass user_id, filter_account, AND JWT token to backend
+    // SECURITY: URL-encode all user-provided parameters to prevent injection
     const filterParam = filterAccount ? `&filter_account=${encodeURIComponent(filterAccount)}` : '';
-    const targetUrl = `${backendUrl}/api/portfolio/sector-allocation?account_id=${account_id}&user_id=${encodeURIComponent(user.id)}${filterParam}`;
+    const targetUrl = `${backendUrl}/api/portfolio/sector-allocation?account_id=${encodeURIComponent(account_id)}&user_id=${encodeURIComponent(user.id)}${filterParam}`;
     console.log(`Proxying sector allocation request to: ${targetUrl}`);
     
     // Get session for JWT token

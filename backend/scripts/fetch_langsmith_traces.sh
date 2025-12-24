@@ -65,8 +65,11 @@ fi
 echo -e "${BLUE}Activating virtual environment...${NC}"
 source "$VENV_PATH/bin/activate"
 
-# Load API key from .env
-export LANGSMITH_API_KEY=$(grep '^LANGSMITH_API_KEY=' "$ENV_FILE" | cut -d '"' -f 2)
+# Load API key from .env (handles both quoted and unquoted values)
+# Format: LANGSMITH_API_KEY="value" OR LANGSMITH_API_KEY=value
+RAW_KEY=$(grep '^LANGSMITH_API_KEY=' "$ENV_FILE" | cut -d '=' -f 2-)
+# Remove surrounding quotes if present
+export LANGSMITH_API_KEY=$(echo "$RAW_KEY" | sed 's/^["'\'']//' | sed 's/["'\'']$//')
 
 if [ -z "$LANGSMITH_API_KEY" ]; then
     echo -e "${YELLOW}Error: LANGSMITH_API_KEY not found in $ENV_FILE${NC}"
@@ -75,47 +78,83 @@ fi
 
 echo -e "${GREEN}✓ Environment configured${NC}"
 
-# Parse arguments
-COMMAND=${1:-traces}
+# Parse arguments - handle -o/--output option first
+COMMAND=""
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
+LIMIT=""
+ID=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o|--output)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -h|--help|help)
+            usage
+            exit 0
+            ;;
+        traces|threads|trace|thread)
+            COMMAND="$1"
+            shift
+            # Next argument could be limit or ID
+            if [[ $# -gt 0 && ! "$1" =~ ^- ]]; then
+                if [[ "$COMMAND" == "traces" || "$COMMAND" == "threads" ]]; then
+                    LIMIT="$1"
+                else
+                    ID="$1"
+                fi
+                shift
+            fi
+            ;;
+        *)
+            # Could be limit or ID if COMMAND is already set
+            if [[ -n "$COMMAND" && -z "$LIMIT" && -z "$ID" ]]; then
+                if [[ "$COMMAND" == "traces" || "$COMMAND" == "threads" ]]; then
+                    LIMIT="$1"
+                else
+                    ID="$1"
+                fi
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Default command if none provided
+COMMAND=${COMMAND:-traces}
 
 case "$COMMAND" in
     traces)
-        LIMIT=${2:-10}
-        echo -e "${BLUE}Fetching $LIMIT most recent traces...${NC}"
+        LIMIT=${LIMIT:-10}
+        echo -e "${BLUE}Fetching $LIMIT most recent traces to $OUTPUT_DIR...${NC}"
         mkdir -p "$OUTPUT_DIR"
         langsmith-fetch traces "$OUTPUT_DIR" --limit "$LIMIT" --project-uuid "$PROJECT_UUID"
         ;;
     threads)
-        LIMIT=${2:-5}
+        LIMIT=${LIMIT:-5}
         THREAD_OUTPUT="$OUTPUT_DIR/threads"
-        echo -e "${BLUE}Fetching $LIMIT most recent threads...${NC}"
+        echo -e "${BLUE}Fetching $LIMIT most recent threads to $THREAD_OUTPUT...${NC}"
         mkdir -p "$THREAD_OUTPUT"
         langsmith-fetch threads "$THREAD_OUTPUT" --limit "$LIMIT" --project-uuid "$PROJECT_UUID"
         ;;
     trace)
-        TRACE_ID=${2}
-        if [ -z "$TRACE_ID" ]; then
+        if [ -z "$ID" ]; then
             echo -e "${YELLOW}Error: Trace ID required${NC}"
             usage
             exit 1
         fi
-        echo -e "${BLUE}Fetching trace $TRACE_ID...${NC}"
-        langsmith-fetch trace "$TRACE_ID"
+        echo -e "${BLUE}Fetching trace $ID...${NC}"
+        langsmith-fetch trace "$ID"
         ;;
     thread)
-        THREAD_ID=${2}
-        if [ -z "$THREAD_ID" ]; then
+        if [ -z "$ID" ]; then
             echo -e "${YELLOW}Error: Thread ID required${NC}"
             usage
             exit 1
         fi
-        echo -e "${BLUE}Fetching thread $THREAD_ID...${NC}"
-        langsmith-fetch thread "$THREAD_ID"
-        ;;
-    -h|--help|help)
-        usage
-        exit 0
+        echo -e "${BLUE}Fetching thread $ID...${NC}"
+        langsmith-fetch thread "$ID"
         ;;
     *)
         echo -e "${YELLOW}Error: Unknown command '$COMMAND'${NC}"

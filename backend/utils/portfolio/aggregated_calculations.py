@@ -295,11 +295,12 @@ def _empty_portfolio_value_response(error: Optional[str] = None) -> Dict[str, An
     return response
 
 def _empty_allocation_response(error: Optional[str] = None) -> Dict[str, Any]:
-    """Return empty allocation response."""
+    """Return empty allocation response with consistent API shape."""
     response = {
         'cash': {'value': 0.0, 'percentage': 100.0},
         'stock': {'value': 0.0, 'percentage': 0.0},
         'bond': {'value': 0.0, 'percentage': 0.0},
+        'crypto': {'value': 0.0, 'percentage': 0.0},  # CRITICAL: Include crypto key for API consistency
         'total_value': 0.0,
         'pie_data': []
     }

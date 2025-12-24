@@ -276,10 +276,13 @@ class LiveEnrichmentService:
         global _enrichment_cache, _cache_timestamps
         
         if user_id:
-            cache_key = f"{user_id}_enriched"
-            _enrichment_cache.pop(cache_key, None)
-            _cache_timestamps.pop(cache_key, None)
-            logger.debug(f"Cleared cache for user {user_id}")
+            # CRITICAL FIX: Cache keys now include symbols hash: {user_id}_{symbols_hash}_enriched
+            # We need to clear ALL cache entries for this user, not just one specific key
+            keys_to_remove = [k for k in _enrichment_cache.keys() if k.startswith(f"{user_id}_")]
+            for cache_key in keys_to_remove:
+                _enrichment_cache.pop(cache_key, None)
+                _cache_timestamps.pop(cache_key, None)
+            logger.debug(f"Cleared {len(keys_to_remove)} cache entries for user {user_id}")
         else:
             _enrichment_cache.clear()
             _cache_timestamps.clear()

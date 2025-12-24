@@ -16,6 +16,17 @@ export async function DELETE(
   try {
     const { accountId } = await params;
     
+    // SECURITY: Validate accountId format to prevent path traversal attacks
+    // SnapTrade account IDs are UUIDs (e.g., "5ea10263-4b55-451c-8f07-faa20dc26442")
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!accountId || !uuidRegex.test(accountId)) {
+      console.error(`[Disconnect Account] ❌ Invalid accountId format: ${accountId}`);
+      return NextResponse.json(
+        { error: 'Invalid account ID format' },
+        { status: 400 }
+      );
+    }
+    
     console.log(`[Disconnect Account] Starting disconnect for account: ${accountId}`);
     
     // Authenticate user via Supabase
@@ -85,9 +96,11 @@ export async function DELETE(
     });
     
   } catch (error) {
+    // Log full error details server-side only
     console.error('[Disconnect Account] ❌ Unexpected error:', error);
+    // Return generic message to client to avoid leaking internal details
     return NextResponse.json(
-      { error: 'Internal server error', details: String(error) },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

@@ -342,12 +342,17 @@ class SnapTradeTradingService:
         Returns:
             Universal symbol ID or None if not found/not tradeable
         """
+        # Normalize ticker to uppercase for consistent matching
+        ticker = ticker.upper().strip()
+        
         try:
             # Get user credentials
             credentials = self.get_user_credentials(user_id)
             if not credentials:
-                logger.warning(f"No credentials for user {user_id}, falling back to generic lookup")
-                return self.get_universal_symbol_id(ticker)
+                # CRITICAL: Do NOT fall back to deprecated method - it may return wrong exchange
+                # This could cause trades to execute on wrong securities (e.g., German JNJ instead of US JNJ)
+                logger.error(f"No credentials for user {user_id} - cannot look up tradeable symbol")
+                return None
             
             logger.info(f"Looking up tradeable symbol ID for {ticker} on account {account_id}")
             
@@ -369,7 +374,9 @@ class SnapTradeTradingService:
             us_match = None
             
             for symbol_data in response.body:
-                if symbol_data.get('symbol') == ticker:
+                # Case-insensitive comparison to handle user input like 'aapl' vs API returning 'AAPL'
+                symbol_from_api = symbol_data.get('symbol', '').upper()
+                if symbol_from_api == ticker:
                     exchange_code = symbol_data.get('exchange', {}).get('code', '')
                     
                     # Prefer US exchanges
@@ -392,9 +399,10 @@ class SnapTradeTradingService:
             return None
             
         except Exception as e:
-            logger.error(f"Error looking up symbol {ticker} for account: {e}")
-            # Fall back to generic lookup
-            return self.get_universal_symbol_id(ticker)
+            # CRITICAL: Do NOT fall back to deprecated method on error
+            # Silent fallback could cause trades on wrong securities
+            logger.error(f"Error looking up symbol {ticker} for account {account_id}: {e}")
+            return None
     
     def check_order_impact(
         self,

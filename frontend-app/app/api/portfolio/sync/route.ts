@@ -52,9 +52,11 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      // Log full error details server-side only
       console.error(`Portfolio Sync API: Backend error: ${errorText}`);
+      // Return generic error to client to avoid leaking internal details
       return NextResponse.json(
-        { error: `Failed to sync portfolio: ${errorText}` },
+        { error: 'Failed to sync portfolio' },
         { status: response.status }
       );
     }

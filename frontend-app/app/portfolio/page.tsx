@@ -751,11 +751,21 @@ export default function PortfolioPage() {
             ? positionsRaw.positions 
             : (Array.isArray(positionsRaw) ? positionsRaw : []);
           
-          // Enrich positions
-          const enrichedPositions = await Promise.all(positionsData.map(async (pos: any) => {
-            const details = await fetchAssetDetails(pos.symbol, false);
-            return { ...pos, name: details?.name || pos.security_name || pos.symbol };
-          }));
+          // PERFORMANCE OPTIMIZATION: Don't fetch asset details for names
+          // The backend already includes security_name in the positions response
+          // This eliminates N API calls (where N = number of positions)
+          const totalMarketValue = positionsData.reduce((sum: number, pos: any) => 
+            sum + safeParseFloat(pos.market_value), 0);
+          const enrichedPositions = positionsData.map((pos: any) => {
+            const marketValue = safeParseFloat(pos.market_value);
+            const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
+            return {
+              ...pos,
+              // Use security_name from backend (already enriched), fallback to symbol
+              name: pos.security_name || pos.name || pos.symbol,
+              weight: weight,
+            };
+          });
           setPositions(enrichedPositions);
           
           // Refresh analytics with new filter (FORCE FRESH - no cache)
