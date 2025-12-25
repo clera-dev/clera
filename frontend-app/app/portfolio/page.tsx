@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ArrowUpRight, ArrowDownRight, DollarSign, BarChart2, Percent, RefreshCw, AlertCircle, LockIcon } from "lucide-react";
@@ -140,6 +140,9 @@ export default function PortfolioPage() {
   // Account filtering for X-ray vision into individual accounts
   const [selectedAccountFilter, setSelectedAccountFilter] = useState<'total' | string>('total');
   const [availableAccounts, setAvailableAccounts] = useState<any[]>([]);
+  
+  // Ref to track if this is the initial mount (to prevent duplicate API calls)
+  const isInitialFilterMount = useRef(true);
   
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioData, setPortfolioData] = useState({
@@ -732,7 +735,14 @@ export default function PortfolioPage() {
 
   // CRITICAL: Auto-refresh ALL data when account filter changes (not just allocation chart)
   // This ensures the entire page updates when user selects a different brokerage
+  // Note: Uses ref guard to prevent duplicate fetching with loadInitialStaticData on initial mount
   useEffect(() => {
+    // Skip the first render - loadInitialStaticData already handles initial data fetch
+    if (isInitialFilterMount.current) {
+      isInitialFilterMount.current = false;
+      return;
+    }
+    
     let isMounted = true;
     
     if (selectedAccountFilter && accountId) {

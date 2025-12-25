@@ -113,7 +113,10 @@ class SectorAllocationService:
                 # Symbol-based classification for comprehensive detection (BTC, ETH, ADA, etc.)
                 symbol = h.get('symbol', '').upper()
                 name = h.get('security_name', '')
-                classification = classify_asset(symbol, name, None)
+                # CRITICAL: Map security_type to asset_class to prevent false positives
+                # Stocks like ONE (One Gas Inc) should not be classified as crypto (Harmony ONE)
+                asset_class = 'us_equity' if security_type in ['equity', 'etf', 'mutual_fund'] else None
+                classification = classify_asset(symbol, name, asset_class)
                 return classification == AssetClassification.CRYPTO
             
             # CRITICAL FIX: Filter out crypto holdings BEFORE sector allocation

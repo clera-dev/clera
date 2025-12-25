@@ -943,10 +943,16 @@ export class SecureChatClientImpl implements SecureChatClient {
                 }
               }
             }
-            // Also handle direct content property
+            // Also handle direct content property (fallback for messages without name)
             else if (item.content && !item.name) {
               if (typeof item.content === 'string') {
                 tokenContent += item.content;
+              } else if (Array.isArray(item.content)) {
+                // Handle array-formatted content to prevent silent message loss
+                for (const c of item.content) {
+                  if (typeof c === 'string') tokenContent += c;
+                  else if (c?.text) tokenContent += c.text;
+                }
               }
             }
           }
