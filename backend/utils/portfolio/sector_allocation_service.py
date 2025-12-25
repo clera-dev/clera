@@ -139,7 +139,7 @@ class SectorAllocationService:
                 # Portfolio is entirely crypto - return "N/A" sector allocation
                 crypto_total_value = sum(float(h.get('total_market_value', 0)) for h in crypto_holdings)
                 logger.info(f"✅ Portfolio is 100% crypto for user {user_id}, filter: {filter_account}. Total crypto: ${crypto_total_value:.2f}")
-                return {
+                crypto_response = {
                     'sectors': [{
                         'sector': 'N/A (Cryptocurrency)',
                         'value': round(crypto_total_value, 2),
@@ -150,6 +150,9 @@ class SectorAllocationService:
                     'data_source': 'crypto_only',
                     'note': 'Cryptocurrencies do not have traditional sector classifications'
                 }
+                # OPTIMIZATION: Cache crypto-only response too (30-second TTL)
+                self._cache_response(cache_key, crypto_response)
+                return crypto_response
             
             if not equity_holdings and not crypto_holdings:
                 # No equity and no crypto - might be cash only

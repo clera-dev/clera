@@ -3,7 +3,7 @@
 ## 🚀 Fastest Start (Copy & Paste)
 
 ```bash
-cd /Users/cristian_mendoza/Desktop/clera
+# From project root (clera/)
 ./backend/scripts/fetch_langsmith_traces.sh traces 10
 ```
 
@@ -19,7 +19,8 @@ cd /Users/cristian_mendoza/Desktop/clera
 ## 🔑 Manual Setup (If Needed)
 
 ```bash
-cd /Users/cristian_mendoza/Desktop/clera/backend
+# From project root
+cd backend
 source venv/bin/activate
 # Load API key from .env file (never hardcode!)
 export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d '\"')"
@@ -29,7 +30,7 @@ export LANGSMITH_API_KEY="$(grep LANGSMITH_API_KEY .env | cut -d'=' -f2 | tr -d 
 
 ### Quick View
 ```bash
-cd /Users/cristian_mendoza/Desktop/clera
+# From project root
 cat docs/langsmith-samples/*.json | jq '.'
 ```
 

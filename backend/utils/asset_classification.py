@@ -200,7 +200,20 @@ def classify_asset(symbol: str, asset_name: Optional[str] = None, asset_class: O
     
     # CRITICAL FIX: Don't classify US equity stocks as crypto even if symbol matches
     # Symbols like ONE (Harmony crypto vs ONE Gas Inc stock), FLOW, RARE, NEAR, MC exist in both markets
-    if asset_class != 'us_equity' and symbol in CRYPTO_SYMBOLS:
+    # 
+    # IMPORTANT: When asset_class is None (unknown), we need to be conservative for ambiguous symbols.
+    # Only classify as crypto if asset_class is explicitly 'crypto' or if the symbol is unambiguous crypto.
+    AMBIGUOUS_SYMBOLS = {'ONE', 'FLOW', 'NEAR', 'MC', 'RARE', 'HIGH', 'SUPER', 'AUDIO', 'BLUR', 'MAGIC', 'PRIME', 'PORTAL'}
+    
+    if symbol in CRYPTO_SYMBOLS:
+        # If explicitly marked as equity, don't classify as crypto
+        if asset_class == 'us_equity':
+            return AssetClassification.STOCK
+        # If asset_class is None and symbol is ambiguous, default to stock (safer assumption)
+        if asset_class is None and symbol in AMBIGUOUS_SYMBOLS:
+            logger.debug(f"Ambiguous symbol {symbol} with unknown asset_class - defaulting to STOCK")
+            return AssetClassification.STOCK
+        # Otherwise, classify as crypto
         return AssetClassification.CRYPTO
     
     # Also check for crypto name keywords in asset_name

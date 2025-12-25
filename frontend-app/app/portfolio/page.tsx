@@ -745,7 +745,11 @@ export default function PortfolioPage() {
     
     let isMounted = true;
     
-    if (selectedAccountFilter && accountId) {
+    // CRITICAL: Handle both brokerage mode (accountId) and aggregation mode (userId)
+    // In aggregation mode, accountId is null but we still need to refresh data
+    const canRefresh = accountId || (portfolioMode === 'aggregation' && userId);
+    
+    if (selectedAccountFilter && canRefresh) {
       // Force re-fetch of allocation charts with new filter
       setAllocationChartRefreshKey(Date.now());
       console.log(`📊 Account filter changed to: ${selectedAccountFilter} - REFRESHING ALL DATA`);
@@ -756,8 +760,8 @@ export default function PortfolioPage() {
         try {
           const cacheBuster = `t=${Date.now()}`;
           
-          // Refresh positions with new filter
-          const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`, cacheBuster);
+          // Refresh positions with new filter (use null accountId for aggregation mode)
+          const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId || 'null'}`, cacheBuster);
           console.log(`📊 Reloading positions: ${positionsUrl}`);
           const positionsRaw = await fetchData(positionsUrl);
           if (!isMounted) return;
@@ -784,7 +788,7 @@ export default function PortfolioPage() {
           if (isMounted) setPositions(enrichedPositions);
           
           // Refresh analytics with new filter (FORCE FRESH - no cache)
-          const analyticsUrl = buildFilteredUrl(`/api/portfolio/analytics?accountId=${accountId}`, cacheBuster);
+          const analyticsUrl = buildFilteredUrl(`/api/portfolio/analytics?accountId=${accountId || 'null'}`, cacheBuster);
           console.log(`📊 Reloading analytics: ${analyticsUrl}`);
           const analyticsData = await fetchData(analyticsUrl);
           if (isMounted) {
@@ -793,14 +797,14 @@ export default function PortfolioPage() {
           }
           
           // Refresh history with new filter
-          const historyUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`, cacheBuster);
+          const historyUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId || 'null'}&period=${selectedTimeRange}`, cacheBuster);
           console.log(`📊 Reloading history: ${historyUrl}`);
           const historyData = await fetchData(historyUrl);
           if (isMounted) setPortfolioHistory(historyData);
           
           // Also refresh all-time history for the growth projection
           if (selectedTimeRange !== 'MAX') {
-            const allTimeUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=MAX`, cacheBuster);
+            const allTimeUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId || 'null'}&period=MAX`, cacheBuster);
             const allTimeData = await fetchData(allTimeUrl);
             if (isMounted) setAllTimeHistory(allTimeData);
           } else {
@@ -818,7 +822,7 @@ export default function PortfolioPage() {
     }
     
     return () => { isMounted = false; };
-  }, [selectedAccountFilter, accountId]);
+  }, [selectedAccountFilter, accountId, portfolioMode, userId]);
 
   const allTimePerformance = useMemo(() => {
     if (!allTimeHistory || !allTimeHistory.equity || allTimeHistory.equity.length === 0) {

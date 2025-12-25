@@ -19,8 +19,10 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache for enriched data (60 second TTL)
-_enrichment_cache: Dict[str, Dict[str, Any]] = {}
+# In-memory cache for live prices (60 second TTL)
+# CRITICAL: Cache only symbol→price mapping, NOT full enriched holdings
+# This prevents cache collisions when different accounts have same symbols with different quantities
+_price_cache: Dict[str, Dict[str, float]] = {}  # user_id → {symbol: price}
 _cache_timestamps: Dict[str, datetime] = {}
 CACHE_TTL_SECONDS = 60
 
@@ -84,28 +86,39 @@ class LiveEnrichmentService:
         if not holdings:
             return []
         
-        # CRITICAL FIX: Include holdings signature in cache key to prevent returning
-        # cached data for ALL holdings when filtering to a specific account
-        # Create a cache key based on the symbols being enriched
-        symbols_hash = "_".join(sorted([h.get('symbol', 'unknown') for h in holdings]))
-        cache_key = f"{user_id}_{symbols_hash}_enriched"
+        # CRITICAL FIX: Only cache the price lookups (symbol→price), not full enriched holdings
+        # This prevents cache collisions when different accounts have same symbols with different quantities
+        # e.g., Account A with 10 AAPL shares vs Account B with 5 AAPL shares
+        price_cache_key = f"{user_id}_prices"
         
-        if not force_refresh and self._is_cache_valid(cache_key):
-            logger.debug(f"💨 Using cached enriched data for user {user_id} (symbols: {len(holdings)})")
-            return _enrichment_cache[cache_key]
+        # Check if we have cached prices
+        live_prices = {}
+        if not force_refresh and self._is_cache_valid(price_cache_key):
+            cached_prices = _price_cache.get(price_cache_key, {})
+            # Get symbols we need
+            needed_symbols = set(h.get('symbol', '') for h in holdings if h.get('symbol'))
+            # Check if all symbols are in cache
+            if needed_symbols.issubset(set(cached_prices.keys())):
+                live_prices = cached_prices
+                logger.debug(f"💨 Using cached prices for user {user_id} ({len(live_prices)} symbols)")
+            else:
+                # Need to fetch some prices
+                live_prices = self._fetch_live_prices(holdings)
+                # Merge with cached prices
+                live_prices = {**cached_prices, **live_prices}
+        else:
+            # Fetch fresh prices
+            live_prices = self._fetch_live_prices(holdings)
         
-        # Fetch live prices
-        live_prices = self._fetch_live_prices(holdings)
+        # Cache the prices (not the full enriched holdings)
+        _price_cache[price_cache_key] = {**_price_cache.get(price_cache_key, {}), **live_prices}
+        _cache_timestamps[price_cache_key] = datetime.utcnow()
         
-        # Enrich each holding
+        # Enrich each holding with the prices (this is fast, no API calls)
         enriched = []
         for holding in holdings:
             enriched_holding = self._enrich_single_holding(holding, live_prices)
             enriched.append(enriched_holding)
-        
-        # Cache the results
-        _enrichment_cache[cache_key] = enriched
-        _cache_timestamps[cache_key] = datetime.utcnow()
         
         logger.info(f"✅ Enriched {len(enriched)} holdings for user {user_id}")
         return enriched
@@ -268,25 +281,22 @@ class LiveEnrichmentService:
     
     def clear_cache(self, user_id: Optional[str] = None):
         """
-        Clear the enrichment cache.
+        Clear the price cache.
         
         Args:
             user_id: If provided, clear only this user's cache. Otherwise clear all.
         """
-        global _enrichment_cache, _cache_timestamps
+        global _price_cache, _cache_timestamps
         
         if user_id:
-            # CRITICAL FIX: Cache keys now include symbols hash: {user_id}_{symbols_hash}_enriched
-            # We need to clear ALL cache entries for this user, not just one specific key
-            keys_to_remove = [k for k in _enrichment_cache.keys() if k.startswith(f"{user_id}_")]
-            for cache_key in keys_to_remove:
-                _enrichment_cache.pop(cache_key, None)
-                _cache_timestamps.pop(cache_key, None)
-            logger.debug(f"Cleared {len(keys_to_remove)} cache entries for user {user_id}")
+            cache_key = f"{user_id}_prices"
+            _price_cache.pop(cache_key, None)
+            _cache_timestamps.pop(cache_key, None)
+            logger.debug(f"Cleared price cache for user {user_id}")
         else:
-            _enrichment_cache.clear()
+            _price_cache.clear()
             _cache_timestamps.clear()
-            logger.debug("Cleared all enrichment cache")
+            logger.debug("Cleared all price cache")
 
 
 # Singleton instance
