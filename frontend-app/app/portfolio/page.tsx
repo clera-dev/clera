@@ -986,8 +986,12 @@ export default function PortfolioPage() {
                         try {
                           console.log('[Refresh Button] Triggering SnapTrade sync before data fetch...');
                           const syncResponse = await fetch('/api/portfolio/sync', { method: 'POST' });
-                          const syncResult = await syncResponse.json();
-                          console.log(`[Refresh Button] Sync completed: ${syncResult.positions_synced} positions synced`);
+                          if (syncResponse.ok) {
+                            const syncResult = await syncResponse.json();
+                            console.log(`[Refresh Button] Sync completed: ${syncResult.positions_synced} positions synced`);
+                          } else {
+                            console.warn(`[Refresh Button] Sync API returned error: ${syncResponse.status}`);
+                          }
                         } catch (syncError) {
                           console.warn('[Refresh Button] Sync failed, fetching cached data:', syncError);
                           // Continue with fetching cached data even if sync fails
