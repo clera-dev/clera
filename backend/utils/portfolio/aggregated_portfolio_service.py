@@ -300,6 +300,9 @@ class AggregatedPortfolioService:
             # Generate daily timeline from start_date to end_date
             current_date = start_date
             
+            # Track previous day's value for calculating day-over-day P/L
+            previous_day_value = last_known_value
+            
             while current_date <= end_date:
                 # Convert to timestamp
                 date_timestamp = int(datetime.combine(current_date, datetime.min.time()).timestamp())
@@ -318,15 +321,24 @@ class AggregatedPortfolioService:
                     
                     # CRITICAL FIX: Snapshot already includes cash - don't add it again!
                     equity_values.append(value)
-                    profit_loss.append(float(snapshot.get('total_gain_loss', 0)))
-                    profit_loss_pct.append(float(snapshot.get('total_gain_loss_percent', 0)))
+                    
+                    # CRITICAL FIX: Calculate DAY-OVER-DAY P/L, not lifetime gain/loss!
+                    # The frontend displays "Today's Return" which should be current_value - previous_day_value
+                    # NOT total_value - cost_basis (which is lifetime gain)
+                    day_pl = value - previous_day_value if previous_day_value > 0 else 0.0
+                    day_pl_pct = (day_pl / previous_day_value * 100) if previous_day_value > 0 else 0.0
+                    profit_loss.append(day_pl)
+                    profit_loss_pct.append(day_pl_pct)
                 else:
                     # Fill gaps with last known value (or zero before first data)
                     # CRITICAL FIX: last_known_value already includes cash from snapshot
                     equity_values.append(last_known_value)
+                    # No change from previous day = 0 P/L
                     profit_loss.append(0.0)
                     profit_loss_pct.append(0.0)
                 
+                # Update previous day value for next iteration
+                previous_day_value = last_known_value
                 current_date += timedelta(days=1)
             
             logger.info(f"📊 Generated daily timeline for {period}: {len(timestamps)} daily points from {start_date} to {end_date}")
@@ -1003,13 +1015,24 @@ class AggregatedPortfolioService:
                 logger.warning(f"Account {prefixed_account_id} has no historical values in snapshots and no current value")
                 return self._empty_history_response(period)
             
-            # Calculate profit/loss (for now, simplified - could enhance later)
+            # CRITICAL FIX: Calculate DAY-OVER-DAY profit/loss, not period-from-start
+            # The frontend displays "Today's Return" using profit_loss[-1]
+            # So the last element MUST be today's return (current - yesterday), not period return
             first_value = equity_values[0]
-            profit_loss = [float(val - first_value) for val in equity_values]
-            profit_loss_pct = [
-                float((val - first_value) / first_value * 100) if first_value > 0 else 0.0
-                for val in equity_values
-            ]
+            profit_loss = []
+            profit_loss_pct = []
+            
+            for i, val in enumerate(equity_values):
+                if i == 0:
+                    # First day has no previous day to compare
+                    profit_loss.append(0.0)
+                    profit_loss_pct.append(0.0)
+                else:
+                    prev_val = equity_values[i - 1]
+                    day_pl = float(val - prev_val)
+                    day_pl_pct = float((day_pl / prev_val * 100)) if prev_val > 0 else 0.0
+                    profit_loss.append(day_pl)
+                    profit_loss_pct.append(day_pl_pct)
             
             account_history = {
                 "timestamp": timestamps,
@@ -1126,13 +1149,21 @@ class AggregatedPortfolioService:
             if not timestamps:
                 return self._empty_history_response(period)
             
-            # 7. Calculate profit/loss
+            # 7. Calculate profit/loss (DAY-OVER-DAY, not period-from-start)
             first_value = equity_values[0]
-            profit_loss = [float(val - first_value) for val in equity_values]
-            profit_loss_pct = [
-                float((val - first_value) / first_value * 100) if first_value > 0 else 0.0
-                for val in equity_values
-            ]
+            profit_loss = []
+            profit_loss_pct = []
+            
+            for i, val in enumerate(equity_values):
+                if i == 0:
+                    profit_loss.append(0.0)
+                    profit_loss_pct.append(0.0)
+                else:
+                    prev_val = equity_values[i - 1]
+                    day_pl = float(val - prev_val)
+                    day_pl_pct = float((day_pl / prev_val * 100)) if prev_val > 0 else 0.0
+                    profit_loss.append(day_pl)
+                    profit_loss_pct.append(day_pl_pct)
             
             logger.info(f"✅ Reconstructed account history: {len(timestamps)} data points (using {account_percentage*100:.1f}% of total)")
             

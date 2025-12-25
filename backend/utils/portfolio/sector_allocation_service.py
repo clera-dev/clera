@@ -113,6 +113,17 @@ class SectorAllocationService:
                 # Symbol-based classification for comprehensive detection (BTC, ETH, ADA, etc.)
                 symbol = h.get('symbol', '').upper()
                 name = h.get('security_name', '')
+                
+                # CRITICAL FIX: Check UNAMBIGUOUS crypto symbols FIRST
+                # These are NEVER valid US stock tickers, so always classify as crypto
+                # regardless of what security_type SnapTrade/Coinbase reports
+                UNAMBIGUOUS_CRYPTO = {'BTC', 'ETH', 'ADA', 'SOL', 'DOGE', 'XRP', 'LTC', 'DOT', 'LINK', 'MATIC',
+                                      'AVAX', 'ATOM', 'XLM', 'ALGO', 'UNI', 'AAVE', 'SHIB', 'FTM', 'SAND',
+                                      'MANA', 'APE', 'CRV', 'MKR', 'COMP', 'SUSHI', 'YFI', 'SNX', 'ENJ',
+                                      'GRT', 'AXS', 'BAT', 'USDC', 'USDT', 'DAI', 'BUSD', 'UST'}
+                if symbol in UNAMBIGUOUS_CRYPTO:
+                    return True
+                
                 # CRITICAL: Map security_type to asset_class to prevent false positives
                 # Stocks like ONE (One Gas Inc) should not be classified as crypto (Harmony ONE)
                 asset_class = 'us_equity' if security_type in ['equity', 'etf', 'mutual_fund'] else None
