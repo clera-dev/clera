@@ -1073,11 +1073,14 @@ class AggregatedPortfolioService:
             days_back = period_mapping.get(period, 30)
             start_date = end_date - timedelta(days=days_back)
             
+            # CRITICAL: Filter by snapshot_type to avoid duplicate data points per day
+            # This matches the main get_portfolio_history query behavior
             snapshots_result = supabase.table('user_portfolio_history')\
                 .select('value_date, total_value')\
                 .eq('user_id', user_id)\
                 .gte('value_date', start_date.isoformat())\
                 .lte('value_date', end_date.isoformat())\
+                .in_('snapshot_type', ['reconstructed', 'daily_eod'])\
                 .order('value_date', desc=False)\
                 .execute()
             

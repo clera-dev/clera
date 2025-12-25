@@ -73,11 +73,13 @@ class AccountFilteringService:
                 return all_holdings
             
             # CRITICAL FIX: Handle different account ID formats
-            # account_contributions uses prefixed format: plaid_XXXX or snaptrade_XXXX
+            # account_contributions uses prefixed format: {provider}_{account_id}
+            # Supported providers: plaid, snaptrade, alpaca, manual
             account_id_for_filter = filter_account
             
-            # If already prefixed (plaid_ or snaptrade_), use as-is
-            if filter_account.startswith('plaid_') or filter_account.startswith('snaptrade_'):
+            # Known provider prefixes - if already prefixed, use as-is
+            KNOWN_PREFIXES = ('plaid_', 'snaptrade_', 'alpaca_', 'manual_')
+            if filter_account.startswith(KNOWN_PREFIXES):
                 account_id_for_filter = filter_account
                 logger.info(f"Using prefixed account ID directly: {account_id_for_filter}")
             else:
