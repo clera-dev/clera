@@ -177,16 +177,73 @@ export default function StockSearchBar({ onStockSelect, accountId, watchlistSymb
     }
   };
 
-  // Filter assets based on search term
+  // Filter and rank assets based on search term with smart prioritization
   const filteredAssets = useMemo(() => {
     const lowerCaseSearch = searchTerm.toLowerCase().trim();
     if (!lowerCaseSearch) return allAssets.slice(0, 50);
 
-    return allAssets.filter(
-      (asset) =>
-        asset.symbol.toLowerCase().includes(lowerCaseSearch) ||
-        asset.name.toLowerCase().includes(lowerCaseSearch)
-    ).slice(0, 50);
+    // Normalize search: replace spaces with flexible matching (handles "coca cola" matching "Coca-Cola")
+    const normalizedSearch = lowerCaseSearch.replace(/\s+/g, '');
+    const searchWords = lowerCaseSearch.split(/\s+/).filter(w => w.length > 0);
+
+    // Score each asset based on match quality
+    const scoredAssets = allAssets
+      .map((asset) => {
+        const symbolLower = asset.symbol.toLowerCase();
+        const nameLower = asset.name.toLowerCase();
+        // Normalize name by removing hyphens and spaces for fuzzy matching
+        const nameNormalized = nameLower.replace(/[-\s]+/g, '');
+        
+        let score = 0;
+        
+        // Priority 1: Exact symbol match (highest priority)
+        if (symbolLower === lowerCaseSearch || symbolLower === normalizedSearch) {
+          score = 1000;
+        }
+        // Priority 2: Symbol starts with search term
+        else if (symbolLower.startsWith(lowerCaseSearch) || symbolLower.startsWith(normalizedSearch)) {
+          // Shorter symbols get higher scores (more relevant)
+          score = 800 - (symbolLower.length - lowerCaseSearch.length) * 5;
+        }
+        // Priority 3: Name starts with search term (exact or normalized)
+        else if (nameLower.startsWith(lowerCaseSearch) || nameNormalized.startsWith(normalizedSearch)) {
+          score = 600;
+        }
+        // Priority 4: All search words found at word boundaries in name
+        else if (searchWords.length > 1 && searchWords.every(word => 
+          new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(nameLower)
+        )) {
+          score = 500;
+        }
+        // Priority 5: Name contains search term at word boundary
+        else if (new RegExp(`\\b${searchWords[0]?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(nameLower)) {
+          score = 400;
+        }
+        // Priority 6: Symbol contains search term
+        else if (symbolLower.includes(lowerCaseSearch) || symbolLower.includes(normalizedSearch)) {
+          score = 200;
+        }
+        // Priority 7: Name contains search term anywhere (normalized match)
+        else if (nameNormalized.includes(normalizedSearch)) {
+          score = 150;
+        }
+        // Priority 8: Name contains search term anywhere
+        else if (nameLower.includes(lowerCaseSearch)) {
+          score = 100;
+        }
+        
+        return { asset, score };
+      })
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => {
+        // Sort by score descending, then by symbol length ascending (shorter = more relevant)
+        if (b.score !== a.score) return b.score - a.score;
+        return a.asset.symbol.length - b.asset.symbol.length;
+      })
+      .slice(0, 50)
+      .map(({ asset }) => asset);
+
+    return scoredAssets;
   }, [searchTerm, allAssets]);
 
   // Get company profiles for filtered assets to show logos
