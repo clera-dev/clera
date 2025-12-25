@@ -1,0 +1,4 @@
+# This directory stores LangSmith trace samples for local debugging
+# Sample files are gitignored to prevent committing sensitive user data
+# Use the helper script to fetch traces: ./backend/scripts/fetch_langsmith_traces.sh
+

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ArrowUpRight, ArrowDownRight, DollarSign, BarChart2, Percent, RefreshCw, AlertCircle, LockIcon } from "lucide-react";
@@ -22,6 +22,7 @@ import LivePortfolioValue from '@/components/portfolio/LivePortfolioValue';
 import PortfolioSummaryWithAssist from '@/components/portfolio/PortfolioSummaryWithAssist';
 import InvestmentGrowthWithAssist from '@/components/portfolio/InvestmentGrowthWithAssist';
 import HoldingsTableWithAssist from '@/components/portfolio/HoldingsTableWithAssist';
+import AccountBreakdownSelector from '@/components/portfolio/AccountBreakdownSelector';
 import OrderModal from '@/components/invest/OrderModal';
 import { Toaster } from 'react-hot-toast';
 import { getAlpacaAccountId } from "@/lib/utils";
@@ -139,6 +140,9 @@ export default function PortfolioPage() {
   // Account filtering for X-ray vision into individual accounts
   const [selectedAccountFilter, setSelectedAccountFilter] = useState<'total' | string>('total');
   const [availableAccounts, setAvailableAccounts] = useState<any[]>([]);
+  
+  // Ref to track if this is the initial mount (to prevent duplicate API calls)
+  const isInitialFilterMount = useRef(true);
   
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioData, setPortfolioData] = useState({
@@ -666,8 +670,9 @@ export default function PortfolioPage() {
       isMounted = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-
-  }, [accountId, portfolioMode, userId, selectedAccountFilter]);
+    // NOTE: selectedAccountFilter is intentionally NOT in dependencies
+    // Filter changes are handled by the dedicated useEffect below to avoid duplicate API calls
+  }, [accountId, portfolioMode, userId]);
 
   useEffect(() => {
      // For brokerage mode: need accountId
@@ -729,14 +734,98 @@ export default function PortfolioPage() {
     }
   }, [portfolioMode, userId]);
 
-  // Trigger allocation chart refresh when account filter changes
+  // CRITICAL: Auto-refresh ALL data when account filter changes (not just allocation chart)
+  // This ensures the entire page updates when user selects a different brokerage
+  // Note: Uses ref guard to prevent duplicate fetching with loadInitialStaticData on initial mount
   useEffect(() => {
-    if (selectedAccountFilter) {
+    // Skip the first render - loadInitialStaticData already handles initial data fetch
+    if (isInitialFilterMount.current) {
+      isInitialFilterMount.current = false;
+      return;
+    }
+    
+    let isMounted = true;
+    
+    // CRITICAL: Handle both brokerage mode (accountId) and aggregation mode (userId)
+    // In aggregation mode, accountId is null but we still need to refresh data
+    const canRefresh = accountId || (portfolioMode === 'aggregation' && userId);
+    
+    if (selectedAccountFilter && canRefresh) {
       // Force re-fetch of allocation charts with new filter
       setAllocationChartRefreshKey(Date.now());
-      console.log(`📊 Account filter changed to: ${selectedAccountFilter}`);
+      console.log(`📊 Account filter changed to: ${selectedAccountFilter} - REFRESHING ALL DATA`);
+      
+      const refreshAllDataForNewFilter = async () => {
+        if (!isMounted) return;
+        setIsLoading(true);
+        try {
+          const cacheBuster = `t=${Date.now()}`;
+          
+          // Refresh positions with new filter (use null accountId for aggregation mode)
+          const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId || 'null'}`, cacheBuster);
+          console.log(`📊 Reloading positions: ${positionsUrl}`);
+          const positionsRaw = await fetchData(positionsUrl);
+          if (!isMounted) return;
+          
+          const positionsData = (positionsRaw && typeof positionsRaw === 'object' && 'positions' in positionsRaw) 
+            ? positionsRaw.positions 
+            : (Array.isArray(positionsRaw) ? positionsRaw : []);
+          
+          // PERFORMANCE OPTIMIZATION: Don't fetch asset details for names
+          // The backend already includes security_name in the positions response
+          // This eliminates N API calls (where N = number of positions)
+          const totalMarketValue = positionsData.reduce((sum: number, pos: any) => 
+            sum + (safeParseFloat(pos.market_value) || 0), 0);
+          const enrichedPositions = positionsData.map((pos: any) => {
+            const marketValue = safeParseFloat(pos.market_value) || 0;
+            const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
+            return {
+              ...pos,
+              // Use security_name from backend (already enriched), fallback to symbol
+              name: pos.security_name || pos.name || pos.symbol,
+              weight: weight,
+            };
+          });
+          if (isMounted) setPositions(enrichedPositions);
+          
+          // Refresh analytics with new filter (FORCE FRESH - no cache)
+          const analyticsUrl = buildFilteredUrl(`/api/portfolio/analytics?accountId=${accountId || 'null'}`, cacheBuster);
+          console.log(`📊 Reloading analytics: ${analyticsUrl}`);
+          const analyticsData = await fetchData(analyticsUrl);
+          if (isMounted) {
+            setAnalytics(analyticsData);
+            console.log(`✅ Analytics loaded:`, analyticsData);
+          }
+          
+          // Refresh history with new filter
+          const historyUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId || 'null'}&period=${selectedTimeRange}`, cacheBuster);
+          console.log(`📊 Reloading history: ${historyUrl}`);
+          const historyData = await fetchData(historyUrl);
+          if (isMounted) setPortfolioHistory(historyData);
+          
+          // Also refresh all-time history for the growth projection
+          if (selectedTimeRange !== 'MAX') {
+            const allTimeUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId || 'null'}&period=MAX`, cacheBuster);
+            const allTimeData = await fetchData(allTimeUrl);
+            if (isMounted) setAllTimeHistory(allTimeData);
+          } else {
+            if (isMounted) setAllTimeHistory(historyData);
+          }
+          
+        } catch (err) {
+          console.error('Error refreshing data for new filter:', err);
+        } finally {
+          if (isMounted) setIsLoading(false);
+        }
+      };
+      
+      refreshAllDataForNewFilter();
     }
-  }, [selectedAccountFilter]);
+    
+    return () => { isMounted = false; };
+    // CRITICAL: Include selectedTimeRange to prevent stale closure bug
+    // Without it, changing time range then filter would fetch history with old time range
+  }, [selectedAccountFilter, accountId, portfolioMode, userId, selectedTimeRange]);
 
   const allTimePerformance = useMemo(() => {
     if (!allTimeHistory || !allTimeHistory.equity || allTimeHistory.equity.length === 0) {
@@ -789,7 +878,11 @@ export default function PortfolioPage() {
   }
 
   // Empty portfolio state - no accounts connected
-  if (!isLoading && positions.length === 0 && portfolioMode !== 'brokerage' && !error) {
+  // CRITICAL: Don't show "Connect Brokerage" if user has accounts but is filtering to empty account
+  const hasConnectedAccounts = availableAccounts && availableAccounts.length > 0;
+  const isFilteringAccount = selectedAccountFilter && selectedAccountFilter !== 'total';
+  
+  if (!isLoading && positions.length === 0 && portfolioMode !== 'brokerage' && !error && !hasConnectedAccounts) {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
@@ -842,7 +935,15 @@ export default function PortfolioPage() {
             <h1 className="text-2xl lg:text-3xl font-bold">Your Portfolio</h1>
             <p className="text-lg text-muted-foreground mt-1">Track your investments and performance</p>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {/* Account Breakdown Selector - only show in aggregation mode with multiple accounts */}
+            {portfolioMode === 'aggregation' && availableAccounts.length > 1 && (
+              <AccountBreakdownSelector
+                selectedFilter={selectedAccountFilter}
+                onFilterChange={setSelectedAccountFilter}
+                accounts={availableAccounts}
+              />
+            )}
             <Button 
               variant="outline" 
               size="sm"
@@ -878,6 +979,24 @@ export default function PortfolioPage() {
                           }
                         });
                       };
+                      
+                      // CRITICAL: For aggregation mode, sync from SnapTrade FIRST before fetching data
+                      // This ensures we have the latest position data after trades
+                      if (portfolioMode === 'aggregation') {
+                        try {
+                          console.log('[Refresh Button] Triggering SnapTrade sync before data fetch...');
+                          const syncResponse = await fetch('/api/portfolio/sync', { method: 'POST' });
+                          if (syncResponse.ok) {
+                            const syncResult = await syncResponse.json();
+                            console.log(`[Refresh Button] Sync completed: ${syncResult.positions_synced} positions synced`);
+                          } else {
+                            console.warn(`[Refresh Button] Sync API returned error: ${syncResponse.status}`);
+                          }
+                        } catch (syncError) {
+                          console.warn('[Refresh Button] Sync failed, fetching cached data:', syncError);
+                          // Continue with fetching cached data even if sync fails
+                        }
+                      }
                       
                       // Fetch positions (works for both modes) - with account filter
                       const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`, cacheBuster);

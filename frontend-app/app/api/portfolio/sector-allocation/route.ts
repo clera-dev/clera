@@ -18,12 +18,13 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const account_id = searchParams.get('account_id');
+    const filterAccount = searchParams.get('filter_account'); // Account filtering parameter for X-Ray Vision
 
     if (!account_id) {
       return NextResponse.json({ detail: 'account_id parameter is required' }, { status: 400 });
     }
 
-      console.log(`Sector Allocation API: Getting allocation for account: ${account_id}, user: ${user.id}`);
+    console.log(`Sector Allocation API: Getting allocation for account: ${account_id}, user: ${user.id}, filter: ${filterAccount || 'none'}`);
 
     // Fetch from backend API
     const backendUrl = process.env.BACKEND_API_URL;
@@ -34,8 +35,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: 'Backend service configuration error' }, { status: 500 });
     }
 
-    // PRODUCTION-GRADE: Pass user_id AND JWT token to backend
-    const targetUrl = `${backendUrl}/api/portfolio/sector-allocation?account_id=${account_id}&user_id=${encodeURIComponent(user.id)}`;
+    // PRODUCTION-GRADE: Pass user_id, filter_account, AND JWT token to backend
+    // SECURITY: URL-encode all user-provided parameters to prevent injection
+    const filterParam = filterAccount ? `&filter_account=${encodeURIComponent(filterAccount)}` : '';
+    const targetUrl = `${backendUrl}/api/portfolio/sector-allocation?account_id=${encodeURIComponent(account_id)}&user_id=${encodeURIComponent(user.id)}${filterParam}`;
     console.log(`Proxying sector allocation request to: ${targetUrl}`);
     
     // Get session for JWT token

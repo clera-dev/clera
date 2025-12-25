@@ -124,6 +124,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
               <LivePortfolioValue 
                 accountId={accountId || 'aggregated'}
                 portfolioMode={portfolioMode}
+                filterAccount={selectedAccountFilter !== 'total' ? selectedAccountFilter : null}
               />
             ) : (
               // Brokerage mode: Requires valid accountId
@@ -175,6 +176,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
               <LivePortfolioValue 
                 accountId={accountId || 'aggregated'}
                 portfolioMode={portfolioMode}
+                filterAccount={selectedAccountFilter !== 'total' ? selectedAccountFilter : null}
               />
             ) : null
           ) : accountId ? (

@@ -3,6 +3,7 @@
 # Import necessary libraries
 from langchain_core.tools import tool
 from langgraph.types import interrupt
+from langgraph.errors import GraphInterrupt  # CRITICAL: This is the actual exception raised by interrupt()
 from langgraph.pregel import Pregel # Import if needed to understand config structure
 from langgraph.config import get_config # Import get_config
 from langchain_core.runnables.config import RunnableConfig
@@ -148,11 +149,19 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
             
             logger.info(f"[Trade Agent] BUY order result: {result}")
             return result
+        except GraphInterrupt:
+            # CRITICAL: Re-raise GraphInterrupt exceptions so LangGraph can handle them
+            # The interrupt() call raises GraphInterrupt to pause execution and request user confirmation
+            raise
         except Exception as e:
             error_msg = str(e)
             logger.error(f"[Trade Agent] Error executing BUY order: {e}", exc_info=True)
             return f"❌ Error executing BUY order: {error_msg}. Please verify the ticker symbol is correct and the amount is valid, then try again."
             
+    except GraphInterrupt:
+        # CRITICAL: Re-raise GraphInterrupt exceptions so LangGraph can handle them properly
+        # This allows the graph to pause and show the confirmation UI to the user
+        raise
     except Exception as e:
         error_msg = str(e)
         logger.error(f"[Trade Agent] Unexpected error in BUY order: {e}", exc_info=True)
@@ -253,11 +262,18 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
             
             logger.info(f"[Trade Agent] SELL order result: {result}")
             return result
+        except GraphInterrupt:
+            # CRITICAL: Re-raise GraphInterrupt exceptions so LangGraph can handle them
+            raise
         except Exception as e:
             error_msg = str(e)
             logger.error(f"[Trade Agent] Error executing SELL order: {e}", exc_info=True)
             return f"❌ Error executing SELL order: {error_msg}. Please verify the ticker symbol is correct and the user has sufficient shares to sell."
             
+    except GraphInterrupt:
+        # CRITICAL: Re-raise GraphInterrupt exceptions so LangGraph can handle them properly
+        # This allows the graph to pause and show the confirmation UI to the user
+        raise
     except Exception as e:
         error_msg = str(e)
         logger.error(f"[Trade Agent] Unexpected error in SELL order: {e}", exc_info=True)
@@ -306,29 +322,48 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         snaptrade_user_id = credentials['user_id']
         user_secret = credentials['user_secret']
         
-        # Get symbol's universal ID from SnapTrade
-        logger.info(f"[Trade Agent] Looking up universal symbol ID for {ticker}")
-        symbol_response = snaptrade_client.reference_data.get_symbols_by_ticker(
-            query=ticker
+        # Clean account ID (remove our prefix) - needed for all SnapTrade API calls
+        clean_account_id = account_id.replace('snaptrade_', '')
+        
+        # Get symbol's universal ID from SnapTrade using account-specific lookup
+        # CRITICAL: Use symbol_search_user_account to get the correct exchange symbol
+        # (e.g., NYSE JNJ instead of German SWB JNJ)
+        logger.info(f"[Trade Agent] Looking up tradeable symbol ID for {ticker} on account {clean_account_id}")
+        
+        # Use symbol_search_user_account to get symbols actually tradeable on this account
+        symbol_response = snaptrade_client.reference_data.symbol_search_user_account(
+            user_id=snaptrade_user_id,
+            user_secret=user_secret,
+            account_id=clean_account_id,
+            substring=ticker
         )
         
         if not symbol_response.body:
-            return f"❌ Error: Symbol '{ticker}' not found. This stock may not be available for trading through the user's brokerage. Please verify the ticker symbol is correct (e.g., 'AAPL' for Apple, 'GOOGL' for Google)."
+            return f"❌ Error: Symbol '{ticker}' is not available for trading on the user's brokerage. Please verify the ticker symbol is correct (e.g., 'AAPL' for Apple, 'GOOGL' for Google), or try a different stock."
         
-        # PRODUCTION-GRADE: Handle both dict and list responses from SnapTrade API
-        # The API may return a single symbol dict or a list depending on version
-        if isinstance(symbol_response.body, dict) and 'id' in symbol_response.body:
-            universal_symbol_id = symbol_response.body['id']
-        elif isinstance(symbol_response.body, list) and len(symbol_response.body) > 0:
-            first_symbol = symbol_response.body[0]
-            universal_symbol_id = first_symbol.get('id') if isinstance(first_symbol, dict) else first_symbol['id']
+        # Find exact match for the ticker, prioritizing US exchanges
+        us_exchanges = {'NYSE', 'NASDAQ', 'ARCA', 'BATS', 'AMEX', 'NYSEARCA'}
+        universal_symbol_id = None
+        exact_match = None
+        us_match = None
+        
+        for symbol_data in symbol_response.body:
+            if symbol_data.get('symbol') == ticker:
+                exchange_code = symbol_data.get('exchange', {}).get('code', '')
+                # Prefer US exchanges
+                if exchange_code in us_exchanges:
+                    us_match = symbol_data
+                    break  # Found US match, use it
+                elif exact_match is None:
+                    exact_match = symbol_data
+        
+        best_match = us_match or exact_match
+        if best_match:
+            universal_symbol_id = best_match.get('id')
+            exchange_code = best_match.get('exchange', {}).get('code', 'Unknown')
+            logger.info(f"[Trade Agent] Found tradeable symbol ID for {ticker} on {exchange_code}: {universal_symbol_id}")
         else:
-            return f"❌ Error: Symbol '{ticker}' not found. This stock may not be available for trading through the user's brokerage. Please verify the ticker symbol is correct (e.g., 'AAPL' for Apple, 'GOOGL' for Google)."
-        
-        logger.info(f"[Trade Agent] Found universal symbol ID: {universal_symbol_id}")
-        
-        # Clean account ID (remove our prefix)
-        clean_account_id = account_id.replace('snaptrade_', '')
+            return f"❌ Error: Symbol '{ticker}' is not available for trading on the user's brokerage. Please verify the ticker symbol is correct, or try a different stock - ETFs like VTI, SPY, or QQQ are usually widely supported."
         
         # Determine order parameters based on action type
         # For SELL orders, we need to use units (whole shares) instead of notional_value
@@ -397,7 +432,7 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         supabase = get_supabase_client()
         order_data = {
             'user_id': user_id,
-            'account_id': account_id,
+            'account_id': clean_account_id,  # CRITICAL FIX: Use clean UUID without 'snaptrade_' prefix
             'brokerage_order_id': order_response.body.get('brokerage_order_id', ''),
             'symbol': ticker,
             'universal_symbol_id': universal_symbol_id,
@@ -413,34 +448,35 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         supabase.table('snaptrade_orders').insert(order_data).execute()
         logger.info(f"[Trade Agent] Order stored in database")
         
-        # PRODUCTION-GRADE: Immediately trigger a portfolio sync after trade
-        # SnapTrade webhooks can be delayed, so sync holdings now
+        # PRODUCTION-GRADE: Trigger portfolio sync after trade in background
+        # Don't block the trade response - user can click Refresh on Portfolio page
+        # The sync will run asynchronously to update holdings
         try:
             from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
             import asyncio
+            import threading
             
-            # Run sync in background task to not block the response
-            async def delayed_sync():
-                # Small delay to let brokerage process the order
-                await asyncio.sleep(3)
-                result = await trigger_full_user_sync(user_id, force_rebuild=True)
-                if result.get('success'):
-                    logger.info(f"[Trade Agent] Post-trade sync completed: {result.get('positions_synced', 0)} positions")
-                else:
-                    logger.warning(f"[Trade Agent] Post-trade sync failed: {result.get('error')}")
+            def run_sync_in_background():
+                """Run sync in a background thread to avoid blocking the response."""
+                try:
+                    asyncio.run(trigger_full_user_sync(user_id, force_rebuild=True))
+                    logger.info(f"[Trade Agent] Background post-trade sync completed for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"[Trade Agent] Background post-trade sync failed: {e}")
             
-            # Schedule the sync but don't wait for it
-            asyncio.create_task(delayed_sync())
-            logger.info(f"[Trade Agent] Scheduled post-trade holdings sync for user {user_id}")
+            # Start background sync - don't wait for it
+            sync_thread = threading.Thread(target=run_sync_in_background, daemon=True)
+            sync_thread.start()
+            logger.info(f"[Trade Agent] Started background sync for user {user_id}")
         except Exception as sync_error:
-            # Don't fail the trade response if sync scheduling fails
-            logger.warning(f"[Trade Agent] Failed to schedule post-trade sync: {sync_error}")
+            # Don't fail the trade response if sync setup fails - user can refresh manually
+            logger.warning(f"[Trade Agent] Failed to start background sync: {sync_error}")
         
-        # Build success message
+        # Build success message with refresh hint
         if order_units is not None:
-            return f"✅ Trade submitted successfully via SnapTrade: {action} {int(order_units)} shares of {ticker}. Monitor status in your Portfolio page."
+            return f"✅ Trade submitted successfully via SnapTrade: {action} {int(order_units)} shares of {ticker}. Click 'Refresh' on the Portfolio page to see updated holdings."
         else:
-            return f"✅ Trade submitted successfully via SnapTrade: {action} order for ${notional_amount:.2f} of {ticker}. Monitor status in your Portfolio page."
+            return f"✅ Trade submitted successfully via SnapTrade: {action} order for ${notional_amount:.2f} of {ticker}. Click 'Refresh' on the Portfolio page to see updated holdings."
     
     except SnapTradeApiException as e:
         error_str = str(e)
@@ -488,7 +524,23 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         if 'permission' in error_str.lower():
             return "❌ The user's brokerage account does not have permission for this type of order. They may need to enable trading permissions in their brokerage account settings."
         
-        return f"❌ Brokerage error: {error_str}. Please verify the order details with the user and try again."
+        # Handle symbol not available error (1063)
+        if '1063' in error_str or 'Unable to obtain symbol' in error_str:
+            return f"❌ Sorry, {ticker} is not available for trading through the user's connected brokerage. This stock may not be supported by their broker, or trading may be restricted. Please suggest a different stock - ETFs like VTI, SPY, or QQQ are usually widely supported."
+        
+        # Generic brokerage error - clean up the technical details for user
+        # Extract just the meaningful part of the error
+        if "'detail':" in error_str:
+            try:
+                import re
+                detail_match = re.search(r"'detail':\s*'([^']+)'", error_str)
+                if detail_match:
+                    clean_error = detail_match.group(1)
+                    return f"❌ Brokerage error: {clean_error}. Please try a different stock or check with the user if this stock is available on their brokerage."
+            except Exception:
+                pass  # Fall through to generic error message
+        
+        return f"❌ Brokerage error occurred while placing the order. Please try a different stock or ask the user to check if {ticker} is available on their brokerage platform."
     except Exception as e:
         logger.error(f"[Trade Agent] SnapTrade order error: {e}", exc_info=True)
         raise e

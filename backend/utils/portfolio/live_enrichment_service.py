@@ -19,8 +19,10 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache for enriched data (60 second TTL)
-_enrichment_cache: Dict[str, Dict[str, Any]] = {}
+# In-memory cache for live prices (60 second TTL)
+# CRITICAL: Cache only symbol→price mapping, NOT full enriched holdings
+# This prevents cache collisions when different accounts have same symbols with different quantities
+_price_cache: Dict[str, Dict[str, float]] = {}  # user_id → {symbol: price}
 _cache_timestamps: Dict[str, datetime] = {}
 CACHE_TTL_SECONDS = 60
 
@@ -84,24 +86,45 @@ class LiveEnrichmentService:
         if not holdings:
             return []
         
-        # Check cache first
-        cache_key = f"{user_id}_enriched"
-        if not force_refresh and self._is_cache_valid(cache_key):
-            logger.debug(f"💨 Using cached enriched data for user {user_id}")
-            return _enrichment_cache[cache_key]
+        # CRITICAL FIX: Only cache the price lookups (symbol→price), not full enriched holdings
+        # This prevents cache collisions when different accounts have same symbols with different quantities
+        # e.g., Account A with 10 AAPL shares vs Account B with 5 AAPL shares
+        price_cache_key = f"{user_id}_prices"
         
-        # Fetch live prices
-        live_prices = self._fetch_live_prices(holdings)
+        # Check if we have cached prices
+        live_prices = {}
+        fetched_fresh_prices = False
         
-        # Enrich each holding
+        if not force_refresh and self._is_cache_valid(price_cache_key):
+            cached_prices = _price_cache.get(price_cache_key, {})
+            # Get symbols we need
+            needed_symbols = set(h.get('symbol', '') for h in holdings if h.get('symbol'))
+            # Check if all symbols are in cache
+            if needed_symbols.issubset(set(cached_prices.keys())):
+                live_prices = cached_prices
+                logger.debug(f"💨 Using cached prices for user {user_id} ({len(live_prices)} symbols)")
+            else:
+                # Need to fetch some prices
+                live_prices = self._fetch_live_prices(holdings)
+                # Merge with cached prices
+                live_prices = {**cached_prices, **live_prices}
+                fetched_fresh_prices = True
+        else:
+            # Fetch fresh prices
+            live_prices = self._fetch_live_prices(holdings)
+            fetched_fresh_prices = True
+        
+        # CRITICAL: Only update cache and timestamp when fresh prices are fetched
+        # This ensures the 60-second TTL works correctly and stale prices eventually expire
+        if fetched_fresh_prices:
+            _price_cache[price_cache_key] = {**_price_cache.get(price_cache_key, {}), **live_prices}
+            _cache_timestamps[price_cache_key] = datetime.utcnow()
+        
+        # Enrich each holding with the prices (this is fast, no API calls)
         enriched = []
         for holding in holdings:
             enriched_holding = self._enrich_single_holding(holding, live_prices)
             enriched.append(enriched_holding)
-        
-        # Cache the results
-        _enrichment_cache[cache_key] = enriched
-        _cache_timestamps[cache_key] = datetime.utcnow()
         
         logger.info(f"✅ Enriched {len(enriched)} holdings for user {user_id}")
         return enriched
@@ -109,6 +132,9 @@ class LiveEnrichmentService:
     def _fetch_live_prices(self, holdings: List[Dict[str, Any]]) -> Dict[str, float]:
         """
         Fetch live prices for all symbols in holdings using FMP API.
+        
+        Handles both stock symbols (AAPL, TSLA) and crypto symbols (BTC, ETH).
+        FMP requires crypto in format BTCUSD, ETHUSD, etc.
         
         Args:
             holdings: List of holdings with 'symbol' field
@@ -122,32 +148,80 @@ class LiveEnrichmentService:
         
         try:
             import requests
+            from utils.asset_classification import classify_asset, AssetClassification
             
-            # Extract unique symbols
-            symbols = list(set(h['symbol'] for h in holdings if h.get('symbol')))
+            # Extract unique symbols and separate crypto vs stock
+            stock_symbols = []
+            crypto_symbols = []  # Original symbol -> FMP format mapping
             
-            if not symbols:
-                return {}
+            for h in holdings:
+                symbol = h.get('symbol')
+                if not symbol:
+                    continue
+                    
+                # Check if this is a crypto asset
+                classification = classify_asset(symbol, h.get('security_name', ''), None)
+                if classification == AssetClassification.CRYPTO:
+                    crypto_symbols.append(symbol)
+                else:
+                    stock_symbols.append(symbol)
             
-            logger.debug(f"🔄 Fetching live prices for {len(symbols)} symbols via FMP")
+            stock_symbols = list(set(stock_symbols))
+            crypto_symbols = list(set(crypto_symbols))
             
-            # FMP batch quote endpoint (much more efficient than individual calls)
-            # https://financialmodelingprep.com/api/v3/quote/AAPL,TSLA,MSFT?apikey=XXX
-            symbols_str = ','.join(symbols)
-            url = f"https://financialmodelingprep.com/api/v3/quote/{symbols_str}"
-            
-            response = requests.get(url, params={'apikey': self.fmp_api_key}, timeout=5)
-            response.raise_for_status()
-            
-            # Parse response
             live_prices = {}
-            for quote in response.json():
-                symbol = quote.get('symbol')
-                price = quote.get('price')
-                if symbol and price:
-                    live_prices[symbol] = float(price)
             
-            logger.info(f"✅ Fetched live prices for {len(live_prices)}/{len(symbols)} symbols via FMP")
+            # Fetch stock prices
+            if stock_symbols:
+                logger.debug(f"🔄 Fetching live prices for {len(stock_symbols)} stock symbols via FMP")
+                symbols_str = ','.join(stock_symbols)
+                url = f"https://financialmodelingprep.com/api/v3/quote/{symbols_str}"
+                
+                response = requests.get(url, params={'apikey': self.fmp_api_key}, timeout=5)
+                response.raise_for_status()
+                
+                for quote in response.json():
+                    symbol = quote.get('symbol')
+                    price = quote.get('price')
+                    if symbol and price:
+                        live_prices[symbol] = float(price)
+                
+                logger.info(f"✅ Fetched {len(live_prices)}/{len(stock_symbols)} stock prices")
+            
+            # Fetch crypto prices using FMP's crypto endpoint
+            # FMP uses format: BTCUSD, ETHUSD, ADAUSD
+            if crypto_symbols:
+                logger.debug(f"🔄 Fetching live prices for {len(crypto_symbols)} crypto symbols via FMP")
+                
+                # Convert to FMP crypto format (add USD suffix)
+                fmp_crypto_symbols = [f"{sym}USD" for sym in crypto_symbols]
+                symbols_str = ','.join(fmp_crypto_symbols)
+                
+                # FMP crypto endpoint
+                url = f"https://financialmodelingprep.com/api/v3/quote/{symbols_str}"
+                
+                try:
+                    response = requests.get(url, params={'apikey': self.fmp_api_key}, timeout=5)
+                    response.raise_for_status()
+                    
+                    for quote in response.json():
+                        fmp_symbol = quote.get('symbol', '')
+                        price = quote.get('price')
+                        if fmp_symbol and price:
+                            # Convert back from BTCUSD -> BTC
+                            if fmp_symbol.endswith('USD'):
+                                original_symbol = fmp_symbol[:-3]  # Remove 'USD' suffix
+                                live_prices[original_symbol] = float(price)
+                    
+                    crypto_found = sum(1 for s in crypto_symbols if s in live_prices)
+                    logger.info(f"✅ Fetched {crypto_found}/{len(crypto_symbols)} crypto prices via FMP")
+                    
+                except Exception as ce:
+                    logger.warning(f"⚠️ Failed to fetch crypto prices: {ce}")
+            
+            total_found = len(live_prices)
+            total_requested = len(stock_symbols) + len(crypto_symbols)
+            logger.info(f"✅ Total live prices: {total_found}/{total_requested} symbols")
             return live_prices
             
         except Exception as e:
@@ -213,22 +287,22 @@ class LiveEnrichmentService:
     
     def clear_cache(self, user_id: Optional[str] = None):
         """
-        Clear the enrichment cache.
+        Clear the price cache.
         
         Args:
             user_id: If provided, clear only this user's cache. Otherwise clear all.
         """
-        global _enrichment_cache, _cache_timestamps
+        global _price_cache, _cache_timestamps
         
         if user_id:
-            cache_key = f"{user_id}_enriched"
-            _enrichment_cache.pop(cache_key, None)
+            cache_key = f"{user_id}_prices"
+            _price_cache.pop(cache_key, None)
             _cache_timestamps.pop(cache_key, None)
-            logger.debug(f"Cleared cache for user {user_id}")
+            logger.debug(f"Cleared price cache for user {user_id}")
         else:
-            _enrichment_cache.clear()
+            _price_cache.clear()
             _cache_timestamps.clear()
-            logger.debug("Cleared all enrichment cache")
+            logger.debug("Cleared all price cache")
 
 
 # Singleton instance

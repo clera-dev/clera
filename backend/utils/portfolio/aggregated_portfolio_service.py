@@ -830,30 +830,45 @@ class AggregatedPortfolioService:
         We extract the specific account's value from the account_breakdown JSONB field
         that's stored in every daily snapshot. This provides exact historical values,
         not approximations.
+        
+        Supports both UUID and prefixed account IDs (snaptrade_xxx, plaid_xxx).
         """
         try:
             import json  # Import at function level for JSON parsing
             supabase = self._get_supabase_client()
             
-            # First, get the Plaid account ID for this UUID
-            account_result = supabase.table('user_investment_accounts')\
-                .select('provider_account_id')\
-                .eq('id', filter_account)\
-                .eq('user_id', user_id)\
-                .single()\
-                .execute()
+            # CRITICAL FIX: Handle prefixed account IDs (snaptrade_xxx, plaid_xxx)
+            # The frontend now sends prefixed IDs directly from AccountBreakdownSelector
+            prefixed_account_id = filter_account
             
-            if not account_result.data:
-                logger.warning(f"Account {filter_account} not found for user {user_id}")
-                return self._empty_history_response(period)
+            if filter_account.startswith('snaptrade_') or filter_account.startswith('plaid_'):
+                # Already prefixed - use as-is for account_contributions matching
+                prefixed_account_id = filter_account
+                logger.info(f"Using prefixed account ID directly: {prefixed_account_id}")
+            else:
+                # Assume it's a UUID - look up the provider and provider_account_id
+                account_result = supabase.table('user_investment_accounts')\
+                    .select('provider, provider_account_id')\
+                    .eq('id', filter_account)\
+                    .eq('user_id', user_id)\
+                    .single()\
+                    .execute()
                 
-            plaid_account_id = f"plaid_{account_result.data['provider_account_id']}"
-            logger.info(f"Filtering history to account {plaid_account_id} (UUID: {filter_account})")
+                if not account_result.data:
+                    logger.warning(f"Account UUID {filter_account} not found for user {user_id}")
+                    return self._empty_history_response(period)
+                
+                provider = account_result.data.get('provider', 'plaid')
+                provider_account_id = account_result.data['provider_account_id']
+                prefixed_account_id = f"{provider}_{provider_account_id}"
+                logger.info(f"Converted UUID {filter_account} to prefixed ID: {prefixed_account_id}")
+            
+            logger.info(f"Filtering history to account {prefixed_account_id}")
             
             # CRITICAL FIX: Handle 1D period specially with intraday chart
             if period == '1D':
-                logger.info(f"Building intraday chart for account {plaid_account_id}")
-                return await self._build_intraday_chart_account(user_id, filter_account, plaid_account_id)
+                logger.info(f"Building intraday chart for account {prefixed_account_id}")
+                return await self._build_intraday_chart_account(user_id, filter_account, prefixed_account_id)
             
             # Calculate date range based on period
             from datetime import datetime, timedelta
@@ -877,8 +892,30 @@ class AggregatedPortfolioService:
             snapshots = snapshots_result.data if snapshots_result.data else []
             
             if not snapshots:
-                # Fallback to current value if no historical data
-                logger.warning(f"No historical snapshots found for user {user_id}, using current value")
+                # Fallback to reconstructed history if no snapshots
+                logger.warning(f"No historical snapshots found for user {user_id}, reconstructing from proportion")
+                return await self._get_current_account_value_fallback(user_id, filter_account, period)
+            
+            # Check if account_breakdown is empty in ALL snapshots (common case - data not stored per-account)
+            has_per_account_data = False
+            for snap in snapshots[:5]:  # Check first 5 snapshots
+                account_breakdown_raw = snap.get('account_breakdown', {})
+                if isinstance(account_breakdown_raw, str):
+                    try:
+                        account_breakdown = json.loads(account_breakdown_raw) if account_breakdown_raw else {}
+                    except (json.JSONDecodeError, ValueError) as e:
+                        logger.debug(f"Failed to parse account_breakdown JSON: {e}")
+                        account_breakdown = {}
+                else:
+                    account_breakdown = account_breakdown_raw or {}
+                
+                if account_breakdown and prefixed_account_id in account_breakdown:
+                    has_per_account_data = True
+                    break
+            
+            if not has_per_account_data:
+                # No per-account historical data stored - use reconstruction
+                logger.info(f"No per-account data in account_breakdown for {prefixed_account_id}, using proportion-based reconstruction")
                 return await self._get_current_account_value_fallback(user_id, filter_account, period)
             
             # CRITICAL: Get cash balance for THIS specific account
@@ -899,13 +936,13 @@ class AggregatedPortfolioService:
                         
                         # Find contribution from this specific account
                         for contrib in account_contribs:
-                            if contrib.get('account_id') == plaid_account_id:
+                            if contrib.get('account_id') == prefixed_account_id:
                                 account_cash_balance += float(contrib.get('market_value', 0))
                     
                     if account_cash_balance > 0:
-                        logger.info(f"💵 Adding ${account_cash_balance:,.2f} cash to account {plaid_account_id} history")
+                        logger.info(f"💵 Adding ${account_cash_balance:,.2f} cash to account {prefixed_account_id} history")
             except Exception as e:
-                logger.warning(f"Could not fetch cash balance for account {plaid_account_id}: {e}")
+                logger.warning(f"Could not fetch cash balance for account {prefixed_account_id}: {e}")
             
             # Extract account-specific values from each snapshot
             timestamps = []
@@ -925,7 +962,7 @@ class AggregatedPortfolioService:
                     account_breakdown = account_breakdown_raw
                 
                 # Extract this account's value from the breakdown
-                account_value = account_breakdown.get(plaid_account_id, 0)
+                account_value = account_breakdown.get(prefixed_account_id, 0)
                 
                 # CRITICAL FIX: Only include days where account actually had holdings (securities > 0)
                 # This prevents oscillations from $0 days + current cash creating flat lines
@@ -963,7 +1000,7 @@ class AggregatedPortfolioService:
             
             # Now check if we have any data points at all
             if not timestamps:
-                logger.warning(f"Account {plaid_account_id} has no historical values in snapshots and no current value")
+                logger.warning(f"Account {prefixed_account_id} has no historical values in snapshots and no current value")
                 return self._empty_history_response(period)
             
             # Calculate profit/loss (for now, simplified - could enhance later)
@@ -985,7 +1022,7 @@ class AggregatedPortfolioService:
                 "data_source": "account_breakdown_actual"
             }
             
-            logger.info(f"✅ Portfolio history for account {plaid_account_id}: {len(timestamps)} actual data points from {start_date} to {end_date}")
+            logger.info(f"✅ Portfolio history for account {prefixed_account_id}: {len(timestamps)} actual data points from {start_date} to {end_date}")
             return account_history
             
         except Exception as e:
@@ -994,37 +1031,125 @@ class AggregatedPortfolioService:
     
     async def _get_current_account_value_fallback(self, user_id: str, filter_account: str, period: str) -> Dict[str, Any]:
         """
-        Fallback when no historical data exists - construct a flat line from current value.
+        IMPROVED: Reconstruct historical chart using account's proportion of total portfolio.
+        
+        When per-account historical data doesn't exist in account_breakdown JSONB, we:
+        1. Get total portfolio history
+        2. Calculate what % of total portfolio this account represents NOW
+        3. Apply that percentage to historical values as an approximation
+        
+        This is better than a flat line and gives users a meaningful chart.
         """
         try:
+            from datetime import datetime, timedelta
             from utils.portfolio.account_filtering_service import get_account_filtering_service
+            
             filter_service = get_account_filtering_service()
+            supabase = self._get_supabase_client()
             
-            # Get current account value
+            # 1. Get current account value from filtered holdings
             filtered_holdings = await filter_service.filter_holdings_by_account(user_id, filter_account)
-            current_value = sum(float(h.get('total_market_value', 0)) for h in filtered_holdings)
+            current_account_value = sum(float(h.get('total_market_value', 0)) for h in filtered_holdings)
             
-            if current_value == 0:
+            if current_account_value == 0:
                 return self._empty_history_response(period)
             
-            # Create flat line with current value
-            from datetime import datetime, timedelta
-            now = datetime.now()
-            timestamps = [int(now.timestamp())]
-            equity_values = [current_value]
+            # 2. Get total portfolio current value (all accounts)
+            all_holdings = await filter_service.filter_holdings_by_account(user_id, None)  # None = all accounts
+            total_portfolio_value = sum(float(h.get('total_market_value', 0)) for h in all_holdings)
+            
+            if total_portfolio_value == 0:
+                return self._empty_history_response(period)
+            
+            # 3. Calculate this account's percentage of total portfolio
+            account_percentage = current_account_value / total_portfolio_value
+            logger.info(f"📊 Account proportion: ${current_account_value:,.2f} / ${total_portfolio_value:,.2f} = {account_percentage*100:.1f}%")
+            
+            # 4. Get total portfolio historical data
+            end_date = datetime.now().date()
+            period_mapping = {
+                '1D': 1, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365, 'MAX': 730
+            }
+            days_back = period_mapping.get(period, 30)
+            start_date = end_date - timedelta(days=days_back)
+            
+            # CRITICAL: Filter by snapshot_type to avoid duplicate data points per day
+            # This matches the main get_portfolio_history query behavior
+            snapshots_result = supabase.table('user_portfolio_history')\
+                .select('value_date, total_value')\
+                .eq('user_id', user_id)\
+                .gte('value_date', start_date.isoformat())\
+                .lte('value_date', end_date.isoformat())\
+                .in_('snapshot_type', ['reconstructed', 'daily_eod'])\
+                .order('value_date', desc=False)\
+                .execute()
+            
+            snapshots = snapshots_result.data if snapshots_result.data else []
+            
+            if not snapshots:
+                # No historical data at all - just use current value
+                now = datetime.now()
+                return {
+                    "timestamp": [int(now.timestamp())],
+                    "equity": [current_account_value],
+                    "profit_loss": [0.0],
+                    "profit_loss_pct": [0.0],
+                    "base_value": current_account_value,
+                    "timeframe": period,
+                    "base_value_asof": str(int(now.timestamp())),
+                    "data_source": "current_value_only"
+                }
+            
+            # 5. Apply account percentage to total historical values
+            timestamps = []
+            equity_values = []
+            
+            for snap in snapshots:
+                total_value = float(snap.get('total_value', 0))
+                if total_value > 0:
+                    # Reconstruct account value as its proportion of historical total
+                    reconstructed_account_value = total_value * account_percentage
+                    value_date = datetime.fromisoformat(snap['value_date'])
+                    timestamps.append(int(value_date.timestamp()))
+                    equity_values.append(reconstructed_account_value)
+            
+            # 6. Add today's actual value (not reconstructed) as the final point
+            today = datetime.now().date()
+            latest_snapshot_date = datetime.fromisoformat(snapshots[-1]['value_date']).date() if snapshots else None
+            
+            if latest_snapshot_date and latest_snapshot_date < today:
+                today_timestamp = int(datetime.combine(today, datetime.min.time()).timestamp())
+                timestamps.append(today_timestamp)
+                equity_values.append(current_account_value)  # Use actual current value
+                logger.info(f"✅ Added today's actual account value: ${current_account_value:,.2f}")
+            
+            if not timestamps:
+                return self._empty_history_response(period)
+            
+            # 7. Calculate profit/loss
+            first_value = equity_values[0]
+            profit_loss = [float(val - first_value) for val in equity_values]
+            profit_loss_pct = [
+                float((val - first_value) / first_value * 100) if first_value > 0 else 0.0
+                for val in equity_values
+            ]
+            
+            logger.info(f"✅ Reconstructed account history: {len(timestamps)} data points (using {account_percentage*100:.1f}% of total)")
             
             return {
                 "timestamp": timestamps,
                 "equity": equity_values,
-                "profit_loss": [0.0],
-                "profit_loss_pct": [0.0],
-                "base_value": current_value,
+                "profit_loss": profit_loss,
+                "profit_loss_pct": profit_loss_pct,
+                "base_value": first_value,
                 "timeframe": period,
-                "base_value_asof": str(timestamps[0]) if timestamps else None,  # Convert to string for API response model
-                "data_source": "current_value_fallback"
+                "base_value_asof": str(timestamps[0]) if timestamps else None,
+                "data_source": "reconstructed_from_proportion",
+                "account_percentage": account_percentage
             }
+            
         except Exception as e:
-            logger.error(f"Error in current account value fallback: {e}")
+            logger.error(f"Error in account history reconstruction: {e}")
             return self._empty_history_response(period)
     
     async def _get_current_account_percentage(self, user_id: str, account_uuid: str) -> float:

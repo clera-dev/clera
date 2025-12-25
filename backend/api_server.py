@@ -3342,54 +3342,80 @@ async def get_portfolio_account_breakdown(
 async def _enhance_account_breakdown(user_id: str, account_breakdown: Dict[str, float]) -> List[Dict[str, Any]]:
     """
     Enhance account breakdown with account type and institution information.
+    Supports both Plaid and SnapTrade accounts.
     """
     try:
         from utils.supabase.db_client import get_supabase_client
         supabase = get_supabase_client()
         
-        # Get account information
+        account_info = {}
+        
+        # Get ALL active accounts (both Plaid and SnapTrade)
         result = supabase.table('user_investment_accounts')\
-            .select('id, provider_account_id, account_name, account_type, account_subtype, institution_name')\
+            .select('id, provider, provider_account_id, account_name, account_type, account_subtype, institution_name')\
             .eq('user_id', user_id)\
-            .eq('provider', 'plaid')\
             .eq('is_active', True)\
             .execute()
         
-        account_info = {}
-        uuid_to_plaid_map = {}  # Map UUIDs to plaid IDs for lookup
         if result.data:
             for account in result.data:
-                account_id = f"plaid_{account['provider_account_id']}"
+                provider = account.get('provider', 'unknown')
+                provider_account_id = account['provider_account_id']
                 account_uuid = account['id']
                 
-                # Store both mappings
-                uuid_to_plaid_map[account_uuid] = account_id
-                account_info[account_id] = {
-                    'uuid': account_uuid,  # CRITICAL: Include UUID for frontend filtering
-                    'account_name': account['account_name'],
-                    'account_type': account['account_type'],
-                    'account_subtype': account['account_subtype'],
-                    'institution_name': account['institution_name']
+                info_obj = {
+                    'uuid': account_uuid,  # UUID for filtering
+                    'provider': provider,
+                    'account_name': account.get('account_name', 'Investment Account'),
+                    'account_type': account.get('account_type', 'investment'),
+                    'account_subtype': account.get('account_subtype', 'investment'),
+                    'institution_name': account.get('institution_name', 'Unknown Institution')
                 }
+                
+                # Build multiple account_id keys to handle different formats in account_contributions
+                # Format 1: provider_accountId (e.g., "plaid_abc123" or "snaptrade_xyz456")
+                prefixed_id = f"{provider}_{provider_account_id}"
+                account_info[prefixed_id] = info_obj
+                
+                # Format 2: Just the provider_account_id (legacy format)
+                account_info[provider_account_id] = info_obj
+                
+                # Format 3: UUID (in case contributions use the database UUID)
+                account_info[account_uuid] = info_obj
+                
+                logger.debug(f"Mapped account: {prefixed_id} -> {account.get('institution_name')}")
         
         # Enhance breakdown with account information
         enhanced_breakdown = []
+        total_value = sum(account_breakdown.values())
+        
         for account_id, value in account_breakdown.items():
             if value > 0:
                 info = account_info.get(account_id, {})
+                
+                # If we couldn't find info by account_id, it might be because
+                # SnapTrade stores account contributions differently
+                if not info:
+                    logger.warning(f"No account info found for account_id: {account_id}")
+                
                 enhanced_breakdown.append({
-                    'account_id': account_id,  # Still include plaid_XXXX for backwards compat
-                    'uuid': info.get('uuid'),  # CRITICAL: UUID for filtering
+                    'account_id': account_id,
+                    'uuid': info.get('uuid'),
+                    'provider': info.get('provider', 'unknown'),
                     'account_name': info.get('account_name', 'Unknown Account'),
-                    'account_type': info.get('account_type', 'unknown'),
-                    'account_subtype': info.get('account_subtype', 'unknown'),
+                    'account_type': info.get('account_type', 'investment'),
+                    'account_subtype': info.get('account_subtype', 'investment'),
                     'institution_name': info.get('institution_name', 'Unknown Institution'),
-                    'portfolio_value': value,
-                    'percentage': 0.0  # Will be calculated by frontend
+                    'total_value': value,  # Renamed from portfolio_value for consistency
+                    'portfolio_value': value,  # Keep for backwards compat
+                    'percentage': (value / total_value * 100) if total_value > 0 else 0.0,
+                    'holdings_count': None  # Could be populated if needed
                 })
         
         # Sort by value descending
-        enhanced_breakdown.sort(key=lambda x: x['portfolio_value'], reverse=True)
+        enhanced_breakdown.sort(key=lambda x: x['total_value'], reverse=True)
+        
+        logger.info(f"Enhanced account breakdown: {len(enhanced_breakdown)} accounts for user {user_id}")
         
         return enhanced_breakdown
         
@@ -4993,6 +5019,68 @@ async def test_get_user_investment_accounts(
 # These endpoints provide portfolio data for the main /portfolio page
 
 from utils.feature_flags import get_feature_flags, FeatureFlagKey
+
+@app.post("/api/portfolio/sync")
+async def sync_portfolio_holdings(
+    user_id: str = Depends(get_authenticated_user_id),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Trigger a full sync of portfolio holdings from SnapTrade/external brokerages.
+    
+    This endpoint fetches the latest position data from connected brokerages
+    and updates the user_aggregated_holdings table.
+    
+    Called by:
+    - Frontend refresh button
+    - Post-trade completion
+    - Manual user action
+    
+    Returns:
+        Dict with sync results including positions_synced count
+    """
+    try:
+        logger.info(f"🔄 Portfolio sync requested for user {user_id}")
+        
+        # Check if user has SnapTrade connections
+        from utils.supabase.db_client import get_supabase_client
+        supabase = get_supabase_client()
+        
+        snaptrade_check = supabase.table('user_investment_accounts')\
+            .select('id')\
+            .eq('user_id', user_id)\
+            .eq('provider', 'snaptrade')\
+            .eq('is_active', True)\
+            .limit(1)\
+            .execute()
+        
+        if not snaptrade_check.data:
+            logger.info(f"User {user_id} has no active SnapTrade connections")
+            return {
+                "success": True,
+                "message": "No external brokerage connections to sync",
+                "positions_synced": 0
+            }
+        
+        # Trigger the sync
+        from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
+        sync_result = await trigger_full_user_sync(user_id, force_rebuild=True)
+        
+        logger.info(f"✅ Portfolio sync completed for user {user_id}: {sync_result}")
+        
+        return {
+            "success": sync_result.get('success', False),
+            "positions_synced": sync_result.get('positions_synced', 0),
+            "message": sync_result.get('message', 'Sync completed'),
+            "timestamp": sync_result.get('timestamp')
+        }
+        
+    except Exception as e:
+        logger.error(f"Error syncing portfolio for user {user_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to sync portfolio: {str(e)}"
+        )
 
 @app.get("/api/portfolio/aggregated")
 async def get_aggregated_portfolio_positions(

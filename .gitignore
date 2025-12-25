@@ -179,3 +179,9 @@ backend/email_previews/
 frontend-app/app/debug/
 frontend-app/app/api/debug/
 frontend-app/tmp/
+
+# LangSmith traces (may contain sensitive user data)
+# Keep the directory but ignore all sample data
+docs/langsmith-samples/*.json
+docs/langsmith-samples/threads/*.json
+docs/langsmith-samples/README.md

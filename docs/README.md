@@ -31,6 +31,7 @@ Welcome to the Clera documentation. This directory contains comprehensive docume
 ### ⚙️ **Operations** (`/operations/`)
 - **Email Configuration** - Email service setup and templates
 - **Portfolio Realtime Setup** - Real-time data infrastructure
+- **LangSmith Fetch Guide** - Debugging agent workflows with LangSmith traces
 - **Troubleshooting** - Common issues and solutions
 
 ### 🔧 **External Integrations** (`/integrations/`)
@@ -53,6 +54,11 @@ Welcome to the Clera documentation. This directory contains comprehensive docume
 1. Begin with `/architecture/backend-notes.md` and `/architecture/frontend-notes.md`
 2. Review `/architecture/dev-guidelines.md` for best practices
 3. Check `/operations/` for deployment and configuration
+
+### For Debugging Agent Workflows:
+1. Use `/operations/langsmith-fetch-guide.md` to fetch and analyze traces
+2. Run `./backend/scripts/fetch_langsmith_traces.sh traces 10` for quick debugging
+3. Review trace JSON files for agent behavior and tool usage
 
 ## 📝 Documentation Standards
 

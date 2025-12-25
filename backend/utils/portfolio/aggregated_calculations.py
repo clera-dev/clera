@@ -153,11 +153,12 @@ def calculate_asset_allocation(holdings_data: List[Dict[str, Any]], user_id: str
     enrichment_service = get_enrichment_service()
     enriched_holdings = enrichment_service.enrich_holdings(holdings_data, user_id)
     
-    # Map security types to asset categories
+    # Map security types to asset categories (including crypto)
     allocations = {
         'cash': Decimal('0'),
         'stock': Decimal('0'),
-        'bond': Decimal('0')
+        'bond': Decimal('0'),
+        'crypto': Decimal('0')  # Cryptocurrency assets
     }
     
     for holding in enriched_holdings:
@@ -173,26 +174,49 @@ def calculate_asset_allocation(holdings_data: List[Dict[str, Any]], user_id: str
 
 def _classify_security_type(security_type: str, holding: Dict[str, Any]) -> str:
     """
-    Classify a Plaid security type into cash/stock/bond categories.
+    Classify a Plaid security type into cash/stock/bond/crypto categories.
     
     Args:
         security_type: Plaid security type
         holding: Full holding data for additional context
         
     Returns:
-        Category string: 'cash', 'stock', or 'bond'
+        Category string: 'cash', 'stock', 'bond', or 'crypto'
     """
+    # Use the comprehensive crypto classification from asset_classification module
+    from utils.asset_classification import classify_asset, AssetClassification
+    
+    symbol = holding.get('symbol', '').upper()
+    security_name = holding.get('security_name', '')
+    
+    # CRITICAL: Check for crypto FIRST using the comprehensive classification
+    # This handles both security_type='crypto' AND symbol-based detection (BTC, ETH, etc.)
+    if security_type in ['crypto', 'cryptocurrency']:
+        return 'crypto'
+    
+    # Map Plaid security types to asset_class for proper classification
+    # This prevents stocks like ONE (One Gas Inc) from being misclassified as crypto (Harmony ONE)
+    if security_type in ['equity', 'etf', 'mutual_fund']:
+        asset_class = 'us_equity'  # Tell classifier this is a stock, not crypto
+    else:
+        asset_class = None
+    
+    # Use the comprehensive classify_asset function for symbol-based crypto detection
+    classification = classify_asset(symbol, security_name, asset_class)
+    if classification == AssetClassification.CRYPTO:
+        return 'crypto'
+    
+    # Standard classifications
     if security_type in ['equity']:
         return 'stock'
     elif security_type in ['etf']:
-        # ETFs could be stock or bond - use symbol to determine
-        symbol = holding.get('symbol', '')
-        if symbol in ['AGG', 'BND', 'VGIT', 'VCIT', 'VMBS', 'TLT', 'IEF']:
+        # ETFs could be stock or bond - use comprehensive classification
+        if classification == AssetClassification.BOND:
             return 'bond'
         return 'stock'
     elif security_type in ['mutual_fund']:
         # Classify mutual funds based on name
-        name = holding.get('security_name', '').lower()
+        name = security_name.lower()
         if any(keyword in name for keyword in ['bond', 'income', 'treasury', 'fixed']):
             return 'bond'
         return 'stock'
@@ -202,8 +226,6 @@ def _classify_security_type(security_type: str, holding: Dict[str, Any]) -> str:
         return 'cash'
     elif security_type in ['option', 'derivative']:
         return 'stock'  # Options are equity-related
-    elif security_type in ['crypto', 'cryptocurrency']:
-        return 'stock'  # Crypto is alternative equity
     else:
         return 'stock'  # Default unknown types to stock
 
@@ -247,7 +269,8 @@ def _build_allocation_response(allocations: Dict[str, Decimal], user_id: str) ->
     logger.info(f"Asset allocation calculated for user {user_id}: "
                f"Cash: {response['cash']['percentage']}%, "
                f"Stock: {response['stock']['percentage']}%, "  
-               f"Bond: {response['bond']['percentage']}%")
+               f"Bond: {response['bond']['percentage']}%, "
+               f"Crypto: {response.get('crypto', {}).get('percentage', 0)}%")
     
     return response
 
@@ -256,7 +279,8 @@ def _get_category_color(category: str) -> str:
     colors = {
         'cash': '#87CEEB',    # Sky Blue (matching frontend)
         'stock': '#4A90E2',   # Medium Blue (matching frontend)
-        'bond': '#2E5BBA'     # Deep Blue (matching frontend)
+        'bond': '#2E5BBA',    # Deep Blue (matching frontend)
+        'crypto': '#F7931A'   # Bitcoin Orange - distinctive crypto color
     }
     return colors.get(category, '#6b7280')
 
@@ -277,11 +301,12 @@ def _empty_portfolio_value_response(error: Optional[str] = None) -> Dict[str, An
     return response
 
 def _empty_allocation_response(error: Optional[str] = None) -> Dict[str, Any]:
-    """Return empty allocation response."""
+    """Return empty allocation response with consistent API shape."""
     response = {
         'cash': {'value': 0.0, 'percentage': 100.0},
         'stock': {'value': 0.0, 'percentage': 0.0},
         'bond': {'value': 0.0, 'percentage': 0.0},
+        'crypto': {'value': 0.0, 'percentage': 0.0},  # CRITICAL: Include crypto key for API consistency
         'total_value': 0.0,
         'pie_data': []
     }

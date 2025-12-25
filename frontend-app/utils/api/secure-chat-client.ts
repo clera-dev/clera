@@ -237,11 +237,11 @@ export class SecureChatClientImpl implements SecureChatClient {
       this.streamCompletedSuccessfully = false; // Reset completion tracking for new stream
       this.isStreaming = true; // Ensure streaming flag is set for token aggregation
       
-      // CRITICAL FIX: Import and use getAlpacaAccountId utility for consistency
+      // CRITICAL FIX: Get user authentication first
       const { getAlpacaAccountId } = await import('@/lib/utils');
       const { createClient } = await import('@/utils/supabase/client');
       
-      // Get authenticated user and account ID using the same method as Chat page
+      // Get authenticated user - required for all operations
       const supabase = createClient();
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       
@@ -249,13 +249,17 @@ export class SecureChatClientImpl implements SecureChatClient {
         throw new Error('User not authenticated');
       }
       
+      // CRITICAL FIX: account_id is OPTIONAL for SnapTrade/aggregation mode users
+      // The backend's TradeRoutingService handles account routing based on user's connected accounts
+      // For Alpaca-only users, accountId will be set; for SnapTrade users, it may be null
       const accountId = await getAlpacaAccountId();
       
-      if (!user.id || !accountId) {
-        throw new Error('User ID or Account ID not found - authentication required');
+      // Only user.id is required - accountId can be null for aggregation/SnapTrade mode
+      if (!user.id) {
+        throw new Error('User ID not found - authentication required');
       }
 
-      // console.log('[SecureChatClient] Handling interrupt with authenticated user and account');
+      // console.log('[SecureChatClient] Handling interrupt with authenticated user, accountId:', accountId ? 'present' : 'null (aggregation mode)');
 
       // Close existing stream before starting interrupt handling
       if (this.eventSource) {
@@ -264,6 +268,7 @@ export class SecureChatClientImpl implements SecureChatClient {
       }
 
       // Use fetch + ReadableStream for SSE, sending authenticated data in POST body
+      // Note: account_id can be null for SnapTrade/aggregation mode users
       const responseStream = await fetch('/api/conversations/handle-interrupt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -272,7 +277,7 @@ export class SecureChatClientImpl implements SecureChatClient {
           run_id: runId,
           response,
           user_id: user.id,
-          account_id: accountId, // Now using the correct account ID
+          account_id: accountId || null, // Can be null for aggregation/SnapTrade mode
         }),
       });
 
@@ -915,15 +920,51 @@ export class SecureChatClientImpl implements SecureChatClient {
     if (chunk.type === 'message_token' && chunk.data) {
       // console.log('[SecureChatClient] Received message_token');
       
-      // Process token content
+      // Process token content - handle multiple formats from LangGraph
       let tokenContent = '';
+      
       if (typeof chunk.data === 'string') {
+        // Direct string token
         tokenContent = chunk.data;
+      } else if (Array.isArray(chunk.data)) {
+        // messages-tuple format: array of message objects or tuples
+        // Extract content only from AI messages from Clera
+        for (const item of chunk.data) {
+          if (item && typeof item === 'object') {
+            // Check if it's an AI message from Clera
+            if (item.type === 'ai' && item.name === 'Clera' && item.content) {
+              // Extract text content
+              if (typeof item.content === 'string') {
+                tokenContent += item.content;
+              } else if (Array.isArray(item.content)) {
+                for (const c of item.content) {
+                  if (typeof c === 'string') tokenContent += c;
+                  else if (c?.text) tokenContent += c.text;
+                }
+              }
+            }
+            // Also handle direct content property (fallback for messages without name)
+            else if (item.content && !item.name) {
+              if (typeof item.content === 'string') {
+                tokenContent += item.content;
+              } else if (Array.isArray(item.content)) {
+                // Handle array-formatted content to prevent silent message loss
+                for (const c of item.content) {
+                  if (typeof c === 'string') tokenContent += c;
+                  else if (c?.text) tokenContent += c.text;
+                }
+              }
+            }
+          }
+        }
       } else if (chunk.data.content) {
-        tokenContent = chunk.data.content;
+        // Object with content property
+        tokenContent = typeof chunk.data.content === 'string' 
+          ? chunk.data.content 
+          : JSON.stringify(chunk.data.content);
       }
 
-        if (tokenContent) {
+      if (tokenContent) {
         const currentMessages = [...this._state.messages];
         
         // First token: Remove status message and start building response

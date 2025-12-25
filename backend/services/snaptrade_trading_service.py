@@ -279,7 +279,10 @@ class SnapTradeTradingService:
     
     def get_universal_symbol_id(self, ticker: str) -> Optional[str]:
         """
-        Get SnapTrade universal symbol ID for a ticker.
+        DEPRECATED: Use get_universal_symbol_id_for_account instead.
+        
+        Get SnapTrade universal symbol ID for a ticker using generic lookup.
+        WARNING: This may return symbols from non-US exchanges (e.g., German SWB for JNJ)
         
         Args:
             ticker: Stock symbol (e.g., 'AAPL')
@@ -316,6 +319,89 @@ class SnapTradeTradingService:
             
         except Exception as e:
             logger.error(f"Error looking up symbol {ticker}: {e}")
+            return None
+    
+    def get_universal_symbol_id_for_account(
+        self, 
+        ticker: str, 
+        user_id: str, 
+        account_id: str
+    ) -> Optional[str]:
+        """
+        Get SnapTrade universal symbol ID for a ticker that is tradeable on a specific account.
+        
+        PRODUCTION-GRADE: Uses symbol_search_user_account to get symbols that are actually
+        available for trading on the user's brokerage account. This avoids returning
+        symbols from foreign exchanges (e.g., German SWB instead of NYSE for JNJ).
+        
+        Args:
+            ticker: Stock symbol (e.g., 'AAPL', 'JNJ')
+            user_id: Platform user ID
+            account_id: SnapTrade account ID (UUID format)
+            
+        Returns:
+            Universal symbol ID or None if not found/not tradeable
+        """
+        # Normalize ticker to uppercase for consistent matching
+        ticker = ticker.upper().strip()
+        
+        try:
+            # Get user credentials
+            credentials = self.get_user_credentials(user_id)
+            if not credentials:
+                # CRITICAL: Do NOT fall back to deprecated method - it may return wrong exchange
+                # This could cause trades to execute on wrong securities (e.g., German JNJ instead of US JNJ)
+                logger.error(f"No credentials for user {user_id} - cannot look up tradeable symbol")
+                return None
+            
+            logger.info(f"Looking up tradeable symbol ID for {ticker} on account {account_id}")
+            
+            # Use symbol_search_user_account to get symbols available on this specific account
+            response = self.client.reference_data.symbol_search_user_account(
+                user_id=credentials['snaptrade_user_id'],
+                user_secret=credentials['snaptrade_user_secret'],
+                account_id=account_id,
+                substring=ticker
+            )
+            
+            if not response.body:
+                logger.warning(f"Symbol {ticker} not found for account {account_id}")
+                return None
+            
+            # Find exact match for the ticker symbol (prioritize US exchanges)
+            us_exchanges = {'NYSE', 'NASDAQ', 'ARCA', 'BATS', 'AMEX', 'NYSEARCA'}
+            exact_match = None
+            us_match = None
+            
+            for symbol_data in response.body:
+                # Case-insensitive comparison to handle user input like 'aapl' vs API returning 'AAPL'
+                symbol_from_api = symbol_data.get('symbol', '').upper()
+                if symbol_from_api == ticker:
+                    exchange_code = symbol_data.get('exchange', {}).get('code', '')
+                    
+                    # Prefer US exchanges
+                    if exchange_code in us_exchanges:
+                        us_match = symbol_data
+                        break  # Found US match, use it
+                    elif exact_match is None:
+                        exact_match = symbol_data
+            
+            # Use US match first, then any exact match
+            best_match = us_match or exact_match
+            
+            if best_match:
+                universal_symbol_id = best_match.get('id')
+                exchange_code = best_match.get('exchange', {}).get('code', 'Unknown')
+                logger.info(f"Found tradeable symbol ID for {ticker} on {exchange_code}: {universal_symbol_id}")
+                return universal_symbol_id
+            
+            logger.warning(f"No exact match for {ticker} found on account {account_id}")
+            return None
+            
+        except Exception as e:
+            # CRITICAL: Do NOT fall back to deprecated method on error
+            # Silent fallback could cause trades on wrong securities
+            logger.error(f"Error looking up symbol {ticker} for account {account_id}: {e}")
             return None
     
     def check_order_impact(
@@ -372,12 +458,14 @@ class SnapTradeTradingService:
                     'error': 'SnapTrade credentials not found. Please reconnect your brokerage account.'
                 }
             
-            # Get universal symbol ID
-            universal_symbol_id = self.get_universal_symbol_id(symbol)
+            # Get universal symbol ID for this specific account
+            # PRODUCTION-GRADE: Use account-specific lookup to get the correct exchange
+            # (e.g., NYSE JNJ instead of German SWB JNJ)
+            universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
             if not universal_symbol_id:
                 return {
                     'success': False,
-                    'error': f'Symbol {symbol} not found or not supported for trading.'
+                    'error': f"Symbol '{symbol}' is not available for trading on your brokerage. Please verify the ticker symbol is correct."
                 }
             
             logger.info(f"Checking order impact: {action} {symbol} via account {account_id}")
@@ -511,12 +599,14 @@ class SnapTradeTradingService:
                         'error': 'Order information is incomplete. Please try again.'
                     }
                 
-                # Get universal symbol ID
-                universal_symbol_id = self.get_universal_symbol_id(symbol)
+                # Get universal symbol ID for this specific account
+                # PRODUCTION-GRADE: Use account-specific lookup to get the correct exchange
+                # (e.g., NYSE JNJ instead of German SWB JNJ)
+                universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
                 if not universal_symbol_id:
                     return {
                         'success': False,
-                        'error': f'Symbol {symbol} not found or not supported for trading.'
+                        'error': f"Symbol '{symbol}' is not available for trading on your brokerage. Please verify the ticker symbol is correct."
                     }
                 
                 logger.info(f"Validating order via get_order_impact: {action} {symbol} via account {account_id}")
@@ -581,8 +671,13 @@ class SnapTradeTradingService:
                                     logger.info(f"SELL order: Converted notional ${notional_value} to {order_units} whole shares (raw: {raw_units:.4f}) at ${current_price}/share")
                                 else:
                                     # For BUY orders, fractional shares are usually supported
-                                    order_units = round(raw_units, 4)
-                                    logger.info(f"BUY order: Converted notional ${notional_value} to {order_units} units at ${current_price}/share")
+                                    # PRODUCTION-GRADE FIX: Round UP to ensure we meet minimum order amounts
+                                    # Some brokerages (like Webull) have a strict $5 minimum and rounding down
+                                    # can cause the final amount to be $4.999 which fails
+                                    import math
+                                    # Round up to 4 decimal places to ensure we meet the minimum
+                                    order_units = math.ceil(raw_units * 10000) / 10000
+                                    logger.info(f"BUY order: Converted notional ${notional_value} to {order_units} units (rounded UP) at ${current_price}/share")
                             else:
                                 logger.warning(f"Could not get price for {symbol}, using notional_value directly")
                     except Exception as price_error:
@@ -648,6 +743,12 @@ class SnapTradeTradingService:
                             price=price,
                             stop_price=stop
                         )
+                    # Handle symbol not tradeable on this brokerage (code 1063)
+                    elif '1063' in error_str or 'failed to obtain symbol' in error_str.lower() or 'unable to obtain symbol' in error_str.lower():
+                        return {
+                            'success': False,
+                            'error': f"The symbol '{symbol}' is not available for trading on your connected brokerage. This stock may not be supported by Webull. Try trading ETFs like VTI, SPY, or QQQ instead."
+                        }
                     elif 'insufficient' in error_str.lower() or 'buying power' in error_str.lower():
                         return {
                             'success': False,
@@ -714,6 +815,20 @@ class SnapTradeTradingService:
                 return {
                     'success': False,
                     'error': 'This brokerage requires selling whole shares only. Please adjust your sell amount to at least 1 full share.'
+                }
+            
+            # Handle minimum order amount error (code 1119 - Webull fractional share minimum)
+            if '1119' in error_str or 'minimum order amount' in error_str.lower() or 'FRACT_AMOUNT_GREAT_5' in error_str:
+                return {
+                    'success': False,
+                    'error': 'The minimum order amount for fractional shares is $5. Please increase your order amount slightly above $5 to account for price fluctuations.'
+                }
+            
+            # Handle symbol not tradeable on this brokerage (code 1063)
+            if '1063' in error_str or 'failed to obtain symbol' in error_str.lower() or 'unable to obtain symbol' in error_str.lower():
+                return {
+                    'success': False,
+                    'error': f"This symbol is not available for trading on your connected brokerage. Try trading ETFs like VTI, SPY, or QQQ instead."
                 }
             
             # Simplify technical errors for user display

@@ -76,6 +76,10 @@ class TradeRoutingService:
         """
         Detect which account holds a specific symbol.
         
+        PRODUCTION-GRADE: This method queries the user_aggregated_holdings table
+        which stores account information in the 'account_contributions' JSONB column.
+        The structure is: [{"account_id": "snaptrade_xxx", "quantity": 10, ...}, ...]
+        
         Returns:
             (account_id, account_type, account_info)
             account_type: 'alpaca' | 'snaptrade' | None
@@ -83,19 +87,27 @@ class TradeRoutingService:
         supabase = get_supabase_client()
         
         # Check aggregated holdings
+        # CRITICAL FIX: Query 'account_contributions' column, not 'accounts'
+        # The database schema defines this column as JSONB with account breakdown
         holdings_result = supabase.table('user_aggregated_holdings')\
-            .select('accounts')\
+            .select('account_contributions')\
             .eq('user_id', user_id)\
-            .eq('symbol', symbol)\
+            .eq('symbol', symbol.upper())\
             .execute()
         
         if not holdings_result.data:
+            logger.debug(f"[TradeRouting] No holdings found for {symbol} for user {user_id}")
             return None, None, None
         
-        accounts_data = holdings_result.data[0].get('accounts', [])
+        # Get account contributions array from the JSONB column
+        # CRITICAL FIX: The column is 'account_contributions', not 'accounts'
+        accounts_data = holdings_result.data[0].get('account_contributions', [])
         
         if not accounts_data:
+            logger.debug(f"[TradeRouting] Holdings exist for {symbol} but no account contributions data")
             return None, None, None
+        
+        logger.debug(f"[TradeRouting] Found {len(accounts_data)} account(s) holding {symbol}")
         
         # Prefer SnapTrade accounts with trade permission, then Alpaca
         for acc in accounts_data:
@@ -113,13 +125,18 @@ class TradeRoutingService:
                     .execute()
                 
                 if account_info.data:
+                    logger.info(f"[TradeRouting] Symbol {symbol} found in SnapTrade account {account_id}")
                     return account_id, 'snaptrade', account_info.data[0]
+                else:
+                    logger.debug(f"[TradeRouting] SnapTrade account {account_id} not trade-enabled or inactive")
             
             elif account_id.startswith('clera_') or account_id == 'alpaca':
                 portfolio_mode = TradeRoutingService.get_user_portfolio_mode(user_id)
                 if portfolio_mode['has_alpaca']:
+                    logger.info(f"[TradeRouting] Symbol {symbol} found in Alpaca account")
                     return portfolio_mode['alpaca_account_id'], 'alpaca', None
         
+        logger.debug(f"[TradeRouting] No tradeable account found for {symbol}")
         return None, None, None
     
     @staticmethod
