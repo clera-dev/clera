@@ -233,13 +233,15 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
                 # CRITICAL FIX: SnapTrade/Coinbase sometimes returns wrong security_type code for crypto
                 # E.g., BTC/ETH/ADA come back as 'cs' (common stock) instead of 'cr' (crypto)
                 # Use symbol-based detection for UNAMBIGUOUS crypto symbols
-                UNAMBIGUOUS_CRYPTO = {'BTC', 'ETH', 'ADA', 'SOL', 'DOGE', 'XRP', 'LTC', 'DOT', 'LINK', 'MATIC',
-                                      'AVAX', 'ATOM', 'XLM', 'ALGO', 'UNI', 'AAVE', 'SHIB', 'FTM', 'SAND',
-                                      'MANA', 'APE', 'CRV', 'MKR', 'COMP', 'SUSHI', 'YFI', 'SNX', 'ENJ',
-                                      'GRT', 'AXS', 'BAT', 'USDC', 'USDT', 'DAI', 'BUSD', 'UST'}
-                if symbol_str.upper() in UNAMBIGUOUS_CRYPTO:
+                from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO, CRYPTO_EXCHANGES
+                
+                # Check if symbol is unambiguous crypto OR if it's from a known crypto exchange
+                symbol_upper = symbol_str.upper()
+                is_crypto_exchange = institution_name in CRYPTO_EXCHANGES
+                
+                if symbol_upper in UNAMBIGUOUS_CRYPTO or (is_crypto_exchange and snaptrade_code == 'cs'):
                     security_type = 'crypto'
-                    logger.debug(f"Overriding security_type for {symbol_str} to 'crypto' (was '{snaptrade_code}')")
+                    logger.debug(f"Overriding security_type for {symbol_str} to 'crypto' (was '{snaptrade_code}', exchange: {institution_name})")
                 
                 # Calculate quantities and values
                 quantity = Decimal(str(pos.get('units', 0)))

@@ -196,11 +196,9 @@ def _classify_security_type(security_type: str, holding: Dict[str, Any]) -> str:
     
     # CRITICAL FIX: Check for UNAMBIGUOUS crypto symbols FIRST, BEFORE applying the us_equity override
     # This handles the case where SnapTrade/Coinbase returns security_type='equity' for crypto assets
-    # BTC, ETH, ADA, SOL, etc. are NEVER valid US stock tickers, so always classify as crypto
-    UNAMBIGUOUS_CRYPTO = {'BTC', 'ETH', 'ADA', 'SOL', 'DOGE', 'XRP', 'LTC', 'DOT', 'LINK', 'MATIC',
-                          'AVAX', 'ATOM', 'XLM', 'ALGO', 'UNI', 'AAVE', 'SHIB', 'FTM', 'SAND',
-                          'MANA', 'APE', 'CRV', 'MKR', 'COMP', 'SUSHI', 'YFI', 'SNX', 'ENJ',
-                          'GRT', 'AXS', 'BAT', 'USDC', 'USDT', 'DAI', 'BUSD', 'UST'}
+    # Only symbols that are NEVER valid US stock tickers are in UNAMBIGUOUS_CRYPTO
+    from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
+    
     if symbol in UNAMBIGUOUS_CRYPTO:
         return 'crypto'
     

@@ -115,12 +115,9 @@ class SectorAllocationService:
                 name = h.get('security_name', '')
                 
                 # CRITICAL FIX: Check UNAMBIGUOUS crypto symbols FIRST
-                # These are NEVER valid US stock tickers, so always classify as crypto
-                # regardless of what security_type SnapTrade/Coinbase reports
-                UNAMBIGUOUS_CRYPTO = {'BTC', 'ETH', 'ADA', 'SOL', 'DOGE', 'XRP', 'LTC', 'DOT', 'LINK', 'MATIC',
-                                      'AVAX', 'ATOM', 'XLM', 'ALGO', 'UNI', 'AAVE', 'SHIB', 'FTM', 'SAND',
-                                      'MANA', 'APE', 'CRV', 'MKR', 'COMP', 'SUSHI', 'YFI', 'SNX', 'ENJ',
-                                      'GRT', 'AXS', 'BAT', 'USDC', 'USDT', 'DAI', 'BUSD', 'UST'}
+                # Only symbols that are NEVER valid US stock tickers are in UNAMBIGUOUS_CRYPTO
+                from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
+                
                 if symbol in UNAMBIGUOUS_CRYPTO:
                     return True
                 
