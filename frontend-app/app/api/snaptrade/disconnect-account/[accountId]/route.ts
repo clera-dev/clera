@@ -79,9 +79,11 @@ export async function DELETE(
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      // Log full error details server-side only
       console.error('[Disconnect Account] ❌ Backend disconnect failed:', errorData);
+      // Return generic error to client to avoid leaking internal details
       return NextResponse.json(
-        { error: 'Failed to disconnect account', details: errorData },
+        { error: 'Failed to disconnect account' },
         { status: response.status }
       );
     }

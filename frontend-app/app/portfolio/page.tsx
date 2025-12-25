@@ -733,12 +733,15 @@ export default function PortfolioPage() {
   // CRITICAL: Auto-refresh ALL data when account filter changes (not just allocation chart)
   // This ensures the entire page updates when user selects a different brokerage
   useEffect(() => {
+    let isMounted = true;
+    
     if (selectedAccountFilter && accountId) {
       // Force re-fetch of allocation charts with new filter
       setAllocationChartRefreshKey(Date.now());
       console.log(`📊 Account filter changed to: ${selectedAccountFilter} - REFRESHING ALL DATA`);
       
       const refreshAllDataForNewFilter = async () => {
+        if (!isMounted) return;
         setIsLoading(true);
         try {
           const cacheBuster = `t=${Date.now()}`;
@@ -747,6 +750,8 @@ export default function PortfolioPage() {
           const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`, cacheBuster);
           console.log(`📊 Reloading positions: ${positionsUrl}`);
           const positionsRaw = await fetchData(positionsUrl);
+          if (!isMounted) return;
+          
           const positionsData = (positionsRaw && typeof positionsRaw === 'object' && 'positions' in positionsRaw) 
             ? positionsRaw.positions 
             : (Array.isArray(positionsRaw) ? positionsRaw : []);
@@ -766,39 +771,43 @@ export default function PortfolioPage() {
               weight: weight,
             };
           });
-          setPositions(enrichedPositions);
+          if (isMounted) setPositions(enrichedPositions);
           
           // Refresh analytics with new filter (FORCE FRESH - no cache)
           const analyticsUrl = buildFilteredUrl(`/api/portfolio/analytics?accountId=${accountId}`, cacheBuster);
           console.log(`📊 Reloading analytics: ${analyticsUrl}`);
           const analyticsData = await fetchData(analyticsUrl);
-          setAnalytics(analyticsData);
-          console.log(`✅ Analytics loaded:`, analyticsData);
+          if (isMounted) {
+            setAnalytics(analyticsData);
+            console.log(`✅ Analytics loaded:`, analyticsData);
+          }
           
           // Refresh history with new filter
           const historyUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=${selectedTimeRange}`, cacheBuster);
           console.log(`📊 Reloading history: ${historyUrl}`);
           const historyData = await fetchData(historyUrl);
-          setPortfolioHistory(historyData);
+          if (isMounted) setPortfolioHistory(historyData);
           
           // Also refresh all-time history for the growth projection
           if (selectedTimeRange !== 'MAX') {
             const allTimeUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=MAX`, cacheBuster);
             const allTimeData = await fetchData(allTimeUrl);
-            setAllTimeHistory(allTimeData);
+            if (isMounted) setAllTimeHistory(allTimeData);
           } else {
-            setAllTimeHistory(historyData);
+            if (isMounted) setAllTimeHistory(historyData);
           }
           
         } catch (err) {
           console.error('Error refreshing data for new filter:', err);
         } finally {
-          setIsLoading(false);
+          if (isMounted) setIsLoading(false);
         }
       };
       
       refreshAllDataForNewFilter();
     }
+    
+    return () => { isMounted = false; };
   }, [selectedAccountFilter, accountId]);
 
   const allTimePerformance = useMemo(() => {

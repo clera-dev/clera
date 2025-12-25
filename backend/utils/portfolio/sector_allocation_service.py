@@ -122,9 +122,10 @@ class SectorAllocationService:
             non_crypto_holdings = [h for h in enriched_holdings if not is_crypto_holding(h)]
             
             # Filter to ONLY equity stocks and ETFs for sector allocation (excluding crypto)
+            # Note: SnapTrade 'et' code is normalized to 'etf' in snaptrade_provider.py
             equity_holdings = [
                 h for h in non_crypto_holdings 
-                if h.get('security_type') in ['equity', 'etf', 'equity', 'et']
+                if h.get('security_type') in ['equity', 'etf']
             ]
             
             # Log for debugging

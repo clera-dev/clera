@@ -448,40 +448,29 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         supabase.table('snaptrade_orders').insert(order_data).execute()
         logger.info(f"[Trade Agent] Order stored in database")
         
-        # PRODUCTION-GRADE: Trigger portfolio sync after trade
-        # SnapTrade webhooks can be delayed, so sync holdings now
-        # NOTE: We run the sync synchronously to ensure data is updated before the user sees the success message
+        # PRODUCTION-GRADE: Trigger portfolio sync after trade in background
+        # Don't block the trade response - user can click Refresh on Portfolio page
+        # The sync will run asynchronously to update holdings
         try:
             from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
             import asyncio
-            import time
+            import threading
             
-            # Small delay to let brokerage process the order
-            time.sleep(2)
+            def run_sync_in_background():
+                """Run sync in a background thread to avoid blocking the response."""
+                try:
+                    asyncio.run(trigger_full_user_sync(user_id, force_rebuild=True))
+                    logger.info(f"[Trade Agent] Background post-trade sync completed for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"[Trade Agent] Background post-trade sync failed: {e}")
             
-            # Run the async sync in the current thread's event loop
-            # This ensures the sync actually runs rather than being lost in a task
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If there's already a running loop, use nest_asyncio or schedule in thread
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, trigger_full_user_sync(user_id, force_rebuild=True))
-                        result = future.result(timeout=30)  # 30 second timeout
-                else:
-                    result = asyncio.run(trigger_full_user_sync(user_id, force_rebuild=True))
-            except RuntimeError:
-                # No event loop - create one
-                result = asyncio.run(trigger_full_user_sync(user_id, force_rebuild=True))
-            
-            if result.get('success'):
-                logger.info(f"[Trade Agent] Post-trade sync completed: {result.get('positions_synced', 0)} positions")
-            else:
-                logger.warning(f"[Trade Agent] Post-trade sync failed: {result.get('error')}")
+            # Start background sync - don't wait for it
+            sync_thread = threading.Thread(target=run_sync_in_background, daemon=True)
+            sync_thread.start()
+            logger.info(f"[Trade Agent] Started background sync for user {user_id}")
         except Exception as sync_error:
-            # Don't fail the trade response if sync fails - user can refresh manually
-            logger.warning(f"[Trade Agent] Post-trade sync failed: {sync_error}. User should refresh portfolio.")
+            # Don't fail the trade response if sync setup fails - user can refresh manually
+            logger.warning(f"[Trade Agent] Failed to start background sync: {sync_error}")
         
         # Build success message with refresh hint
         if order_units is not None:
@@ -537,7 +526,7 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
         
         # Handle symbol not available error (1063)
         if '1063' in error_str or 'Unable to obtain symbol' in error_str:
-            return f"❌ Sorry, {ticker} is not available for trading through the user's brokerage (Webull). This stock may not be supported by their broker, or trading may be restricted. Please suggest a different stock - ETFs like VTI, SPY, or QQQ are usually widely supported."
+            return f"❌ Sorry, {ticker} is not available for trading through the user's connected brokerage. This stock may not be supported by their broker, or trading may be restricted. Please suggest a different stock - ETFs like VTI, SPY, or QQQ are usually widely supported."
         
         # Generic brokerage error - clean up the technical details for user
         # Extract just the meaningful part of the error
@@ -548,8 +537,8 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
                 if detail_match:
                     clean_error = detail_match.group(1)
                     return f"❌ Brokerage error: {clean_error}. Please try a different stock or check with the user if this stock is available on their brokerage."
-            except:
-                pass
+            except Exception:
+                pass  # Fall through to generic error message
         
         return f"❌ Brokerage error occurred while placing the order. Please try a different stock or ask the user to check if {ticker} is available on their brokerage platform."
     except Exception as e:

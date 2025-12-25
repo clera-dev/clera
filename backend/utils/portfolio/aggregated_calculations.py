@@ -194,8 +194,14 @@ def _classify_security_type(security_type: str, holding: Dict[str, Any]) -> str:
     if security_type in ['crypto', 'cryptocurrency']:
         return 'crypto'
     
+    # Map Plaid security types to asset_class for proper classification
+    # This prevents stocks like ONE (One Gas Inc) from being misclassified as crypto (Harmony ONE)
+    if security_type in ['equity', 'etf', 'mutual_fund']:
+        asset_class = 'us_equity'  # Tell classifier this is a stock, not crypto
+    else:
+        asset_class = None
+    
     # Use the comprehensive classify_asset function for symbol-based crypto detection
-    asset_class = 'crypto' if security_type == 'crypto' else None
     classification = classify_asset(symbol, security_name, asset_class)
     if classification == AssetClassification.CRYPTO:
         return 'crypto'

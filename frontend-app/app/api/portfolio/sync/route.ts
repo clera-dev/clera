@@ -37,15 +37,34 @@ export async function POST(request: Request) {
       );
     }
 
-    // Call backend sync endpoint
+    // Validate required environment variables
     const backendUrl = process.env.BACKEND_API_URL;
+    const backendApiKey = process.env.BACKEND_API_KEY;
+    
+    if (!backendUrl) {
+      console.error('Portfolio Sync API: BACKEND_API_URL not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    
+    if (!backendApiKey) {
+      console.error('Portfolio Sync API: BACKEND_API_KEY not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    
+    // Call backend sync endpoint
     const url = `${backendUrl}/api/portfolio/sync`;
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': process.env.BACKEND_API_KEY || '',
+        'X-API-Key': backendApiKey,
         'Authorization': `Bearer ${session.access_token}`,
       },
     });

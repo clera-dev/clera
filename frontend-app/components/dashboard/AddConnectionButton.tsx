@@ -269,10 +269,12 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
             >
               No, keep connected
             </AlertDialogCancel>
-            <AlertDialogAction
+            {/* Use Button instead of AlertDialogAction to prevent auto-close during async operation */}
+            <Button
               onClick={handleDisconnectConfirm}
               disabled={isDisconnecting}
-              className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
+              className="w-full sm:w-auto"
             >
               {isDisconnecting ? (
                 <>
@@ -282,7 +284,7 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
               ) : (
                 'Yes, disconnect'
               )}
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
