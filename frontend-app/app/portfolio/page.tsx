@@ -755,9 +755,9 @@ export default function PortfolioPage() {
           // The backend already includes security_name in the positions response
           // This eliminates N API calls (where N = number of positions)
           const totalMarketValue = positionsData.reduce((sum: number, pos: any) => 
-            sum + safeParseFloat(pos.market_value), 0);
+            sum + (safeParseFloat(pos.market_value) || 0), 0);
           const enrichedPositions = positionsData.map((pos: any) => {
-            const marketValue = safeParseFloat(pos.market_value);
+            const marketValue = safeParseFloat(pos.market_value) || 0;
             const weight = totalMarketValue && marketValue ? (marketValue / totalMarketValue) * 100 : 0;
             return {
               ...pos,
