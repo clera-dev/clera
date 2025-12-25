@@ -93,6 +93,8 @@ class LiveEnrichmentService:
         
         # Check if we have cached prices
         live_prices = {}
+        fetched_fresh_prices = False
+        
         if not force_refresh and self._is_cache_valid(price_cache_key):
             cached_prices = _price_cache.get(price_cache_key, {})
             # Get symbols we need
@@ -106,13 +108,17 @@ class LiveEnrichmentService:
                 live_prices = self._fetch_live_prices(holdings)
                 # Merge with cached prices
                 live_prices = {**cached_prices, **live_prices}
+                fetched_fresh_prices = True
         else:
             # Fetch fresh prices
             live_prices = self._fetch_live_prices(holdings)
+            fetched_fresh_prices = True
         
-        # Cache the prices (not the full enriched holdings)
-        _price_cache[price_cache_key] = {**_price_cache.get(price_cache_key, {}), **live_prices}
-        _cache_timestamps[price_cache_key] = datetime.utcnow()
+        # CRITICAL: Only update cache and timestamp when fresh prices are fetched
+        # This ensures the 60-second TTL works correctly and stale prices eventually expire
+        if fetched_fresh_prices:
+            _price_cache[price_cache_key] = {**_price_cache.get(price_cache_key, {}), **live_prices}
+            _cache_timestamps[price_cache_key] = datetime.utcnow()
         
         # Enrich each holding with the prices (this is fast, no API calls)
         enriched = []

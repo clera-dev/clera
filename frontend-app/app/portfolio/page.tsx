@@ -670,8 +670,9 @@ export default function PortfolioPage() {
       isMounted = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-
-  }, [accountId, portfolioMode, userId, selectedAccountFilter]);
+    // NOTE: selectedAccountFilter is intentionally NOT in dependencies
+    // Filter changes are handled by the dedicated useEffect below to avoid duplicate API calls
+  }, [accountId, portfolioMode, userId]);
 
   useEffect(() => {
      // For brokerage mode: need accountId

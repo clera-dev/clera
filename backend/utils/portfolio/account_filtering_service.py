@@ -146,7 +146,9 @@ class AccountFilteringService:
                 .execute()
             
             if result.data:
-                provider = result.data.get('provider', 'unknown')
+                # CRITICAL: Use 'plaid' as default to match aggregated_portfolio_service.py
+                # Inconsistent defaults would cause silent filtering failures
+                provider = result.data.get('provider', 'plaid')
                 provider_account_id = result.data['provider_account_id']
                 return f"{provider}_{provider_account_id}"
             
