@@ -823,7 +823,9 @@ export default function PortfolioPage() {
     }
     
     return () => { isMounted = false; };
-  }, [selectedAccountFilter, accountId, portfolioMode, userId]);
+    // CRITICAL: Include selectedTimeRange to prevent stale closure bug
+    // Without it, changing time range then filter would fetch history with old time range
+  }, [selectedAccountFilter, accountId, portfolioMode, userId, selectedTimeRange]);
 
   const allTimePerformance = useMemo(() => {
     if (!allTimeHistory || !allTimeHistory.equity || allTimeHistory.equity.length === 0) {

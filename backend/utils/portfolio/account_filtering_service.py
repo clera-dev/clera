@@ -87,7 +87,10 @@ class AccountFilteringService:
                     account_id_for_filter = converted_id
                     logger.info(f"Converted UUID {filter_account} to prefixed ID {account_id_for_filter}")
                 else:
-                    logger.warning(f"Could not convert {filter_account}, using as-is")
+                    # CRITICAL: UUID conversion failed - return empty list instead of silently filtering
+                    # with an invalid ID that will never match any account_contributions
+                    logger.error(f"Failed to convert filter_account '{filter_account}' to prefixed ID - returning empty holdings")
+                    return []
             
             # Filter to specific account
             filtered_holdings = []
