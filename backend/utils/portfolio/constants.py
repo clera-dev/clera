@@ -19,7 +19,8 @@ to ensure consistency and prevent DRY violations.
 # which uses security_type and security_name to disambiguate.
 UNAMBIGUOUS_CRYPTO = frozenset({
     # Major cryptocurrencies (no stock ticker conflicts)
-    'BTC', 'ETH', 'ADA', 'SOL', 'DOGE', 'XRP', 'LTC', 'DOT', 'MATIC',
+    # NOTE: SOL is excluded - ReneSola Ltd (NYSE: SOL) is a valid stock
+    'BTC', 'ETH', 'ADA', 'DOGE', 'XRP', 'LTC', 'DOT', 'MATIC',
     'AVAX', 'ATOM', 'XLM', 'ALGO', 'UNI', 'AAVE', 'SHIB', 'FTM',
     'APE', 'CRV', 'MKR', 'SUSHI', 'YFI', 'ENJ',
     'GRT', 'AXS', 'BAT',

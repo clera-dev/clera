@@ -20,6 +20,7 @@ from snaptrade_client.exceptions import ApiException
 from .abstract_provider import (
     AbstractPortfolioProvider, Account, Position, Transaction, PerformanceData, ProviderError
 )
+from .constants import UNAMBIGUOUS_CRYPTO, CRYPTO_EXCHANGES
 
 logger = logging.getLogger(__name__)
 
@@ -233,8 +234,6 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
                 # CRITICAL FIX: SnapTrade/Coinbase sometimes returns wrong security_type code for crypto
                 # E.g., BTC/ETH/ADA come back as 'cs' (common stock) instead of 'cr' (crypto)
                 # Use symbol-based detection for UNAMBIGUOUS crypto symbols
-                from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO, CRYPTO_EXCHANGES
-                
                 # Check if symbol is unambiguous crypto OR if it's from a known crypto exchange
                 symbol_upper = symbol_str.upper()
                 is_crypto_exchange = institution_name in CRYPTO_EXCHANGES
