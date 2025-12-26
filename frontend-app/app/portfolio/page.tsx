@@ -470,13 +470,19 @@ export default function PortfolioPage() {
           }
         } else {
           console.error('Error checking payment status:', paymentResult.reason);
+          // SECURITY: On payment check failure, redirect to protected page as fail-safe
+          // This prevents users from bypassing payment by exploiting API failures
+          router.push('/protected');
+          return;
         }
 
       } catch (err: any) {
         if (isMounted) {
           console.error("Error in initialization:", err);
-          setError(err.message || "Failed to load account details.");
-        setPortfolioMode('brokerage'); // Safe fallback
+          // SECURITY: On critical initialization failure, redirect to protected page
+          // This ensures users can't bypass checks due to unexpected errors
+          router.push('/protected');
+          return;
         }
       }
     };
