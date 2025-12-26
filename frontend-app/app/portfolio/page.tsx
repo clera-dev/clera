@@ -374,53 +374,85 @@ export default function PortfolioPage() {
     }
   };
 
+  // OPTIMIZED: Combined parallel initialization for faster page load
+  // Previously these were separate useEffects that ran sequentially
+  // Now they run in parallel, reducing initial load time significantly
   useEffect(() => {
     let isMounted = true;
 
-    const getAccountInfo = async () => {
+    const initializeAll = async () => {
       setIsLoading(true);
       setError(null);
+      
       try {
-        const response = await fetch('/api/user/account-info');
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || `Failed to fetch account info (${response.status})`);
-        }
-        const data = await response.json();
+        // Get supabase client and user first (needed for other calls)
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && isMounted) setUserId(user.id);
 
-        if (isMounted) {
+        // Run all initialization calls in PARALLEL for faster loading
+        const [accountInfoResult, portfolioModeResult, paymentResult] = await Promise.allSettled([
+          // 1. Get account info (brokerage account ID)
+          fetch('/api/user/account-info').then(async (res) => {
+            if (!res.ok) throw new Error(`Account info failed (${res.status})`);
+            return res.json();
+          }),
+          
+          // 2. Get portfolio mode (aggregation vs brokerage)
+          fetch('/api/portfolio/connection-status').then(async (res) => {
+            if (!res.ok) throw new Error(`Portfolio mode failed (${res.status})`);
+            return res.json();
+          }),
+          
+          // 3. Check payment status
+          fetch('/api/stripe/check-payment-status').then(async (res) => {
+            if (!res.ok) throw new Error(`Payment check failed (${res.status})`);
+            return res.json();
+          })
+        ]);
+
+        if (!isMounted) return;
+
+        // Process account info result
+        if (accountInfoResult.status === 'fulfilled') {
+          const data = accountInfoResult.value;
           if (data.accountId) {
             setAccountId(data.accountId);
           } else {
-            // No Alpaca account - user in aggregation mode, this is expected
             console.log("No Alpaca account found - user in aggregation mode");
             setAccountId(null);
           }
+        } else {
+          console.error("Error in getAccountInfo:", accountInfoResult.reason);
         }
-      } catch (err: any) {
-        if (isMounted) {
-            console.error("Error in getAccountInfo:", err);
-            setError(err.message || "Failed to load account details.");
+
+        // Process portfolio mode result
+        if (portfolioModeResult.status === 'fulfilled') {
+          const data = portfolioModeResult.value;
+          setPortfolioMode(data.portfolio_mode || 'brokerage');
+          
+          // Check historical data status for aggregation mode (non-blocking)
+          if (data.portfolio_mode === 'aggregation' && user) {
+            fetch('/api/portfolio/reconstruction/status')
+              .then(res => res.ok ? res.json() : null)
+              .then(status => {
+                if (isMounted && status) {
+                  setHasHistoricalData(status.status === 'completed');
+                }
+              })
+              .catch(err => console.debug('Historical data check failed:', err));
+          }
+        } else {
+          console.error('Error initializing portfolio mode:', portfolioModeResult.reason);
+          setPortfolioMode('brokerage'); // Safe fallback
         }
-      }
-    };
 
-    getAccountInfo();
-
-    return () => { isMounted = false; };
-
-  }, []);
-
-  // Check payment status before allowing access
-  useEffect(() => {
-    const checkPaymentStatus = async () => {
-      try {
-        const paymentCheck = await fetch('/api/stripe/check-payment-status');
-        if (paymentCheck.ok) {
-          const paymentData = await paymentCheck.json();
+        // Process payment status result - handle redirect if needed
+        if (paymentResult.status === 'fulfilled') {
+          const paymentData = paymentResult.value;
           if (!paymentData.hasActivePayment) {
-            // User doesn't have active payment, redirect to checkout
             console.log('Payment required, redirecting to checkout');
+            try {
             const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
               method: 'POST',
             });
@@ -431,62 +463,52 @@ export default function PortfolioPage() {
                 return;
               }
             }
-            // If checkout creation fails, redirect to protected page
+            } catch (checkoutErr) {
+              console.error('Error creating checkout session:', checkoutErr);
+          }
             router.push('/protected');
           }
+        } else {
+          console.error('Error checking payment status:', paymentResult.reason);
+          // SECURITY: On payment check failure, redirect to protected page as fail-safe
+          // This prevents users from bypassing payment by exploiting API failures
+          router.push('/protected');
+          return;
         }
-      } catch (error) {
-        console.error('Error checking payment status:', error);
-        // On error, redirect to protected page to be safe
-        router.push('/protected');
+
+      } catch (err: any) {
+        if (isMounted) {
+          console.error("Error in initialization:", err);
+          // SECURITY: On critical initialization failure, redirect to protected page
+          // This ensures users can't bypass checks due to unexpected errors
+          router.push('/protected');
+          return;
+        }
       }
     };
 
-    checkPaymentStatus();
+    initializeAll();
+
+    return () => { isMounted = false; };
   }, [router]);
-
-  // Essential initialization for component selection
-  useEffect(() => {
-    const initializePortfolioMode = async () => {
-      try {
-        // Get user ID
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) setUserId(user.id);
-
-        // Get portfolio mode
-        const response = await fetch('/api/portfolio/connection-status');
-        if (response.ok) {
-          const data = await response.json();
-          setPortfolioMode(data.portfolio_mode || 'brokerage');
-          
-          // Check historical data status for aggregation mode
-          if (data.portfolio_mode === 'aggregation' && user) {
-            try {
-              const histResponse = await fetch('/api/portfolio/reconstruction/status');
-              if (histResponse.ok) {
-                const status = await histResponse.json();
-                setHasHistoricalData(status.status === 'completed');
-              }
-            } catch (err) {
-              console.debug('Historical data check failed:', err);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error initializing portfolio mode:', error);
-        setPortfolioMode('brokerage'); // Safe fallback
-      }
-    };
-
-    initializePortfolioMode();
-  }, []);
 
   useEffect(() => {
     // For brokerage mode: need accountId
     // For aggregation mode: need userId and portfolio mode to be set
-    if (!accountId && portfolioMode !== 'aggregation') return;
-    if (portfolioMode === 'aggregation' && !userId) return;
+    if (!accountId && portfolioMode !== 'aggregation') {
+      // CRITICAL: Set isLoading to false when we know data won't be loaded
+      // This prevents infinite loading state for users without accounts
+      if (portfolioMode !== 'loading') {
+        setIsLoading(false);
+      }
+      return;
+    }
+    if (portfolioMode === 'aggregation' && !userId) {
+      // Also handle this case to prevent infinite loading
+      // portfolioMode is already 'aggregation' here, so we can set isLoading directly
+      setIsLoading(false);
+      return;
+    }
 
     let isMounted = true;
     const loadInitialStaticData = async () => {
@@ -849,18 +871,90 @@ export default function PortfolioPage() {
     return { amount: amountReturn, percent: percentReturn };
   }, [allTimeHistory]);
 
-  if (isLoading && !allTimeHistory) {
+  // REMOVED: Blocking skeleton that waited for allTimeHistory
+  // Previously this blocked the ENTIRE page until all data loaded
+  // Now each component shows its own skeleton while loading independently
+  // This enables progressive loading - the page structure appears immediately
+
+  // Show initial page structure with skeletons while portfolio mode is being determined
+  // This provides immediate visual feedback instead of a blank screen
+  if (portfolioMode === 'loading') {
     return (
-      <div className="p-4 space-y-6">
-        <Skeleton className="h-10 w-1/3" />
+      <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="py-4 space-y-6 bg-background text-foreground w-full h-full">
+          {/* Header - shows immediately */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold">Your Portfolio</h1>
+              <p className="text-lg text-muted-foreground mt-1">Track your investments and performance</p>
+            </div>
+            <Skeleton className="h-9 w-24" />
+          </div>
+          
+          {/* Progressive skeleton layout matching actual page structure */}
+          <div className="space-y-4 sm:space-y-6">
+            {/* Row 1: Chart and Analytics */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 xl:grid-cols-3 gap-4 lg:gap-6">
+              <div className="lg:col-span-3 xl:col-span-2">
+                <Card className="bg-card shadow-lg">
+                  <CardHeader className="py-3">
+                    <Skeleton className="h-6 w-32" />
+                  </CardHeader>
+                  <CardContent className="pb-0">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-baseline">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-8 w-32" />
+                      </div>
+                      <Skeleton className="h-64 w-full" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="lg:col-span-2 xl:col-span-1 space-y-4">
+                <Card className="bg-card shadow-lg">
+                  <CardHeader className="py-3">
+                    <Skeleton className="h-6 w-40" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <Skeleton className="h-16 w-full" />
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-card shadow-lg">
+                  <CardHeader className="py-3">
+                    <Skeleton className="h-6 w-36" />
+                  </CardHeader>
+                  <CardContent>
         <Skeleton className="h-48 w-full" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Skeleton className="h-40 w-full" />
-            <Skeleton className="h-40 w-full" />
+                  </CardContent>
+                </Card>
         </div>
-        <Skeleton className="h-40 w-full" />
+            </div>
+            
+            {/* Row 2: Investment Growth */}
+            <Card className="bg-card shadow-lg">
+              <CardHeader className="py-3">
+                <Skeleton className="h-6 w-48" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-32 w-full" />
+              </CardContent>
+            </Card>
+            
+            {/* Row 3: Holdings Table */}
+            <Card className="bg-card shadow-lg">
+              <CardHeader className="py-3">
+                <Skeleton className="h-10 w-64" />
+              </CardHeader>
+              <CardContent className="p-0">
         <Skeleton className="h-64 w-full" />
-        <Skeleton className="h-64 w-full" />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     );
   }

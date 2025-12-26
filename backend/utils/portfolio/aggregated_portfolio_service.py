@@ -352,9 +352,42 @@ class AggregatedPortfolioService:
             trading_calendar = get_trading_calendar()
             
             # Check if today is already in the timeline (it should be, since end_date = today)
-            if today in snapshot_by_date:
-                # Today's snapshot already exists - no need to update (use DB value)
-                logger.info(f"✅ Today's EOD snapshot exists in DB - using stored value")
+            # PRODUCTION-GRADE: Always update with LIVE portfolio value for accurate returns
+            # 
+            # CRYPTO-AWARE LOGIC:
+            # - Crypto trades 24/7, so returns can occur on weekends/holidays
+            # - Stock prices are "stale" on holidays (= yesterday's close), contributing $0 to return
+            # - Total return = crypto return + stock return ($0 on holidays)
+            # - This naturally gives correct behavior: crypto returns show, stock returns are $0
+            #
+            # The math works because:
+            # - current_stock_price = yesterday_stock_price (stale) → stock return = $0
+            # - current_crypto_price = live → crypto return = actual change
+            # - total_return = (stale_stock + live_crypto) - (yesterday_stock + yesterday_crypto)
+            #                = live_crypto - yesterday_crypto = crypto return only
+            
+            if today in snapshot_by_date and len(equity_values) > 0:
+                # Today's snapshot exists - but we should STILL update with live values
+                # because crypto prices may have changed since the snapshot was created
+                logger.info(f"📍 Today's snapshot exists, updating with LIVE portfolio value for crypto accuracy")
+                
+                current_portfolio = await self.get_portfolio_value(user_id, include_cash=True)
+                current_value = current_portfolio.get('raw_value', 0)
+                
+                if current_value > 0:
+                    equity_values[-1] = current_value
+                    yesterday_value = equity_values[-2] if len(equity_values) > 1 else current_value
+                    today_pl = current_value - yesterday_value
+                    today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                    profit_loss[-1] = today_pl
+                    profit_loss_pct[-1] = today_pl_pct
+                    
+                    is_market_closed = not trading_calendar.is_market_open_today(today)
+                    if is_market_closed:
+                        logger.info(f"📅 Market CLOSED: Today's return (crypto only): ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                    else:
+                        logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                        
             elif end_date >= today and len(equity_values) > 0:
                 # Today was included in the loop but has no snapshot yet
                 # Update the last data point (today) with live value
@@ -368,25 +401,20 @@ class AggregatedPortfolioService:
                     # Update today's value (last item in arrays)
                     equity_values[-1] = current_value
                     
-                    # PRODUCTION-GRADE: Calculate today's P/L ONLY if market is open
-                    # On weekends/holidays, return should be $0.00 (market closed, no trading)
-                    if trading_calendar.is_market_open_today(today):
-                        # Market is OPEN - calculate real P/L vs yesterday
-                        yesterday_value = equity_values[-2] if len(equity_values) > 1 else current_value
-                        today_pl = current_value - yesterday_value
-                        today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
-                        
-                        logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
-                    else:
-                        # Market is CLOSED (weekend/holiday) - return is $0.00
-                        today_pl = 0.0
-                        today_pl_pct = 0.0
-                        
-                        logger.info(f"📅 Market CLOSED: Today's return is $0.00 (weekend/holiday)")
+                    # Calculate real P/L vs yesterday (crypto returns will show on holidays)
+                    yesterday_value = equity_values[-2] if len(equity_values) > 1 else current_value
+                    today_pl = current_value - yesterday_value
+                    today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
                     
                     # Update today's P/L (last item)
                     profit_loss[-1] = today_pl
                     profit_loss_pct[-1] = today_pl_pct
+                    
+                    is_market_closed = not trading_calendar.is_market_open_today(today)
+                    if is_market_closed:
+                        logger.info(f"📅 Market CLOSED: Today's return (crypto only): ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                    else:
+                        logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
                     
                     logger.info(f"✅ Updated today's value: ${current_value:,.2f} (return: ${today_pl:+,.2f})")
             
@@ -422,23 +450,129 @@ class AggregatedPortfolioService:
             "base_value_asof": None
         }
     
+    async def _build_market_closed_chart(self, user_id: str, today: 'date') -> Dict[str, Any]:
+        """
+        Build a chart for market closed days (weekends/holidays) that shows CRYPTO returns.
+        
+        CRYPTO-AWARE LOGIC:
+        - Crypto trades 24/7, so returns CAN occur on weekends/holidays
+        - Stock prices are "stale" (= yesterday's close), contributing $0 to return
+        - Total return = crypto return only (which is the correct behavior)
+        
+        The chart shows: yesterday's close → current live value
+        If user has crypto, this will show actual portfolio movement.
+        If user has stocks only, this will show a flat line ($0 return).
+        
+        Args:
+            user_id: User ID
+            today: Today's date (verified to be market closed)
+            
+        Returns:
+            Chart response with actual crypto returns (or flat if stocks only)
+        """
+        try:
+            from datetime import datetime, time, timedelta
+            import pytz
+            
+            supabase = self._get_supabase_client()
+            est = pytz.timezone('US/Eastern')
+            
+            # Get the last trading day's closing value
+            # Look back up to 5 days to handle long weekends
+            yesterday_value = 0.0
+            last_trading_date = today - timedelta(days=1)
+            
+            for _ in range(5):  # Look back up to 5 days
+                result = supabase.table('user_portfolio_history')\
+                    .select('total_value, closing_value, value_date')\
+                    .eq('user_id', user_id)\
+                    .eq('value_date', last_trading_date.isoformat())\
+                    .in_('snapshot_type', ['daily_eod', 'reconstructed'])\
+                    .limit(1)\
+                    .execute()
+                
+                if result.data:
+                    yesterday_value = float(result.data[0].get('closing_value') or result.data[0]['total_value'])
+                    logger.info(f"📊 Found last trading day close: {last_trading_date} = ${yesterday_value:,.2f}")
+                    break
+                    
+                last_trading_date -= timedelta(days=1)
+            
+            # Get CURRENT live portfolio value (includes stale stocks + live crypto)
+            current_portfolio = await self.get_portfolio_value(user_id, include_cash=True)
+            current_value = current_portfolio.get('raw_value', 0)
+            
+            # If no historical data, use current as baseline (no return to show)
+            if yesterday_value == 0:
+                yesterday_value = current_value
+                logger.info(f"📊 No historical data, using current as baseline: ${current_value:,.2f}")
+            
+            # Calculate return (will be crypto-only since stock prices are stale)
+            today_pl = current_value - yesterday_value
+            today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+            
+            # Build 2-point chart: last trading day close → current value
+            # CRITICAL: Use actual last_trading_date for timestamp consistency
+            # (e.g., on Monday holiday, use Friday 4pm, not Sunday 4pm)
+            yesterday_close = datetime.combine(last_trading_date, time(16, 0)).replace(tzinfo=est)
+            now = datetime.now(est)
+            
+            timestamps = [
+                int(yesterday_close.timestamp()),
+                int(now.timestamp())
+            ]
+            equity_values = [yesterday_value, current_value]
+            profit_loss = [0.0, today_pl]  # First point is baseline, second is actual change
+            profit_loss_pct = [0.0, today_pl_pct]
+            
+            if abs(today_pl) > 0.01:  # Has crypto movement
+                logger.info(f"📅 Market CLOSED: Showing crypto return: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+            else:
+                logger.info(f"📅 Market CLOSED: No crypto movement, flat at ${current_value:,.2f}")
+            
+            return {
+                "timestamp": timestamps,
+                "equity": equity_values,
+                "profit_loss": profit_loss,
+                "profit_loss_pct": profit_loss_pct,
+                "base_value": yesterday_value,
+                "timeframe": "1D",
+                "base_value_asof": str(timestamps[0]),
+                "data_source": "market_closed_with_crypto"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error building market closed chart for user {user_id}: {e}")
+            return self._empty_history_response('1D')
+    
     async def _build_intraday_chart(self, user_id: str, filter_account: Optional[str] = None) -> Dict[str, Any]:
         """
         Build intraday (1D) chart using REAL snapshots taken every 5 minutes.
         
         Falls back to interpolation only if no snapshots exist (e.g., first day of use).
         This provides ACTUAL portfolio movements, not estimates.
+        
+        PRODUCTION-GRADE: Returns flat line with $0.00 return on market closed days (weekends/holidays).
         """
         try:
             from datetime import datetime, time, timedelta
             import pytz
             from services.intraday_snapshot_service import get_intraday_snapshot_service
+            from utils.trading_calendar import get_trading_calendar
             
             supabase = self._get_supabase_client()
             snapshot_service = get_intraday_snapshot_service()
+            trading_calendar = get_trading_calendar()
+            
+            # PRODUCTION-GRADE: Check if market is open today
+            # On weekends/holidays, return flat line with previous day's close
+            today = datetime.now().date()
+            
+            if not trading_calendar.is_market_open_today(today):
+                logger.info(f"📅 Market CLOSED on {today} - returning flat line for 1D chart")
+                return await self._build_market_closed_chart(user_id, today)
             
             # Try to get real intraday snapshots first (PREFERRED)
-            today = datetime.now().date()
             intraday_snapshots = await snapshot_service.get_intraday_snapshots(user_id, today)
             
             # If we have real snapshots, use them!
@@ -622,14 +756,26 @@ class AggregatedPortfolioService:
         """
         Build intraday chart for a specific account with hourly progression.
         Similar to _build_intraday_chart but filtered to one account.
+        
+        CRYPTO-AWARE: On market closed days, shows actual portfolio change (crypto returns)
+        instead of a flat line. Stock prices are stale (= yesterday), so stock return = $0.
         """
         try:
             import pytz
             from datetime import datetime, time, timedelta
+            from utils.trading_calendar import get_trading_calendar
+            
             supabase = self._get_supabase_client()
+            trading_calendar = get_trading_calendar()
+            today = datetime.now().date()
+            
+            # PRODUCTION-GRADE: Check if market is open
+            is_market_closed = not trading_calendar.is_market_open_today(today)
+            if is_market_closed:
+                logger.info(f"📅 Market CLOSED on {today} - building crypto-aware chart for account {plaid_account_id}")
             
             # Get yesterday's close for THIS account
-            yesterday = datetime.now().date() - timedelta(days=1)
+            yesterday = today - timedelta(days=1)
             yesterday_result = supabase.table('user_portfolio_history')\
                 .select('total_value, closing_value, account_breakdown')\
                 .eq('user_id', user_id)\
@@ -708,36 +854,49 @@ class AggregatedPortfolioService:
             profit_loss.append(0.0)
             profit_loss_pct.append(0.0)
             
-            # Point 2: Today's market open
-            if now >= market_open:
-                timestamps.append(market_open_ts)
-                equity_values.append(yesterday_value)
-                profit_loss.append(0.0)
-                profit_loss_pct.append(0.0)
-            
-            # Point 3-N: Hourly intervals
-            if now >= market_open:
-                hours_since_open = (now - market_open).total_seconds() / 3600
-                for hour in range(1, int(hours_since_open) + 1):
-                    hour_time = market_open + timedelta(hours=hour)
-                    if hour_time <= now:
-                        progress = hour / max(hours_since_open, 1)
-                        interpolated_value = yesterday_value + (total_change * progress)
-                        interpolated_pl = total_change * progress
-                        interpolated_pl_pct = (interpolated_pl / yesterday_value * 100) if yesterday_value > 0 else 0
-                        
-                        timestamps.append(int(hour_time.timestamp()))
-                        equity_values.append(interpolated_value)
-                        profit_loss.append(interpolated_pl)
-                        profit_loss_pct.append(interpolated_pl_pct)
-            
-            # Final point: Current value
-            timestamps.append(now_ts)
-            equity_values.append(current_value)
-            profit_loss.append(total_change)
-            profit_loss_pct.append(total_change_pct)
-            
-            logger.info(f"📊 Built account intraday chart: {len(timestamps)} points from ${yesterday_value:,.2f} → ${current_value:,.2f} ({total_change_pct:+.2f}%)")
+            # CRYPTO-AWARE: On market closed days, DON'T create interpolated hourly points
+            # Just show yesterday close → current value (2 points)
+            # The change will reflect crypto movements (24/7 trading) while stocks are stale ($0 return)
+            if is_market_closed:
+                # Market closed - just add current value point (no fake interpolation)
+                timestamps.append(now_ts)
+                equity_values.append(current_value)
+                profit_loss.append(total_change)
+                profit_loss_pct.append(total_change_pct)
+                
+                logger.info(f"📅 Market CLOSED chart for account: ${yesterday_value:,.2f} → ${current_value:,.2f} (change: ${total_change:+,.2f}, {total_change_pct:+.2f}%)")
+            else:
+                # Market OPEN - build hourly progression
+                # Point 2: Today's market open
+                if now >= market_open:
+                    timestamps.append(market_open_ts)
+                    equity_values.append(yesterday_value)
+                    profit_loss.append(0.0)
+                    profit_loss_pct.append(0.0)
+                
+                # Point 3-N: Hourly intervals (only on trading days)
+                if now >= market_open:
+                    hours_since_open = (now - market_open).total_seconds() / 3600
+                    for hour in range(1, int(hours_since_open) + 1):
+                        hour_time = market_open + timedelta(hours=hour)
+                        if hour_time <= now:
+                            progress = hour / max(hours_since_open, 1)
+                            interpolated_value = yesterday_value + (total_change * progress)
+                            interpolated_pl = total_change * progress
+                            interpolated_pl_pct = (interpolated_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                            
+                            timestamps.append(int(hour_time.timestamp()))
+                            equity_values.append(interpolated_value)
+                            profit_loss.append(interpolated_pl)
+                            profit_loss_pct.append(interpolated_pl_pct)
+                
+                # Final point: Current value
+                timestamps.append(now_ts)
+                equity_values.append(current_value)
+                profit_loss.append(total_change)
+                profit_loss_pct.append(total_change_pct)
+                
+                logger.info(f"📊 Built account intraday chart: {len(timestamps)} points from ${yesterday_value:,.2f} → ${current_value:,.2f} ({total_change_pct:+.2f}%)")
             
             return {
                 "timestamp": timestamps,
@@ -1061,14 +1220,23 @@ class AggregatedPortfolioService:
         2. Calculate what % of total portfolio this account represents NOW
         3. Apply that percentage to historical values as an approximation
         
-        This is better than a flat line and gives users a meaningful chart.
+        CRYPTO-AWARE: On holidays, this fallback is problematic because:
+        - The proportion is calculated from TODAY's values (which include crypto changes)
+        - Applying this to historical data creates fake movements for stock accounts
+        - This causes incorrect "Today's Return" values
+        
+        On holidays, we return the current value with $0 change to avoid fake returns.
         """
         try:
             from datetime import datetime, timedelta
             from utils.portfolio.account_filtering_service import get_account_filtering_service
+            from utils.trading_calendar import get_trading_calendar
             
             filter_service = get_account_filtering_service()
             supabase = self._get_supabase_client()
+            trading_calendar = get_trading_calendar()
+            today = datetime.now().date()
+            is_market_closed = not trading_calendar.is_market_open_today(today)
             
             # 1. Get current account value from filtered holdings
             filtered_holdings = await filter_service.filter_holdings_by_account(user_id, filter_account)
@@ -1076,6 +1244,31 @@ class AggregatedPortfolioService:
             
             if current_account_value == 0:
                 return self._empty_history_response(period)
+            
+            # HOLIDAY FIX: On market closed days, the proportional reconstruction is unreliable
+            # because crypto movements in the total portfolio don't apply to individual stock accounts
+            # Return a simple 2-point chart: yesterday's reconstructed value → today's actual value
+            # This prevents showing fake +11% returns on Christmas!
+            if is_market_closed:
+                logger.info(f"📅 Market CLOSED: Using simple 2-point chart for account fallback")
+                now = datetime.now()
+                yesterday = today - timedelta(days=1)
+                
+                # Use current value for both points (approximation: no change on holiday for stocks)
+                # This is safer than the proportional reconstruction which creates fake movements
+                yesterday_timestamp = int(datetime.combine(yesterday, datetime.min.time()).timestamp())
+                today_timestamp = int(now.timestamp())
+                
+                return {
+                    "timestamp": [yesterday_timestamp, today_timestamp],
+                    "equity": [current_account_value, current_account_value],  # Flat line
+                    "profit_loss": [0.0, 0.0],  # No change on holiday
+                    "profit_loss_pct": [0.0, 0.0],
+                    "base_value": current_account_value,
+                    "timeframe": period,
+                    "base_value_asof": str(yesterday_timestamp),
+                    "data_source": "market_closed_account_fallback"
+                }
             
             # 2. Get total portfolio current value (all accounts)
             all_holdings = await filter_service.filter_holdings_by_account(user_id, None)  # None = all accounts

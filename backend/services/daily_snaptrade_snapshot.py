@@ -134,6 +134,9 @@ class DailySnapTradeSnapshotService:
         PRODUCTION-GRADE FIX: Uses live market prices instead of stale reconstructed values.
         This ensures each day's snapshot reflects actual market prices, not duplicated values.
         
+        CRITICAL: Skips snapshot capture on market closed days (weekends/holidays).
+        On closed days, the previous trading day's value should be used for charts.
+        
         Args:
             user_id: User ID to capture snapshot for
             
@@ -141,8 +144,18 @@ class DailySnapTradeSnapshotService:
             True if snapshot was created, False if already exists or error
         """
         try:
+            from utils.trading_calendar import get_trading_calendar
+            
             supabase = self._get_supabase_client()
             today = datetime.now().date()
+            
+            # CRITICAL FIX: Skip snapshot capture on market closed days (weekends/holidays)
+            # On Christmas, Thanksgiving, etc., we don't want to capture live prices
+            # because crypto prices would create misleading portfolio values
+            trading_calendar = get_trading_calendar()
+            if not trading_calendar.is_market_open_today(today):
+                logger.info(f"📅 Market closed on {today} - skipping snapshot capture for user {user_id}")
+                return False
             
             # Check if snapshot already exists for today
             existing = supabase.table('user_portfolio_history')\
@@ -212,19 +225,25 @@ class DailySnapTradeSnapshotService:
         """
         Detect missing snapshot days for a user.
         
-        SMART: Only checks trading days (Mon-Fri), skips weekends/holidays.
+        PRODUCTION-GRADE: Uses trading_calendar to properly skip BOTH weekends AND holidays.
+        This ensures we don't try to backfill Christmas, Thanksgiving, etc.
         
         Args:
             user_id: User ID to check
             lookback_days: How many calendar days to look back (default: 30)
             
         Returns:
-            List of dates that are missing snapshots
+            List of dates that are missing snapshots (only actual trading days)
         """
         try:
+            from utils.trading_calendar import get_trading_calendar
+            
             supabase = self._get_supabase_client()
             today = datetime.now().date()
             start_date = today - timedelta(days=lookback_days)
+            
+            # Get trading calendar for holiday detection
+            trading_calendar = get_trading_calendar()
             
             # Get existing snapshots in this period
             # FIX: Filter by snapshot_type='daily_eod' to avoid treating reconstructed rows as coverage
@@ -241,13 +260,15 @@ class DailySnapTradeSnapshotService:
                 for row in result.data:
                     existing_dates.add(datetime.fromisoformat(row['value_date']).date())
             
-            # Generate list of all trading days (Mon-Fri) in the period
+            # CRITICAL FIX: Use trading_calendar to check BOTH weekends AND holidays
+            # This ensures we only count ACTUAL trading days as missing
             missing_days = []
             current_date = start_date
             
             while current_date <= today:
-                # Only check trading days (Mon=0, Fri=4)
-                if current_date.weekday() < 5:  # Monday to Friday
+                # PRODUCTION-GRADE: Use trading calendar for proper holiday detection
+                # This skips Christmas, Thanksgiving, MLK Day, etc.
+                if trading_calendar.is_market_open_today(current_date):
                     if current_date not in existing_dates:
                         missing_days.append(current_date)
                 

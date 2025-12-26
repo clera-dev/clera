@@ -104,26 +104,28 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
                     const profitLoss = historyData?.profit_loss || [];
                     const profitLossPct = historyData?.profit_loss_pct || [];
                     
-                    // PRODUCTION-GRADE: Use backend's calculated P/L (handles weekends/holidays correctly)
-                    // Backend sets profit_loss[last] = 0.0 on weekends/holidays
+                    // PRODUCTION-GRADE: Use backend's calculated P/L
+                    // CRYPTO-AWARE: On holidays, crypto returns show (24/7 trading)
+                    // Stock returns = $0 on holidays (stale prices = yesterday's close)
+                    // Total return = crypto return only (correct behavior)
                     if (equityValues.length >= 2 && profitLoss.length > 0) {
                         // Get today's P/L from backend (last element in profit_loss array)
                         const todayReturn = parseFloat(profitLoss[profitLoss.length - 1]) || 0;
                         const returnPercent = parseFloat(profitLossPct[profitLossPct.length - 1]) || 0;
                         
-                        // Check if market is closed (weekend/holiday) - backend returns 0.0
-                        const isMarketClosed = todayReturn === 0 && returnPercent === 0;
+                        // Check if there's no return (could be market closed + no crypto, or just no movement)
+                        const isZeroReturn = todayReturn === 0 && returnPercent === 0;
                         
                         // Format with correct signs (both dollar and percent must match)
                         const sign = todayReturn >= 0 ? '+' : '-';
                         const absReturn = Math.abs(todayReturn);
                         const absPercent = Math.abs(returnPercent);
                         
-                        if (isMarketClosed) {
-                            // Market closed (weekend/holiday) - show $0.00 explicitly
+                        if (isZeroReturn) {
+                            // No movement (market closed + no crypto, or just flat day)
                             setTodayReturn("$0.00 (0.00%)");
                         } else {
-                            // Market open - show actual return
+                            // Has actual return (could be crypto on holiday, or normal trading day)
                             setTodayReturn(`${sign}$${absReturn.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${sign}${absPercent.toFixed(2)}%)`);
                         }
                     } else {
