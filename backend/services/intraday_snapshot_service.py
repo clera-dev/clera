@@ -45,15 +45,22 @@ class IntradaySnapshotService:
         """
         Check if current time is during market hours (9:30 AM - 4:00 PM EST).
         
+        PRODUCTION-GRADE: Uses trading_calendar to properly detect both weekends AND holidays.
+        
         Returns:
-            True if market is open, False otherwise
+            True if market is open and within trading hours, False otherwise
         """
+        from utils.trading_calendar import get_trading_calendar
+        
         now = datetime.now(self.est)
         current_time = now.time()
         current_date = now.date()
         
-        # Check if it's a weekday (Monday=0, Sunday=6)
-        if now.weekday() >= 5:  # Saturday or Sunday
+        # CRITICAL FIX: Use trading calendar to check for BOTH weekends AND holidays
+        # This ensures we don't take snapshots on Christmas, Thanksgiving, etc.
+        trading_calendar = get_trading_calendar()
+        if not trading_calendar.is_market_open_today(current_date):
+            logger.debug(f"📅 Market closed on {current_date} (weekend or holiday)")
             return False
         
         # Market hours: 9:30 AM to 4:00 PM EST
