@@ -103,6 +103,7 @@ class SectorAllocationService:
             
             # Use comprehensive crypto detection from asset_classification module
             from utils.asset_classification import classify_asset, AssetClassification
+            from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
             
             def is_crypto_holding(h):
                 """Check if a holding is a cryptocurrency using comprehensive detection."""
@@ -116,8 +117,6 @@ class SectorAllocationService:
                 
                 # CRITICAL FIX: Check UNAMBIGUOUS crypto symbols FIRST
                 # Only symbols that are NEVER valid US stock tickers are in UNAMBIGUOUS_CRYPTO
-                from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
-                
                 if symbol in UNAMBIGUOUS_CRYPTO:
                     return True
                 
