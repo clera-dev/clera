@@ -511,8 +511,10 @@ class AggregatedPortfolioService:
             today_pl = current_value - yesterday_value
             today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
             
-            # Build 2-point chart: yesterday close → current value
-            yesterday_close = datetime.combine(today - timedelta(days=1), time(16, 0)).replace(tzinfo=est)
+            # Build 2-point chart: last trading day close → current value
+            # CRITICAL: Use actual last_trading_date for timestamp consistency
+            # (e.g., on Monday holiday, use Friday 4pm, not Sunday 4pm)
+            yesterday_close = datetime.combine(last_trading_date, time(16, 0)).replace(tzinfo=est)
             now = datetime.now(est)
             
             timestamps = [
