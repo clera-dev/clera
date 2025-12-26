@@ -103,6 +103,7 @@ class SectorAllocationService:
             
             # Use comprehensive crypto detection from asset_classification module
             from utils.asset_classification import classify_asset, AssetClassification
+            from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
             
             def is_crypto_holding(h):
                 """Check if a holding is a cryptocurrency using comprehensive detection."""
@@ -113,6 +114,12 @@ class SectorAllocationService:
                 # Symbol-based classification for comprehensive detection (BTC, ETH, ADA, etc.)
                 symbol = h.get('symbol', '').upper()
                 name = h.get('security_name', '')
+                
+                # CRITICAL FIX: Check UNAMBIGUOUS crypto symbols FIRST
+                # Only symbols that are NEVER valid US stock tickers are in UNAMBIGUOUS_CRYPTO
+                if symbol in UNAMBIGUOUS_CRYPTO:
+                    return True
+                
                 # CRITICAL: Map security_type to asset_class to prevent false positives
                 # Stocks like ONE (One Gas Inc) should not be classified as crypto (Harmony ONE)
                 asset_class = 'us_equity' if security_type in ['equity', 'etf', 'mutual_fund'] else None
