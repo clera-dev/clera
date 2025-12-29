@@ -83,6 +83,23 @@ class HoldingsBasedHistoryEstimator:
             logger.info(f"📈 Fetching historical prices from {start_date} to {end_date}")
             historical_prices = await self._fetch_bulk_historical_prices(symbols, start_date, end_date)
             
+            # CRITICAL FIX: Pre-fetch today's market values in ONE batch query
+            # This prevents N+1 queries when iterating holdings for today's date
+            today_market_values = {}
+            supabase = self._get_supabase_client()
+            today_holdings_result = supabase.table('user_aggregated_holdings')\
+                .select('symbol, total_market_value, total_cost_basis')\
+                .eq('user_id', user_id)\
+                .in_('symbol', symbols)\
+                .execute()
+            
+            for h in today_holdings_result.data or []:
+                today_market_values[h['symbol']] = {
+                    'market_value': Decimal(str(h.get('total_market_value', 0))),
+                    'cost_basis': Decimal(str(h.get('total_cost_basis', 0)))
+                }
+            logger.info(f"✅ Pre-fetched {len(today_market_values)} holdings' market values for today")
+            
             # Step 3: Generate daily snapshots
             snapshots_created = 0
             current_date = start_date
@@ -102,19 +119,13 @@ class HoldingsBasedHistoryEstimator:
                     # Get price for this date
                     price = historical_prices.get(symbol, {}).get(current_date, Decimal(0))
                     
-                    # CRITICAL FIX: For today, use current holdings market value if no historical price
+                    # CRITICAL FIX: For today, use pre-fetched market values (O(1) lookup)
+                    # This eliminates N+1 query anti-pattern - all values fetched in one batch query
                     if price == 0 and current_date == date.today():
-                        # Fall back to database market value for today
-                        supabase = self._get_supabase_client()
-                        holding_result = supabase.table('user_aggregated_holdings')\
-                            .select('total_market_value, total_cost_basis')\
-                            .eq('user_id', user_id)\
-                            .eq('symbol', symbol)\
-                            .limit(1)\
-                            .execute()
-                        if holding_result.data:
-                            total_value += Decimal(str(holding_result.data[0].get('total_market_value', 0)))
-                            total_cost_basis += Decimal(str(holding_result.data[0].get('total_cost_basis', 0)))
+                        # Use pre-fetched today's market values
+                        if symbol in today_market_values:
+                            total_value += today_market_values[symbol]['market_value']
+                            total_cost_basis += today_market_values[symbol]['cost_basis']
                             continue
                     
                     if price > 0:
