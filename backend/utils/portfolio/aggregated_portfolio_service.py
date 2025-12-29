@@ -389,12 +389,12 @@ class AggregatedPortfolioService:
                         today_pl_pct = 0.0
                         logger.info(f"📅 Market CLOSED, stocks-only portfolio: forcing $0.00 return")
                     else:
-                        today_pl = current_value - yesterday_value
-                        today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
-                        if is_market_closed:
+                    today_pl = current_value - yesterday_value
+                    today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                    if is_market_closed:
                             logger.info(f"📅 Market CLOSED, crypto portfolio: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
-                        else:
-                            logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                    else:
+                        logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
                     
                     profit_loss[-1] = today_pl
                     profit_loss_pct[-1] = today_pl_pct
@@ -421,8 +421,8 @@ class AggregatedPortfolioService:
                         today_pl_pct = 0.0
                         logger.info(f"📅 Market CLOSED, stocks-only portfolio: forcing $0.00 return")
                     else:
-                        today_pl = current_value - yesterday_value
-                        today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                    today_pl = current_value - yesterday_value
+                    today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
                         if is_market_closed:
                             logger.info(f"📅 Market CLOSED, crypto portfolio: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
                         else:

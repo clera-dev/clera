@@ -184,6 +184,11 @@ export default function PortfolioPage() {
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<PositionData | null>(null);
   const [activeTab, setActiveTab] = useState<string>("holdings");
+  
+  // Data freshness tracking (production-grade)
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'fresh' | 'stale' | 'syncing' | 'error'>('fresh');
 
   // Trade action handlers
   const handleInvestClick = (symbol: string) => {
@@ -507,6 +512,37 @@ export default function PortfolioPage() {
         if (!isMounted) return;
         setIsLoading(true);
         setError(null);
+        
+        // PRODUCTION-GRADE: Auto-sync from SnapTrade if data is stale (aggregation mode only)
+        // This ensures users see fresh data, not stale cached values
+        if (portfolioMode === 'aggregation') {
+          try {
+            setSyncStatus('syncing');
+            setIsSyncing(true);
+            console.log('[Portfolio] Checking data freshness for aggregation mode...');
+            
+            const syncResponse = await fetch('/api/portfolio/sync-if-stale', { method: 'POST' });
+            if (syncResponse.ok) {
+              const syncResult = await syncResponse.json();
+              if (syncResult.synced) {
+                console.log(`[Portfolio] Auto-synced ${syncResult.positions_synced} positions (data was stale)`);
+              } else {
+                console.log(`[Portfolio] Data is fresh (${syncResult.age_minutes?.toFixed(1) || 'N/A'}min old), using cached`);
+              }
+              setLastSynced(syncResult.last_synced);
+              setSyncStatus('fresh');
+            } else {
+              console.warn('[Portfolio] Auto-sync failed, using cached data');
+              setSyncStatus('stale');
+            }
+          } catch (syncErr) {
+            console.warn('[Portfolio] Auto-sync error, using cached data:', syncErr);
+            setSyncStatus('stale');
+          } finally {
+            setIsSyncing(false);
+          }
+        }
+        
         try {
             const positionsUrl = buildFilteredUrl(`/api/portfolio/positions?accountId=${accountId}`);
             const allTimeUrl = buildFilteredUrl(`/api/portfolio/history?accountId=${accountId}&period=MAX`);
@@ -1066,21 +1102,29 @@ export default function PortfolioPage() {
                         });
                       };
                       
-                      // CRITICAL: For aggregation mode, sync from SnapTrade FIRST before fetching data
-                      // This ensures we have the latest position data after trades
+                      // CRITICAL: For aggregation mode, FORCE sync from SnapTrade before fetching data
+                      // This ensures we have the latest position data (user explicitly clicked Refresh)
                       if (portfolioMode === 'aggregation') {
                         try {
-                          console.log('[Refresh Button] Triggering SnapTrade sync before data fetch...');
-                          const syncResponse = await fetch('/api/portfolio/sync', { method: 'POST' });
+                          setIsSyncing(true);
+                          setSyncStatus('syncing');
+                          console.log('[Refresh Button] Force-syncing from SnapTrade...');
+                          const syncResponse = await fetch('/api/portfolio/sync-if-stale?force=true', { method: 'POST' });
                           if (syncResponse.ok) {
                             const syncResult = await syncResponse.json();
                             console.log(`[Refresh Button] Sync completed: ${syncResult.positions_synced} positions synced`);
+                            setLastSynced(syncResult.last_synced || new Date().toISOString());
+                            setSyncStatus('fresh');
                           } else {
                             console.warn(`[Refresh Button] Sync API returned error: ${syncResponse.status}`);
+                            setSyncStatus('stale');
                           }
                         } catch (syncError) {
                           console.warn('[Refresh Button] Sync failed, fetching cached data:', syncError);
+                          setSyncStatus('stale');
                           // Continue with fetching cached data even if sync fails
+                        } finally {
+                          setIsSyncing(false);
                         }
                       }
                       
@@ -1172,14 +1216,29 @@ export default function PortfolioPage() {
                 }
               }}
             >
-              <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
-              {isLoading ? 'Refreshing...' : 'Refresh'}
+              <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 ${isLoading || isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Syncing...' : isLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
             {/* Add Funds button only for brokerage mode */}
             {portfolioMode === 'brokerage' && accountId && (
               <AddFundsButton accountId={accountId} />
             )}
           </div>
+          {/* Last Updated indicator for aggregation mode - DEV ONLY */}
+          {process.env.NODE_ENV === 'development' && portfolioMode === 'aggregation' && lastSynced && (() => {
+            const timestamp = lastSynced.endsWith('Z') ? lastSynced : lastSynced + 'Z';
+            const date = new Date(timestamp);
+            const isValidDate = !isNaN(date.getTime());
+            if (!isValidDate) return null;
+            return (
+              <div className="text-xs text-muted-foreground">
+                [dev] Last updated: {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {syncStatus === 'stale' && (
+                  <span className="ml-2 text-yellow-500">(may be outdated)</span>
+                )}
+              </div>
+            );
+          })()}
         </div>
         
 

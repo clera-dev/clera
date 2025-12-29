@@ -63,6 +63,64 @@ class TradingCalendar:
         
         return True
     
+    def is_market_open_now(self) -> bool:
+        """
+        Check if the market is currently open (both day AND time).
+        
+        Returns:
+            True if market is open right now (trading day + within market hours)
+        """
+        now = datetime.now(self.est)
+        
+        # First check if it's a trading day
+        if not self.is_market_open_today(now.date()):
+            return False
+        
+        # Check if within market hours (9:30 AM - 4:00 PM ET)
+        current_time = now.time()
+        
+        # Check if early close day
+        if self.is_early_close_day(now.date()):
+            return self.market_open_time <= current_time < self.early_close_time
+        
+        return self.market_open_time <= current_time < self.market_close_time
+    
+    def is_early_close_day(self, check_date: date) -> bool:
+        """
+        Check if a date is an early close day (half day).
+        
+        Early close days typically include:
+        - Day after Thanksgiving
+        - Christmas Eve
+        - Day before Independence Day (July 3rd)
+        
+        Args:
+            check_date: Date to check
+            
+        Returns:
+            True if early close day
+        """
+        year = check_date.year
+        early_close_dates = [
+            date(year, 11, self._get_thanksgiving_day(year) + 1),  # Day after Thanksgiving
+            date(year, 12, 24),  # Christmas Eve (if weekday)
+            date(year, 7, 3),    # July 3rd (if weekday)
+        ]
+        
+        # Filter out dates that fall on weekends
+        early_close_dates = [d for d in early_close_dates if d.weekday() < 5]
+        
+        return check_date in early_close_dates
+    
+    def _get_thanksgiving_day(self, year: int) -> int:
+        """Get the day of month for Thanksgiving (4th Thursday in November)."""
+        # Find first day of November
+        first_day = date(year, 11, 1)
+        # Find first Thursday
+        first_thursday = first_day.day + (3 - first_day.weekday()) % 7
+        # Fourth Thursday is 21 days later
+        return first_thursday + 21
+    
     def is_market_holiday(self, check_date: date) -> bool:
         """
         Check if a date is a US market holiday.

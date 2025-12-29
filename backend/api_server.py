@@ -210,8 +210,10 @@ async def lifespan(app: FastAPI):
     )
     from services.intraday_portfolio_tracker import get_intraday_portfolio_tracker
     from services.daily_portfolio_snapshot_service import DailyPortfolioScheduler
+    from services.portfolio_refresh_scheduler import start_portfolio_refresh_scheduler
     
     bg_manager = None
+    portfolio_refresh_scheduler = None
     try:
         bg_manager = get_background_service_manager()
         
@@ -235,6 +237,14 @@ async def lifespan(app: FastAPI):
         
         logger.info("✅ Background services configured with leader election")
         
+        # Start Portfolio Refresh Scheduler (hourly refresh of all users' brokerage data)
+        try:
+            portfolio_refresh_scheduler = start_portfolio_refresh_scheduler()
+            logger.info("✅ Portfolio Refresh Scheduler started (1-hour interval)")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not start Portfolio Refresh Scheduler: {e}")
+            startup_errors.append(f"Portfolio Refresh Scheduler failed: {str(e)}")
+        
     except Exception as e:
         logger.error(f"❌ Failed to configure background services: {e}")
         startup_errors.append(f"Background services configuration failed: {str(e)}")
@@ -249,6 +259,15 @@ async def lifespan(app: FastAPI):
     
     # Shutdown logic
     logger.info("Shutting down API server...")
+    
+    # Stop Portfolio Refresh Scheduler
+    if portfolio_refresh_scheduler is not None:
+        try:
+            from services.portfolio_refresh_scheduler import stop_portfolio_refresh_scheduler
+            stop_portfolio_refresh_scheduler()
+            logger.info("✅ Portfolio Refresh Scheduler stopped")
+        except Exception as e:
+            logger.error(f"Error stopping Portfolio Refresh Scheduler: {e}")
     
     # Gracefully shutdown all background services (if initialized)
     if bg_manager is not None:
@@ -270,8 +289,10 @@ app = FastAPI(
 # Register modular route modules (keep api_server.py clean)
 from routes.account_filtering_routes import router as account_filtering_router
 from routes.snaptrade_routes import router as snaptrade_router
+from routes.portfolio_freshness import router as portfolio_freshness_router
 app.include_router(account_filtering_router)
 app.include_router(snaptrade_router)
+app.include_router(portfolio_freshness_router)
 
 # Add CORS middleware with restricted origins
 app.add_middleware(
