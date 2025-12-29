@@ -65,6 +65,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const { closureData, loading: closureLoading } = useAccountClosure();
 
   // Paths that don't need the sidebar
+  // CRITICAL: Include all onboarding and payment flow pages to prevent UI confusion
   const nonSidebarPaths = [
     "/",
     "/sign-in",
@@ -72,6 +73,10 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     "/auth/callback",
     "/auth/confirm",
     "/protected/reset-password",
+    "/onboarding/snaptrade-callback", // SnapTrade connection callback during onboarding
+    "/stripe/success",                 // Stripe payment success page
+    "/stripe/cancel",                  // Stripe payment cancel page
+    "/forgot-password",                // Password recovery page
   ];
   
   // Paths that can have the sidebar chat

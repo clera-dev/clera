@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,14 +38,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check payment status
-    let paymentStatus = 'inactive';
+    // Check payment status from Stripe
+    let paymentStatus: 'active' | 'inactive' = 'inactive';
+    let subscriptionId: string | null = null;
+    let subscriptionStatus: string | null = null;
+    
     if (session.mode === 'subscription') {
       if (session.subscription) {
         const subscription = typeof session.subscription === 'string'
           ? await stripe.subscriptions.retrieve(session.subscription)
           : session.subscription;
         
+        subscriptionId = subscription.id;
+        subscriptionStatus = subscription.status;
         paymentStatus = subscription.status === 'active' || subscription.status === 'trialing' 
           ? 'active' 
           : 'inactive';
@@ -53,7 +59,71 @@ export async function POST(request: NextRequest) {
       paymentStatus = session.payment_status === 'paid' ? 'active' : 'inactive';
     }
 
-    // Check if payment record exists in database
+    // CRITICAL FIX: If session is complete and payment is active, UPDATE the database directly
+    // This eliminates the race condition where webhook hasn't processed yet
+    if (session.status === 'complete' && paymentStatus === 'active') {
+      console.log(`[verify-session] Session complete, updating DB for user ${user.id}`);
+      
+      // Use service role key to bypass RLS and ensure write succeeds
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      
+      if (supabaseUrl && supabaseServiceKey) {
+        const adminSupabase = createSupabaseClient(supabaseUrl, supabaseServiceKey);
+        
+        // Check if payment record exists
+        const { data: existingPayment } = await adminSupabase
+          .from('user_payments')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        const customerId = typeof session.customer === 'string' 
+          ? session.customer 
+          : session.customer?.id;
+        
+        const paymentRecord = {
+          user_id: user.id,
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subscriptionId,
+          subscription_status: subscriptionStatus,
+          payment_status: paymentStatus,
+          updated_at: new Date().toISOString(),
+        };
+        
+        if (existingPayment) {
+          // Update existing record
+          const { error: updateError } = await adminSupabase
+            .from('user_payments')
+            .update(paymentRecord)
+            .eq('user_id', user.id);
+          
+          if (updateError) {
+            console.error('[verify-session] Error updating payment record:', updateError);
+          } else {
+            console.log(`[verify-session] Updated payment record for user ${user.id}`);
+          }
+        } else {
+          // Insert new record
+          const { error: insertError } = await adminSupabase
+            .from('user_payments')
+            .insert({
+              ...paymentRecord,
+              created_at: new Date().toISOString(),
+            });
+          
+          if (insertError) {
+            console.error('[verify-session] Error creating payment record:', insertError);
+          } else {
+            console.log(`[verify-session] Created payment record for user ${user.id}`);
+          }
+        }
+      } else {
+        console.warn('[verify-session] Missing Supabase config, cannot update DB directly');
+      }
+    }
+
+    // Check if payment record exists in database (it should now after our update)
     const { data: paymentRecord } = await supabase
       .from('user_payments')
       .select('*')

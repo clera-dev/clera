@@ -448,25 +448,17 @@ export default function PortfolioPage() {
         }
 
         // Process payment status result - handle redirect if needed
+        // SECURITY FIX: Never create new checkout sessions from /portfolio to prevent
+        // double-charging due to webhook race conditions. Always redirect to /protected
+        // which handles the proper payment flow.
         if (paymentResult.status === 'fulfilled') {
           const paymentData = paymentResult.value;
           if (!paymentData.hasActivePayment) {
-            console.log('Payment required, redirecting to checkout');
-            try {
-            const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-              method: 'POST',
-            });
-            if (checkoutResponse.ok) {
-              const { url } = await checkoutResponse.json();
-              if (url) {
-                router.push(url);
-                return;
-              }
-            }
-            } catch (checkoutErr) {
-              console.error('Error creating checkout session:', checkoutErr);
-          }
+            console.log('[Portfolio] Payment required - redirecting to /protected for proper payment flow');
+            // CRITICAL: Do NOT create checkout sessions here - causes race condition with webhooks
+            // The /protected page handles the proper onboarding/payment flow
             router.push('/protected');
+            return;
           }
         } else {
           console.error('Error checking payment status:', paymentResult.reason);
