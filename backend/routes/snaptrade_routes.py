@@ -721,12 +721,31 @@ async def sync_all_connections(
             logger.error(f"⚠️  Failed to sync holdings (non-fatal): {holdings_error}")
             # Don't fail the whole request if holdings sync fails
         
+        # CRITICAL FIX: Generate portfolio history IMMEDIATELY after holdings sync
+        # Without this, the portfolio chart shows a flat line (no historical data)
+        # This uses current holdings + historical prices to estimate portfolio history
+        history_generated = 0
+        try:
+            from services.snaptrade_holdings_based_history import get_estimator_service
+            logger.info(f"📊 Generating estimated portfolio history for user {user_id}")
+            estimator = get_estimator_service()
+            history_result = await estimator.generate_estimated_history(user_id, lookback_days=365)
+            if history_result.get('success'):
+                history_generated = history_result.get('snapshots_created', 0)
+                logger.info(f"✅ Generated {history_generated} portfolio history snapshots for user {user_id}")
+            else:
+                logger.warning(f"⚠️  History generation returned: {history_result.get('error')}")
+        except Exception as history_error:
+            logger.error(f"⚠️  Failed to generate portfolio history (non-fatal): {history_error}")
+            # Don't fail the whole request if history generation fails
+        
         return {
             "success": True,
-            "message": f"Synced {connections_synced} connections, {accounts_synced} accounts, and {holdings_synced} holdings",
+            "message": f"Synced {connections_synced} connections, {accounts_synced} accounts, {holdings_synced} holdings, and generated {history_generated} history snapshots",
             "connections_synced": connections_synced,
             "accounts_synced": accounts_synced,
             "holdings_synced": holdings_synced,
+            "history_snapshots_generated": history_generated,
             "user_id": user_id
         }
         

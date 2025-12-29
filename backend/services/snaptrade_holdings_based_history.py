@@ -49,14 +49,14 @@ class HoldingsBasedHistoryEstimator:
     async def generate_estimated_history(
         self,
         user_id: str,
-        lookback_days: int = 365
+        lookback_days: int = 400
     ) -> Dict[str, Any]:
         """
         Generate estimated portfolio history from current holdings.
         
         Args:
             user_id: Clera user ID
-            lookback_days: Number of days to look back (default 1 year)
+            lookback_days: Number of days to look back (default 400 for full 1Y+ coverage)
             
         Returns:
             Dictionary with generation statistics
@@ -75,7 +75,9 @@ class HoldingsBasedHistoryEstimator:
             
             # Step 2: Fetch historical prices for all symbols
             symbols = [h['symbol'] for h in holdings]
-            end_date = date.today() - timedelta(days=1)  # Yesterday (most recent complete EOD data)
+            # CRITICAL FIX: Include TODAY if market is open, otherwise yesterday
+            # This ensures the chart shows current data
+            end_date = date.today()
             start_date = end_date - timedelta(days=lookback_days)
             
             logger.info(f"📈 Fetching historical prices from {start_date} to {end_date}")
@@ -84,6 +86,8 @@ class HoldingsBasedHistoryEstimator:
             # Step 3: Generate daily snapshots
             snapshots_created = 0
             current_date = start_date
+            last_valid_value = Decimal(0)  # Track last valid value for filling gaps
+            last_cost_basis = Decimal(0)
             
             while current_date <= end_date:
                 # Calculate portfolio value for this date
@@ -98,6 +102,21 @@ class HoldingsBasedHistoryEstimator:
                     # Get price for this date
                     price = historical_prices.get(symbol, {}).get(current_date, Decimal(0))
                     
+                    # CRITICAL FIX: For today, use current holdings market value if no historical price
+                    if price == 0 and current_date == date.today():
+                        # Fall back to database market value for today
+                        supabase = self._get_supabase_client()
+                        holding_result = supabase.table('user_aggregated_holdings')\
+                            .select('total_market_value, total_cost_basis')\
+                            .eq('user_id', user_id)\
+                            .eq('symbol', symbol)\
+                            .limit(1)\
+                            .execute()
+                        if holding_result.data:
+                            total_value += Decimal(str(holding_result.data[0].get('total_market_value', 0)))
+                            total_cost_basis += Decimal(str(holding_result.data[0].get('total_cost_basis', 0)))
+                            continue
+                    
                     if price > 0:
                         market_value = quantity * price
                         cost_basis = quantity * cost_basis_per_share
@@ -105,8 +124,25 @@ class HoldingsBasedHistoryEstimator:
                         total_value += market_value
                         total_cost_basis += cost_basis
                 
-                # Only create snapshot if we have valid data
-                if total_value > 0:
+                # CRITICAL FIX: Fill gaps (weekends, holidays) with last known value
+                # This prevents zero/tiny values from appearing on the chart
+                # Use $1 threshold because near-zero stocks (like FUVV at $0.0001) shouldn't count
+                MIN_VALID_VALUE = Decimal('1.0')
+                
+                if total_value < MIN_VALID_VALUE and last_valid_value >= MIN_VALID_VALUE:
+                    logger.info(f"🔧 Filling gap for {current_date}: ${total_value:.2f} -> ${last_valid_value:.2f}")
+                    total_value = last_valid_value
+                    total_cost_basis = last_cost_basis
+                
+                # Update last valid value if we have meaningful data (MUST be separate if!)
+                if total_value >= MIN_VALID_VALUE:
+                    last_valid_value = total_value
+                    last_cost_basis = total_cost_basis
+                else:
+                    logger.warning(f"⚠️ No meaningful data for {current_date}: ${total_value:.2f}")
+                
+                # Create snapshot if we have valid data (real or gap-filled)
+                if total_value >= MIN_VALID_VALUE:
                     total_gain_loss = total_value - total_cost_basis
                     total_gain_loss_percent = (total_gain_loss / total_cost_basis * 100) if total_cost_basis > 0 else Decimal(0)
                     
@@ -319,24 +355,38 @@ class HoldingsBasedHistoryEstimator:
         total_gain_loss_percent: Decimal,
         securities_count: int
     ):
-        """Store an estimated snapshot in database."""
+        """Store an estimated snapshot in database.
+        
+        Uses delete-then-insert pattern because PostgreSQL partitioned tables
+        don't support UNIQUE constraints across partitions properly for upsert.
+        """
         supabase = self._get_supabase_client()
         
         try:
-            supabase.table('user_portfolio_history').upsert({
+            # Delete any existing record for this user/date/type (handles duplicates)
+            supabase.table('user_portfolio_history')\
+                .delete()\
+                .eq('user_id', user_id)\
+                .eq('value_date', snapshot_date.isoformat())\
+                .eq('snapshot_type', 'reconstructed')\
+                .execute()
+            
+            # Insert new record
+            supabase.table('user_portfolio_history').insert({
                 'user_id': user_id,
                 'value_date': snapshot_date.isoformat(),
-                'snapshot_type': 'reconstructed',  # Use 'reconstructed' (allowed by schema)
+                'snapshot_type': 'reconstructed',
                 'total_value': float(total_value),
                 'total_cost_basis': float(total_cost_basis),
                 'total_gain_loss': float(total_gain_loss),
                 'total_gain_loss_percent': float(total_gain_loss_percent),
                 'securities_count': securities_count,
                 'data_quality_score': 75.0  # 75% quality (estimated from current holdings)
-            }, on_conflict='user_id,value_date,snapshot_type').execute()
+            }).execute()
             
         except Exception as e:
             logger.error(f"❌ Error storing snapshot for {snapshot_date}: {e}")
+            raise  # Re-raise to propagate the error
 
 
 # Singleton

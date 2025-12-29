@@ -16,6 +16,15 @@ def calculate_portfolio_value(holdings_data: List[Dict[str, Any]], user_id: str)
     """
     Calculate portfolio value from aggregated holdings data.
     
+    PRODUCTION-GRADE: Calculates actual Today's Return using yesterday's portfolio value.
+    
+    MARKET-AWARE BEHAVIOR (Industry Standard):
+    - On trading days: Shows actual return (current value vs previous close)
+    - On non-trading days (weekends/holidays):
+      - Stocks-only portfolio: Shows "$0.00 (Markets Closed)" since stock prices are stale
+      - Portfolio with crypto: Shows crypto-only return (crypto trades 24/7)
+      - This matches Robinhood, Fidelity, Schwab behavior
+    
     Args:
         holdings_data: List of aggregated holdings from database
         user_id: User ID for logging
@@ -30,30 +39,159 @@ def calculate_portfolio_value(holdings_data: List[Dict[str, Any]], user_id: str)
     total_market_value = sum(float(holding.get('total_market_value', 0)) for holding in holdings_data)
     total_cost_basis = sum(float(holding.get('total_cost_basis', 0)) for holding in holdings_data)
     
-    # Conservative daily return estimate (Plaid doesn't provide intraday data)
+    # PRODUCTION-GRADE: Check if market is open today
+    from utils.trading_calendar import get_trading_calendar
+    from datetime import date, timedelta
+    
+    trading_calendar = get_trading_calendar()
+    today = date.today()
+    is_market_open = trading_calendar.is_market_open_today(today)
+    
+    # Detect if portfolio has crypto (crypto trades 24/7)
+    has_crypto = _portfolio_has_crypto(holdings_data)
+    
+    # CRITICAL: Calculate today's return with market-awareness
     todays_return = 0.0
     return_percent = 0.0
+    market_status = "open" if is_market_open else "closed"
     
-    if total_market_value > 1000:  # Only for substantial portfolios
-        todays_return = total_market_value * 0.001  # 0.1% conservative estimate
-        return_percent = (todays_return / (total_market_value - todays_return)) * 100 if total_market_value > todays_return else 0.0
+    try:
+        from utils.supabase.db_client import get_supabase_client
+        
+        supabase = get_supabase_client()
+        
+        # PRODUCTION-GRADE: On non-trading days for stocks-only portfolios,
+        # return $0.00 immediately - no need to calculate stale price differences
+        if not is_market_open and not has_crypto:
+            logger.info(f"📅 Market CLOSED, stocks-only portfolio for user {user_id} - showing $0 return")
+            return {
+                "account_id": "aggregated",
+                "total_value": f"${total_market_value:.2f}",
+                "today_return": "$0.00 (0.00%)",
+                "today_return_label": "Markets Closed",
+                "raw_value": total_market_value,
+                "raw_return": 0.0,
+                "raw_return_percent": 0.0,
+                "market_status": "closed",
+                "timestamp": datetime.now().isoformat(),
+                "data_source": "plaid_aggregated",
+                "holdings_count": len(holdings_data)
+            }
+        
+        # Look for the most recent portfolio snapshot (yesterday or last trading day)
+        # Look back up to 5 days to find last trading day (weekends/holidays)
+        yesterday_value = None
+        reference_date = None
+        for days_back in range(1, 6):
+            check_date = today - timedelta(days=days_back)
+            result = supabase.table('user_portfolio_history')\
+                .select('total_value, value_date')\
+                .eq('user_id', user_id)\
+                .eq('value_date', check_date.isoformat())\
+                .in_('snapshot_type', ['reconstructed', 'daily_eod'])\
+                .limit(1)\
+                .execute()
+            
+            if result.data and len(result.data) > 0:
+                yesterday_value = float(result.data[0]['total_value'])
+                reference_date = check_date
+                logger.debug(f"Found previous value for {check_date}: ${yesterday_value:.2f}")
+                break
+        
+        if yesterday_value and yesterday_value > 0:
+            # On non-trading days with crypto: Calculate return but note it's crypto-only
+            if not is_market_open and has_crypto:
+                # For mixed portfolios on weekends, the return is from crypto movement only
+                # Stock prices are stale, so any change is crypto
+                todays_return = total_market_value - yesterday_value
+                return_percent = (todays_return / yesterday_value) * 100
+                logger.info(f"📅 Market CLOSED, crypto portfolio for user {user_id}: "
+                           f"${todays_return:.2f} ({return_percent:.2f}%) - crypto movement only")
+            else:
+                # Normal trading day calculation
+                todays_return = total_market_value - yesterday_value
+                return_percent = (todays_return / yesterday_value) * 100
+                logger.info(f"Today's return for user {user_id}: ${todays_return:.2f} ({return_percent:.2f}%) "
+                           f"vs {reference_date} ${yesterday_value:.2f}")
+        else:
+            # No historical data yet - show $0 return (not estimated)
+            logger.info(f"No historical data for user {user_id}, showing $0 return")
+            todays_return = 0.0
+            return_percent = 0.0
+            
+    except Exception as e:
+        logger.warning(f"Error calculating today's return for user {user_id}: {e}")
+        # Fall back to $0 if we can't get historical data
+        todays_return = 0.0
+        return_percent = 0.0
     
     # Format return for display
     return_formatted = f"+${todays_return:.2f}" if todays_return >= 0 else f"-${abs(todays_return):.2f}"
     
-    logger.info(f"Portfolio value calculated for user {user_id}: ${total_market_value:.2f} (return: {return_formatted})")
+    # Add market status label for non-trading days
+    return_label = None
+    if not is_market_open:
+        if has_crypto:
+            return_label = "Crypto Only"
+        else:
+            return_label = "Markets Closed"
     
-    return {
+    logger.info(f"Portfolio value calculated for user {user_id}: ${total_market_value:.2f} "
+               f"(return: {return_formatted}, market: {market_status})")
+    
+    response = {
         "account_id": "aggregated",
         "total_value": f"${total_market_value:.2f}",
         "today_return": f"{return_formatted} ({return_percent:.2f}%)",
         "raw_value": total_market_value,
         "raw_return": todays_return,
         "raw_return_percent": return_percent,
+        "market_status": market_status,
         "timestamp": datetime.now().isoformat(),
         "data_source": "plaid_aggregated",
         "holdings_count": len(holdings_data)
     }
+    
+    if return_label:
+        response["today_return_label"] = return_label
+    
+    return response
+
+
+def _portfolio_has_crypto(holdings_data: List[Dict[str, Any]]) -> bool:
+    """
+    Check if portfolio contains any cryptocurrency holdings.
+    
+    This is used to determine if weekend returns should be shown (crypto trades 24/7).
+    
+    Args:
+        holdings_data: List of aggregated holdings
+        
+    Returns:
+        True if portfolio has crypto, False otherwise
+    """
+    from utils.asset_classification import classify_asset, AssetClassification
+    from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
+    
+    for holding in holdings_data:
+        security_type = holding.get('security_type', '').lower()
+        symbol = holding.get('symbol', '').upper()
+        security_name = holding.get('security_name', '')
+        
+        # Check explicit crypto security type
+        if security_type in ['crypto', 'cryptocurrency']:
+            return True
+        
+        # Check unambiguous crypto symbols (BTC, ETH, etc.)
+        if symbol in UNAMBIGUOUS_CRYPTO:
+            return True
+        
+        # Use comprehensive classification
+        classification = classify_asset(symbol, security_name)
+        if classification == AssetClassification.CRYPTO:
+            return True
+    
+    return False
 
 def calculate_portfolio_analytics(holdings_data: List[Dict[str, Any]], user_id: str) -> Dict[str, Any]:
     """
