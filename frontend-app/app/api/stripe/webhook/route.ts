@@ -2,7 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
-import { upsertUserPayment, mapSubscriptionToPaymentStatus } from '@/lib/stripe-payments';
+import { upsertUserPayment, mapSubscriptionToPaymentStatus, PaymentData } from '@/lib/stripe-payments';
+
+/**
+ * Wrapper that throws on upsert failure to maintain original error-handling behavior.
+ * Webhook errors should propagate to the catch block and return HTTP 500 to Stripe,
+ * which will trigger a retry.
+ */
+async function upsertPaymentOrThrow(userId: string, paymentData: PaymentData): Promise<void> {
+  const { success, error } = await upsertUserPayment(userId, paymentData);
+  if (!success) {
+    throw error || new Error('Failed to upsert payment record');
+  }
+}
 
 // Ensure this route is dynamic and handles raw body for webhook signature verification
 export const dynamic = 'force-dynamic';
@@ -65,7 +77,7 @@ export async function POST(request: NextRequest) {
             );
             
             if (subscription.status === 'active' || subscription.status === 'trialing') {
-              await upsertUserPayment(userId, {
+              await upsertPaymentOrThrow(userId, {
                 stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id,
                 stripeSubscriptionId: subscription.id,
                 subscriptionStatus: subscription.status,
@@ -76,7 +88,7 @@ export async function POST(request: NextRequest) {
         } else {
           // One-time payment
           if (session.payment_status === 'paid') {
-            await upsertUserPayment(userId, {
+            await upsertPaymentOrThrow(userId, {
               stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id,
               paymentStatus: 'active',
             });
@@ -95,7 +107,7 @@ export async function POST(request: NextRequest) {
           break;
         }
         
-        await upsertUserPayment(userId, {
+        await upsertPaymentOrThrow(userId, {
           stripeCustomerId: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id,
           stripeSubscriptionId: subscription.id,
           subscriptionStatus: subscription.status,
@@ -113,7 +125,7 @@ export async function POST(request: NextRequest) {
           break;
         }
         
-        await upsertUserPayment(userId, {
+        await upsertPaymentOrThrow(userId, {
           paymentStatus: 'inactive',
           subscriptionStatus: 'canceled',
         });
@@ -130,7 +142,7 @@ export async function POST(request: NextRequest) {
           const userId = subscription.metadata?.userId;
           
           if (userId) {
-            await upsertUserPayment(userId, {
+            await upsertPaymentOrThrow(userId, {
               paymentStatus: 'active',
             });
           }
@@ -148,7 +160,7 @@ export async function POST(request: NextRequest) {
           const userId = subscription.metadata?.userId;
           
           if (userId) {
-            await upsertUserPayment(userId, {
+            await upsertPaymentOrThrow(userId, {
               paymentStatus: 'past_due',
             });
           }

@@ -73,12 +73,30 @@ export async function upsertUserPayment(
 
 /**
  * Determine payment status from Stripe subscription status
+ * 
+ * Stripe subscription statuses:
+ * - active: Payment confirmed, subscription is active
+ * - trialing: In trial period (treated as active)
+ * - past_due: Payment failed but in grace period (customer can still access)
+ * - canceled: Subscription ended
+ * - unpaid: Payment failed, grace period expired
+ * - incomplete: Initial payment failed
+ * - incomplete_expired: Initial payment failed and expired
+ * - paused: Subscription paused (treated as inactive)
  */
 export function mapSubscriptionToPaymentStatus(
   subscriptionStatus: string
-): 'active' | 'inactive' {
-  return subscriptionStatus === 'active' || subscriptionStatus === 'trialing' 
-    ? 'active' 
-    : 'inactive';
+): 'active' | 'inactive' | 'past_due' {
+  switch (subscriptionStatus) {
+    case 'active':
+    case 'trialing':
+      return 'active';
+    case 'past_due':
+      // Grace period - customer should still have access but needs to update payment
+      return 'past_due';
+    default:
+      // canceled, unpaid, incomplete, incomplete_expired, paused
+      return 'inactive';
+  }
 }
 

@@ -78,11 +78,20 @@ describe('Stripe Payment Flow Security Tests', () => {
   describe('Stripe Session Status Mapping', () => {
     /**
      * Map Stripe subscription status to internal payment status
+     * 
+     * Updated to handle 'past_due' as a distinct state (grace period)
+     * instead of treating it as 'inactive' which would lock out customers
      */
-    const mapStripeStatusToPaymentStatus = (subscriptionStatus: string): 'active' | 'inactive' => {
-      return subscriptionStatus === 'active' || subscriptionStatus === 'trialing' 
-        ? 'active' 
-        : 'inactive';
+    const mapStripeStatusToPaymentStatus = (subscriptionStatus: string): 'active' | 'inactive' | 'past_due' => {
+      switch (subscriptionStatus) {
+        case 'active':
+        case 'trialing':
+          return 'active';
+        case 'past_due':
+          return 'past_due'; // Grace period - customer can still access
+        default:
+          return 'inactive';
+      }
     };
 
     test('should map active subscription to active payment', () => {
@@ -97,8 +106,9 @@ describe('Stripe Payment Flow Security Tests', () => {
       expect(mapStripeStatusToPaymentStatus('canceled')).toBe('inactive');
     });
 
-    test('should map past_due subscription to inactive payment', () => {
-      expect(mapStripeStatusToPaymentStatus('past_due')).toBe('inactive');
+    test('should map past_due subscription to past_due (grace period)', () => {
+      // CRITICAL: past_due customers are in grace period and should NOT be locked out
+      expect(mapStripeStatusToPaymentStatus('past_due')).toBe('past_due');
     });
 
     test('should map unpaid subscription to inactive payment', () => {
