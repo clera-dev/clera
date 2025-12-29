@@ -14,7 +14,9 @@ Implementation:
 - Uses UPDATE...WHERE last_action_at < cutoff as a single atomic operation
 - If UPDATE affects rows: action allowed (timestamp was old enough)
 - If UPDATE affects 0 rows: either rate limited OR no record exists
-- For new users: INSERT with conflict handling
+- For new users: INSERT (NOT upsert) with unique constraint error handling
+  - First concurrent request: INSERT succeeds → allowed
+  - Second concurrent request: INSERT fails (unique constraint) → denied
 """
 
 import logging
@@ -141,26 +143,52 @@ class SecureRateLimiter:
                     self._update_timestamp(user_id, action, now_iso, existing.data[0].get('action_count', 0) + 1)
                     return (True, None)
             
-            # No record exists - this is a new user, try to INSERT
-            # Use upsert to handle race condition where another request inserts first
+            # No record exists - this is a new user, try to INSERT (NOT upsert!)
+            # 
+            # CRITICAL: We use INSERT, not UPSERT, because:
+            # - UPSERT silently updates on conflict, allowing both concurrent requests
+            # - INSERT fails on unique constraint, allowing us to deny the second request
+            #
+            # Race condition handling:
+            # - Request A: INSERT succeeds → allowed
+            # - Request B: INSERT fails (unique constraint) → denied
             try:
                 insert_result = self.supabase.table('user_rate_limits')\
-                    .upsert({
+                    .insert({
                         'user_id': user_id,
                         'action_type': action,
                         'last_action_at': now_iso,
                         'action_count': 1
-                    }, on_conflict='user_id,action_type')\
+                    })\
                     .execute()
                 
+                # INSERT succeeded - this is the first request
                 logger.info(f"Rate limit check: User {user_id} action={action} ALLOWED (first time)")
                 return (True, None)
                 
             except Exception as insert_error:
-                # If INSERT fails (e.g., unique constraint from concurrent request),
-                # another request beat us - we should be rate limited
-                logger.warning(f"Insert failed (concurrent request?): {insert_error}")
-                return (False, limit_minutes)
+                # INSERT failed - check if it's a unique constraint violation
+                error_str = str(insert_error).lower()
+                
+                # PostgreSQL unique constraint error codes/messages
+                is_unique_violation = (
+                    '23505' in error_str or  # PostgreSQL error code for unique violation
+                    'unique' in error_str or
+                    'duplicate' in error_str or
+                    'already exists' in error_str
+                )
+                
+                if is_unique_violation:
+                    # Another concurrent request beat us - they get the action, we get rate limited
+                    logger.info(
+                        f"Rate limit check: User {user_id} action={action} "
+                        f"DENIED (concurrent first request beat us)"
+                    )
+                    return (False, limit_minutes)
+                else:
+                    # Some other error - fail closed for security
+                    logger.error(f"Insert failed with unexpected error: {insert_error}")
+                    return (False, limit_minutes)
                 
         except Exception as e:
             # FAIL CLOSED - if we can't verify rate limit, deny the request
