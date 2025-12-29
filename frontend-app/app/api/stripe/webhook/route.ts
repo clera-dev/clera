@@ -2,7 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { upsertUserPayment, mapSubscriptionToPaymentStatus, PaymentData } from '@/lib/stripe-payments';
+
+/**
+ * Wrapper that throws on upsert failure to maintain original error-handling behavior.
+ * Webhook errors should propagate to the catch block and return HTTP 500 to Stripe,
+ * which will trigger a retry.
+ */
+async function upsertPaymentOrThrow(userId: string, paymentData: PaymentData): Promise<void> {
+  const { success, error } = await upsertUserPayment(userId, paymentData);
+  if (!success) {
+    throw error || new Error('Failed to upsert payment record');
+  }
+}
 
 // Ensure this route is dynamic and handles raw body for webhook signature verification
 export const dynamic = 'force-dynamic';
@@ -65,7 +77,7 @@ export async function POST(request: NextRequest) {
             );
             
             if (subscription.status === 'active' || subscription.status === 'trialing') {
-              await updateUserPaymentStatus(userId, {
+              await upsertPaymentOrThrow(userId, {
                 stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id,
                 stripeSubscriptionId: subscription.id,
                 subscriptionStatus: subscription.status,
@@ -76,7 +88,7 @@ export async function POST(request: NextRequest) {
         } else {
           // One-time payment
           if (session.payment_status === 'paid') {
-            await updateUserPaymentStatus(userId, {
+            await upsertPaymentOrThrow(userId, {
               stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id,
               paymentStatus: 'active',
             });
@@ -95,11 +107,11 @@ export async function POST(request: NextRequest) {
           break;
         }
         
-        await updateUserPaymentStatus(userId, {
+        await upsertPaymentOrThrow(userId, {
           stripeCustomerId: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id,
           stripeSubscriptionId: subscription.id,
           subscriptionStatus: subscription.status,
-          paymentStatus: subscription.status === 'active' || subscription.status === 'trialing' ? 'active' : 'inactive',
+          paymentStatus: mapSubscriptionToPaymentStatus(subscription.status),
         });
         break;
       }
@@ -113,7 +125,7 @@ export async function POST(request: NextRequest) {
           break;
         }
         
-        await updateUserPaymentStatus(userId, {
+        await upsertPaymentOrThrow(userId, {
           paymentStatus: 'inactive',
           subscriptionStatus: 'canceled',
         });
@@ -130,7 +142,7 @@ export async function POST(request: NextRequest) {
           const userId = subscription.metadata?.userId;
           
           if (userId) {
-            await updateUserPaymentStatus(userId, {
+            await upsertPaymentOrThrow(userId, {
               paymentStatus: 'active',
             });
           }
@@ -148,7 +160,7 @@ export async function POST(request: NextRequest) {
           const userId = subscription.metadata?.userId;
           
           if (userId) {
-            await updateUserPaymentStatus(userId, {
+            await upsertPaymentOrThrow(userId, {
               paymentStatus: 'past_due',
             });
           }
@@ -168,76 +180,5 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-async function updateUserPaymentStatus(
-  userId: string | undefined,
-  paymentData: {
-    stripeCustomerId?: string;
-    stripeSubscriptionId?: string;
-    subscriptionStatus?: string;
-    paymentStatus: 'active' | 'inactive' | 'past_due';
-  }
-) {
-  if (!userId) {
-    console.error('No userId provided to updateUserPaymentStatus');
-    return;
-  }
-
-  // Use service role key for webhook operations to bypass RLS
-  // Webhooks come from Stripe, not from authenticated users
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing Supabase configuration for webhook');
-    throw new Error('Supabase configuration error');
-  }
-
-  const supabase = createSupabaseClient(supabaseUrl, supabaseServiceKey);
-  
-  // First, check if a payment record exists
-  const { data: existingPayment } = await supabase
-    .from('user_payments')
-    .select('id')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  const paymentRecord = {
-    user_id: userId,
-    stripe_customer_id: paymentData.stripeCustomerId,
-    stripe_subscription_id: paymentData.stripeSubscriptionId,
-    subscription_status: paymentData.subscriptionStatus,
-    payment_status: paymentData.paymentStatus,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (existingPayment) {
-    // Update existing record
-    const { error } = await supabase
-      .from('user_payments')
-      .update(paymentRecord)
-      .eq('user_id', userId);
-
-    if (error) {
-      console.error('Error updating payment status:', error);
-      throw error;
-    }
-  } else {
-    // Insert new record
-    const { error } = await supabase
-      .from('user_payments')
-      .insert({
-        ...paymentRecord,
-        created_at: new Date().toISOString(),
-      });
-
-    if (error) {
-      console.error('Error creating payment record:', error);
-      throw error;
-    }
-  }
-
-  console.log(`Payment status updated for user ${userId}:`, paymentData.paymentStatus);
 }
 

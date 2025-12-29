@@ -99,15 +99,20 @@ function SnapTradeCallbackContent() {
               });
 
               if (checkoutResponse.ok) {
-                const { url } = await checkoutResponse.json();
-                if (url) {
-                  window.location.href = url;
+                const checkoutData = await checkoutResponse.json();
+                if (checkoutData.url) {
+                  window.location.href = checkoutData.url;
                 } else {
                   console.error('❌ No checkout URL received');
                   setTimeout(() => {
                     window.location.href = '/protected';
                   }, 2000);
                 }
+              } else if (checkoutResponse.status === 409) {
+                // User already has active subscription (race condition protection)
+                const errorData = await checkoutResponse.json();
+                console.log('✅ User already has active subscription, redirecting to portfolio');
+                window.location.href = errorData.redirectTo || '/portfolio';
               } else {
                 console.error('❌ Failed to create checkout session');
                 setTimeout(() => {
@@ -127,14 +132,19 @@ function SnapTradeCallbackContent() {
             });
 
             if (checkoutResponse.ok) {
-              const { url } = await checkoutResponse.json();
-              if (url) {
-                window.location.href = url;
+              const checkoutData = await checkoutResponse.json();
+              if (checkoutData.url) {
+                window.location.href = checkoutData.url;
               } else {
                 setTimeout(() => {
                   window.location.href = '/protected';
                 }, 2000);
               }
+            } else if (checkoutResponse.status === 409) {
+              // User already has active subscription
+              const errorData = await checkoutResponse.json();
+              console.log('✅ User already has active subscription, redirecting to portfolio');
+              window.location.href = errorData.redirectTo || '/portfolio';
             } else {
               setTimeout(() => {
                 window.location.href = '/protected';

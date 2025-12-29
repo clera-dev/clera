@@ -366,6 +366,10 @@ class AggregatedPortfolioService:
             # - total_return = (stale_stock + live_crypto) - (yesterday_stock + yesterday_crypto)
             #                = live_crypto - yesterday_crypto = crypto return only
             
+            # PRODUCTION-GRADE: Check if market is closed and portfolio has crypto
+            is_market_closed = not trading_calendar.is_market_open_today(today)
+            has_crypto = await self._portfolio_has_crypto(user_id)
+            
             if today in snapshot_by_date and len(equity_values) > 0:
                 # Today's snapshot exists - but we should STILL update with live values
                 # because crypto prices may have changed since the snapshot was created
@@ -377,16 +381,23 @@ class AggregatedPortfolioService:
                 if current_value > 0:
                     equity_values[-1] = current_value
                     yesterday_value = equity_values[-2] if len(equity_values) > 1 else current_value
-                    today_pl = current_value - yesterday_value
-                    today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                    
+                    # PRODUCTION-GRADE: On non-trading days for stocks-only portfolios,
+                    # force today's return to $0 to avoid phantom returns from calculation noise
+                    if is_market_closed and not has_crypto:
+                        today_pl = 0.0
+                        today_pl_pct = 0.0
+                        logger.info(f"📅 Market CLOSED, stocks-only portfolio: forcing $0.00 return")
+                    else:
+                        today_pl = current_value - yesterday_value
+                        today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                        if is_market_closed:
+                            logger.info(f"📅 Market CLOSED, crypto portfolio: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                        else:
+                            logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                    
                     profit_loss[-1] = today_pl
                     profit_loss_pct[-1] = today_pl_pct
-                    
-                    is_market_closed = not trading_calendar.is_market_open_today(today)
-                    if is_market_closed:
-                        logger.info(f"📅 Market CLOSED: Today's return (crypto only): ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
-                    else:
-                        logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
                         
             elif end_date >= today and len(equity_values) > 0:
                 # Today was included in the loop but has no snapshot yet
@@ -401,20 +412,25 @@ class AggregatedPortfolioService:
                     # Update today's value (last item in arrays)
                     equity_values[-1] = current_value
                     
-                    # Calculate real P/L vs yesterday (crypto returns will show on holidays)
                     yesterday_value = equity_values[-2] if len(equity_values) > 1 else current_value
-                    today_pl = current_value - yesterday_value
-                    today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                    
+                    # PRODUCTION-GRADE: On non-trading days for stocks-only portfolios,
+                    # force today's return to $0 to avoid phantom returns from calculation noise
+                    if is_market_closed and not has_crypto:
+                        today_pl = 0.0
+                        today_pl_pct = 0.0
+                        logger.info(f"📅 Market CLOSED, stocks-only portfolio: forcing $0.00 return")
+                    else:
+                        today_pl = current_value - yesterday_value
+                        today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
+                        if is_market_closed:
+                            logger.info(f"📅 Market CLOSED, crypto portfolio: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                        else:
+                            logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
                     
                     # Update today's P/L (last item)
                     profit_loss[-1] = today_pl
                     profit_loss_pct[-1] = today_pl_pct
-                    
-                    is_market_closed = not trading_calendar.is_market_open_today(today)
-                    if is_market_closed:
-                        logger.info(f"📅 Market CLOSED: Today's return (crypto only): ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
-                    else:
-                        logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
                     
                     logger.info(f"✅ Updated today's value: ${current_value:,.2f} (return: ${today_pl:+,.2f})")
             
@@ -437,6 +453,62 @@ class AggregatedPortfolioService:
         except Exception as e:
             logger.error(f"Error getting aggregated portfolio history for user {user_id}: {e}")
             return self._empty_history_response(period)
+    
+    async def _portfolio_has_crypto(self, user_id: str) -> bool:
+        """
+        Check if user's portfolio contains any cryptocurrency holdings.
+        
+        This is used to determine if weekend/holiday returns should be shown:
+        - Crypto trades 24/7, so returns CAN occur on weekends/holidays
+        - Stocks only trade on market days, so returns should be $0 on non-trading days
+        
+        Args:
+            user_id: User ID to check
+            
+        Returns:
+            True if portfolio has crypto, False otherwise
+        """
+        try:
+            from utils.asset_classification import classify_asset, AssetClassification
+            from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
+            
+            supabase = self._get_supabase_client()
+            
+            # Get user's holdings
+            result = supabase.table('user_aggregated_holdings')\
+                .select('symbol, security_type, security_name')\
+                .eq('user_id', user_id)\
+                .execute()
+            
+            if not result.data:
+                return False
+            
+            for holding in result.data:
+                security_type = (holding.get('security_type') or '').lower()
+                symbol = (holding.get('symbol') or '').upper()
+                security_name = holding.get('security_name') or ''
+                
+                # Check explicit crypto security type
+                if security_type in ['crypto', 'cryptocurrency']:
+                    logger.debug(f"Found crypto by security_type: {symbol}")
+                    return True
+                
+                # Check unambiguous crypto symbols (BTC, ETH, etc.)
+                if symbol in UNAMBIGUOUS_CRYPTO:
+                    logger.debug(f"Found crypto by unambiguous symbol: {symbol}")
+                    return True
+                
+                # Use comprehensive classification
+                classification = classify_asset(symbol, security_name)
+                if classification == AssetClassification.CRYPTO:
+                    logger.debug(f"Found crypto by classification: {symbol}")
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error checking if portfolio has crypto for user {user_id}: {e}")
+            return False  # Conservative default: assume no crypto
     
     def _empty_history_response(self, period: str = '1M') -> Dict[str, Any]:
         """Return empty portfolio history response."""

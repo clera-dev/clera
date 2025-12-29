@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@/utils/supabase/server';
+import { upsertUserPayment, mapSubscriptionToPaymentStatus } from '@/lib/stripe-payments';
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,14 +38,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check payment status
-    let paymentStatus = 'inactive';
+    // Check payment status from Stripe
+    let paymentStatus: 'active' | 'inactive' = 'inactive';
+    let subscriptionId: string | null = null;
+    let subscriptionStatus: string | null = null;
+    
     if (session.mode === 'subscription') {
       if (session.subscription) {
         const subscription = typeof session.subscription === 'string'
           ? await stripe.subscriptions.retrieve(session.subscription)
           : session.subscription;
         
+        subscriptionId = subscription.id;
+        subscriptionStatus = subscription.status;
         paymentStatus = subscription.status === 'active' || subscription.status === 'trialing' 
           ? 'active' 
           : 'inactive';
@@ -53,7 +59,29 @@ export async function POST(request: NextRequest) {
       paymentStatus = session.payment_status === 'paid' ? 'active' : 'inactive';
     }
 
-    // Check if payment record exists in database
+    // CRITICAL FIX: If session is complete and payment is active, UPDATE the database directly
+    // This eliminates the race condition where webhook hasn't processed yet
+    if (session.status === 'complete' && paymentStatus === 'active') {
+      console.log(`[verify-session] Session complete, updating DB for user ${user.id}`);
+      
+      const customerId = typeof session.customer === 'string' 
+        ? session.customer 
+        : session.customer?.id;
+      
+      // Use shared utility for atomic upsert (same logic as webhook)
+      const { success, error: upsertError } = await upsertUserPayment(user.id, {
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscriptionId,
+        subscriptionStatus: subscriptionStatus,
+        paymentStatus: paymentStatus,
+      });
+      
+      if (!success) {
+        console.error('[verify-session] Failed to upsert payment:', upsertError?.message);
+      }
+    }
+
+    // Check if payment record exists in database (it should now after our update)
     const { data: paymentRecord } = await supabase
       .from('user_payments')
       .select('*')
