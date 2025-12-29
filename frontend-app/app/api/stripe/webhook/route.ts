@@ -196,48 +196,27 @@ async function updateUserPaymentStatus(
 
   const supabase = createSupabaseClient(supabaseUrl, supabaseServiceKey);
   
-  // First, check if a payment record exists
-  const { data: existingPayment } = await supabase
+  // ATOMIC OPERATION: Use upsert to prevent race condition with verify-session
+  // Both webhook and verify-session can execute simultaneously - upsert handles this atomically
+  const { error } = await supabase
     .from('user_payments')
-    .select('id')
-    .eq('user_id', userId)
-    .maybeSingle();
+    .upsert({
+      user_id: userId,
+      stripe_customer_id: paymentData.stripeCustomerId,
+      stripe_subscription_id: paymentData.stripeSubscriptionId,
+      subscription_status: paymentData.subscriptionStatus,
+      payment_status: paymentData.paymentStatus,
+      updated_at: new Date().toISOString(),
+    }, { 
+      onConflict: 'user_id',
+      ignoreDuplicates: false // Update if exists
+    });
 
-  const paymentRecord = {
-    user_id: userId,
-    stripe_customer_id: paymentData.stripeCustomerId,
-    stripe_subscription_id: paymentData.stripeSubscriptionId,
-    subscription_status: paymentData.subscriptionStatus,
-    payment_status: paymentData.paymentStatus,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (existingPayment) {
-    // Update existing record
-    const { error } = await supabase
-      .from('user_payments')
-      .update(paymentRecord)
-      .eq('user_id', userId);
-
-    if (error) {
-      console.error('Error updating payment status:', error);
-      throw error;
-    }
-  } else {
-    // Insert new record
-    const { error } = await supabase
-      .from('user_payments')
-      .insert({
-        ...paymentRecord,
-        created_at: new Date().toISOString(),
-      });
-
-    if (error) {
-      console.error('Error creating payment record:', error);
-      throw error;
-    }
+  if (error) {
+    console.error('Error upserting payment status:', error);
+    throw error;
   }
 
-  console.log(`Payment status updated for user ${userId}:`, paymentData.paymentStatus);
+  console.log(`Payment status upserted for user ${userId}:`, paymentData.paymentStatus);
 }
 

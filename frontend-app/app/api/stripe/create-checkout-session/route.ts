@@ -18,11 +18,25 @@ export async function POST(request: NextRequest) {
 
     // CRITICAL: Check if user already has an active subscription to prevent double-billing
     // This is a safety net against race conditions and accidental duplicate checkouts
-    const { data: existingPayment } = await supabase
+    // FAIL-CLOSED: If we can't verify, we don't create checkout (safer than double-billing)
+    const { data: existingPayment, error: paymentQueryError } = await supabase
       .from('user_payments')
       .select('payment_status, subscription_status, stripe_subscription_id')
       .eq('user_id', user.id)
       .maybeSingle();
+
+    // CRITICAL: Fail-closed on database errors to prevent double-billing
+    // If we can't verify subscription status, it's safer to block than risk charging twice
+    if (paymentQueryError) {
+      console.error(`[create-checkout] CRITICAL: Database query failed for user ${user.id}:`, paymentQueryError);
+      return NextResponse.json(
+        { 
+          error: 'Unable to verify subscription status. Please try again.',
+          code: 'VERIFICATION_FAILED'
+        },
+        { status: 503 } // Service Unavailable - indicates temporary issue
+      );
+    }
 
     if (existingPayment) {
       const isActive = existingPayment.payment_status === 'active' || 
@@ -57,8 +71,20 @@ export async function POST(request: NextRequest) {
             );
           }
         } catch (stripeErr: any) {
-          // Subscription might not exist anymore, continue with checkout
-          console.log(`[create-checkout] Could not verify existing subscription: ${stripeErr.message}`);
+          // ONLY continue if subscription doesn't exist (resource_missing)
+          // For other errors (network, rate limit, 5xx), fail-closed to prevent double-billing
+          if (stripeErr.code === 'resource_missing') {
+            console.log(`[create-checkout] Subscription ${existingPayment.stripe_subscription_id} no longer exists, allowing new checkout`);
+          } else {
+            console.error(`[create-checkout] CRITICAL: Stripe verification failed for user ${user.id}:`, stripeErr);
+            return NextResponse.json(
+              { 
+                error: 'Unable to verify subscription status. Please try again.',
+                code: 'STRIPE_VERIFICATION_FAILED'
+              },
+              { status: 503 }
+            );
+          }
         }
       }
     }

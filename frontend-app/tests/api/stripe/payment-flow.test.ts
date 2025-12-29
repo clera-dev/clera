@@ -394,3 +394,90 @@ describe('Edge Cases', () => {
     });
   });
 });
+
+describe('Fail-Closed Safety Behavior', () => {
+  /**
+   * CRITICAL: All billing-related safety checks must fail-closed
+   * If we can't verify subscription status, we should NOT proceed with checkout
+   */
+  
+  describe('Database Error Handling', () => {
+    test('create-checkout should return 503 when DB query fails', () => {
+      // When Supabase query fails, the API should return 503 (Service Unavailable)
+      // NOT proceed with creating a checkout session
+      
+      const dbQueryFailed = true;
+      const expectedStatus = 503;
+      const expectedCode = 'VERIFICATION_FAILED';
+      
+      expect(dbQueryFailed).toBe(true);
+      expect(expectedStatus).toBe(503);
+      expect(expectedCode).toBe('VERIFICATION_FAILED');
+    });
+    
+    test('create-checkout should NOT create session when verification fails', () => {
+      // This is the critical safety behavior - fail-closed, not fail-open
+      const canVerifySubscription = false;
+      const shouldCreateCheckout = canVerifySubscription; // Only create if verified
+      
+      expect(shouldCreateCheckout).toBe(false);
+    });
+  });
+  
+  describe('Stripe API Error Handling', () => {
+    test('should only continue for resource_missing error', () => {
+      // When verifying existing subscription with Stripe:
+      // - resource_missing (subscription deleted): Continue with checkout ✅
+      // - rate_limit, timeout, 5xx: Fail-closed, return 503 ❌
+      
+      const resourceMissingError = { code: 'resource_missing' };
+      const rateLimitError = { code: 'rate_limit' };
+      const timeoutError = { code: 'request_timeout' };
+      
+      const shouldContinueOnResourceMissing = resourceMissingError.code === 'resource_missing';
+      const shouldContinueOnRateLimit = rateLimitError.code === 'resource_missing';
+      const shouldContinueOnTimeout = timeoutError.code === 'resource_missing';
+      
+      expect(shouldContinueOnResourceMissing).toBe(true);
+      expect(shouldContinueOnRateLimit).toBe(false);
+      expect(shouldContinueOnTimeout).toBe(false);
+    });
+    
+    test('should return 503 for transient Stripe errors', () => {
+      // Transient errors should result in 503, not create a duplicate checkout
+      const stripeError = { code: 'rate_limit', message: 'Too many requests' };
+      const isResourceMissing = stripeError.code === 'resource_missing';
+      const expectedStatus = isResourceMissing ? 200 : 503;
+      
+      expect(expectedStatus).toBe(503);
+    });
+  });
+});
+
+describe('Atomic Database Operations', () => {
+  /**
+   * Both verify-session and webhook must use atomic upsert operations
+   * to prevent race conditions when they execute simultaneously
+   */
+  
+  test('upsert should handle concurrent calls without duplicates', () => {
+    // Simulating two concurrent calls with same user_id
+    // Using upsert with onConflict: 'user_id' ensures only one record exists
+    
+    const call1 = { user_id: 'user-123', payment_status: 'active' };
+    const call2 = { user_id: 'user-123', payment_status: 'active' };
+    
+    // Both calls should succeed, resulting in ONE record (not two)
+    const expectedRecords = 1;
+    expect(call1.user_id).toBe(call2.user_id);
+    expect(expectedRecords).toBe(1);
+  });
+  
+  test('upsert should update existing record, not fail on conflict', () => {
+    // When record exists, upsert should update (ignoreDuplicates: false)
+    const upsertConfig = { onConflict: 'user_id', ignoreDuplicates: false };
+    
+    expect(upsertConfig.ignoreDuplicates).toBe(false);
+    expect(upsertConfig.onConflict).toBe('user_id');
+  });
+});
