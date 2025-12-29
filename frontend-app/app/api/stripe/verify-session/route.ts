@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@/utils/supabase/server';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { upsertUserPayment, mapSubscriptionToPaymentStatus } from '@/lib/stripe-payments';
 
 export async function POST(request: NextRequest) {
   try {
@@ -64,40 +64,20 @@ export async function POST(request: NextRequest) {
     if (session.status === 'complete' && paymentStatus === 'active') {
       console.log(`[verify-session] Session complete, updating DB for user ${user.id}`);
       
-      // Use service role key to bypass RLS and ensure write succeeds
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const customerId = typeof session.customer === 'string' 
+        ? session.customer 
+        : session.customer?.id;
       
-      if (supabaseUrl && supabaseServiceKey) {
-        const adminSupabase = createSupabaseClient(supabaseUrl, supabaseServiceKey);
-        
-        const customerId = typeof session.customer === 'string' 
-          ? session.customer 
-          : session.customer?.id;
-        
-        // ATOMIC OPERATION: Use upsert to prevent race condition with webhook
-        // Both verify-session and webhook can execute simultaneously - upsert handles this atomically
-        const { error: upsertError } = await adminSupabase
-          .from('user_payments')
-          .upsert({
-            user_id: user.id,
-            stripe_customer_id: customerId,
-            stripe_subscription_id: subscriptionId,
-            subscription_status: subscriptionStatus,
-            payment_status: paymentStatus,
-            updated_at: new Date().toISOString(),
-          }, { 
-            onConflict: 'user_id',
-            ignoreDuplicates: false // Update if exists
-          });
-        
-        if (upsertError) {
-          console.error('[verify-session] Error upserting payment record:', upsertError);
-        } else {
-          console.log(`[verify-session] Upserted payment record for user ${user.id}`);
-        }
-      } else {
-        console.warn('[verify-session] Missing Supabase config, cannot update DB directly');
+      // Use shared utility for atomic upsert (same logic as webhook)
+      const { success, error: upsertError } = await upsertUserPayment(user.id, {
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscriptionId,
+        subscriptionStatus: subscriptionStatus,
+        paymentStatus: paymentStatus,
+      });
+      
+      if (!success) {
+        console.error('[verify-session] Failed to upsert payment:', upsertError?.message);
       }
     }
 
