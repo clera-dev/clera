@@ -63,6 +63,31 @@ class TradingCalendar:
         
         return True
     
+    def is_market_open_now(self) -> bool:
+        """
+        Check if the market is currently open (both day AND time).
+        
+        Returns:
+            True if market is open right now (trading day + within market hours)
+        """
+        now = datetime.now(self.est)
+        
+        # First check if it's a trading day
+        if not self.is_market_open_today(now.date()):
+            return False
+        
+        # Check if within market hours (9:30 AM - 4:00 PM ET)
+        current_time = now.time()
+        
+        # Check if early close day
+        if self.is_early_close_day(now.date()):
+            return self.market_open_time <= current_time < self.early_close_time
+        
+        return self.market_open_time <= current_time < self.market_close_time
+    
+    # NOTE: is_early_close_day() is defined later in this file (line ~319)
+    # It uses _get_nth_weekday() which is more robust than a separate helper
+    
     def is_market_holiday(self, check_date: date) -> bool:
         """
         Check if a date is a US market holiday.

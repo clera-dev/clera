@@ -30,6 +30,15 @@ In T3 run:
 cd frontend-app && npm install && npm run dev
 ```
 
+If you need to run webhook to test stripe payments, you need 2 other terminals running:
+```bash
+ngrok http 8000
+```
+and
+```bash
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+
 And to redeploy AWS servers (anytime you change backend):
 ``` bash
    copilot svc deploy --name api-service --env production

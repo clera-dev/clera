@@ -210,6 +210,7 @@ async def lifespan(app: FastAPI):
     )
     from services.intraday_portfolio_tracker import get_intraday_portfolio_tracker
     from services.daily_portfolio_snapshot_service import DailyPortfolioScheduler
+    from services.portfolio_refresh_scheduler import start_portfolio_refresh_scheduler
     
     bg_manager = None
     try:
@@ -233,6 +234,27 @@ async def lifespan(app: FastAPI):
         bg_manager.create_task(intraday_config)
         bg_manager.create_task(scheduler_config)
         
+        # Configure Portfolio Refresh Scheduler with leader election
+        # This ensures only ONE server instance runs the hourly refresh job
+        async def run_portfolio_refresh_scheduler():
+            """Wrapper to run the APScheduler in async context."""
+            scheduler = start_portfolio_refresh_scheduler()
+            # Keep running until cancelled
+            try:
+                while True:
+                    await asyncio.sleep(60)  # Check every minute
+            except asyncio.CancelledError:
+                from services.portfolio_refresh_scheduler import stop_portfolio_refresh_scheduler
+                stop_portfolio_refresh_scheduler()
+                raise
+        
+        portfolio_refresh_config = BackgroundServiceConfig(
+            service_name="Portfolio Refresh Scheduler",
+            service_func=run_portfolio_refresh_scheduler,
+            leader_key="portfolio:refresh_scheduler:leader"
+        )
+        bg_manager.create_task(portfolio_refresh_config)
+        
         logger.info("✅ Background services configured with leader election")
         
     except Exception as e:
@@ -249,6 +271,9 @@ async def lifespan(app: FastAPI):
     
     # Shutdown logic
     logger.info("Shutting down API server...")
+    
+    # Portfolio Refresh Scheduler is now managed by BackgroundServiceManager
+    # and will be stopped automatically during bg_manager.shutdown_all()
     
     # Gracefully shutdown all background services (if initialized)
     if bg_manager is not None:
@@ -270,8 +295,10 @@ app = FastAPI(
 # Register modular route modules (keep api_server.py clean)
 from routes.account_filtering_routes import router as account_filtering_router
 from routes.snaptrade_routes import router as snaptrade_router
+from routes.portfolio_freshness import router as portfolio_freshness_router
 app.include_router(account_filtering_router)
 app.include_router(snaptrade_router)
+app.include_router(portfolio_freshness_router)
 
 # Add CORS middleware with restricted origins
 app.add_middleware(

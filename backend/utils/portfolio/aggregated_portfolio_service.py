@@ -392,7 +392,7 @@ class AggregatedPortfolioService:
                         today_pl = current_value - yesterday_value
                         today_pl_pct = (today_pl / yesterday_value * 100) if yesterday_value > 0 else 0
                         if is_market_closed:
-                            logger.info(f"📅 Market CLOSED, crypto portfolio: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
+                                logger.info(f"📅 Market CLOSED, crypto portfolio: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
                         else:
                             logger.info(f"✅ Market OPEN: Today's P/L: ${today_pl:+,.2f} ({today_pl_pct:+.2f}%)")
                     
