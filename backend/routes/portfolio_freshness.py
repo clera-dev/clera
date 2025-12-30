@@ -159,7 +159,7 @@ async def get_portfolio_freshness(
             "staleness_threshold_minutes": _get_staleness_threshold_minutes(),
             "market_status": "unknown",
             "recommendation": "sync_now",
-            "error": str(e)
+            "error": "Unable to check freshness status"  # Generic error, don't expose internals
         }
 
 
@@ -243,15 +243,12 @@ async def sync_portfolio_if_stale(
                     refresh_success = await provider.refresh_data(user_id)
                     refresh_triggered = refresh_success
                     
+                    # NOTE: We do NOT update last_synced here because:
+                    # 1. The brokerage refresh is ASYNC - data arrives via webhook later
+                    # 2. Updating timestamp now would be misleading
+                    # 3. The webhook handler updates last_synced when actual data arrives
                     if refresh_success:
-                        # Update last_synced timestamp
-                        supabase = get_supabase_client()
-                        supabase.table('user_investment_accounts')\
-                            .update({'last_synced': datetime.utcnow().isoformat() + 'Z'})\
-                            .eq('user_id', user_id)\
-                            .eq('is_active', True)\
-                            .execute()
-                        logger.info(f"✅ Triggered brokerage refresh for user {user_id}")
+                        logger.info(f"✅ Triggered brokerage refresh for user {user_id} (data will arrive via webhook)")
                 except Exception as e:
                     logger.warning(f"Could not trigger brokerage refresh: {e}")
         
@@ -259,13 +256,16 @@ async def sync_portfolio_if_stale(
         from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
         sync_result = await trigger_full_user_sync(user_id, force_rebuild=force and not rate_limited)
         
+        # Determine if sync actually succeeded
+        sync_success = sync_result.get('success', False)
+        
         response = {
-            "synced": True,
+            "synced": sync_success,  # Accurately reflect whether sync succeeded
             "reason": "data_stale" if not force else ("rate_limited" if rate_limited else "force_refresh"),
-            "last_synced": datetime.utcnow().isoformat() + 'Z',
+            "last_synced": datetime.utcnow().isoformat() + 'Z' if sync_success else freshness.get('last_synced'),
             "was_stale": freshness.get('is_stale', True),
             "positions_synced": sync_result.get('positions_synced', 0),
-            "sync_success": sync_result.get('success', False),
+            "sync_success": sync_success,
             "refresh_triggered": refresh_triggered,  # Indicates if real brokerage refresh was queued
         }
         
@@ -276,6 +276,8 @@ async def sync_portfolio_if_stale(
             response["note"] = f"Rate limited - you can refresh again in {minutes_until_refresh:.1f} minutes"
         elif refresh_triggered:
             response["note"] = "Brokerage refresh is async - fresh data will arrive via webhook"
+        elif not sync_success:
+            response["note"] = "Sync failed - using cached data"
         
         return response
         
@@ -284,7 +286,7 @@ async def sync_portfolio_if_stale(
         return {
             "synced": False,
             "reason": "error",
-            "error": str(e),
+            "error": "An internal error occurred",  # Generic error, don't expose internals
             "was_stale": True,
             "positions_synced": 0
         }
@@ -320,7 +322,7 @@ async def get_refresh_status(
         logger.error(f"Error getting refresh status for user {user_id}: {e}")
         return {
             "can_refresh": False,
-            "error": str(e)
+            "error": "Unable to check refresh status"  # Generic error, don't expose internals
         }
 
 
@@ -346,5 +348,5 @@ async def get_scheduler_status(
         logger.error(f"Error getting scheduler status: {e}")
         return {
             "is_running": False,
-            "error": str(e)
+            "error": "Unable to get scheduler status"  # Generic error, don't expose internals
         }

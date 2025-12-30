@@ -163,9 +163,12 @@ class PortfolioRefreshScheduler:
         """Get all users with active SnapTrade connections."""
         try:
             # Get users from snaptrade_users table who have active connections
-            result = self.supabase.table('snaptrade_users')\
-                .select('user_id, snaptrade_user_id')\
-                .execute()
+            # Use asyncio.to_thread to avoid blocking the event loop
+            result = await asyncio.to_thread(
+                lambda: self.supabase.table('snaptrade_users')
+                    .select('user_id, snaptrade_user_id')
+                    .execute()
+            )
             
             if not result.data:
                 return []
@@ -173,12 +176,14 @@ class PortfolioRefreshScheduler:
             # Filter to only users with active investment accounts
             user_ids = [u['user_id'] for u in result.data]
             
-            active_accounts = self.supabase.table('user_investment_accounts')\
-                .select('user_id')\
-                .in_('user_id', user_ids)\
-                .eq('is_active', True)\
-                .eq('provider', 'snaptrade')\
-                .execute()
+            active_accounts = await asyncio.to_thread(
+                lambda: self.supabase.table('user_investment_accounts')
+                    .select('user_id')
+                    .in_('user_id', user_ids)
+                    .eq('is_active', True)
+                    .eq('provider', 'snaptrade')
+                    .execute()
+            )
             
             active_user_ids = set(a['user_id'] for a in active_accounts.data)
             
@@ -235,12 +240,16 @@ class PortfolioRefreshScheduler:
             # Step 2: Sync data to our database
             sync_result = await trigger_full_user_sync(user_id, force_rebuild=False)
             
-            # Step 3: Update last_synced timestamp
-            self.supabase.table('user_investment_accounts')\
-                .update({'last_synced': datetime.utcnow().isoformat() + 'Z'})\
-                .eq('user_id', user_id)\
-                .eq('is_active', True)\
-                .execute()
+            # Step 3: Update last_synced timestamp for SnapTrade accounts ONLY
+            # Use asyncio.to_thread to avoid blocking the event loop
+            await asyncio.to_thread(
+                lambda: self.supabase.table('user_investment_accounts')
+                    .update({'last_synced': datetime.utcnow().isoformat() + 'Z'})
+                    .eq('user_id', user_id)
+                    .eq('is_active', True)
+                    .eq('provider', 'snaptrade')  # Only update SnapTrade accounts
+                    .execute()
+            )
             
             return {
                 'user_id': user_id,
@@ -254,7 +263,7 @@ class PortfolioRefreshScheduler:
             return {
                 'user_id': user_id,
                 'success': False,
-                'error': str(e)
+                'error': 'Refresh failed'  # Don't expose internal error details
             }
     
     async def _record_job_stats(

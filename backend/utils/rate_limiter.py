@@ -270,7 +270,7 @@ class SecureRateLimiter:
             return {
                 'can_refresh': False,
                 'minutes_until_refresh': limit_minutes,
-                'error': str(e)
+                'error': 'Unable to check rate limit status'  # Generic error, don't expose internals
             }
 
 

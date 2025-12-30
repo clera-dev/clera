@@ -213,7 +213,6 @@ async def lifespan(app: FastAPI):
     from services.portfolio_refresh_scheduler import start_portfolio_refresh_scheduler
     
     bg_manager = None
-    portfolio_refresh_scheduler = None
     try:
         bg_manager = get_background_service_manager()
         
@@ -235,15 +234,28 @@ async def lifespan(app: FastAPI):
         bg_manager.create_task(intraday_config)
         bg_manager.create_task(scheduler_config)
         
-        logger.info("✅ Background services configured with leader election")
+        # Configure Portfolio Refresh Scheduler with leader election
+        # This ensures only ONE server instance runs the hourly refresh job
+        async def run_portfolio_refresh_scheduler():
+            """Wrapper to run the APScheduler in async context."""
+            scheduler = start_portfolio_refresh_scheduler()
+            # Keep running until cancelled
+            try:
+                while True:
+                    await asyncio.sleep(60)  # Check every minute
+            except asyncio.CancelledError:
+                from services.portfolio_refresh_scheduler import stop_portfolio_refresh_scheduler
+                stop_portfolio_refresh_scheduler()
+                raise
         
-        # Start Portfolio Refresh Scheduler (hourly refresh of all users' brokerage data)
-        try:
-            portfolio_refresh_scheduler = start_portfolio_refresh_scheduler()
-            logger.info("✅ Portfolio Refresh Scheduler started (1-hour interval)")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not start Portfolio Refresh Scheduler: {e}")
-            startup_errors.append(f"Portfolio Refresh Scheduler failed: {str(e)}")
+        portfolio_refresh_config = BackgroundServiceConfig(
+            service_name="Portfolio Refresh Scheduler",
+            service_func=run_portfolio_refresh_scheduler,
+            leader_key="portfolio:refresh_scheduler:leader"
+        )
+        bg_manager.create_task(portfolio_refresh_config)
+        
+        logger.info("✅ Background services configured with leader election")
         
     except Exception as e:
         logger.error(f"❌ Failed to configure background services: {e}")
@@ -260,14 +272,8 @@ async def lifespan(app: FastAPI):
     # Shutdown logic
     logger.info("Shutting down API server...")
     
-    # Stop Portfolio Refresh Scheduler
-    if portfolio_refresh_scheduler is not None:
-        try:
-            from services.portfolio_refresh_scheduler import stop_portfolio_refresh_scheduler
-            stop_portfolio_refresh_scheduler()
-            logger.info("✅ Portfolio Refresh Scheduler stopped")
-        except Exception as e:
-            logger.error(f"Error stopping Portfolio Refresh Scheduler: {e}")
+    # Portfolio Refresh Scheduler is now managed by BackgroundServiceManager
+    # and will be stopped automatically during bg_manager.shutdown_all()
     
     # Gracefully shutdown all background services (if initialized)
     if bg_manager is not None:
