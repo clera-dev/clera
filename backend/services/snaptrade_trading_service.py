@@ -9,13 +9,25 @@ PRODUCTION-GRADE: Handles trade execution via SnapTrade API with:
 - Multi-account support
 - ORDER QUEUEING: When market is closed, orders are queued locally
 
+IMPORTANT - WHY WE USE LOCAL QUEUE FOR MARKET ORDERS:
+Webull (and many other brokerages) only support GTC (Good Till Canceled) for
+LIMIT orders, not MARKET orders. Since we use Market orders for dollar-based
+(notional value) purchases, we cannot rely on the brokerage to queue these
+orders when the market is closed. Instead:
+1. We detect when market is closed
+2. Store the order in our `queued_orders` table
+3. A background job (QueuedOrderExecutor) executes these at market open
+
+For LIMIT orders, brokerages typically DO support GTC, but our current flow
+uses Market orders for simplicity and guaranteed execution.
+
 Follows SOLID principles and SnapTrade best practices.
 """
 
 import os
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,22 +49,157 @@ def is_market_closed_error(error_str: str) -> bool:
     return any(indicator.lower() in error_lower for indicator in market_closed_indicators)
 
 
+def is_connection_disabled_error(error_str: str) -> bool:
+    """
+    Check if an error indicates the brokerage connection is disabled.
+    
+    SnapTrade error code 3003 means the connection needs to be re-established.
+    This can happen when:
+    - The user's brokerage OAuth token has expired
+    - The brokerage revoked access
+    - SnapTrade sync issues
+    """
+    connection_disabled_indicators = [
+        '3003',  # SnapTrade connection disabled code
+        'connection is disabled',
+        'unable to sync with brokerage',
+        'brokerage account.*disabled',
+        'connection.*broken',
+    ]
+    error_lower = error_str.lower()
+    return any(indicator.lower() in error_lower for indicator in connection_disabled_indicators)
+
+
+class SnapTradeConnectionError(Exception):
+    """Raised when a SnapTrade brokerage connection is disabled or broken."""
+    def __init__(self, message: str, account_id: str = None):
+        self.message = message
+        self.account_id = account_id
+        super().__init__(self.message)
+
+
 class SnapTradeTradingService:
     """
     Service for executing trades through SnapTrade API.
     
     This service provides production-grade trade execution with proper validation,
     error handling, and order tracking.
+    
+    HYBRID AFTER-HOURS HANDLING:
+    1. First, try to place order with GTC (Good Till Canceled) - brokerage queues natively
+    2. If that fails with market closed error, fall back to local queue system
+    3. Local queued orders are executed by background job at market open
     """
     
     def __init__(self):
         """Initialize the SnapTrade trading service."""
         from snaptrade_client import SnapTrade
+        from utils.trading_calendar import get_trading_calendar
         
         self.client = SnapTrade(
             consumer_key=os.getenv('SNAPTRADE_CONSUMER_KEY'),
             client_id=os.getenv('SNAPTRADE_CLIENT_ID')
         )
+        self.calendar = get_trading_calendar()
+    
+    def get_market_status(self) -> Dict[str, Any]:
+        """
+        Get current market status with detailed information.
+        
+        Returns:
+            {
+                'is_open': bool,
+                'status': 'open' | 'closed' | 'pre_market' | 'after_hours',
+                'message': str,
+                'next_open': str (ISO format) | None,
+                'orders_accepted': bool  # Whether orders can be placed (queued if closed)
+            }
+        """
+        import pytz
+        from datetime import time as dt_time
+        
+        eastern = pytz.timezone('US/Eastern')
+        now = datetime.now(eastern)
+        current_time = now.time()
+        
+        is_trading_day = self.calendar.is_market_open_today(now.date())
+        is_market_hours = self.calendar.is_market_open_now()
+        
+        # Determine status
+        if is_market_hours:
+            return {
+                'is_open': True,
+                'status': 'open',
+                'message': 'Market is open for trading',
+                'next_open': None,
+                'orders_accepted': True
+            }
+        
+        # Market is closed - determine why and when it opens
+        if not is_trading_day:
+            # Weekend or holiday
+            weekday = now.weekday()
+            if weekday == 5:  # Saturday
+                reason = 'weekend'
+                next_open_date = now.date() + timedelta(days=2)  # Monday
+            elif weekday == 6:  # Sunday
+                reason = 'weekend'
+                next_open_date = now.date() + timedelta(days=1)  # Monday
+            else:
+                reason = 'holiday'
+                # Find next trading day
+                from datetime import timedelta
+                check_date = now.date() + timedelta(days=1)
+                for _ in range(7):
+                    if self.calendar.is_market_open_today(check_date):
+                        next_open_date = check_date
+                        break
+                    check_date += timedelta(days=1)
+                else:
+                    next_open_date = now.date() + timedelta(days=1)
+            
+            next_open = eastern.localize(datetime.combine(next_open_date, dt_time(9, 30)))
+            
+            return {
+                'is_open': False,
+                'status': 'closed',
+                'message': f'Market is closed ({reason}). Orders will be queued for market open.',
+                'next_open': next_open.isoformat(),
+                'orders_accepted': True  # We accept and queue orders
+            }
+        
+        # Trading day but outside market hours
+        market_open = dt_time(9, 30)
+        market_close = dt_time(16, 0)
+        
+        if current_time < market_open:
+            # Pre-market
+            next_open = eastern.localize(datetime.combine(now.date(), market_open))
+            return {
+                'is_open': False,
+                'status': 'pre_market',
+                'message': 'Market opens at 9:30 AM ET. Orders will be queued.',
+                'next_open': next_open.isoformat(),
+                'orders_accepted': True
+            }
+        else:
+            # After-hours
+            from datetime import timedelta
+            # Find next trading day
+            next_date = now.date() + timedelta(days=1)
+            for _ in range(7):
+                if self.calendar.is_market_open_today(next_date):
+                    break
+                next_date += timedelta(days=1)
+            
+            next_open = eastern.localize(datetime.combine(next_date, market_open))
+            return {
+                'is_open': False,
+                'status': 'after_hours',
+                'message': 'Market is closed. Orders will be queued for next market open.',
+                'next_open': next_open.isoformat(),
+                'orders_accepted': True
+            }
     
     def get_supabase_client(self):
         """Get Supabase client for database operations."""
@@ -341,6 +488,9 @@ class SnapTradeTradingService:
             
         Returns:
             Universal symbol ID or None if not found/not tradeable
+            
+        Raises:
+            SnapTradeConnectionError: If the brokerage connection is disabled/broken
         """
         # Normalize ticker to uppercase for consistent matching
         ticker = ticker.upper().strip()
@@ -399,9 +549,20 @@ class SnapTradeTradingService:
             return None
             
         except Exception as e:
+            error_str = str(e)
+            logger.error(f"Error looking up symbol {ticker} for account {account_id}: {e}")
+            
+            # PRODUCTION-GRADE: Detect connection disabled errors and raise specific exception
+            # This allows callers to handle this case specially (e.g., prompt user to reconnect)
+            if is_connection_disabled_error(error_str):
+                raise SnapTradeConnectionError(
+                    message="Your brokerage connection has expired or been disabled. Please reconnect your account from the Dashboard.",
+                    account_id=account_id
+                )
+            
+            # For other errors, return None (symbol lookup failed)
             # CRITICAL: Do NOT fall back to deprecated method on error
             # Silent fallback could cause trades on wrong securities
-            logger.error(f"Error looking up symbol {ticker} for account {account_id}: {e}")
             return None
     
     def check_order_impact(
@@ -461,7 +622,17 @@ class SnapTradeTradingService:
             # Get universal symbol ID for this specific account
             # PRODUCTION-GRADE: Use account-specific lookup to get the correct exchange
             # (e.g., NYSE JNJ instead of German SWB JNJ)
-            universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
+            try:
+                universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
+            except SnapTradeConnectionError as conn_error:
+                # Connection is disabled - return user-friendly error
+                logger.error(f"Connection disabled for account {account_id}: {conn_error.message}")
+                return {
+                    'success': False,
+                    'error': conn_error.message,
+                    'error_code': 'CONNECTION_DISABLED'
+                }
+            
             if not universal_symbol_id:
                 return {
                     'success': False,
@@ -602,7 +773,17 @@ class SnapTradeTradingService:
                 # Get universal symbol ID for this specific account
                 # PRODUCTION-GRADE: Use account-specific lookup to get the correct exchange
                 # (e.g., NYSE JNJ instead of German SWB JNJ)
-                universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
+                try:
+                    universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
+                except SnapTradeConnectionError as conn_error:
+                    # Connection is disabled - return user-friendly error
+                    logger.error(f"Connection disabled for account {account_id}: {conn_error.message}")
+                    return {
+                        'success': False,
+                        'error': conn_error.message,
+                        'error_code': 'CONNECTION_DISABLED'
+                    }
+                
                 if not universal_symbol_id:
                     return {
                         'success': False,

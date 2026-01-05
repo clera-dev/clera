@@ -1,0 +1,36 @@
+-- Migration 015: Add retry tracking columns to queued_orders
+-- These columns support the production-grade queued order executor with retry logic.
+
+-- Add retry tracking columns
+ALTER TABLE queued_orders 
+ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;
+
+ALTER TABLE queued_orders 
+ADD COLUMN IF NOT EXISTS last_error TEXT;
+
+ALTER TABLE queued_orders 
+ADD COLUMN IF NOT EXISTS execution_result JSONB;
+
+-- Rename error_message to last_error for consistency (if error_message exists)
+-- Note: This is a no-op if column doesn't exist or has been renamed already
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'queued_orders' 
+        AND column_name = 'error_message'
+    ) THEN
+        -- Copy data if column exists
+        UPDATE queued_orders SET last_error = error_message WHERE error_message IS NOT NULL AND last_error IS NULL;
+    END IF;
+END $$;
+
+-- Add index for retry processing (find orders that haven't exceeded max retries)
+CREATE INDEX IF NOT EXISTS idx_queued_orders_retry ON queued_orders(status, retry_count) 
+WHERE status = 'pending';
+
+-- Comment
+COMMENT ON COLUMN queued_orders.retry_count IS 'Number of execution attempts for this order';
+COMMENT ON COLUMN queued_orders.last_error IS 'Most recent error message from execution attempt';
+COMMENT ON COLUMN queued_orders.execution_result IS 'Full result object from successful execution';
+

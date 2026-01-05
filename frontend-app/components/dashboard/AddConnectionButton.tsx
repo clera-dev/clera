@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Building2, CheckCircle2, X, AlertTriangle, Loader2 } from "lucide-react";
+import { PlusCircle, Building2, CheckCircle2, X, AlertTriangle, Loader2, RefreshCw, ExternalLink } from "lucide-react";
 import { SnapTradeConnectButton } from "@/components/portfolio/SnapTradeConnectButton";
 import {
   AlertDialog,
@@ -25,6 +25,8 @@ interface ConnectedAccount {
   account_name?: string;
   is_active: boolean;
   last_synced?: string;
+  connection_status?: 'active' | 'error';  // From SnapTrade health check
+  reconnect_url?: string;  // URL to reconnect broken connections
 }
 
 interface AddConnectionButtonProps {
@@ -38,12 +40,15 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [showAllAccounts, setShowAllAccounts] = useState(false);
 
-  // Fetch connected accounts
+  // Fetch connected accounts with real-time connection health status from SnapTrade
   const fetchConnectedAccounts = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/test/user/investment-accounts', {
-        method: 'POST',
+      
+      // Use the trade-enabled-accounts endpoint which does real-time SnapTrade health checks
+      // This returns connection_status and reconnect_url for each account
+      const response = await fetch('/api/snaptrade/trade-enabled-accounts', {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -52,7 +57,28 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
 
       if (response.ok) {
         const data = await response.json();
-        setConnectedAccounts(data.accounts || []);
+        // Map the response to our ConnectedAccount interface
+        const mappedAccounts: ConnectedAccount[] = (data.accounts || []).map((acc: any) => ({
+          id: acc.account_id,
+          provider_account_id: acc.account_id,
+          institution_name: acc.institution_name,
+          account_name: acc.account_name,
+          is_active: acc.connection_status === 'active',
+          connection_status: acc.connection_status,
+          reconnect_url: acc.reconnect_url,
+        }));
+        setConnectedAccounts(mappedAccounts);
+      } else {
+        // Fallback to the basic endpoint if trade-enabled-accounts fails
+        const fallbackResponse = await fetch('/api/test/user/investment-accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        });
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json();
+          setConnectedAccounts(data.accounts || []);
+        }
       }
     } catch (error) {
       console.error('Error fetching connected accounts:', error);
@@ -144,43 +170,74 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
           ) : connectedAccounts.length > 0 ? (
             <div className="space-y-2">
               <div className="space-y-2">
-                {displayedAccounts.map((account) => (
-                  <div 
-                    key={account.id} 
-                    className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors group"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <span className="font-medium truncate block">
-                          {account.institution_name}
-                        </span>
-                        {account.account_name && (
-                          <span className="text-xs text-muted-foreground truncate block">
-                            {account.account_name}
-                          </span>
+                {displayedAccounts.map((account) => {
+                  const isConnectionBroken = account.connection_status === 'error';
+                  
+                  return (
+                    <div 
+                      key={account.id} 
+                      className={`flex items-center justify-between text-sm p-2 rounded-lg transition-colors group ${
+                        isConnectionBroken 
+                          ? 'bg-destructive/10 border border-destructive/20' 
+                          : 'bg-muted/50 hover:bg-muted'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {isConnectionBroken ? (
+                          <AlertTriangle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
                         )}
+                        <div className="min-w-0 flex-1">
+                          <span className="font-medium truncate block">
+                            {account.institution_name}
+                          </span>
+                          {isConnectionBroken ? (
+                            <span className="text-xs text-destructive truncate block">
+                              Connection expired - needs reconnection
+                            </span>
+                          ) : account.account_name && (
+                            <span className="text-xs text-muted-foreground truncate block">
+                              {account.account_name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {isConnectionBroken && account.reconnect_url ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs bg-background hover:bg-primary hover:text-primary-foreground"
+                            onClick={() => {
+                              window.open(account.reconnect_url, '_blank', 'noopener,noreferrer');
+                            }}
+                            title="Reconnect this account"
+                          >
+                            <RefreshCw className="h-3 w-3 mr-1" />
+                            Reconnect
+                          </Button>
+                        ) : (
+                          <Badge 
+                            variant={account.is_active ? "default" : "secondary"} 
+                            className="text-xs hidden sm:inline-flex"
+                          >
+                            {account.is_active ? "Active" : "Inactive"}
+                          </Badge>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleDisconnectClick(account)}
+                          title="Disconnect account"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <Badge 
-                        variant={account.is_active ? "default" : "secondary"} 
-                        className="text-xs hidden sm:inline-flex"
-                      >
-                        {account.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => handleDisconnectClick(account)}
-                        title="Disconnect account"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               
               {/* Show more/less toggle */}

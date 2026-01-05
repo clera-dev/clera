@@ -211,6 +211,7 @@ async def lifespan(app: FastAPI):
     from services.intraday_portfolio_tracker import get_intraday_portfolio_tracker
     from services.daily_portfolio_snapshot_service import DailyPortfolioScheduler
     from services.portfolio_refresh_scheduler import start_portfolio_refresh_scheduler
+    from services.queued_order_executor import start_queued_order_executor, stop_queued_order_executor
     
     bg_manager = None
     try:
@@ -254,6 +255,25 @@ async def lifespan(app: FastAPI):
             leader_key="portfolio:refresh_scheduler:leader"
         )
         bg_manager.create_task(portfolio_refresh_config)
+        
+        # Configure Queued Order Executor with leader election
+        # This executes orders that were queued when market was closed
+        async def run_queued_order_executor():
+            """Wrapper to run the queued order executor in async context."""
+            executor = start_queued_order_executor()
+            try:
+                while True:
+                    await asyncio.sleep(60)  # Keep running
+            except asyncio.CancelledError:
+                stop_queued_order_executor()
+                raise
+        
+        queued_order_config = BackgroundServiceConfig(
+            service_name="Queued Order Executor",
+            service_func=run_queued_order_executor,
+            leader_key="trading:queued_order_executor:leader"
+        )
+        bg_manager.create_task(queued_order_config)
         
         logger.info("✅ Background services configured with leader election")
         

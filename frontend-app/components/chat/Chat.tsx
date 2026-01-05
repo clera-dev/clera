@@ -21,6 +21,7 @@ import ChatMessage, { ChatMessageProps } from './ChatMessage';
 import UserAvatar from './UserAvatar';
 import CleraAvatar from './CleraAvatar';
 import { InterruptConfirmation } from './InterruptConfirmation';
+import { TradeInterruptConfirmation, isTradeInterrupt } from './TradeInterruptConfirmation';
 import ModelProviderRetryPopup from './ModelProviderRetryPopup';
 import QueryLimitPopup from './QueryLimitPopup';
 import { createTimelineBuilder, TimelineBuilder } from '@/utils/services/TimelineBuilder';
@@ -514,8 +515,8 @@ export default function Chat({
     }
   }, [input]); // Re-run when input changes
 
-  // Handle interrupt confirmation
-  const handleInterruptConfirmation = useCallback(async (confirmationString: 'yes' | 'no') => { 
+  // Handle interrupt confirmation - supports both simple yes/no and modified trade responses
+  const handleInterruptConfirmation = useCallback(async (confirmationString: string) => { 
     //console.log("Resuming interrupt with value:", confirmationString);
     if (!isInterrupting) return;
 
@@ -712,11 +713,19 @@ export default function Chat({
 
         
         {isInterrupting && interrupt && (
-          <InterruptConfirmation
-            interrupt={interrupt}
-            onConfirm={(response: boolean) => handleInterruptConfirmation(response ? 'yes' : 'no')}
-            isLoading={isProcessing}
-          />
+          isTradeInterrupt(interrupt.value) ? (
+            <TradeInterruptConfirmation
+              interrupt={interrupt}
+              onConfirm={handleInterruptConfirmation}
+              isLoading={isProcessing}
+            />
+          ) : (
+            <InterruptConfirmation
+              interrupt={interrupt}
+              onConfirm={(response: boolean) => handleInterruptConfirmation(response ? 'yes' : 'no')}
+              isLoading={isProcessing}
+            />
+          )
         )}
         
         {/* ChatSkeleton removed - status messages now provide proper feedback */}

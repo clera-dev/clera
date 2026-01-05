@@ -45,6 +45,9 @@ async def get_trade_enabled_accounts(
     If balances are null, triggers a real-time fetch from SnapTrade API.
     Respects user's buying_power_display preference (cash_only or cash_and_margin).
     
+    IMPORTANT: Also validates connection health - accounts with disabled/broken connections
+    are marked with connection_status='error' so the frontend can show appropriate UI.
+    
     Returns:
         {
             "success": True,
@@ -57,7 +60,9 @@ async def get_trade_enabled_accounts(
                     "cash": float,
                     "buying_power": float,  # Respects user preference
                     "type": "snaptrade",
-                    "is_trade_enabled": True
+                    "is_trade_enabled": True,
+                    "connection_status": "active" | "error",  # NEW: Connection health indicator
+                    "connection_error": Optional[str]  # NEW: Error message if connection broken
                 }
             ],
             "alpaca_account": None  # For future hybrid mode
@@ -101,16 +106,16 @@ async def get_trade_enabled_accounts(
         snaptrade_user_id = snap_user_result.data[0]['snaptrade_user_id']
         user_secret = snap_user_result.data[0]['snaptrade_user_secret']
         
-        # Fetch SnapTrade accounts with trade capabilities
+        # Fetch SnapTrade accounts with trade capabilities (including authorization_id for reconnect)
         accounts_result = supabase.table('user_investment_accounts')\
-            .select('id, provider_account_id, institution_name, account_name, cash_balance, buying_power, connection_type')\
+            .select('id, provider_account_id, institution_name, account_name, cash_balance, buying_power, connection_type, connection_status, snaptrade_authorization_id')\
             .eq('user_id', user_id)\
             .eq('provider', 'snaptrade')\
             .eq('is_active', True)\
             .eq('connection_type', 'trade')\
             .execute()
         
-        # Initialize SnapTrade provider for balance fetching
+        # Initialize SnapTrade provider for balance fetching and health checks
         from utils.portfolio.snaptrade_provider import SnapTradePortfolioProvider
         provider = SnapTradePortfolioProvider()
         
@@ -119,10 +124,60 @@ async def get_trade_enabled_accounts(
             cash_balance = account.get('cash_balance')
             buying_power = account.get('buying_power')
             account_id = account['provider_account_id']
+            connection_status = 'active'
+            connection_error = None
             
-            # CRITICAL FIX: If balances are None, fetch them live from SnapTrade
-            if cash_balance is None or buying_power is None:
-                logger.info(f"📊 Fetching live balance for account {account_id}")
+            # PRODUCTION-GRADE: Check connection health via detail_brokerage_authorization API
+            # This is more reliable than balance fetch which can succeed even when trading is disabled
+            # SnapTrade's authorization object has a 'disabled' field that tells us the true status
+            authorization_id = account.get('snaptrade_authorization_id')
+            
+            if authorization_id:
+                try:
+                    logger.info(f"📊 Checking authorization health for {account['institution_name']} (auth: {authorization_id})")
+                    auth_response = provider.client.connections.detail_brokerage_authorization(
+                        authorization_id=authorization_id,
+                        user_id=snaptrade_user_id,
+                        user_secret=user_secret
+                    )
+                    
+                    auth_data = auth_response.body
+                    is_disabled = auth_data.get('disabled', False)
+                    
+                    if is_disabled:
+                        connection_status = 'error'
+                        connection_error = 'Connection expired. Please reconnect your brokerage account.'
+                        
+                        # Update database to mark connection as broken
+                        supabase.table('user_investment_accounts')\
+                            .update({'connection_status': 'error'})\
+                            .eq('id', account['id'])\
+                            .execute()
+                        
+                        logger.error(f"❌ Authorization disabled for {account['institution_name']} (auth {authorization_id})")
+                    else:
+                        # Authorization is healthy - now fetch balance
+                        logger.info(f"✅ Authorization healthy for {account['institution_name']}")
+                        
+                except Exception as auth_error:
+                    error_str = str(auth_error)
+                    logger.warning(f"⚠️  Could not check authorization for {account['institution_name']}: {auth_error}")
+                    
+                    # Check if this is a connection-disabled error
+                    from services.snaptrade_trading_service import is_connection_disabled_error
+                    if is_connection_disabled_error(error_str):
+                        connection_status = 'error'
+                        connection_error = 'Connection expired. Please reconnect your brokerage account.'
+                        
+                        supabase.table('user_investment_accounts')\
+                            .update({'connection_status': 'error'})\
+                            .eq('id', account['id'])\
+                            .execute()
+                        
+                        logger.error(f"❌ Connection disabled for {account['institution_name']} (account {account_id})")
+            
+            # Fetch balance (only if connection is healthy)
+            if connection_status == 'active':
                 try:
                     balances_response = provider.client.account_information.get_user_account_balance(
                         user_id=snaptrade_user_id,
@@ -131,7 +186,6 @@ async def get_trade_enabled_accounts(
                     )
                     
                     # Extract cash and buying power from all currencies (usually USD)
-                    # SnapTrade returns: [{'currency': {...}, 'cash': 342.38, 'buying_power': 25865.06}]
                     total_cash = 0
                     total_buying_power = 0
                     
@@ -141,31 +195,32 @@ async def get_trade_enabled_accounts(
                             total_buying_power += float(balance.get('buying_power', 0) or 0)
                     
                     cash_balance = total_cash
-                    # Use buying_power from API if available, otherwise fall back to cash
                     buying_power = total_buying_power if total_buying_power > 0 else total_cash
                     
-                    # Update database with fetched balances
+                    # Update database with fetched balances and mark connection as active
                     supabase.table('user_investment_accounts')\
                         .update({
                             'cash_balance': cash_balance,
-                            'buying_power': buying_power
+                            'buying_power': buying_power,
+                            'connection_status': 'active'
                         })\
                         .eq('id', account['id'])\
                         .execute()
                     
-                    logger.info(f"✅ Updated balance for {account['institution_name']}: cash=${cash_balance:.2f}, buying_power=${buying_power:.2f}")
+                    logger.info(f"✅ Verified balance for {account['institution_name']}: cash=${cash_balance:.2f}")
                     
                 except Exception as balance_error:
                     logger.warning(f"⚠️  Could not fetch balance for account {account_id}: {balance_error}")
-                    cash_balance = 0
-                    buying_power = 0
+                    # Use cached values for balance
+                    cash_balance = cash_balance or 0
+                    buying_power = buying_power or 0
             
             # PRODUCTION-GRADE: Respect user's buying power preference
             # cash_only = safer, discourages margin trading (default)
             # cash_and_margin = shows full buying power including margin
             display_buying_power = float(cash_balance or 0) if buying_power_display == 'cash_only' else float(buying_power or 0)
             
-            accounts_list.append({
+            account_data = {
                 'id': account['id'],
                 'account_id': account_id,
                 'institution_name': account['institution_name'],
@@ -173,10 +228,39 @@ async def get_trade_enabled_accounts(
                 'cash': float(cash_balance or 0),
                 'buying_power': display_buying_power,
                 'type': 'snaptrade',
-                'is_trade_enabled': True
-            })
+                'is_trade_enabled': connection_status == 'active',  # Only trade-enabled if connection is healthy
+                'connection_status': connection_status,
+                'connection_error': connection_error,
+            }
+            
+            # PRODUCTION-GRADE: For broken connections, include reconnect URL
+            # This allows frontend to show a one-click "Reconnect" button
+            if connection_status == 'error':
+                authorization_id = account.get('snaptrade_authorization_id')
+                if authorization_id:
+                    try:
+                        # Generate reconnect URL with redirect back to our callback page
+                        # The callback page will sync the connection and allow user to close the tab
+                        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+                        redirect_url = f"{frontend_url}/snaptrade-reconnect-callback"
+                        
+                        reconnect_url = await provider.get_connection_portal_url(
+                            user_id=user_id,
+                            connection_type='trade',
+                            redirect_url=redirect_url,
+                            reconnect=authorization_id
+                        )
+                        account_data['reconnect_url'] = reconnect_url
+                        logger.info(f"Generated reconnect URL for broken {account['institution_name']} account")
+                    except Exception as reconnect_error:
+                        logger.warning(f"Could not generate reconnect URL: {reconnect_error}")
+            
+            accounts_list.append(account_data)
         
-        logger.info(f"Found {len(accounts_list)} trade-enabled SnapTrade accounts for user {user_id}")
+        # Log summary including connection health
+        healthy_count = sum(1 for a in accounts_list if a['connection_status'] == 'active')
+        broken_count = len(accounts_list) - healthy_count
+        logger.info(f"Found {len(accounts_list)} trade-enabled SnapTrade accounts for user {user_id} ({healthy_count} healthy, {broken_count} broken)")
         
         return {
             'success': True,
@@ -388,6 +472,72 @@ async def cancel_queued_order(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/market-status")
+async def get_market_status(
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Get current market status for trade UI.
+    
+    Returns:
+        {
+            "success": True,
+            "market": {
+                "is_open": bool,
+                "status": "open" | "closed" | "pre_market" | "after_hours",
+                "message": str,
+                "next_open": str (ISO format) | None,
+                "orders_accepted": bool
+            }
+        }
+    """
+    try:
+        from services.snaptrade_trading_service import get_snaptrade_trading_service
+        trading_service = get_snaptrade_trading_service()
+        market_status = trading_service.get_market_status()
+        
+        return {
+            "success": True,
+            "market": market_status
+        }
+    except Exception as e:
+        logger.error(f"Error getting market status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/queued-order-executor-status")
+async def get_queued_order_executor_status(
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Get the status of the queued order executor (for debugging/monitoring).
+    
+    Returns:
+        {
+            "success": True,
+            "executor": {
+                "is_running": bool,
+                "pending_orders": int,
+                "jobs": [...]
+            }
+        }
+    """
+    try:
+        from services.queued_order_executor import get_queued_order_executor
+        executor = get_queued_order_executor()
+        
+        return {
+            "success": True,
+            "executor": executor.get_status()
+        }
+    except Exception as e:
+        logger.error(f"Error getting executor status: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
 @router.post("/connection-url")
 async def create_connection_url(
     request: Request,
@@ -442,6 +592,110 @@ async def create_connection_url(
         raise
     except Exception as e:
         logger.error(f"Error creating SnapTrade connection URL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reconnect-url/{account_id}")
+async def create_reconnect_url(
+    account_id: str,
+    request: Request,
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Generate SnapTrade reconnect portal URL for fixing a broken/disabled connection.
+    
+    PRODUCTION-GRADE: Uses SnapTrade's reconnect parameter to re-authorize an existing
+    connection without creating a new one. This is the proper way to handle expired
+    access tokens (which typically expire after a few weeks).
+    
+    Reference: https://docs.snaptrade.com/docs/fix-broken-connections
+    
+    Args:
+        account_id: The provider_account_id of the disabled account
+        
+    Request body:
+        {
+            "redirect_url": Optional[str]  // Where to redirect after reconnection
+        }
+    
+    Returns:
+        {
+            "success": True,
+            "reconnect_url": str,
+            "account_id": str,
+            "institution_name": str
+        }
+    """
+    try:
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            pass  # Empty body is OK
+        
+        redirect_url = body.get('redirect_url')
+        
+        supabase = get_supabase_client()
+        
+        # Verify user owns this account and get the authorization ID
+        account_result = supabase.table('user_investment_accounts')\
+            .select('id, provider_account_id, snaptrade_authorization_id, institution_name')\
+            .eq('user_id', user_id)\
+            .eq('provider_account_id', account_id)\
+            .eq('provider', 'snaptrade')\
+            .execute()
+        
+        if not account_result.data:
+            raise HTTPException(status_code=404, detail="Account not found or you don't have permission to reconnect it")
+        
+        account = account_result.data[0]
+        authorization_id = account.get('snaptrade_authorization_id')
+        institution_name = account.get('institution_name', 'your brokerage')
+        
+        if not authorization_id:
+            # Fallback: Try to get authorization_id from snaptrade_brokerage_connections
+            # using the account to find the related connection
+            conn_result = supabase.table('snaptrade_brokerage_connections')\
+                .select('authorization_id')\
+                .eq('user_id', user_id)\
+                .execute()
+            
+            if conn_result.data and len(conn_result.data) > 0:
+                authorization_id = conn_result.data[0].get('authorization_id')
+        
+        if not authorization_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Cannot reconnect this account - authorization ID not found. Please disconnect and reconnect the account."
+            )
+        
+        logger.info(f"Generating reconnect URL for user {user_id}, account {account_id}, authorization {authorization_id}")
+        
+        # Initialize SnapTrade provider
+        provider = SnapTradePortfolioProvider()
+        
+        # Get reconnect portal URL with the reconnect parameter
+        reconnect_url = await provider.get_connection_portal_url(
+            user_id=user_id,
+            connection_type='trade',
+            redirect_url=redirect_url,
+            reconnect=authorization_id  # This is the key parameter!
+        )
+        
+        logger.info(f"✅ Generated reconnect URL for {institution_name} account")
+        
+        return {
+            "success": True,
+            "reconnect_url": reconnect_url,
+            "account_id": account_id,
+            "institution_name": institution_name,
+            "message": f"Click the link to reconnect your {institution_name} account"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating reconnect URL: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

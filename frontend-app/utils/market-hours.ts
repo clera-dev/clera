@@ -3,9 +3,12 @@
  * 
  * Checks if the US stock market is currently open.
  * Regular trading hours: Monday-Friday, 9:30 AM - 4:00 PM ET
+ * 
+ * IMPORTANT: Orders can still be placed when market is closed!
+ * They will be queued and executed at market open.
  */
 
-// US Market holidays for 2024-2025 (update annually)
+// US Market holidays for 2024-2026 (update annually)
 const MARKET_HOLIDAYS = [
   // 2024
   '2024-01-01', // New Year's Day
@@ -29,12 +32,25 @@ const MARKET_HOLIDAYS = [
   '2025-09-01', // Labor Day
   '2025-11-27', // Thanksgiving
   '2025-12-25', // Christmas
+  // 2026
+  '2026-01-01', // New Year's Day
+  '2026-01-19', // MLK Day  
+  '2026-02-16', // Presidents Day
+  '2026-04-03', // Good Friday
+  '2026-05-25', // Memorial Day
+  '2026-06-19', // Juneteenth
+  '2026-07-03', // Independence Day (observed - July 4th is Saturday)
+  '2026-09-07', // Labor Day
+  '2026-11-26', // Thanksgiving
+  '2026-12-25', // Christmas
 ];
 
 export interface MarketStatus {
   isOpen: boolean;
   message: string;
   nextOpenTime?: string;
+  ordersAccepted: boolean;  // Orders can still be placed (queued) when market is closed
+  status: 'open' | 'pre_market' | 'after_hours' | 'closed';
 }
 
 /**
@@ -91,6 +107,9 @@ export function isMarketOpen(): boolean {
 
 /**
  * Get detailed market status with a user-friendly message
+ * 
+ * IMPORTANT: ordersAccepted is always true because orders can be queued
+ * when market is closed and will execute at next market open.
  */
 export function getMarketStatus(): MarketStatus {
   const now = getEasternTime();
@@ -106,16 +125,20 @@ export function getMarketStatus(): MarketStatus {
   if (dayOfWeek === 0) {
     return {
       isOpen: false,
-      message: "Markets are closed for the weekend. Trading resumes Monday at 9:30 AM ET.",
-      nextOpenTime: "Monday 9:30 AM ET"
+      status: 'closed',
+      message: "Markets are closed for the weekend. Your order will be queued and execute Monday at 9:30 AM ET.",
+      nextOpenTime: "Monday 9:30 AM ET",
+      ordersAccepted: true
     };
   }
   
   if (dayOfWeek === 6) {
     return {
       isOpen: false,
-      message: "Markets are closed for the weekend. Trading resumes Monday at 9:30 AM ET.",
-      nextOpenTime: "Monday 9:30 AM ET"
+      status: 'closed',
+      message: "Markets are closed for the weekend. Your order will be queued and execute Monday at 9:30 AM ET.",
+      nextOpenTime: "Monday 9:30 AM ET",
+      ordersAccepted: true
     };
   }
   
@@ -123,40 +146,50 @@ export function getMarketStatus(): MarketStatus {
   if (isMarketHoliday(now)) {
     return {
       isOpen: false,
-      message: "Markets are closed for a holiday. Please try again on the next trading day.",
-      nextOpenTime: "Next trading day 9:30 AM ET"
+      status: 'closed',
+      message: "Markets are closed for a holiday. Your order will be queued for the next trading day.",
+      nextOpenTime: "Next trading day 9:30 AM ET",
+      ordersAccepted: true
     };
   }
   
-  // Before market open
+  // Before market open (pre-market)
   if (currentMinutes < marketOpen) {
     return {
       isOpen: false,
-      message: "Markets open at 9:30 AM ET. Please wait for the market to open.",
-      nextOpenTime: "Today 9:30 AM ET"
+      status: 'pre_market',
+      message: "Pre-market hours. Your order will be queued and execute at 9:30 AM ET.",
+      nextOpenTime: "Today 9:30 AM ET",
+      ordersAccepted: true
     };
   }
   
-  // After market close
+  // After market close (after-hours)
   if (currentMinutes >= marketClose) {
     // Check if tomorrow is a weekend
     if (dayOfWeek === 5) {
       return {
         isOpen: false,
-        message: "Markets are closed. Trading resumes Monday at 9:30 AM ET.",
-        nextOpenTime: "Monday 9:30 AM ET"
+        status: 'after_hours',
+        message: "After-hours. Your order will be queued and execute Monday at 9:30 AM ET.",
+        nextOpenTime: "Monday 9:30 AM ET",
+        ordersAccepted: true
       };
     }
     return {
       isOpen: false,
-      message: "Markets are closed. Trading resumes tomorrow at 9:30 AM ET.",
-      nextOpenTime: "Tomorrow 9:30 AM ET"
+      status: 'after_hours',
+      message: "After-hours. Your order will be queued and execute tomorrow at 9:30 AM ET.",
+      nextOpenTime: "Tomorrow 9:30 AM ET",
+      ordersAccepted: true
     };
   }
   
   // Market is open
   return {
     isOpen: true,
-    message: "Markets are open for trading."
+    status: 'open',
+    message: "Markets are open for trading.",
+    ordersAccepted: true
   };
 }

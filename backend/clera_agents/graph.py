@@ -511,23 +511,31 @@ CRITICAL RULES:
 * If multiple trades requested, process ONLY the first one
 * Return EXACTLY the raw tool output as final answer
 
+    ⚠️ USER MODIFICATION AWARENESS - CRITICAL:
+Users can MODIFY trade details (ticker, amount, account) via the confirmation popup BEFORE executing.
+The tool output will show what was ACTUALLY traded, which may differ from your original tool call.
+ALWAYS read the tool output carefully and report the ACTUAL executed trade to the user.
+If tool output shows different values than your call, the user modified the trade - this is normal and expected.
+Example: You call execute_buy_market_order("VTI", 5.0), but output shows "BUY order for $6.00 of SPY"
+→ The user changed it. Confirm: "Executed BUY $6.00 of SPY" (NOT $5 of VTI).
+
 EXAMPLES:
 
 Input: "Buy $500 of AAPL"
 → execute_buy_market_order(ticker="AAPL", notional_amount=500.0)
-Final Answer: [Exact tool response]
+Final Answer: [Exact tool response - report what was ACTUALLY traded]
 
 Input: "Sell $1000 of Tesla"
 → execute_sell_market_order(ticker="TSLA", notional_amount=1000.0)
-Final Answer: [Exact tool response]
+Final Answer: [Exact tool response - report what was ACTUALLY traded]
 
 Input: "Buy $250 worth of VTI"
 → execute_buy_market_order(ticker="VTI", notional_amount=250.0)
-Final Answer: [Exact tool response]
+Final Answer: [Exact tool response - report what was ACTUALLY traded]
 
 Input: "Buy $500 of SPY and sell $500 of AAPL" (multiple trades)
 → execute_buy_market_order(ticker="SPY", notional_amount=500.0)
-Final Answer: [Exact tool response]
+Final Answer: [Exact tool response - report what was ACTUALLY traded]
 
 Input: "Buy some Apple stock"
 Final Answer: Cannot execute trade - missing dollar amount. Please specify how much you want to invest (e.g., "Buy $500 of AAPL").

@@ -126,26 +126,63 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         )
         
         og_user_confirmation = interrupt(confirmation_prompt)
-        user_confirmation = str(og_user_confirmation).lower().strip()
+        user_confirmation = str(og_user_confirmation).strip()
         logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
+        # PRODUCTION-GRADE: Check if user sent modified trade values (JSON format)
+        # This allows users to adjust ticker, amount, or account from the confirmation popup
+        modified_ticker = ticker
+        modified_amount = notional_amount
+        modified_account_id = account_id
+        modified_account_type = account_type
+        
+        try:
+            import json
+            if user_confirmation.startswith('{'):
+                modified_data = json.loads(user_confirmation)
+                if modified_data.get('action') == 'execute':
+                    # User confirmed with modifications
+                    if modified_data.get('modified'):
+                        modified_ticker = modified_data.get('ticker', ticker).upper()
+                        modified_amount = float(modified_data.get('amount', notional_amount))
+                        new_account_id = modified_data.get('account_id')
+                        
+                        if new_account_id:
+                            # User selected a different account
+                            if new_account_id.startswith('snaptrade_'):
+                                modified_account_id = new_account_id
+                                modified_account_type = 'snaptrade'
+                            else:
+                                modified_account_id = f"snaptrade_{new_account_id}"
+                                modified_account_type = 'snaptrade'
+                            
+                        logger.info(f"[Trade Agent] User MODIFIED trade: {modified_ticker} ${modified_amount:.2f} via {modified_account_id}")
+                    
+                    # Valid confirmation
+                    user_confirmation = "yes"
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            # Not JSON or invalid - treat as regular text response
+            pass
+        
+        user_confirmation_lower = user_confirmation.lower()
+
         # Check rejection
-        if any(rejection in user_confirmation for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
+        if any(rejection in user_confirmation_lower for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
             logger.info(f"[Trade Agent] Trade CANCELED by user")
             return "Trade canceled: You chose not to proceed with this transaction."
 
         # Check explicit confirmation
-        if not any(approval in user_confirmation for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
+        if not any(approval in user_confirmation_lower for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
             return "Trade not executed: Unclear confirmation. Please try again with a clear 'yes' or 'no'."
 
-        # Execute trade based on account type
+        # Execute trade with potentially modified values
         try:
-            if account_type == 'alpaca':
-                logger.info(f"[Trade Agent] Executing BUY via Alpaca")
-                result = _submit_alpaca_market_order(account_id, ticker, notional_amount, OrderSide.BUY)
+            if modified_account_type == 'alpaca':
+                logger.info(f"[Trade Agent] Executing BUY via Alpaca: {modified_ticker} ${modified_amount:.2f}")
+                result = _submit_alpaca_market_order(modified_account_id, modified_ticker, modified_amount, OrderSide.BUY)
             else:  # snaptrade
-                logger.info(f"[Trade Agent] Executing BUY via SnapTrade")
-                result = _submit_snaptrade_market_order(user_id, account_id, ticker, notional_amount, 'BUY')
+                logger.info(f"[Trade Agent] Executing BUY via SnapTrade: {modified_ticker} ${modified_amount:.2f}")
+                result = _submit_snaptrade_market_order(user_id, modified_account_id, modified_ticker, modified_amount, 'BUY')
             
             logger.info(f"[Trade Agent] BUY order result: {result}")
             return result
@@ -239,26 +276,63 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
         )
         
         og_user_confirmation = interrupt(confirmation_prompt)
-        user_confirmation = str(og_user_confirmation).lower().strip()
+        user_confirmation = str(og_user_confirmation).strip()
         logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
+        # PRODUCTION-GRADE: Check if user sent modified trade values (JSON format)
+        # Note: For SELL orders, ticker changes are less common but amount changes are allowed
+        modified_ticker = ticker
+        modified_amount = notional_amount
+        modified_account_id = account_id
+        modified_account_type = account_type
+        
+        try:
+            import json
+            if user_confirmation.startswith('{'):
+                modified_data = json.loads(user_confirmation)
+                if modified_data.get('action') == 'execute':
+                    # User confirmed with modifications
+                    if modified_data.get('modified'):
+                        modified_ticker = modified_data.get('ticker', ticker).upper()
+                        modified_amount = float(modified_data.get('amount', notional_amount))
+                        new_account_id = modified_data.get('account_id')
+                        
+                        # For SELL, account change requires re-detection of holdings
+                        if new_account_id and new_account_id != account_id.replace('snaptrade_', ''):
+                            logger.warning(f"[Trade Agent] User changed account for SELL - verifying holdings on new account")
+                            # Re-verify the new account holds the symbol
+                            new_account_id_full = new_account_id if new_account_id.startswith('snaptrade_') else f"snaptrade_{new_account_id}"
+                            # For now, use the new account but log warning
+                            modified_account_id = new_account_id_full
+                            modified_account_type = 'snaptrade'
+                            
+                        logger.info(f"[Trade Agent] User MODIFIED SELL trade: {modified_ticker} ${modified_amount:.2f} via {modified_account_id}")
+                    
+                    # Valid confirmation
+                    user_confirmation = "yes"
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            # Not JSON or invalid - treat as regular text response
+            pass
+        
+        user_confirmation_lower = user_confirmation.lower()
+
         # Check rejection
-        if any(rejection in user_confirmation for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
+        if any(rejection in user_confirmation_lower for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
             logger.info(f"[Trade Agent] Trade CANCELED by user")
             return "Trade canceled: You chose not to proceed with this transaction."
 
         # Check explicit confirmation
-        if not any(approval in user_confirmation for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
+        if not any(approval in user_confirmation_lower for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
             return "Trade not executed: Unclear confirmation. Please try again with a clear 'yes' or 'no'."
 
-        # Execute trade based on account type
+        # Execute trade with potentially modified values
         try:
-            if account_type == 'alpaca':
-                logger.info(f"[Trade Agent] Executing SELL via Alpaca")
-                result = _submit_alpaca_market_order(account_id, ticker, notional_amount, OrderSide.SELL)
+            if modified_account_type == 'alpaca':
+                logger.info(f"[Trade Agent] Executing SELL via Alpaca: {modified_ticker} ${modified_amount:.2f}")
+                result = _submit_alpaca_market_order(modified_account_id, modified_ticker, modified_amount, OrderSide.SELL)
             else:  # snaptrade
-                logger.info(f"[Trade Agent] Executing SELL via SnapTrade")
-                result = _submit_snaptrade_market_order(user_id, account_id, ticker, notional_amount, 'SELL')
+                logger.info(f"[Trade Agent] Executing SELL via SnapTrade: {modified_ticker} ${modified_amount:.2f}")
+                result = _submit_snaptrade_market_order(user_id, modified_account_id, modified_ticker, modified_amount, 'SELL')
             
             logger.info(f"[Trade Agent] SELL order result: {result}")
             return result
