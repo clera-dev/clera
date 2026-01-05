@@ -328,10 +328,14 @@ async def get_refresh_status(
 
 @router.get("/scheduler-status")
 async def get_scheduler_status(
+    user_id: str = Depends(get_authenticated_user_id),
     api_key: str = Depends(verify_api_key)
 ) -> Dict[str, Any]:
     """
-    Get the background scheduler status (admin endpoint).
+    Get the background scheduler status (admin/debug endpoint).
+    
+    Requires user authentication to prevent unauthorized access to scheduler internals.
+    In production, consider adding admin role verification.
     
     Returns:
         - is_running: Whether the scheduler is active
@@ -341,6 +345,9 @@ async def get_scheduler_status(
     try:
         from services.portfolio_refresh_scheduler import get_portfolio_refresh_scheduler
         scheduler = get_portfolio_refresh_scheduler()
+        
+        # Log who is accessing this endpoint for audit trail
+        logger.info(f"Scheduler status requested by user {user_id}")
         
         return scheduler.get_status()
         

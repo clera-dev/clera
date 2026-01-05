@@ -235,25 +235,27 @@ class PortfolioRefreshScheduler:
             
             if not refresh_success:
                 logger.warning(f"Brokerage refresh failed for user {user_id}")
-                # Still try to sync cached data
+                # Still try to sync cached data, but DON'T update last_synced
+                # to avoid giving false impression of fresh data
             
             # Step 2: Sync data to our database
             sync_result = await trigger_full_user_sync(user_id, force_rebuild=False)
             
-            # Step 3: Update last_synced timestamp for SnapTrade accounts ONLY
-            # Use asyncio.to_thread to avoid blocking the event loop
-            await asyncio.to_thread(
-                lambda: self.supabase.table('user_investment_accounts')
-                    .update({'last_synced': datetime.utcnow().isoformat() + 'Z'})
-                    .eq('user_id', user_id)
-                    .eq('is_active', True)
-                    .eq('provider', 'snaptrade')  # Only update SnapTrade accounts
-                    .execute()
-            )
+            # Step 3: Update last_synced timestamp ONLY if brokerage refresh succeeded
+            # This prevents users from seeing stale data marked as "fresh"
+            if refresh_success:
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('user_investment_accounts')
+                        .update({'last_synced': datetime.utcnow().isoformat() + 'Z'})
+                        .eq('user_id', user_id)
+                        .eq('is_active', True)
+                        .eq('provider', 'snaptrade')  # Only update SnapTrade accounts
+                        .execute()
+                )
             
             return {
                 'user_id': user_id,
-                'success': True,
+                'success': refresh_success,  # Reflect actual refresh success
                 'refresh_triggered': refresh_success,
                 'positions_synced': sync_result.get('positions_synced', 0)
             }
