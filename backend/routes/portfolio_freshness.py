@@ -17,25 +17,13 @@ Features:
 """
 
 import logging
-import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, Query, Header, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException
 
-from utils.authentication import get_authenticated_user_id
+from utils.authentication import get_authenticated_user_id, verify_api_key
 from utils.supabase.db_client import get_supabase_client
 from utils.trading_calendar import get_trading_calendar
-
-
-# Inline verify_api_key to avoid circular imports (same pattern as snaptrade_routes.py)
-def verify_api_key(x_api_key: str = Header(None)):
-    """Verify the API key from the request header."""
-    expected_key = os.getenv("BACKEND_API_KEY")
-    if not expected_key:
-        raise HTTPException(status_code=500, detail="API key not configured")
-    if x_api_key != expected_key:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return x_api_key
 
 logger = logging.getLogger(__name__)
 
