@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
       })
       .map(msg => {
         let content = '';
-        
+
         if (typeof msg.content === 'string') {
           content = msg.content;
         } else if (Array.isArray(msg.content)) {
@@ -135,11 +135,39 @@ export async function POST(request: NextRequest) {
           content = String(msg.content || '');
         }
 
+        // BUG FIX: Extract citations from HTML comments for historical messages
+        // Each message gets ONLY the citations embedded in its own content
+        const citations: string[] = [];
+        const htmlCommentPattern = /<!--\s*CITATIONS:\s*([^>]+)\s*-->/g;
+        let match;
+        while ((match = htmlCommentPattern.exec(content)) !== null) {
+          if (match[1]) {
+            const urls = match[1].split(',').map(url => url.trim()).filter(url => url);
+            citations.push(...urls);
+          }
+        }
+
+        // Remove duplicates while preserving order
+        const uniqueCitations = Array.from(new Set(citations));
+
+        // Remove HTML comment citations and XML tags from content
+        content = content.replace(/<!--\s*CITATIONS:[\s\S]*?-->/g, '');
+        content = content.replace(/<name>.*?<\/name>/g, '');
+        content = content.replace(/<\/?content>/g, '');
+        content = content.trim();
+
         const role = msg.type === 'human' ? 'user' : 'assistant';
+
+        // Log citation extraction for debugging
+        if (uniqueCitations.length > 0) {
+          console.log(`[get-thread-messages] Extracted ${uniqueCitations.length} citations for message ${index}:`, uniqueCitations);
+        }
 
         return {
           role,
-          content
+          content,
+          // Attach citations ONLY if found in this specific message (per-message isolation)
+          ...(uniqueCitations.length > 0 && { citations: uniqueCitations })
         };
       });
     

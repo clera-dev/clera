@@ -1,0 +1,415 @@
+commit b5c7ca541d7b6a312c07dd90571a46b2c6b20b35
+Author: Rishthegod <rishit.on.mail@gmail.com>
+Date:   Wed Oct 1 17:18:37 2025 -0700
+
+    feat: implement streaming support and citation rendering
+    
+    - Add streaming support for Perplexity API across all chatbot components
+    - Update financial_analyst_agent.py with web_search_streaming tool
+    - Replace LangChain ChatPerplexity with direct Perplexity API client
+    - Implement streaming in realtime_context_node for all chatbot components
+    - Add citation rendering in ChatMessage.tsx with clickable links
+    - Ensure citations open in new tabs with proper security attributes
+    - Add hover effects and styling for citation links
+    - Update requirements.txt to include perplexity package
+    - Maintain backward compatibility with existing functionality
+
+diff --git a/backend/clera_agents/financial_analyst_agent.py b/backend/clera_agents/financial_analyst_agent.py
+index 33c56b8..24a70d4 100644
+--- a/backend/clera_agents/financial_analyst_agent.py
++++ b/backend/clera_agents/financial_analyst_agent.py
+@@ -18,6 +18,8 @@ import pandas as pd
+ from langchain_core.messages import SystemMessage, HumanMessage
+ from langchain_core.tools import tool
+ import numpy as np
++from perplexity import Perplexity
++
+ 
+ # Make sure we load environment variables first
+ load_dotenv(override=True)
+@@ -80,6 +82,8 @@ deep_research_perplexity = ChatPerplexity(
+     temperature=0.4
+ )
+ 
++# Initialize Perplexity client for web search
++pplx_client = Perplexity() 
+ @tool("web_search")
+ def web_search(query: str) -> str:
+     """Simple one-step search tool for financial information.
+@@ -96,7 +100,7 @@ def web_search(query: str) -> str:
+     current_year = datetime.now().year
+ 
+     if is_in_depth_query:
+-        research_prompt = f"""You are the world's BEST financial news analyst. 
++        research_prompt = (f"""You are the world's BEST financial news analyst. 
+         The user has asked for DETAILED/IN-DEPTH research. 
+         Provide a thorough, comprehensive analysis with actionable insights on the query below. 
+         Focus on concrete facts, figures, sources, and causal relationships. 
+@@ -107,22 +111,117 @@ def web_search(query: str) -> str:
+         If referencing older data, clearly state the time period.
+ 
+ Query: {query}
+-"""
++""")
++        model_name = "sonar-pro"
+     else:
+-        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations. 
++        research_prompt = (f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
+ 
+ IMPORTANT: Today's date is {current_date}. Current year is {current_year}. 
+ Always prioritize recent information from {current_year} and clearly indicate time periods for any data you reference.
+ 
+ Query: {query}
+-"""
++""")
++        model_name = "sonar"
++    messages = [
++        {"role": "system", "content": research_prompt},
++        {"role": "user", "content": query}
++    ]
++    #messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
++    try:
++        # Call Perplexity Chat Completions API
++        response = pplx_client.chat.completions.create(messages=messages, model=model_name)
++        answer_text = response.choices[0].message.content  # The answer text
++        citations = getattr(response, "citations", None)   # List of source URLs (if present)
++
++        # If citations are available, embed them as Markdown footnote links [1](url)
++        if citations:
++            for idx, url in enumerate(citations, start=1):
++                # Replace bracketed number with markdown link
++                footnote = f"[{idx}]"
++                link = f"[{idx}]({url})"
++                answer_text = answer_text.replace(footnote, link)
++        return answer_text
++    except Exception as e:
++        return f"Error searching for information: {e}"
++
++
++@tool("web_search_streaming")
++def web_search_streaming(query: str, stream_callback=None) -> str:
++    """Streaming web search tool for financial information.
++    
++    Args:
++        query (str): The search query
++        stream_callback (callable): Optional callback function to handle streaming chunks
++        
++    Returns:
++        str: Complete search results
++    """
++    # Determine if in-depth research is requested
++    is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
++    current_date = datetime.now().strftime("%Y-%m-%d")
++    current_year = datetime.now().year
+ 
+-    messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
++    if is_in_depth_query:
++        research_prompt = (f"""You are the world's BEST financial news analyst. 
++        The user has asked for DETAILED/IN-DEPTH research. 
++        Provide a thorough, comprehensive analysis with actionable insights on the query below. 
++        Focus on concrete facts, figures, sources, and causal relationships. 
++        Avoid generic advice. Use recent AND credible financial news sources. 
++        Today's date is {current_date}. Current year is {current_year}.
++        
++        CRITICAL: Always prioritize information from {current_year} and recent months. 
++        If referencing older data, clearly state the time period.
++
++Query: {query}
++""")
++        model_name = "sonar-pro"
++    else:
++        research_prompt = (f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
++
++IMPORTANT: Today's date is {current_date}. Current year is {current_year}. 
++Always prioritize recent information from {current_year} and clearly indicate time periods for any data you reference.
++
++Query: {query}
++""")
++        model_name = "sonar"
++    messages = [
++        {"role": "system", "content": research_prompt},
++        {"role": "user", "content": query}
++    ]
++    
+     try:
+-        # Use the standard perplexity model for efficiency unless deep research is needed?
+-        # For now, standard model should handle prompt instructions.
+-        response = chat_perplexity.invoke(messages)
+-        return response.content
++        # Call Perplexity Chat Completions API with streaming
++        stream = pplx_client.chat.completions.create(messages=messages, model=model_name, stream=True)
++        
++        answer_text = ""
++        citations = None
++        
++        for chunk in stream:
++            if chunk.choices[0].delta.content:
++                partial_text = chunk.choices[0].delta.content
++                answer_text += partial_text
++                
++                # Call the streaming callback if provided
++                if stream_callback:
++                    stream_callback(partial_text)
++        
++        # Get citations from the final response if available
++        try:
++            # Note: Citations might not be available in streaming mode
++            # We'll need to handle this based on Perplexity's streaming API behavior
++            pass
++        except:
++            pass
++
++        # If citations are available, embed them as Markdown footnote links [1](url)
++        if citations:
++            for idx, url in enumerate(citations, start=1):
++                # Replace bracketed number with markdown link
++                footnote = f"[{idx}]"
++                link = f"[{idx}]({url})"
++                answer_text = answer_text.replace(footnote, link)
++        
++        return answer_text
+     except Exception as e:
+         return f"Error searching for information: {e}"
+ 
+diff --git a/backend/clera_agents/graph.py b/backend/clera_agents/graph.py
+index bb4d3ca..f3f74b7 100644
+--- a/backend/clera_agents/graph.py
++++ b/backend/clera_agents/graph.py
+@@ -111,6 +111,7 @@ chat_perplexity = ChatPerplexity(
+ # Define tools for each agent upfront
+ financial_analyst_tools = [
+     fa_module.web_search,
++    fa_module.web_search_streaming,
+     fa_module.get_stock_price,
+     fa_module.calculate_investment_performance
+ ]
+diff --git a/backend/clera_chatbots/chatbot_for_frontend.py b/backend/clera_chatbots/chatbot_for_frontend.py
+index ccc696c..614788b 100644
+--- a/backend/clera_chatbots/chatbot_for_frontend.py
++++ b/backend/clera_chatbots/chatbot_for_frontend.py
+@@ -19,6 +19,7 @@ from langgraph.graph.message import add_messages
+ 
+ from langchain_perplexity import ChatPerplexity
+ from langchain_groq import ChatGroq
++from perplexity import Perplexity
+ 
+ #from langchain_pinecone import PineconeVectorStore
+ from langchain_huggingface import HuggingFaceEmbeddings
+@@ -73,10 +74,7 @@ class FinancialRAGAgent:
+         os.environ["TOKENIZERS_PARALLELISM"] = "false"
+ 
+         # LLMs
+-        self.perplexity_search = ChatPerplexity(
+-            temperature=0.4,
+-            model="sonar"
+-        )
++        self.perplexity_client = Perplexity()
+         self.llm = ChatGroq(
+             groq_api_key=os.environ['GROQ_API_KEY'],
+             model_name='llama-3.3-70b-versatile',
+@@ -140,11 +138,20 @@ class FinancialRAGAgent:
+             "Use a neutral, factual tone."
+         )
+         messages = [
+-            SystemMessage(content=pplx_system_prompt),
+-            HumanMessage(content=user_message.content)
++            {"role": "system", "content": pplx_system_prompt},
++            {"role": "user", "content": user_message.content}
+         ]
+         try:
+-            pplx_response = self.perplexity_search.invoke(messages)
++            # Use streaming for real-time context
++            stream = self.perplexity_client.chat.completions.create(messages=messages, model="sonar", stream=True)
++            answer_text = ""
++            
++            for chunk in stream:
++                if chunk.choices[0].delta.content:
++                    partial_text = chunk.choices[0].delta.content
++                    answer_text += partial_text
++            
++            pplx_response = AIMessage(content=answer_text)
+         except Exception as e:
+             print(f"Error from Perplexity: {e}")
+             pplx_response = AIMessage(content="No real-time context available.")
+diff --git a/backend/clera_chatbots/llama_pplx_ragbot.py b/backend/clera_chatbots/llama_pplx_ragbot.py
+index 89e1da6..a9174f4 100644
+--- a/backend/clera_chatbots/llama_pplx_ragbot.py
++++ b/backend/clera_chatbots/llama_pplx_ragbot.py
+@@ -18,6 +18,7 @@ import uuid
+ from langchain_groq import ChatGroq
+ from langchain_perplexity import ChatPerplexity
+ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
++from perplexity import Perplexity
+ 
+ from langchain_core.prompts import (
+     ChatPromptTemplate,
+@@ -88,10 +89,7 @@ class FinancialRAGAgent:
+         # Load environment variables
+         load_dotenv()
+ 
+-        self.perplexity_search = ChatPerplexity(
+-            temperature=0.4,
+-            model="sonar"
+-        )
++        self.perplexity_client = Perplexity()
+         self.llm = ChatGroq(
+             groq_api_key=os.environ['GROQ_API_KEY'],
+             model_name='llama-3.3-70b-versatile',
+@@ -193,18 +191,26 @@ class FinancialRAGAgent:
+             "Use a neutral, factual tone. Only provide the key points. Do not include lengthy explanations or personal opinions."
+         )
+         messages = [
+-            SystemMessage(content=pplx_system_prompt),
+-            HumanMessage(content=user_message.content)
++            {"role": "system", "content": pplx_system_prompt},
++            {"role": "user", "content": user_message.content}
+         ]
+ 
+-        # Invoke perplexity model
++        # Invoke perplexity model with streaming
+         try:
+             print("\n", "-" * 20, "Running perplexity search", "-"*20)
+-            pplx_response = self.perplexity_search.invoke(messages)
++            stream = self.perplexity_client.chat.completions.create(messages=messages, model="sonar", stream=True)
++            answer_text = ""
++            
++            for chunk in stream:
++                if chunk.choices[0].delta.content:
++                    partial_text = chunk.choices[0].delta.content
++                    answer_text += partial_text
++            
++            pplx_response = AIMessage(content=answer_text)
+             print(f"Successfuully ran perplexity search. Here is the output: \n{pplx_response}\n")
+         except Exception as e:
+             print("There was an error while running perplexity search: {e}")
+-            pplx_response = "No real-time context available."
++            pplx_response = AIMessage(content="No real-time context available.")
+         
+         # Add output as context for chatbot node
+         state["retrieved_context"].append(pplx_response.content)
+diff --git a/backend/clera_chatbots/perplexity_ragbot.py b/backend/clera_chatbots/perplexity_ragbot.py
+index d4e6b54..f7d76b6 100644
+--- a/backend/clera_chatbots/perplexity_ragbot.py
++++ b/backend/clera_chatbots/perplexity_ragbot.py
+@@ -22,6 +22,7 @@ import uuid
+ 
+ from langchain_perplexity import ChatPerplexity
+ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
++from perplexity import Perplexity
+ 
+ from langchain_core.prompts import (
+     ChatPromptTemplate,
+@@ -92,7 +93,7 @@ class FinancialRAGAgent:
+         # Load environment variables
+         load_dotenv()
+ 
+-        self.llm = ChatPerplexity(temperature=0.4, model="sonar")
++        self.pplx_client = Perplexity()
+         self.initalize_vectorstore()
+ 
+         graph_builder = StateGraph(State)
+@@ -229,8 +230,23 @@ class FinancialRAGAgent:
+ 
+         print(f"FOR DEBUGGING: here is what you get with `state[\"messages\"]`: \n{state["messages"]}\n")
+ 
+-        # Now we pass these messages directly to the LLM
+-        response = self.llm.invoke(state["messages"])
++        # Convert state["messages"] (a list of SystemMessage/HumanMessage/AIMessage) to dict format
++        api_messages = []
++        for msg in state["messages"]:
++            role = "assistant" if isinstance(msg, AIMessage) else "user" if isinstance(msg, HumanMessage) else "system"
++            api_messages.append({"role": role, "content": msg.content})
++        
++        # Call Perplexity API with streaming
++        stream = self.pplx_client.chat.completions.create(messages=api_messages, model="sonar", stream=True)
++        answer = ""
++        
++        for chunk in stream:
++            if chunk.choices[0].delta.content:
++                partial_text = chunk.choices[0].delta.content
++                answer += partial_text
++        
++        # Wrap answer as AIMessage and append
++        response = AIMessage(content=answer)
+         print(f"FOR DEBUGGING: here is what you get with `response`: \n{response}\n")
+ 
+         # Append the LLM's answer (AIMessage) to the conversation
+diff --git a/backend/clera_chatbots/pplx_rag_for_apis.py b/backend/clera_chatbots/pplx_rag_for_apis.py
+index 5b02d99..6acb4b2 100644
+--- a/backend/clera_chatbots/pplx_rag_for_apis.py
++++ b/backend/clera_chatbots/pplx_rag_for_apis.py
+@@ -12,6 +12,7 @@ import uuid
+ 
+ from langchain_perplexity import ChatPerplexity
+ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
++from perplexity import Perplexity
+ from langchain_core.prompts import (
+     SystemMessagePromptTemplate,
+     HumanMessagePromptTemplate
+@@ -82,7 +83,7 @@ class FinancialRAGAgent:
+         # Load environment variables
+         load_dotenv()
+ 
+-        self.llm = ChatPerplexity(temperature=0.4, model="sonar")
++        self.pplx_client = Perplexity()
+         self.initalize_vectorstore()
+ 
+         graph_builder = StateGraph(State)
+@@ -176,7 +177,23 @@ class FinancialRAGAgent:
+         human_msgs = human_message_prompt.format_messages(input=user_message)
+         state["messages"].extend(human_msgs)
+ 
+-        response = self.llm.invoke(state["messages"])
++        # Convert state["messages"] (a list of SystemMessage/HumanMessage/AIMessage) to dict format
++        api_messages = []
++        for msg in state["messages"]:
++            role = "assistant" if isinstance(msg, AIMessage) else "user" if isinstance(msg, HumanMessage) else "system"
++            api_messages.append({"role": role, "content": msg.content})
++        
++        # Call Perplexity API with streaming
++        stream = self.pplx_client.chat.completions.create(messages=api_messages, model="sonar", stream=True)
++        answer = ""
++        
++        for chunk in stream:
++            if chunk.choices[0].delta.content:
++                partial_text = chunk.choices[0].delta.content
++                answer += partial_text
++        
++        # Wrap answer as AIMessage and append
++        response = AIMessage(content=answer)
+         state["messages"].append(response)
+         return {"messages": state["messages"]}
+ 
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+index fc3c4fc..f8fa600 100644
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@ -109,6 +109,8 @@ orjson>=3.10.16
+ ormsgpack>=1.10.0
+ packaging>=24.2
+ pandas>=2.2.3
++perplexityai>=1.0.0
++perplexity>=0.1.0
+ pillow>=11.2.1
+ pinecone>=6.0.2
+ pinecone-plugin-inference>=3.1.0
+diff --git a/frontend-app/components/chat/ChatMessage.tsx b/frontend-app/components/chat/ChatMessage.tsx
+index df7a729..fd3bea6 100644
+--- a/frontend-app/components/chat/ChatMessage.tsx
++++ b/frontend-app/components/chat/ChatMessage.tsx
+@@ -98,6 +98,15 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
+               strong: ({children}) => <strong className="font-semibold">{children}</strong>,
+               em: ({children}) => <em className="italic">{children}</em>,
+               code: ({children}) => <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">{children}</code>,
++              // Citation links - render as clickable links that open in new tab
++              a: ({node, ...props}) => (
++                <a 
++                  {...props} 
++                  target="_blank" 
++                  rel="noopener noreferrer"
++                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline decoration-dotted underline-offset-2 hover:decoration-solid transition-all duration-200"
++                />
++              ),
+             }}
+           >
+             {message.content}

@@ -76,7 +76,7 @@ export default function Chat({
   const [isFirstMessageSent, setIsFirstMessageSent] = useState(false); // New state to prevent duplicates
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const autoSubmissionTriggered = useRef(false); // Track if auto-submission has been triggered for this prompt
-  
+
   // Mobile detection state
   const [isMobile, setIsMobile] = useState(false);
   
@@ -139,7 +139,7 @@ export default function Chat({
   const isInterrupting = interrupt !== null;
   const interruptMessage = interrupt?.value || null;
   const toolActivities = chatClient.state.toolActivities;
-  
+
   // Use retry popup state from the hook
   const shouldShowRetryPopup = messageRetry.shouldShowRetryPopup;
 
@@ -618,6 +618,7 @@ export default function Chat({
         setIsFirstMessageSent(false);
         autoSubmissionTriggered.current = false; // Reset auto-submission flag for new chat
         chatClient.setMessages([]); // Clear messages immediately
+        chatClient.clearCitations(); // Clear citations for new chat
         return; // Don't proceed with normal logic
       }
       
@@ -630,10 +631,11 @@ export default function Chat({
           setPendingFirstMessage(null);
           setIsFirstMessageSent(false);
           autoSubmissionTriggered.current = false; // Reset auto-submission flag when switching threads
-          
+
           // PRODUCTION FIX: Clear messages synchronously, let useEffect handle loading
           // This is deterministic and doesn't rely on timing
           chatClient.setMessages([]);
+          chatClient.clearCitations(); // Clear citations when switching threads
       }
       
   }, [initialSessionId, currentThreadId, chatClient, initialPrompt]); 
@@ -710,7 +712,6 @@ export default function Chat({
           timelineBuilder={timelineBuilder}
         />
 
-        
         {isInterrupting && interrupt && (
           <InterruptConfirmation
             interrupt={interrupt}
