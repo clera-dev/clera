@@ -29,17 +29,26 @@ import { getMarketStatus } from "@/utils/market-hours";
 
 // SECURITY: Validate reconnect URLs before opening
 // Only allow SnapTrade and known broker domains
+// Uses exact domain matching to prevent spoofing (e.g., evil-snaptrade.com)
 function isValidReconnectUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     // Only allow https
     if (parsed.protocol !== 'https:') return false;
-    // Allow SnapTrade domains
+    
     const host = parsed.hostname.toLowerCase();
-    if (host.includes('snaptrade.com') || host.includes('snaptrade.io')) return true;
+    
+    // Helper: check if host exactly matches or is a subdomain of allowed domain
+    const matchesDomain = (allowedDomain: string): boolean => {
+      return host === allowedDomain || host.endsWith('.' + allowedDomain);
+    };
+    
+    // Allow SnapTrade domains
+    if (matchesDomain('snaptrade.com') || matchesDomain('snaptrade.io')) return true;
+    
     // Allow common broker OAuth domains
     const allowedDomains = ['webull.com', 'coinbase.com', 'alpaca.markets', 'schwab.com', 'fidelity.com', 'etrade.com', 'robinhood.com'];
-    return allowedDomains.some(d => host.includes(d));
+    return allowedDomains.some(d => matchesDomain(d));
   } catch {
     return false;
   }

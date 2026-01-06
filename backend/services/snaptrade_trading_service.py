@@ -148,22 +148,21 @@ class SnapTradeTradingService:
             weekday = now.weekday()
             if weekday == 5:  # Saturday
                 reason = 'weekend'
-                next_open_date = now.date() + timedelta(days=2)  # Monday
+                candidate_date = now.date() + timedelta(days=2)  # Monday
             elif weekday == 6:  # Sunday
                 reason = 'weekend'
-                next_open_date = now.date() + timedelta(days=1)  # Monday
+                candidate_date = now.date() + timedelta(days=1)  # Monday
             else:
                 reason = 'holiday'
-                # Find next trading day
-                from datetime import timedelta
-                check_date = now.date() + timedelta(days=1)
-                for _ in range(7):
-                    if self.calendar.is_market_open_today(check_date):
-                        next_open_date = check_date
-                        break
-                    check_date += timedelta(days=1)
-                else:
-                    next_open_date = now.date() + timedelta(days=1)
+                candidate_date = now.date() + timedelta(days=1)
+            
+            # CRITICAL: Verify the candidate date is actually a trading day
+            # This handles weekend before Monday holiday (Memorial Day, Labor Day, etc.)
+            next_open_date = candidate_date
+            for _ in range(7):
+                if self.calendar.is_market_open_today(next_open_date):
+                    break
+                next_open_date += timedelta(days=1)
             
             next_open = eastern.localize(datetime.combine(next_open_date, dt_time(9, 30)))
             

@@ -372,6 +372,7 @@ class QueuedOrderExecutor:
                 return {'success': True, 'order_id': order_id, 'result': order_result, 'warning': 'Post-execution error'}
             
             if retry_count < MAX_RETRY_ATTEMPTS:
+                # CRITICAL: Use optimistic locking to prevent resetting executed orders
                 self.supabase.table('queued_orders')\
                     .update({
                         'status': 'pending',
@@ -380,6 +381,7 @@ class QueuedOrderExecutor:
                         'updated_at': datetime.now(timezone.utc).isoformat()
                     })\
                     .eq('id', order_id)\
+                    .eq('status', 'executing')\
                     .execute()
                 return {'success': False, 'order_id': order_id, 'error': error_msg, 'will_retry': True}
             else:
@@ -388,16 +390,20 @@ class QueuedOrderExecutor:
     
     def _mark_order_failed(self, order_id: str, error_msg: str):
         """Mark an order as permanently failed."""
-        self.supabase.table('queued_orders')\
+        # CRITICAL: Use optimistic locking to prevent overwriting 'executed' status
+        # Only mark as failed if still in 'executing' state
+        result = self.supabase.table('queued_orders')\
             .update({
                 'status': 'failed',
                 'last_error': error_msg,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             })\
             .eq('id', order_id)\
+            .eq('status', 'executing')\
             .execute()
         
-        logger.error(f"❌ Queued order {order_id} permanently failed: {error_msg}")
+        if result.data:
+            logger.error(f"❌ Queued order {order_id} permanently failed: {error_msg}")
         
         # TODO: Send notification to user about failed order
     

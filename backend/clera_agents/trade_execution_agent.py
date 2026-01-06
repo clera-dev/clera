@@ -140,9 +140,11 @@ def _parse_and_validate_trade_confirmation(
                             modified_account_id = f"snaptrade_{normalized_new}" if not new_account_id.startswith('snaptrade_') else new_account_id
                             modified_account_type = 'snaptrade'
                     
-                    # For SELL orders: verify holdings if ticker was changed
-                    if is_sell and modified_ticker != original_ticker:
-                        # Verify user holds the new ticker on the target account
+                    # For SELL orders: verify holdings if ticker OR account was changed
+                    # Must verify the target account actually holds the stock
+                    account_changed = normalized_new and normalized_new != normalized_original
+                    if is_sell and (modified_ticker != original_ticker or account_changed):
+                        # Verify user holds the ticker on some account
                         # detect_symbol_account returns (account_id, account_type, account_info) tuple
                         found_account_id, found_account_type, found_account_info = TradeRoutingService.detect_symbol_account(
                             modified_ticker, user_id
@@ -152,10 +154,19 @@ def _parse_and_validate_trade_confirmation(
                             return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
                                     original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
                         
-                        # Update account to the one that holds the symbol
-                        modified_account_id = found_account_id
-                        modified_account_type = found_account_type or 'snaptrade'
-                        logger.info(f"[Trade Agent] SELL ticker changed - verified holdings on account {modified_account_id}")
+                        # If user changed account, verify they hold the stock on that specific account
+                        if account_changed:
+                            # Check if the user-selected account is the one that holds the stock
+                            found_normalized = found_account_id.replace('snaptrade_', '').replace('alpaca_', '')
+                            if found_normalized != normalized_new:
+                                return (f"Error: The selected account doesn't hold {modified_ticker}. Please use the account that holds this stock.",
+                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                            logger.info(f"[Trade Agent] SELL account changed - verified holdings on account {modified_account_id}")
+                        else:
+                            # Ticker changed - use the account that holds the new ticker
+                            modified_account_id = found_account_id
+                            modified_account_type = found_account_type or 'snaptrade'
+                            logger.info(f"[Trade Agent] SELL ticker changed - verified holdings on account {modified_account_id}")
                     
                     action_type = "SELL" if is_sell else "BUY"
                     logger.info(f"[Trade Agent] User MODIFIED {action_type} trade: {modified_ticker} ${modified_amount:.2f} via {modified_account_id}")
