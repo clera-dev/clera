@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { InterruptConfirmation } from './InterruptConfirmation';
 import { isValidReconnectUrl } from '@/utils/url-validation';
+import toast from 'react-hot-toast';
 
 interface TradeAccount {
   account_id: string;
@@ -383,6 +384,8 @@ export function TradeInterruptConfirmation({
                       // SECURITY: Validate URL before opening
                       if (account.reconnect_url && isValidReconnectUrl(account.reconnect_url)) {
                         window.open(account.reconnect_url, '_blank', 'noopener,noreferrer');
+                      } else {
+                        toast.error('Unable to reconnect. Please try from the Dashboard.');
                       }
                       return;
                     }

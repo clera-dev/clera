@@ -78,6 +78,48 @@ function isMarketHoliday(date: Date): boolean {
 }
 
 /**
+ * Check if a given date is a trading day (weekday and not a holiday)
+ */
+function isTradingDay(date: Date): boolean {
+  const dayOfWeek = date.getDay();
+  // Weekends are not trading days
+  if (dayOfWeek === 0 || dayOfWeek === 6) return false;
+  // Holidays are not trading days
+  if (isMarketHoliday(date)) return false;
+  return true;
+}
+
+/**
+ * Get the next trading day after a given date
+ * Accounts for weekends AND holidays
+ */
+function getNextTradingDay(fromDate: Date): { date: Date; description: string } {
+  const result = new Date(fromDate);
+  result.setDate(result.getDate() + 1);
+  
+  // Keep advancing until we find a trading day
+  let daysAdvanced = 1;
+  while (!isTradingDay(result)) {
+    result.setDate(result.getDate() + 1);
+    daysAdvanced++;
+    // Safety limit to prevent infinite loop (max 2 weeks of holidays)
+    if (daysAdvanced > 14) break;
+  }
+  
+  // Generate human-readable description
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayName = dayNames[result.getDay()];
+  
+  // If it's tomorrow (1 day ahead), say "tomorrow"
+  if (daysAdvanced === 1) {
+    return { date: result, description: 'tomorrow' };
+  }
+  
+  // Otherwise use the day name (e.g., "Tuesday" for a Monday holiday)
+  return { date: result, description: dayName };
+}
+
+/**
  * Check if the US stock market is currently open
  */
 export function isMarketOpen(): boolean {
@@ -122,33 +164,25 @@ export function getMarketStatus(): MarketStatus {
   const marketClose = 16 * 60;
   
   // Weekend
-  if (dayOfWeek === 0) {
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    const nextDay = getNextTradingDay(now);
     return {
       isOpen: false,
       status: 'closed',
-      message: "Markets are closed for the weekend. Your order will be queued and execute Monday at 9:30 AM ET.",
-      nextOpenTime: "Monday 9:30 AM ET",
-      ordersAccepted: true
-    };
-  }
-  
-  if (dayOfWeek === 6) {
-    return {
-      isOpen: false,
-      status: 'closed',
-      message: "Markets are closed for the weekend. Your order will be queued and execute Monday at 9:30 AM ET.",
-      nextOpenTime: "Monday 9:30 AM ET",
+      message: `Markets are closed for the weekend. Your order will be queued and execute ${nextDay.description} at 9:30 AM ET.`,
+      nextOpenTime: `${nextDay.description.charAt(0).toUpperCase() + nextDay.description.slice(1)} 9:30 AM ET`,
       ordersAccepted: true
     };
   }
   
   // Holiday
   if (isMarketHoliday(now)) {
+    const nextDay = getNextTradingDay(now);
     return {
       isOpen: false,
       status: 'closed',
-      message: "Markets are closed for a holiday. Your order will be queued for the next trading day.",
-      nextOpenTime: "Next trading day 9:30 AM ET",
+      message: `Markets are closed for a holiday. Your order will be queued and execute ${nextDay.description} at 9:30 AM ET.`,
+      nextOpenTime: `${nextDay.description.charAt(0).toUpperCase() + nextDay.description.slice(1)} 9:30 AM ET`,
       ordersAccepted: true
     };
   }
@@ -166,21 +200,13 @@ export function getMarketStatus(): MarketStatus {
   
   // After market close (after-hours)
   if (currentMinutes >= marketClose) {
-    // Check if tomorrow is a weekend
-    if (dayOfWeek === 5) {
-      return {
-        isOpen: false,
-        status: 'after_hours',
-        message: "After-hours. Your order will be queued and execute Monday at 9:30 AM ET.",
-        nextOpenTime: "Monday 9:30 AM ET",
-        ordersAccepted: true
-      };
-    }
+    // Use getNextTradingDay to account for weekends AND holidays
+    const nextDay = getNextTradingDay(now);
     return {
       isOpen: false,
       status: 'after_hours',
-      message: "After-hours. Your order will be queued and execute tomorrow at 9:30 AM ET.",
-      nextOpenTime: "Tomorrow 9:30 AM ET",
+      message: `After-hours. Your order will be queued and execute ${nextDay.description} at 9:30 AM ET.`,
+      nextOpenTime: `${nextDay.description.charAt(0).toUpperCase() + nextDay.description.slice(1)} 9:30 AM ET`,
       ordersAccepted: true
     };
   }

@@ -61,10 +61,13 @@ def validate_redirect_url(url: Optional[str]) -> bool:
         parsed_frontend = urlparse(frontend_url)
         
         # Build list of allowed hosts (filter out empty strings)
-        allowed_hosts = [
-            'localhost',
-            '127.0.0.1',
-        ]
+        allowed_hosts = []
+        
+        # SECURITY: Only allow localhost in development mode
+        # In production, redirecting to localhost could be abused
+        environment = os.getenv('ENVIRONMENT', 'development').lower()
+        if environment in ('development', 'dev', 'local'):
+            allowed_hosts.extend(['localhost', '127.0.0.1'])
         
         # Only add frontend netloc if it's non-empty
         if parsed_frontend.netloc:
