@@ -22,7 +22,10 @@ function SnapTradeReconnectCallbackContent() {
 
     if (error) {
       setStatus('error');
-      toast.error(`Reconnection Failed: ${decodeURIComponent(error)}`);
+      // SECURITY: Don't display raw error from URL (phishing risk)
+      // Show generic message instead of unsanitized URL parameter
+      toast.error('Reconnection failed. Please try again or contact support.');
+      console.error('SnapTrade reconnect error:', error);
       setCanClose(true);
       return;
     }

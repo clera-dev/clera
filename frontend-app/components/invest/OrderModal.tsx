@@ -27,6 +27,24 @@ import {
 } from "@/components/ui/select";
 import { getMarketStatus } from "@/utils/market-hours";
 
+// SECURITY: Validate reconnect URLs before opening
+// Only allow SnapTrade and known broker domains
+function isValidReconnectUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Only allow https
+    if (parsed.protocol !== 'https:') return false;
+    // Allow SnapTrade domains
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes('snaptrade.com') || host.includes('snaptrade.io')) return true;
+    // Allow common broker OAuth domains
+    const allowedDomains = ['webull.com', 'coinbase.com', 'alpaca.markets', 'schwab.com', 'fidelity.com', 'etrade.com', 'robinhood.com'];
+    return allowedDomains.some(d => host.includes(d));
+  } catch {
+    return false;
+  }
+}
+
 // Webull requires a minimum of $5 for fractional share orders
 const MINIMUM_ORDER_AMOUNT = 5;
 
@@ -543,7 +561,12 @@ export default function OrderModal({
                             size="sm"
                             className="w-full bg-background hover:bg-muted"
                             onClick={() => {
-                              window.open(selectedAccountData.reconnect_url, '_blank');
+                              // SECURITY: Validate URL before opening
+                              if (isValidReconnectUrl(selectedAccountData.reconnect_url!)) {
+                                window.open(selectedAccountData.reconnect_url, '_blank', 'noopener,noreferrer');
+                              } else {
+                                toast.error('Invalid reconnect URL. Please contact support.');
+                              }
                             }}
                           >
                             <RefreshCw className="h-4 w-4 mr-2" />

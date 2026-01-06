@@ -13,6 +13,24 @@ import {
 } from '@/components/ui/select';
 import { InterruptConfirmation } from './InterruptConfirmation';
 
+// SECURITY: Validate reconnect URLs before opening
+// Only allow SnapTrade and known broker domains
+function isValidReconnectUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Only allow https
+    if (parsed.protocol !== 'https:') return false;
+    // Allow SnapTrade domains
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes('snaptrade.com') || host.includes('snaptrade.io')) return true;
+    // Allow common broker OAuth domains
+    const allowedDomains = ['webull.com', 'coinbase.com', 'alpaca.markets', 'schwab.com', 'fidelity.com', 'etrade.com', 'robinhood.com'];
+    return allowedDomains.some(d => host.includes(d));
+  } catch {
+    return false;
+  }
+}
+
 interface TradeAccount {
   account_id: string;
   institution_name: string;
@@ -366,8 +384,8 @@ export function TradeInterruptConfirmation({
                   onValueChange={(value) => {
                     const account = accounts.find(a => a.account_id === value);
                     if (account?.connection_status === 'error') {
-                      // Open reconnect URL with security flags to prevent reverse tabnabbing
-                      if (account.reconnect_url) {
+                      // SECURITY: Validate URL before opening
+                      if (account.reconnect_url && isValidReconnectUrl(account.reconnect_url)) {
                         window.open(account.reconnect_url, '_blank', 'noopener,noreferrer');
                       }
                       return;

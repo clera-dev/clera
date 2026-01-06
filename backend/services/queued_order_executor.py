@@ -278,6 +278,10 @@ class QueuedOrderExecutor:
             logger.info(f"⏭️ Order {order_id} already being processed by another instance, skipping")
             return {'success': False, 'reason': 'already_processing'}
         
+        # Track whether order was placed (to prevent duplicate execution on DB errors)
+        order_placed = False
+        order_result = None
+        
         try:
             trading_service = self._get_trading_service()
             
@@ -294,16 +298,25 @@ class QueuedOrderExecutor:
             )
             
             if result.get('success'):
-                # Mark as executed
-                self.supabase.table('queued_orders')\
-                    .update({
-                        'status': 'executed',
-                        'executed_at': datetime.now(timezone.utc).isoformat(),
-                        'execution_result': result,
-                        'updated_at': datetime.now(timezone.utc).isoformat()
-                    })\
-                    .eq('id', order_id)\
-                    .execute()
+                # CRITICAL: Mark order as placed BEFORE attempting DB update
+                # This prevents duplicate execution if DB update fails
+                order_placed = True
+                order_result = result
+                
+                # Mark as executed in DB
+                try:
+                    self.supabase.table('queued_orders')\
+                        .update({
+                            'status': 'executed',
+                            'executed_at': datetime.now(timezone.utc).isoformat(),
+                            'execution_result': result,
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        })\
+                        .eq('id', order_id)\
+                        .execute()
+                except Exception as db_error:
+                    # Log DB error but don't retry the order - it was already placed!
+                    logger.error(f"⚠️ Order {order_id} executed but DB update failed: {db_error}")
                 
                 logger.info(f"✅ Queued order {order_id} executed successfully")
                 
@@ -336,6 +349,27 @@ class QueuedOrderExecutor:
         except Exception as e:
             error_msg = str(e)
             logger.error(f"❌ Error executing queued order {order_id}: {e}", exc_info=True)
+            
+            # CRITICAL: Only retry if order was NOT placed
+            # If order was placed but we got an exception (e.g., during DB update),
+            # do NOT reset to pending - that would cause duplicate execution
+            if order_placed:
+                logger.error(f"⚠️ Order {order_id} was placed but post-execution failed. NOT retrying to avoid duplicate.")
+                # Try to mark as executed anyway
+                try:
+                    self.supabase.table('queued_orders')\
+                        .update({
+                            'status': 'executed',
+                            'executed_at': datetime.now(timezone.utc).isoformat(),
+                            'execution_result': order_result,
+                            'last_error': f'Post-execution error (order was placed): {error_msg}',
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        })\
+                        .eq('id', order_id)\
+                        .execute()
+                except Exception:
+                    pass
+                return {'success': True, 'order_id': order_id, 'result': order_result, 'warning': 'Post-execution error'}
             
             if retry_count < MAX_RETRY_ATTEMPTS:
                 self.supabase.table('queued_orders')\
@@ -383,28 +417,26 @@ class QueuedOrderExecutor:
         error_lower = error_msg.lower()
         return any(indicator in error_lower for indicator in retriable_indicators)
     
-    def get_status(self, user_id: Optional[str] = None) -> Dict:
+    def get_status(self, user_id: str) -> Dict:
         """
         Get executor status for monitoring.
         
+        SECURITY: user_id is REQUIRED to prevent information disclosure.
+        Each user can only see their own pending order count.
+        
         Args:
-            user_id: If provided, only count pending orders for this user.
-                    This prevents information disclosure of global platform metrics.
+            user_id: User ID to filter pending orders (required for security)
         """
         jobs = self.scheduler.get_jobs() if self._is_running else []
         
-        # Get pending order count (optionally filtered by user)
+        # Get pending order count filtered by user
         pending_count = 0
         try:
-            query = self.supabase.table('queued_orders')\
+            result = self.supabase.table('queued_orders')\
                 .select('id', count='exact')\
-                .eq('status', 'pending')
-            
-            # SECURITY: Filter by user_id to prevent information disclosure
-            if user_id:
-                query = query.eq('user_id', user_id)
-            
-            result = query.execute()
+                .eq('status', 'pending')\
+                .eq('user_id', user_id)\
+                .execute()
             pending_count = result.count or 0
         except Exception:
             pass
