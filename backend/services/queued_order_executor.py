@@ -6,20 +6,21 @@ This handles orders that were placed when the market was closed and couldn't be
 submitted directly to the brokerage.
 
 Architecture:
-- Uses APScheduler for reliable job scheduling
+- Uses APScheduler BackgroundScheduler for reliable job scheduling (sync)
 - Runs every 5 minutes during market hours to check for pending orders
 - Also triggers at market open (9:30 AM ET) to catch overnight orders
 - Processes orders one at a time with proper error handling
 - Updates order status in database for user visibility
+- Recovers stuck 'executing' orders after timeout
 - Sends notifications on success/failure (future enhancement)
 """
 
 import logging
-import asyncio
+import time
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Any
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -31,6 +32,8 @@ logger = logging.getLogger(__name__)
 # Configuration
 CHECK_INTERVAL_MINUTES = int(os.getenv('QUEUED_ORDER_CHECK_INTERVAL_MINUTES', '5'))
 MAX_RETRY_ATTEMPTS = 3
+# Orders stuck in 'executing' for longer than this will be reset to 'pending'
+STUCK_ORDER_TIMEOUT_MINUTES = 5
 
 
 class QueuedOrderExecutor:
@@ -39,17 +42,34 @@ class QueuedOrderExecutor:
     
     Features:
     - Automatic execution of pending orders at market open
+    - Recovery of stuck 'executing' orders (server crash protection)
     - Retry logic with exponential backoff
     - Proper status tracking in database
     - Market hours awareness
     - Graceful error handling per order
     """
     
-    def __init__(self):
-        self.scheduler = AsyncIOScheduler()
+    def __init__(self, trading_service=None):
+        """
+        Initialize the executor.
+        
+        Args:
+            trading_service: Optional trading service instance for dependency injection.
+                           If not provided, will be imported when needed.
+        """
+        self.scheduler = BackgroundScheduler()
         self.supabase = get_supabase_client()
         self.calendar = get_trading_calendar()
         self._is_running = False
+        self._trading_service = trading_service
+        
+    def _get_trading_service(self):
+        """Get trading service, importing if not injected."""
+        if self._trading_service is None:
+            # Import here to avoid circular imports at module load time
+            from services.snaptrade_trading_service import get_snaptrade_trading_service
+            self._trading_service = get_snaptrade_trading_service()
+        return self._trading_service
         
     def start(self):
         """Start the executor with configured jobs."""
@@ -58,29 +78,36 @@ class QueuedOrderExecutor:
             return
             
         logger.info("🚀 Starting Queued Order Executor")
-        logger.info(f"   Check interval: Every {CHECK_INTERVAL_MINUTES} minutes during market hours")
         
-        # Job 1: Check for pending orders every N minutes during market hours
-        # This catches any orders that slip through or need retry
+        # Job 1: Check and execute pending orders every N minutes during market hours
         self.scheduler.add_job(
             self._process_pending_orders,
             IntervalTrigger(minutes=CHECK_INTERVAL_MINUTES),
             id='queued_order_check',
-            name='Queued Order Check',
+            name='Check and execute queued orders',
             replace_existing=True,
-            max_instances=1,
-            coalesce=True,
+            max_instances=1  # Prevent overlapping runs
         )
         
-        # Job 2: Trigger at market open (9:31 AM ET) - slight delay to ensure market is open
-        # This catches all overnight orders immediately
+        # Job 2: Special trigger at market open (9:31 AM ET, 1 min after open)
+        # This ensures overnight orders are processed promptly
         self.scheduler.add_job(
             self._process_pending_orders,
-            CronTrigger(hour=9, minute=31, timezone='US/Eastern'),
-            id='market_open_execution',
-            name='Market Open Order Execution',
+            CronTrigger(hour=9, minute=31, timezone='America/New_York'),
+            id='market_open_trigger',
+            name='Market open order execution',
             replace_existing=True,
-            max_instances=1,
+            max_instances=1
+        )
+        
+        # Job 3: Recovery job for stuck orders (runs every 10 minutes)
+        self.scheduler.add_job(
+            self._recover_stuck_orders,
+            IntervalTrigger(minutes=10),
+            id='stuck_order_recovery',
+            name='Recover stuck executing orders',
+            replace_existing=True,
+            max_instances=1
         )
         
         self.scheduler.start()
@@ -96,8 +123,62 @@ class QueuedOrderExecutor:
         self.scheduler.shutdown(wait=True)
         self._is_running = False
         logger.info("✅ Queued Order Executor stopped")
+    
+    def _recover_stuck_orders(self):
+        """
+        Recover orders stuck in 'executing' status.
         
-    async def _process_pending_orders(self):
+        This handles the case where the server crashes after acquiring the lock
+        but before completing the order. Orders stuck in 'executing' for longer
+        than STUCK_ORDER_TIMEOUT_MINUTES are reset to 'pending' for retry.
+        """
+        try:
+            timeout_threshold = datetime.now(timezone.utc) - timedelta(minutes=STUCK_ORDER_TIMEOUT_MINUTES)
+            
+            # Find orders stuck in 'executing' for too long
+            stuck_orders = self.supabase.table('queued_orders')\
+                .select('id, last_attempt_at, retry_count')\
+                .eq('status', 'executing')\
+                .lt('last_attempt_at', timeout_threshold.isoformat())\
+                .execute()
+            
+            if not stuck_orders.data:
+                return
+            
+            logger.warning(f"🔧 Found {len(stuck_orders.data)} stuck orders to recover")
+            
+            for order in stuck_orders.data:
+                order_id = order['id']
+                retry_count = order.get('retry_count', 0)
+                
+                if retry_count >= MAX_RETRY_ATTEMPTS:
+                    # Max retries exceeded, mark as failed
+                    self.supabase.table('queued_orders')\
+                        .update({
+                            'status': 'failed',
+                            'last_error': 'Order stuck in executing state - max retries exceeded',
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        })\
+                        .eq('id', order_id)\
+                        .execute()
+                    logger.error(f"❌ Order {order_id} failed after being stuck - max retries exceeded")
+                else:
+                    # Reset to pending for retry
+                    self.supabase.table('queued_orders')\
+                        .update({
+                            'status': 'pending',
+                            'retry_count': retry_count + 1,
+                            'last_error': 'Order stuck in executing state - recovered for retry',
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        })\
+                        .eq('id', order_id)\
+                        .execute()
+                    logger.info(f"🔄 Order {order_id} recovered from stuck state (retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS})")
+                    
+        except Exception as e:
+            logger.error(f"Error recovering stuck orders: {e}", exc_info=True)
+        
+    def _process_pending_orders(self):
         """
         Main job: Process all pending queued orders.
         
@@ -112,7 +193,7 @@ class QueuedOrderExecutor:
             return
         
         try:
-            # Get all pending orders
+            # Get all pending orders (oldest first)
             pending_orders = self.supabase.table('queued_orders')\
                 .select('*')\
                 .eq('status', 'pending')\
@@ -133,7 +214,7 @@ class QueuedOrderExecutor:
             
             for order in orders:
                 try:
-                    result = await self._execute_queued_order(order)
+                    result = self._execute_queued_order(order)
                     if result.get('success'):
                         success_count += 1
                     else:
@@ -141,17 +222,17 @@ class QueuedOrderExecutor:
                 except Exception as e:
                     logger.error(f"Error processing order {order['id']}: {e}", exc_info=True)
                     fail_count += 1
-                    await self._mark_order_failed(order['id'], str(e))
+                    self._mark_order_failed(order['id'], str(e))
                 
                 # Small delay between orders to avoid rate limits
-                await asyncio.sleep(1)
+                time.sleep(1)
             
             logger.info(f"📈 Queued order execution complete: {success_count} succeeded, {fail_count} failed")
             
         except Exception as e:
             logger.error(f"Error in queued order processing: {e}", exc_info=True)
     
-    async def _execute_queued_order(self, order: Dict[str, Any]) -> Dict[str, Any]:
+    def _execute_queued_order(self, order: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a single queued order.
         
@@ -191,9 +272,7 @@ class QueuedOrderExecutor:
             return {'success': False, 'reason': 'already_processing'}
         
         try:
-            # Import here to avoid circular imports
-            from services.snaptrade_trading_service import get_snaptrade_trading_service
-            trading_service = get_snaptrade_trading_service()
+            trading_service = self._get_trading_service()
             
             # Execute the order through our trading service
             result = trading_service.place_order(
@@ -244,7 +323,7 @@ class QueuedOrderExecutor:
                     return {'success': False, 'order_id': order_id, 'error': error_msg, 'will_retry': True}
                 else:
                     # Mark as failed
-                    await self._mark_order_failed(order_id, error_msg)
+                    self._mark_order_failed(order_id, error_msg)
                     return {'success': False, 'order_id': order_id, 'error': error_msg}
                     
         except Exception as e:
@@ -263,10 +342,10 @@ class QueuedOrderExecutor:
                     .execute()
                 return {'success': False, 'order_id': order_id, 'error': error_msg, 'will_retry': True}
             else:
-                await self._mark_order_failed(order_id, error_msg)
+                self._mark_order_failed(order_id, error_msg)
                 return {'success': False, 'order_id': order_id, 'error': error_msg}
     
-    async def _mark_order_failed(self, order_id: str, error_msg: str):
+    def _mark_order_failed(self, order_id: str, error_msg: str):
         """Mark an order as permanently failed."""
         self.supabase.table('queued_orders')\
             .update({
@@ -297,17 +376,28 @@ class QueuedOrderExecutor:
         error_lower = error_msg.lower()
         return any(indicator in error_lower for indicator in retriable_indicators)
     
-    def get_status(self) -> Dict:
-        """Get executor status for monitoring."""
+    def get_status(self, user_id: Optional[str] = None) -> Dict:
+        """
+        Get executor status for monitoring.
+        
+        Args:
+            user_id: If provided, only count pending orders for this user.
+                    This prevents information disclosure of global platform metrics.
+        """
         jobs = self.scheduler.get_jobs() if self._is_running else []
         
-        # Get pending order count
+        # Get pending order count (optionally filtered by user)
         pending_count = 0
         try:
-            result = self.supabase.table('queued_orders')\
+            query = self.supabase.table('queued_orders')\
                 .select('id', count='exact')\
-                .eq('status', 'pending')\
-                .execute()
+                .eq('status', 'pending')
+            
+            # SECURITY: Filter by user_id to prevent information disclosure
+            if user_id:
+                query = query.eq('user_id', user_id)
+            
+            result = query.execute()
             pending_count = result.count or 0
         except Exception:
             pass
@@ -352,4 +442,3 @@ def stop_queued_order_executor():
     if _executor is not None:
         _executor.stop()
         _executor = None
-

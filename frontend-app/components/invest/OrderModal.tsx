@@ -732,7 +732,7 @@ export default function OrderModal({
             ) : marketStatus.isOpen ? (
               `Place ${isBuyOrder ? 'Buy' : 'Sell'} Order`
             ) : (
-              <><Clock className="mr-2 h-4 w-4" /> Queue ${isBuyOrder ? 'Buy' : 'Sell'} Order</>
+              <><Clock className="mr-2 h-4 w-4" /> Queue {isBuyOrder ? 'Buy' : 'Sell'} Order</>
             )}
           </Button>
         </div>

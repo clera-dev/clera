@@ -44,6 +44,131 @@ snaptrade_client = SnapTrade(
 )
 
 
+def _parse_and_validate_trade_confirmation(
+    user_confirmation: str,
+    original_ticker: str,
+    original_amount: float,
+    original_account_id: str,
+    original_account_type: str,
+    user_id: str,
+    is_sell: bool = False
+) -> Tuple[Optional[str], str, float, str, str, str]:
+    """
+    Parse and validate modified trade confirmation from user.
+    
+    Extracts a shared helper to avoid DRY violations between buy/sell.
+    Handles JSON parsing, input validation, and account ownership verification.
+    
+    Args:
+        user_confirmation: Raw confirmation string from user (could be JSON or text)
+        original_ticker: Original ticker proposed by agent
+        original_amount: Original dollar amount proposed by agent
+        original_account_id: Original account ID
+        original_account_type: Original account type ('alpaca' or 'snaptrade')
+        user_id: Authenticated user ID for ownership verification
+        is_sell: Whether this is a SELL order (requires holdings check on ticker change)
+    
+    Returns:
+        Tuple of (error_message, final_ticker, final_amount, final_account_id, final_account_type, final_confirmation)
+        - error_message: None if valid, error string if validation failed
+        - final_*: Validated values to use for trade execution
+        - final_confirmation: Normalized confirmation string ('yes'/'no'/original)
+    """
+    import json
+    
+    modified_ticker = original_ticker
+    modified_amount = original_amount
+    modified_account_id = original_account_id
+    modified_account_type = original_account_type
+    final_confirmation = user_confirmation
+    
+    try:
+        if user_confirmation.startswith('{'):
+            modified_data = json.loads(user_confirmation)
+            if modified_data.get('action') == 'execute':
+                # User confirmed with modifications
+                if modified_data.get('modified'):
+                    # SECURITY: Re-validate all modified inputs
+                    new_ticker = str(modified_data.get('ticker', original_ticker)).strip().upper()
+                    new_amount = modified_data.get('amount', original_amount)
+                    new_account_id = modified_data.get('account_id')
+                    
+                    # Validate ticker format
+                    if not new_ticker or not new_ticker.isalnum():
+                        return (f"Error: Invalid ticker symbol '{new_ticker}'. Ticker symbols must be alphanumeric.",
+                                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                    modified_ticker = new_ticker
+                    
+                    # Validate amount
+                    try:
+                        new_amount = float(new_amount)
+                        if new_amount < 1:
+                            return (f"Error: Invalid dollar amount '{new_amount}'. Minimum order is $1.00.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        modified_amount = new_amount
+                    except (ValueError, TypeError):
+                        return (f"Error: Invalid dollar amount '{new_amount}'. Please provide a valid number.",
+                                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                    
+                    # SECURITY: Validate account ownership if user changed account
+                    # Normalize account_id comparison (strip prefixes for consistent comparison)
+                    normalized_original = original_account_id.replace('snaptrade_', '').replace('alpaca_', '')
+                    normalized_new = new_account_id.replace('snaptrade_', '').replace('alpaca_', '') if new_account_id else None
+                    
+                    if normalized_new and normalized_new != normalized_original:
+                        from utils.supabase.db_client import get_supabase_client
+                        supabase = get_supabase_client()
+                        
+                        # Verify account belongs to this user
+                        account_check = supabase.table('user_investment_accounts')\
+                            .select('provider_account_id, provider')\
+                            .eq('user_id', user_id)\
+                            .eq('provider_account_id', normalized_new)\
+                            .execute()
+                        
+                        if not account_check.data:
+                            logger.warning(f"[Trade Agent] SECURITY: User {user_id} attempted to use unauthorized account {new_account_id}")
+                            return ("Error: You don't have permission to trade with that account.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        
+                        # Set account type based on actual provider
+                        account_provider = account_check.data[0].get('provider', 'snaptrade')
+                        if account_provider == 'alpaca':
+                            modified_account_id = normalized_new
+                            modified_account_type = 'alpaca'
+                        else:
+                            modified_account_id = f"snaptrade_{normalized_new}" if not new_account_id.startswith('snaptrade_') else new_account_id
+                            modified_account_type = 'snaptrade'
+                    
+                    # For SELL orders: verify holdings if ticker was changed
+                    if is_sell and modified_ticker != original_ticker:
+                        # Verify user holds the new ticker on the target account
+                        holdings_check = TradeRoutingService.detect_symbol_account(
+                            user_id=user_id,
+                            ticker=modified_ticker,
+                            action='SELL'
+                        )
+                        
+                        if not holdings_check.get('found'):
+                            return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        
+                        # Update account to the one that holds the symbol
+                        modified_account_id = holdings_check.get('account_id', modified_account_id)
+                        modified_account_type = holdings_check.get('account_type', modified_account_type)
+                        logger.info(f"[Trade Agent] SELL ticker changed - verified holdings on account {modified_account_id}")
+                    
+                    action_type = "SELL" if is_sell else "BUY"
+                    logger.info(f"[Trade Agent] User MODIFIED {action_type} trade: {modified_ticker} ${modified_amount:.2f} via {modified_account_id}")
+                
+                # Valid confirmation
+                final_confirmation = "yes"
+                
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        # Not JSON or invalid - treat as regular text response
+        logger.debug(f"[Trade Agent] Confirmation not JSON: {e}")
+    
+    return (None, modified_ticker, modified_amount, modified_account_id, modified_account_type, final_confirmation)
 
 
 @tool("execute_buy_market_order")
@@ -129,75 +254,20 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         user_confirmation = str(og_user_confirmation).strip()
         logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
-        # PRODUCTION-GRADE: Check if user sent modified trade values (JSON format)
-        # This allows users to adjust ticker, amount, or account from the confirmation popup
-        modified_ticker = ticker
-        modified_amount = notional_amount
-        modified_account_id = account_id
-        modified_account_type = account_type
+        # Parse and validate any modifications from the confirmation popup
+        error_msg, modified_ticker, modified_amount, modified_account_id, modified_account_type, user_confirmation = \
+            _parse_and_validate_trade_confirmation(
+                user_confirmation=user_confirmation,
+                original_ticker=ticker,
+                original_amount=notional_amount,
+                original_account_id=account_id,
+                original_account_type=account_type,
+                user_id=user_id,
+                is_sell=False
+            )
         
-        try:
-            import json
-            if user_confirmation.startswith('{'):
-                modified_data = json.loads(user_confirmation)
-                if modified_data.get('action') == 'execute':
-                    # User confirmed with modifications
-                    if modified_data.get('modified'):
-                        # SECURITY: Re-validate all modified inputs
-                        new_ticker = str(modified_data.get('ticker', ticker)).strip().upper()
-                        new_amount = modified_data.get('amount', notional_amount)
-                        new_account_id = modified_data.get('account_id')
-                        
-                        # Validate ticker format (same validation as initial)
-                        if not new_ticker or not new_ticker.isalnum():
-                            return f"Error: Invalid ticker symbol '{new_ticker}'. Ticker symbols must be alphanumeric."
-                        modified_ticker = new_ticker
-                        
-                        # Validate amount (same validation as initial)
-                        try:
-                            new_amount = float(new_amount)
-                            if new_amount < 1:
-                                return f"Error: Invalid dollar amount '{new_amount}'. Minimum order is $1.00."
-                            modified_amount = new_amount
-                        except (ValueError, TypeError):
-                            return f"Error: Invalid dollar amount '{new_amount}'. Please provide a valid number."
-                        
-                        # SECURITY: Validate account ownership if user changed account
-                        if new_account_id and new_account_id != account_id:
-                            from utils.supabase.db_client import get_supabase_client
-                            supabase = get_supabase_client()
-                            
-                            # Strip any prefix for lookup
-                            lookup_id = new_account_id.replace('snaptrade_', '').replace('alpaca_', '')
-                            
-                            # Verify account belongs to this user
-                            account_check = supabase.table('user_investment_accounts')\
-                                .select('provider_account_id, provider')\
-                                .eq('user_id', user_id)\
-                                .eq('provider_account_id', lookup_id)\
-                                .execute()
-                            
-                            if not account_check.data:
-                                logger.warning(f"[Trade Agent] SECURITY: User {user_id} attempted to use unauthorized account {new_account_id}")
-                                return "Error: You don't have permission to trade with that account."
-                            
-                            # Set account type based on actual provider
-                            account_provider = account_check.data[0].get('provider', 'snaptrade')
-                            if account_provider == 'alpaca':
-                                modified_account_id = lookup_id
-                                modified_account_type = 'alpaca'
-                            else:
-                                modified_account_id = f"snaptrade_{lookup_id}" if not new_account_id.startswith('snaptrade_') else new_account_id
-                                modified_account_type = 'snaptrade'
-                            
-                        logger.info(f"[Trade Agent] User MODIFIED trade: {modified_ticker} ${modified_amount:.2f} via {modified_account_id}")
-                    
-                    # Valid confirmation
-                    user_confirmation = "yes"
-        except (json.JSONDecodeError, ValueError, TypeError) as e:
-            # Not JSON or invalid - treat as regular text response
-            logger.debug(f"[Trade Agent] Confirmation not JSON: {e}")
-            pass
+        if error_msg:
+            return error_msg
         
         user_confirmation_lower = user_confirmation.lower()
 
@@ -314,77 +384,21 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
         user_confirmation = str(og_user_confirmation).strip()
         logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
-        # PRODUCTION-GRADE: Check if user sent modified trade values (JSON format)
-        # Note: For SELL orders, ticker changes are less common but amount changes are allowed
-        modified_ticker = ticker
-        modified_amount = notional_amount
-        modified_account_id = account_id
-        modified_account_type = account_type
+        # Parse and validate any modifications from the confirmation popup
+        # Note: is_sell=True enables holdings verification if ticker changes
+        error_msg, modified_ticker, modified_amount, modified_account_id, modified_account_type, user_confirmation = \
+            _parse_and_validate_trade_confirmation(
+                user_confirmation=user_confirmation,
+                original_ticker=ticker,
+                original_amount=notional_amount,
+                original_account_id=account_id,
+                original_account_type=account_type,
+                user_id=user_id,
+                is_sell=True
+            )
         
-        try:
-            import json
-            if user_confirmation.startswith('{'):
-                modified_data = json.loads(user_confirmation)
-                if modified_data.get('action') == 'execute':
-                    # User confirmed with modifications
-                    if modified_data.get('modified'):
-                        # SECURITY: Re-validate all modified inputs
-                        new_ticker = str(modified_data.get('ticker', ticker)).strip().upper()
-                        new_amount = modified_data.get('amount', notional_amount)
-                        new_account_id = modified_data.get('account_id')
-                        
-                        # Validate ticker format (same validation as initial)
-                        if not new_ticker or not new_ticker.isalnum():
-                            return f"Error: Invalid ticker symbol '{new_ticker}'. Ticker symbols must be alphanumeric."
-                        modified_ticker = new_ticker
-                        
-                        # Validate amount (same validation as initial)
-                        try:
-                            new_amount = float(new_amount)
-                            if new_amount < 1:
-                                return f"Error: Invalid dollar amount '{new_amount}'. Minimum order is $1.00."
-                            modified_amount = new_amount
-                        except (ValueError, TypeError):
-                            return f"Error: Invalid dollar amount '{new_amount}'. Please provide a valid number."
-                        
-                        # SECURITY: Validate account ownership if user changed account
-                        if new_account_id and new_account_id != account_id.replace('snaptrade_', ''):
-                            from utils.supabase.db_client import get_supabase_client
-                            supabase = get_supabase_client()
-                            
-                            # Strip any prefix for lookup
-                            lookup_id = new_account_id.replace('snaptrade_', '').replace('alpaca_', '')
-                            
-                            # Verify account belongs to this user
-                            account_check = supabase.table('user_investment_accounts')\
-                                .select('provider_account_id, provider')\
-                                .eq('user_id', user_id)\
-                                .eq('provider_account_id', lookup_id)\
-                                .execute()
-                            
-                            if not account_check.data:
-                                logger.warning(f"[Trade Agent] SECURITY: User {user_id} attempted to use unauthorized account {new_account_id}")
-                                return "Error: You don't have permission to trade with that account."
-                            
-                            # Set account type based on actual provider
-                            account_provider = account_check.data[0].get('provider', 'snaptrade')
-                            if account_provider == 'alpaca':
-                                modified_account_id = lookup_id
-                                modified_account_type = 'alpaca'
-                            else:
-                                modified_account_id = f"snaptrade_{lookup_id}" if not new_account_id.startswith('snaptrade_') else new_account_id
-                                modified_account_type = 'snaptrade'
-                            
-                            logger.warning(f"[Trade Agent] User changed account for SELL - verified ownership and holdings")
-                            
-                        logger.info(f"[Trade Agent] User MODIFIED SELL trade: {modified_ticker} ${modified_amount:.2f} via {modified_account_id}")
-                    
-                    # Valid confirmation
-                    user_confirmation = "yes"
-        except (json.JSONDecodeError, ValueError, TypeError) as e:
-            # Not JSON or invalid - treat as regular text response
-            logger.debug(f"[Trade Agent] Confirmation not JSON: {e}")
-            pass
+        if error_msg:
+            return error_msg
         
         user_confirmation_lower = user_confirmation.lower()
 

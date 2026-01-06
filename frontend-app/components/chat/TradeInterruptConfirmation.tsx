@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { InterruptConfirmation } from './InterruptConfirmation';
 
 interface TradeAccount {
   account_id: string;
@@ -245,9 +246,17 @@ export function TradeInterruptConfirmation({
     onConfirm('no');
   }, [isLoading, onConfirm]);
 
-  // If not a trade confirmation, return null (use default InterruptConfirmation)
+  // If parsing failed, fall back to the generic InterruptConfirmation
+  // This prevents the UI from getting stuck with no confirmation dialog
   if (!initialDetails) {
-    return null;
+    console.warn('TradeInterruptConfirmation: Failed to parse trade details, using fallback');
+    return (
+      <InterruptConfirmation
+        interrupt={interrupt}
+        onConfirm={(response: boolean) => onConfirm(response ? 'yes' : 'no')}
+        isLoading={isLoading}
+      />
+    );
   }
 
   const selectedAccount = accounts.find(a => a.account_id === selectedAccountId);
@@ -357,9 +366,9 @@ export function TradeInterruptConfirmation({
                   onValueChange={(value) => {
                     const account = accounts.find(a => a.account_id === value);
                     if (account?.connection_status === 'error') {
-                      // Open reconnect URL
+                      // Open reconnect URL with security flags to prevent reverse tabnabbing
                       if (account.reconnect_url) {
-                        window.open(account.reconnect_url, '_blank');
+                        window.open(account.reconnect_url, '_blank', 'noopener,noreferrer');
                       }
                       return;
                     }
@@ -506,7 +515,7 @@ export function TradeInterruptConfirmation({
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleConfirm}
-              disabled={isLoading || !selectedAccountId || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1}
+              disabled={isLoading || !selectedAccountId || !editedTicker.trim() || !/^[A-Za-z0-9]+$/.test(editedTicker.trim()) || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1}
               className={`
                 relative overflow-hidden px-6 py-3 rounded-xl font-medium transition-all duration-200
                 ${selectedResponse === 'confirm' 
@@ -515,7 +524,7 @@ export function TradeInterruptConfirmation({
                     ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg shadow-green-500/25'
                     : 'bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white shadow-lg shadow-red-500/25'
                 }
-                ${(isLoading || !selectedAccountId || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                ${(isLoading || !selectedAccountId || !editedTicker.trim() || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
               `}
             >
               <div className="flex items-center space-x-2">

@@ -28,6 +28,57 @@ def verify_api_key(x_api_key: str = Header(None)):
         raise HTTPException(status_code=403, detail="Invalid API key")
     return x_api_key
 
+
+def validate_redirect_url(url: Optional[str]) -> bool:
+    """
+    SECURITY: Validate redirect URL to prevent Open Redirect attacks.
+    
+    Only allows redirects to trusted domains (our own app domains).
+    Attackers could otherwise redirect users to malicious sites after
+    legitimate authentication, enabling phishing attacks.
+    """
+    if not url:
+        return True  # No redirect is safe
+    
+    from urllib.parse import urlparse
+    
+    # Get allowed hosts from environment or use defaults
+    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+    parsed_frontend = urlparse(frontend_url)
+    
+    # Build list of allowed hosts
+    allowed_hosts = [
+        'localhost',
+        '127.0.0.1',
+        parsed_frontend.netloc,  # From FRONTEND_URL
+    ]
+    
+    # Add Vercel preview URLs if configured
+    vercel_url = os.getenv('VERCEL_URL')
+    if vercel_url:
+        allowed_hosts.append(vercel_url)
+    
+    # Add any additional allowed domains from env
+    additional_hosts = os.getenv('ALLOWED_REDIRECT_HOSTS', '').split(',')
+    allowed_hosts.extend([h.strip() for h in additional_hosts if h.strip()])
+    
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        
+        # Check if host matches any allowed host
+        for allowed in allowed_hosts:
+            allowed = allowed.lower()
+            if host == allowed:
+                return True
+            # Also allow subdomains (e.g., preview.yourapp.com matches yourapp.com)
+            if host.endswith('.' + allowed):
+                return True
+        
+        return False
+    except Exception:
+        return False
+
 logger = logging.getLogger(__name__)
 
 # Create router
@@ -512,12 +563,15 @@ async def get_queued_order_executor_status(
     """
     Get the status of the queued order executor (for debugging/monitoring).
     
+    SECURITY: Only returns pending order count for the authenticated user,
+    not global platform metrics.
+    
     Returns:
         {
             "success": True,
             "executor": {
                 "is_running": bool,
-                "pending_orders": int,
+                "pending_orders": int (user's orders only),
                 "jobs": [...]
             }
         }
@@ -528,7 +582,7 @@ async def get_queued_order_executor_status(
         
         return {
             "success": True,
-            "executor": executor.get_status()
+            "executor": executor.get_status(user_id=user_id)
         }
     except Exception as e:
         logger.error(f"Error getting executor status: {e}", exc_info=True)
@@ -565,6 +619,11 @@ async def create_connection_url(
         connection_type = body.get('connection_type', 'trade')
         broker = body.get('broker')
         redirect_url = body.get('redirect_url')
+        
+        # SECURITY: Validate redirect URL to prevent Open Redirect attacks
+        if redirect_url and not validate_redirect_url(redirect_url):
+            logger.warning(f"Rejected invalid redirect URL: {redirect_url}")
+            raise HTTPException(status_code=400, detail="Invalid redirect URL - must be a trusted domain")
         
         # SECURITY FIX: user_id comes from authenticated JWT token, not request body
         
@@ -631,6 +690,11 @@ async def create_reconnect_url(
             pass  # Empty body is OK
         
         redirect_url = body.get('redirect_url')
+        
+        # SECURITY: Validate redirect URL to prevent Open Redirect attacks
+        if redirect_url and not validate_redirect_url(redirect_url):
+            logger.warning(f"Rejected invalid redirect URL: {redirect_url}")
+            raise HTTPException(status_code=400, detail="Invalid redirect URL - must be a trusted domain")
         
         supabase = get_supabase_client()
         

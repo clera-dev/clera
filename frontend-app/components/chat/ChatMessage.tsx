@@ -24,7 +24,9 @@ function stripAgentNameTags(content: string): string {
   // Strip <content> and </content> tags (handle cases with or without closing tag)
   cleaned = cleaned.replace(/<\/?content>/g, '');
   
-  return cleaned.trim() || content;
+  // Return the cleaned content, or empty string if nothing remains
+  // (don't fall back to original content which may have XML tags)
+  return cleaned.trim();
 }
 
 export interface ChatMessageProps {
