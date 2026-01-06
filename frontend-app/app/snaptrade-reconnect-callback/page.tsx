@@ -65,13 +65,13 @@ function SnapTradeReconnectCallbackContent() {
           
           // Try to auto-close the tab after a short delay
           // Note: window.close() only works for tabs opened via window.open()
+          // It silently fails otherwise (doesn't throw), so we use a timeout check
           setTimeout(() => {
-            try {
-              window.close();
-            } catch (e) {
-              // If we can't close, the user will use the button
-              console.log('Cannot auto-close tab, user will close manually');
-            }
+            window.close();
+            // If we're still here after 100ms, the close didn't work
+            setTimeout(() => {
+              console.log('Auto-close failed, user will close manually or use dashboard button');
+            }, 100);
           }, 2000);
         } else {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -93,12 +93,15 @@ function SnapTradeReconnectCallbackContent() {
 
   const handleClose = () => {
     // Try to close the tab
-    try {
-      window.close();
-    } catch (e) {
-      // If we can't close, redirect to dashboard
+    // Note: window.close() silently fails if not opened via window.open()
+    // It doesn't throw, so we use a timeout to detect failure
+    window.close();
+    
+    // If still here after 200ms, the close didn't work - redirect to dashboard
+    setTimeout(() => {
+      // If we reach this code, window.close() failed
       window.location.href = '/dashboard';
-    }
+    }, 200);
   };
 
   const handleReturnToDashboard = () => {

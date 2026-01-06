@@ -71,20 +71,21 @@ function parseTradeDetails(message: string): ParsedTradeDetails | null {
     if (!actionMatch) return null;
 
     const action = actionMatch[1].toUpperCase() as 'BUY' | 'SELL';
-    const amount = parseFloat(actionMatch[2].replace(',', ''));
+    // Use replaceAll to handle amounts with multiple commas (e.g., $1,000,000)
+    const amount = parseFloat(actionMatch[2].replaceAll(',', ''));
     const ticker = actionMatch[3].toUpperCase();
 
     // Parse account display
     const accountMatch = message.match(/• Trading Account: (.+)/);
     const accountDisplay = accountMatch ? accountMatch[1].trim() : 'Unknown Account';
 
-    // Parse current price
+    // Parse current price (replaceAll for prices like $1,234.56)
     const priceMatch = message.match(/• Current Price: \$([0-9,.]+)/);
-    const currentPrice = priceMatch ? parseFloat(priceMatch[1].replace(',', '')) : 0;
+    const currentPrice = priceMatch ? parseFloat(priceMatch[1].replaceAll(',', '')) : 0;
 
-    // Parse approximate shares
+    // Parse approximate shares (replaceAll for large share counts)
     const sharesMatch = message.match(/• Approximate Shares: ([0-9,.]+)/);
-    const approximateShares = sharesMatch ? parseFloat(sharesMatch[1].replace(',', '')) : 0;
+    const approximateShares = sharesMatch ? parseFloat(sharesMatch[1].replaceAll(',', '')) : 0;
 
     return {
       action,
@@ -505,7 +506,7 @@ export function TradeInterruptConfirmation({
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleConfirm}
-              disabled={isLoading || !selectedAccountId || parseFloat(editedAmount) < 1}
+              disabled={isLoading || !selectedAccountId || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1}
               className={`
                 relative overflow-hidden px-6 py-3 rounded-xl font-medium transition-all duration-200
                 ${selectedResponse === 'confirm' 
@@ -514,7 +515,7 @@ export function TradeInterruptConfirmation({
                     ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg shadow-green-500/25'
                     : 'bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white shadow-lg shadow-red-500/25'
                 }
-                ${(isLoading || !selectedAccountId || parseFloat(editedAmount) < 1) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                ${(isLoading || !selectedAccountId || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
               `}
             >
               <div className="flex items-center space-x-2">

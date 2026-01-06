@@ -78,10 +78,15 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
         if (fallbackResponse.ok) {
           const data = await fallbackResponse.json();
           setConnectedAccounts(data.accounts || []);
+        } else {
+          // Both endpoints failed - notify user
+          console.error('Both account endpoints failed');
+          toast.error('Unable to load connected accounts. Please refresh the page.');
         }
       }
     } catch (error) {
       console.error('Error fetching connected accounts:', error);
+      toast.error('Failed to load accounts. Please try again.');
     } finally {
       setLoading(false);
     }

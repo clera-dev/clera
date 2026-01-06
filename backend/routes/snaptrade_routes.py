@@ -532,10 +532,7 @@ async def get_queued_order_executor_status(
         }
     except Exception as e:
         logger.error(f"Error getting executor status: {e}", exc_info=True)
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        raise HTTPException(status_code=500, detail="Failed to get executor status")
 
 
 @router.post("/connection-url")
@@ -654,10 +651,14 @@ async def create_reconnect_url(
         
         if not authorization_id:
             # Fallback: Try to get authorization_id from snaptrade_brokerage_connections
-            # using the account to find the related connection
+            # CRITICAL: Must filter by brokerage_name to avoid returning wrong authorization
+            # for users with multiple brokerage connections (e.g., Webull + Coinbase)
             conn_result = supabase.table('snaptrade_brokerage_connections')\
                 .select('authorization_id')\
                 .eq('user_id', user_id)\
+                .eq('brokerage_name', institution_name)\
+                .order('created_at', desc=True)\
+                .limit(1)\
                 .execute()
             
             if conn_result.data and len(conn_result.data) > 0:

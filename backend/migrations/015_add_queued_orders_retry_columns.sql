@@ -12,7 +12,7 @@ ALTER TABLE queued_orders
 ADD COLUMN IF NOT EXISTS execution_result JSONB;
 
 -- Rename error_message to last_error for consistency (if error_message exists)
--- Note: This is a no-op if column doesn't exist or has been renamed already
+-- This migration: 1) Copies data to last_error, 2) Drops the old column
 DO $$
 BEGIN
     IF EXISTS (
@@ -20,8 +20,12 @@ BEGIN
         WHERE table_name = 'queued_orders' 
         AND column_name = 'error_message'
     ) THEN
-        -- Copy data if column exists
+        -- Copy data to new column first
         UPDATE queued_orders SET last_error = error_message WHERE error_message IS NOT NULL AND last_error IS NULL;
+        
+        -- Drop the deprecated column to complete the rename
+        -- This prevents confusion about which column to use
+        ALTER TABLE queued_orders DROP COLUMN error_message;
     END IF;
 END $$;
 

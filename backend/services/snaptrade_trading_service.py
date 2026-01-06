@@ -59,12 +59,19 @@ def is_connection_disabled_error(error_str: str) -> bool:
     - The brokerage revoked access
     - SnapTrade sync issues
     """
+    # NOTE: These are literal substring matches, NOT regex patterns
+    # The `in` operator does substring matching, not regex
     connection_disabled_indicators = [
         '3003',  # SnapTrade connection disabled code
         'connection is disabled',
+        'connection has been disabled',
         'unable to sync with brokerage',
-        'brokerage account.*disabled',
-        'connection.*broken',
+        'brokerage account disabled',
+        'brokerage account has been disabled',
+        'connection broken',
+        'connection has broken',
+        'authorization is disabled',
+        'authorization has been disabled',
     ]
     error_lower = error_str.lower()
     return any(indicator.lower() in error_lower for indicator in connection_disabled_indicators)

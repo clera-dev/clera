@@ -170,16 +170,25 @@ class QueuedOrderExecutor:
         units = order.get('units')
         retry_count = order.get('retry_count', 0)
         
-        logger.info(f"🔄 Executing queued order {order_id}: {action} {symbol}")
+        logger.info(f"🔄 Attempting to execute queued order {order_id}: {action} {symbol}")
         
-        # Mark as executing
-        self.supabase.table('queued_orders')\
+        # CRITICAL: Atomic lock acquisition to prevent race conditions
+        # Only update to 'executing' if status is still 'pending'
+        # This prevents duplicate order execution across multiple server instances
+        lock_result = self.supabase.table('queued_orders')\
             .update({
                 'status': 'executing',
+                'last_attempt_at': datetime.now(timezone.utc).isoformat(),
                 'updated_at': datetime.now(timezone.utc).isoformat()
             })\
             .eq('id', order_id)\
+            .eq('status', 'pending')\
             .execute()
+        
+        # Check if we successfully acquired the lock
+        if not lock_result.data or len(lock_result.data) == 0:
+            logger.info(f"⏭️ Order {order_id} already being processed by another instance, skipping")
+            return {'success': False, 'reason': 'already_processing'}
         
         try:
             # Import here to avoid circular imports
