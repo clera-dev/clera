@@ -42,37 +42,52 @@ def validate_redirect_url(url: Optional[str]) -> bool:
     
     from urllib.parse import urlparse
     
-    # Get allowed hosts from environment or use defaults
-    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
-    parsed_frontend = urlparse(frontend_url)
-    
-    # Build list of allowed hosts
-    allowed_hosts = [
-        'localhost',
-        '127.0.0.1',
-        parsed_frontend.netloc,  # From FRONTEND_URL
-    ]
-    
-    # Add Vercel preview URLs if configured
-    vercel_url = os.getenv('VERCEL_URL')
-    if vercel_url:
-        allowed_hosts.append(vercel_url)
-    
-    # Add any additional allowed domains from env
-    additional_hosts = os.getenv('ALLOWED_REDIRECT_HOSTS', '').split(',')
-    allowed_hosts.extend([h.strip() for h in additional_hosts if h.strip()])
-    
     try:
         parsed = urlparse(url)
+        
+        # SECURITY: Only allow http and https schemes
+        # Blocks javascript:, data:, and other dangerous schemes
+        if parsed.scheme.lower() not in ('http', 'https'):
+            return False
+        
         host = parsed.netloc.lower()
+        
+        # SECURITY: Reject empty hosts (malformed URLs)
+        if not host:
+            return False
+        
+        # Get allowed hosts from environment or use defaults
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        parsed_frontend = urlparse(frontend_url)
+        
+        # Build list of allowed hosts (filter out empty strings)
+        allowed_hosts = [
+            'localhost',
+            '127.0.0.1',
+        ]
+        
+        # Only add frontend netloc if it's non-empty
+        if parsed_frontend.netloc:
+            allowed_hosts.append(parsed_frontend.netloc)
+        
+        # Add Vercel preview URLs if configured
+        vercel_url = os.getenv('VERCEL_URL')
+        if vercel_url:
+            allowed_hosts.append(vercel_url)
+        
+        # Add any additional allowed domains from env (filter empty)
+        additional_hosts = os.getenv('ALLOWED_REDIRECT_HOSTS', '').split(',')
+        allowed_hosts.extend([h.strip() for h in additional_hosts if h.strip()])
         
         # Check if host matches any allowed host
         for allowed in allowed_hosts:
+            if not allowed:  # Skip empty strings
+                continue
             allowed = allowed.lower()
             if host == allowed:
                 return True
             # Also allow subdomains (e.g., preview.yourapp.com matches yourapp.com)
-            if host.endswith('.' + allowed):
+            if allowed and host.endswith('.' + allowed):
                 return True
         
         return False

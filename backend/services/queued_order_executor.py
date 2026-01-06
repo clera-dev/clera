@@ -153,18 +153,23 @@ class QueuedOrderExecutor:
                 
                 if retry_count >= MAX_RETRY_ATTEMPTS:
                     # Max retries exceeded, mark as failed
-                    self.supabase.table('queued_orders')\
+                    # CRITICAL: Use optimistic locking to prevent race conditions
+                    # Only update if status is still 'executing' (order didn't complete while we were processing)
+                    result = self.supabase.table('queued_orders')\
                         .update({
                             'status': 'failed',
                             'last_error': 'Order stuck in executing state - max retries exceeded',
                             'updated_at': datetime.now(timezone.utc).isoformat()
                         })\
                         .eq('id', order_id)\
+                        .eq('status', 'executing')\
                         .execute()
-                    logger.error(f"❌ Order {order_id} failed after being stuck - max retries exceeded")
+                    if result.data:
+                        logger.error(f"❌ Order {order_id} failed after being stuck - max retries exceeded")
                 else:
                     # Reset to pending for retry
-                    self.supabase.table('queued_orders')\
+                    # CRITICAL: Use optimistic locking to prevent race conditions
+                    result = self.supabase.table('queued_orders')\
                         .update({
                             'status': 'pending',
                             'retry_count': retry_count + 1,
@@ -172,8 +177,10 @@ class QueuedOrderExecutor:
                             'updated_at': datetime.now(timezone.utc).isoformat()
                         })\
                         .eq('id', order_id)\
+                        .eq('status', 'executing')\
                         .execute()
-                    logger.info(f"🔄 Order {order_id} recovered from stuck state (retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS})")
+                    if result.data:
+                        logger.info(f"🔄 Order {order_id} recovered from stuck state (retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS})")
                     
         except Exception as e:
             logger.error(f"Error recovering stuck orders: {e}", exc_info=True)

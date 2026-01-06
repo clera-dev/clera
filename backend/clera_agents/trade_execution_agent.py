@@ -143,19 +143,18 @@ def _parse_and_validate_trade_confirmation(
                     # For SELL orders: verify holdings if ticker was changed
                     if is_sell and modified_ticker != original_ticker:
                         # Verify user holds the new ticker on the target account
-                        holdings_check = TradeRoutingService.detect_symbol_account(
-                            user_id=user_id,
-                            ticker=modified_ticker,
-                            action='SELL'
+                        # detect_symbol_account returns (account_id, account_type, account_info) tuple
+                        found_account_id, found_account_type, found_account_info = TradeRoutingService.detect_symbol_account(
+                            modified_ticker, user_id
                         )
                         
-                        if not holdings_check.get('found'):
+                        if not found_account_id:
                             return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
                                     original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
                         
                         # Update account to the one that holds the symbol
-                        modified_account_id = holdings_check.get('account_id', modified_account_id)
-                        modified_account_type = holdings_check.get('account_type', modified_account_type)
+                        modified_account_id = found_account_id
+                        modified_account_type = found_account_type or 'snaptrade'
                         logger.info(f"[Trade Agent] SELL ticker changed - verified holdings on account {modified_account_id}")
                     
                     action_type = "SELL" if is_sell else "BUY"

@@ -524,7 +524,7 @@ export function TradeInterruptConfirmation({
                     ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg shadow-green-500/25'
                     : 'bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white shadow-lg shadow-red-500/25'
                 }
-                ${(isLoading || !selectedAccountId || !editedTicker.trim() || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                ${(isLoading || !selectedAccountId || !editedTicker.trim() || !/^[A-Za-z0-9]+$/.test(editedTicker.trim()) || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
               `}
             >
               <div className="flex items-center space-x-2">
