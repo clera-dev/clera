@@ -269,6 +269,13 @@ export function TradeInterruptConfirmation({
   const selectedAccount = accounts.find(a => a.account_id === selectedAccountId);
   const isBuy = initialDetails.action === 'BUY';
 
+  // DRY: Extract validation logic to avoid duplication between disabled prop and className
+  // Uses Number.isFinite() to catch both NaN and Infinity (which bypass isNaN check)
+  const parsedAmount = parseFloat(editedAmount);
+  const isValidTicker = editedTicker.trim() && /^[A-Za-z0-9]+$/.test(editedTicker.trim());
+  const isValidAmount = Number.isFinite(parsedAmount) && parsedAmount >= 1;
+  const isSubmitDisabled = isLoading || !selectedAccountId || !isValidTicker || !isValidAmount;
+
   return (
     <AnimatePresence>
       <motion.div
@@ -522,7 +529,7 @@ export function TradeInterruptConfirmation({
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleConfirm}
-              disabled={isLoading || !selectedAccountId || !editedTicker.trim() || !/^[A-Za-z0-9]+$/.test(editedTicker.trim()) || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1}
+              disabled={isSubmitDisabled}
               className={`
                 relative overflow-hidden px-6 py-3 rounded-xl font-medium transition-all duration-200
                 ${selectedResponse === 'confirm' 
@@ -531,7 +538,7 @@ export function TradeInterruptConfirmation({
                     ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg shadow-green-500/25'
                     : 'bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white shadow-lg shadow-red-500/25'
                 }
-                ${(isLoading || !selectedAccountId || !editedTicker.trim() || !/^[A-Za-z0-9]+$/.test(editedTicker.trim()) || isNaN(parseFloat(editedAmount)) || parseFloat(editedAmount) < 1) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                ${isSubmitDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
               `}
             >
               <div className="flex items-center space-x-2">
