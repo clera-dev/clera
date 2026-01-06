@@ -1,4 +1,4 @@
--- Migration 015: Add retry tracking columns to queued_orders
+-- Migration 016: Add retry tracking columns to queued_orders
 -- These columns support the production-grade queued order executor with retry logic.
 
 -- Add retry tracking columns

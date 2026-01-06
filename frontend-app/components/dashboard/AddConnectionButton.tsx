@@ -78,7 +78,17 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
         });
         if (fallbackResponse.ok) {
           const data = await fallbackResponse.json();
-          setConnectedAccounts(data.accounts || []);
+          // Map fallback response to match ConnectedAccount interface
+          const mappedFallback: ConnectedAccount[] = (data.accounts || []).map((acc: any) => ({
+            id: acc.account_id || acc.id || acc.provider_account_id,
+            provider_account_id: acc.provider_account_id || acc.account_id || acc.id,
+            institution_name: acc.institution_name || acc.brokerage_name || 'Unknown',
+            account_name: acc.account_name,
+            is_active: acc.is_active ?? true,
+            connection_status: acc.connection_status,
+            reconnect_url: acc.reconnect_url,
+          }));
+          setConnectedAccounts(mappedFallback);
         } else {
           // Both endpoints failed - notify user
           console.error('Both account endpoints failed');

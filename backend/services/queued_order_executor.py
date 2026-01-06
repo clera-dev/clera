@@ -130,14 +130,21 @@ class QueuedOrderExecutor:
         
         This handles the case where the server crashes after acquiring the lock
         but before completing the order. Orders stuck in 'executing' for longer
-        than STUCK_ORDER_TIMEOUT_MINUTES are reset to 'pending' for retry.
+        than STUCK_ORDER_TIMEOUT_MINUTES are flagged for manual review.
+        
+        CRITICAL: We do NOT auto-retry stuck orders because:
+        1. The order may have been placed with the brokerage before the crash
+        2. We have no way to verify with the brokerage if the order was placed
+        3. Auto-retrying could cause DUPLICATE TRADES with real money
+        
+        Instead, stuck orders are marked as 'needs_review' for manual inspection.
         """
         try:
             timeout_threshold = datetime.now(timezone.utc) - timedelta(minutes=STUCK_ORDER_TIMEOUT_MINUTES)
             
             # Find orders stuck in 'executing' for too long
             stuck_orders = self.supabase.table('queued_orders')\
-                .select('id, last_attempt_at, retry_count')\
+                .select('id, user_id, symbol, action, notional_value, last_attempt_at, retry_count')\
                 .eq('status', 'executing')\
                 .lt('last_attempt_at', timeout_threshold.isoformat())\
                 .execute()
@@ -145,42 +152,36 @@ class QueuedOrderExecutor:
             if not stuck_orders.data:
                 return
             
-            logger.warning(f"🔧 Found {len(stuck_orders.data)} stuck orders to recover")
+            logger.critical(f"🚨 CRITICAL: Found {len(stuck_orders.data)} stuck orders requiring manual review")
             
             for order in stuck_orders.data:
                 order_id = order['id']
-                retry_count = order.get('retry_count', 0)
+                user_id = order.get('user_id', 'unknown')
+                symbol = order.get('symbol', 'unknown')
+                action = order.get('action', 'unknown')
+                notional_value = order.get('notional_value', 0)
                 
-                if retry_count >= MAX_RETRY_ATTEMPTS:
-                    # Max retries exceeded, mark as failed
-                    # CRITICAL: Use optimistic locking to prevent race conditions
-                    # Only update if status is still 'executing' (order didn't complete while we were processing)
-                    result = self.supabase.table('queued_orders')\
-                        .update({
-                            'status': 'failed',
-                            'last_error': 'Order stuck in executing state - max retries exceeded',
-                            'updated_at': datetime.now(timezone.utc).isoformat()
-                        })\
-                        .eq('id', order_id)\
-                        .eq('status', 'executing')\
-                        .execute()
-                    if result.data:
-                        logger.error(f"❌ Order {order_id} failed after being stuck - max retries exceeded")
-                else:
-                    # Reset to pending for retry
-                    # CRITICAL: Use optimistic locking to prevent race conditions
-                    result = self.supabase.table('queued_orders')\
-                        .update({
-                            'status': 'pending',
-                            'retry_count': retry_count + 1,
-                            'last_error': 'Order stuck in executing state - recovered for retry',
-                            'updated_at': datetime.now(timezone.utc).isoformat()
-                        })\
-                        .eq('id', order_id)\
-                        .eq('status', 'executing')\
-                        .execute()
-                    if result.data:
-                        logger.info(f"🔄 Order {order_id} recovered from stuck state (retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS})")
+                # CRITICAL: Do NOT auto-retry - mark for manual review
+                # The order may have been placed with the brokerage already
+                # Human verification is required to prevent duplicate trades
+                result = self.supabase.table('queued_orders')\
+                    .update({
+                        'status': 'needs_review',
+                        'last_error': 'CRITICAL: Order stuck in executing state. Manual verification required - check brokerage for duplicate orders before re-processing.',
+                        'updated_at': datetime.now(timezone.utc).isoformat()
+                    })\
+                    .eq('id', order_id)\
+                    .eq('status', 'executing')\
+                    .execute()
+                
+                if result.data:
+                    logger.critical(
+                        f"🚨 Order {order_id} flagged for review: "
+                        f"user={user_id}, {action} ${notional_value} of {symbol}. "
+                        f"CHECK BROKERAGE FOR DUPLICATE ORDERS BEFORE RE-PROCESSING."
+                    )
+                    # TODO: Send alert to admin/support team
+                    # TODO: Consider sending notification to user about delayed order
                     
         except Exception as e:
             logger.error(f"Error recovering stuck orders: {e}", exc_info=True)
@@ -440,6 +441,7 @@ class QueuedOrderExecutor:
         
         # Get pending order count filtered by user
         pending_count = 0
+        needs_review_count = 0
         try:
             result = self.supabase.table('queued_orders')\
                 .select('id', count='exact')\
@@ -447,12 +449,21 @@ class QueuedOrderExecutor:
                 .eq('user_id', user_id)\
                 .execute()
             pending_count = result.count or 0
+            
+            # Also get orders needing manual review (stuck orders)
+            review_result = self.supabase.table('queued_orders')\
+                .select('id', count='exact')\
+                .eq('status', 'needs_review')\
+                .eq('user_id', user_id)\
+                .execute()
+            needs_review_count = review_result.count or 0
         except Exception:
             pass
         
         return {
             'is_running': self._is_running,
             'pending_orders': pending_count,
+            'needs_review_orders': needs_review_count,
             'jobs': [
                 {
                     'id': job.id,

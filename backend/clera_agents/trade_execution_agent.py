@@ -91,7 +91,10 @@ def _parse_and_validate_trade_confirmation(
                     # SECURITY: Re-validate all modified inputs
                     new_ticker = str(modified_data.get('ticker', original_ticker)).strip().upper()
                     new_amount = modified_data.get('amount', original_amount)
-                    new_account_id = modified_data.get('account_id')
+                    # SECURITY: Convert account_id to string to prevent AttributeError
+                    # if malformed JSON sends integer (e.g., "account_id": 123)
+                    raw_account_id = modified_data.get('account_id')
+                    new_account_id = str(raw_account_id) if raw_account_id is not None else None
                     
                     # Validate ticker format
                     if not new_ticker or not new_ticker.isalnum():
