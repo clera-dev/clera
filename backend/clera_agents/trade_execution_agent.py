@@ -102,7 +102,9 @@ def _parse_and_validate_trade_confirmation(
                     # Validate amount
                     try:
                         new_amount = float(new_amount)
-                        if new_amount < 1:
+                        # SECURITY: Check for NaN, Infinity which bypass < comparison
+                        import math
+                        if not math.isfinite(new_amount) or new_amount < 1:
                             return (f"Error: Invalid dollar amount '{new_amount}'. Minimum order is $1.00.",
                                     original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
                         modified_amount = new_amount

@@ -329,6 +329,8 @@ class QueuedOrderExecutor:
                 # Check if this is a retriable error
                 if self._is_retriable_error(error_msg) and retry_count < MAX_RETRY_ATTEMPTS:
                     # Increment retry count, will try again next cycle
+                    # CRITICAL: Use optimistic locking to prevent race conditions
+                    # Only update if status is still 'executing' to prevent overwriting completed orders
                     self.supabase.table('queued_orders')\
                         .update({
                             'status': 'pending',  # Back to pending for retry
@@ -337,6 +339,7 @@ class QueuedOrderExecutor:
                             'updated_at': datetime.now(timezone.utc).isoformat()
                         })\
                         .eq('id', order_id)\
+                        .eq('status', 'executing')\
                         .execute()
                     
                     logger.warning(f"⚠️ Order {order_id} failed (retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS}): {error_msg}")

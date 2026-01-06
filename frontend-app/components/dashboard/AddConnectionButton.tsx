@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import toast from 'react-hot-toast';
+import { isValidReconnectUrl } from '@/utils/url-validation';
 
 interface ConnectedAccount {
   id: string;
@@ -215,7 +216,12 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
                             size="sm"
                             className="h-7 text-xs bg-background hover:bg-primary hover:text-primary-foreground"
                             onClick={() => {
-                              window.open(account.reconnect_url, '_blank', 'noopener,noreferrer');
+                              // SECURITY: Validate URL before opening
+                              if (isValidReconnectUrl(account.reconnect_url!)) {
+                                window.open(account.reconnect_url, '_blank', 'noopener,noreferrer');
+                              } else {
+                                toast.error('Invalid reconnect URL. Please contact support.');
+                              }
                             }}
                             title="Reconnect this account"
                           >

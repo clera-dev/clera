@@ -12,33 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { InterruptConfirmation } from './InterruptConfirmation';
-
-// SECURITY: Validate reconnect URLs before opening
-// Only allow SnapTrade and known broker domains
-// Uses exact domain matching to prevent spoofing (e.g., evil-snaptrade.com)
-function isValidReconnectUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    // Only allow https
-    if (parsed.protocol !== 'https:') return false;
-    
-    const host = parsed.hostname.toLowerCase();
-    
-    // Helper: check if host exactly matches or is a subdomain of allowed domain
-    const matchesDomain = (allowedDomain: string): boolean => {
-      return host === allowedDomain || host.endsWith('.' + allowedDomain);
-    };
-    
-    // Allow SnapTrade domains
-    if (matchesDomain('snaptrade.com') || matchesDomain('snaptrade.io')) return true;
-    
-    // Allow common broker OAuth domains
-    const allowedDomains = ['webull.com', 'coinbase.com', 'alpaca.markets', 'schwab.com', 'fidelity.com', 'etrade.com', 'robinhood.com'];
-    return allowedDomains.some(d => matchesDomain(d));
-  } catch {
-    return false;
-  }
-}
+import { isValidReconnectUrl } from '@/utils/url-validation';
 
 interface TradeAccount {
   account_id: string;
@@ -147,6 +121,8 @@ export function TradeInterruptConfirmation({
     initialDetails?.ticker || ''
   );
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  // Track the original account ID to detect modifications (comparing IDs, not names)
+  const [originalAccountId, setOriginalAccountId] = useState<string>('');
   
   // Accounts state
   const [accounts, setAccounts] = useState<TradeAccount[]>([]);
@@ -209,8 +185,12 @@ export function TradeInterruptConfirmation({
             const healthyAccounts = accountsList.filter((acc: TradeAccount) => acc.connection_status === 'active');
             if (matchingAccount && matchingAccount.connection_status === 'active') {
               setSelectedAccountId(matchingAccount.account_id);
+              // Track original account for modification detection
+              setOriginalAccountId(matchingAccount.account_id);
             } else if (healthyAccounts.length > 0) {
               setSelectedAccountId(healthyAccounts[0].account_id);
+              // Track original account for modification detection
+              setOriginalAccountId(healthyAccounts[0].account_id);
             }
           }
         } else {
@@ -235,12 +215,12 @@ export function TradeInterruptConfirmation({
     : 0;
 
   // Check if values have been modified
+  // CRITICAL: Compare account_id directly, not institution_name, to detect
+  // switching between accounts at the same institution (e.g., "Webull - Margin" vs "Webull - IRA")
   const isModified = initialDetails && (
     parseFloat(editedAmount) !== initialDetails.amount ||
     editedTicker !== initialDetails.ticker ||
-    (selectedAccountId && !initialDetails.accountDisplay.includes(
-      accounts.find(a => a.account_id === selectedAccountId)?.institution_name || ''
-    ))
+    (selectedAccountId && originalAccountId && selectedAccountId !== originalAccountId)
   );
 
   const handleConfirm = useCallback(() => {
