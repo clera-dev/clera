@@ -532,42 +532,57 @@ export default function OrderModal({
                     </SelectContent>
                   </Select>
                   
-                  {/* Show warning if selected account has broken connection with reconnect button */}
-                  {selectedAccountData?.connection_status === 'error' && (
+                  {/* Show reconnect UI for ALL broken accounts (not just selected) */}
+                  {/* Since broken accounts can't be selected, we show this for any broken accounts in the list */}
+                  {tradeAccounts.filter(a => a.connection_status === 'error').length > 0 && (
                     <Alert variant="destructive" className="py-3 mt-2">
                       <AlertCircle className="h-4 w-4" />
                       <AlertDescription className="text-sm flex flex-col gap-2">
-                        <span>This brokerage connection has expired and needs to be refreshed.</span>
-                        {selectedAccountData.reconnect_url ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full bg-background hover:bg-muted"
-                            onClick={() => {
-                              // SECURITY: Validate URL before opening
-                              if (isValidReconnectUrl(selectedAccountData.reconnect_url!)) {
-                                window.open(selectedAccountData.reconnect_url, '_blank', 'noopener,noreferrer');
-                              } else {
-                                toast.error('Invalid reconnect URL. Please contact support.');
-                              }
-                            }}
-                          >
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                            Reconnect {selectedAccountData.institution_name}
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full bg-background hover:bg-muted"
-                            onClick={() => {
-                              window.location.href = '/dashboard';
-                            }}
-                          >
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                            Go to Dashboard to Reconnect
-                          </Button>
-                        )}
+                        <span>
+                          {tradeAccounts.filter(a => a.connection_status === 'error').length === 1
+                            ? 'One of your brokerage connections has expired and needs to be refreshed.'
+                            : `${tradeAccounts.filter(a => a.connection_status === 'error').length} brokerage connections have expired and need to be refreshed.`
+                          }
+                        </span>
+                        <div className="flex flex-col gap-2">
+                          {tradeAccounts
+                            .filter(a => a.connection_status === 'error')
+                            .map((brokenAccount) => (
+                              brokenAccount.reconnect_url ? (
+                                <Button
+                                  key={brokenAccount.account_id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full bg-background hover:bg-muted"
+                                  onClick={() => {
+                                    // SECURITY: Validate URL before opening
+                                    if (isValidReconnectUrl(brokenAccount.reconnect_url!)) {
+                                      window.open(brokenAccount.reconnect_url, '_blank', 'noopener,noreferrer');
+                                    } else {
+                                      toast.error('Invalid reconnect URL. Please contact support.');
+                                    }
+                                  }}
+                                >
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  Reconnect {brokenAccount.institution_name}
+                                </Button>
+                              ) : (
+                                <Button
+                                  key={brokenAccount.account_id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full bg-background hover:bg-muted"
+                                  onClick={() => {
+                                    window.location.href = '/dashboard';
+                                  }}
+                                >
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  Go to Dashboard to Reconnect {brokenAccount.institution_name}
+                                </Button>
+                              )
+                            ))
+                          }
+                        </div>
                       </AlertDescription>
                     </Alert>
                   )}
