@@ -65,7 +65,9 @@ def validate_redirect_url(url: Optional[str]) -> bool:
         
         # SECURITY: Only allow localhost in development mode
         # In production, redirecting to localhost could be abused
-        environment = os.getenv('ENVIRONMENT', 'development').lower()
+        # IMPORTANT: Default to 'production' (fail-closed) - if ENVIRONMENT is unset,
+        # we assume production and block localhost to prevent security bypass
+        environment = os.getenv('ENVIRONMENT', 'production').lower()
         if environment in ('development', 'dev', 'local'):
             allowed_hosts.extend(['localhost', '127.0.0.1'])
         
