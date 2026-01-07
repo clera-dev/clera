@@ -311,19 +311,26 @@ class QueuedOrderExecutor:
                     # CRITICAL: Only cancel original if we have a valid new order ID
                     # If order_id is missing, keep original as 'pending' to avoid order loss
                     if not new_order_id:
-                        logger.error(f"⚠️ Order {order_id} was re-queued but no new order_id returned. Keeping original as pending.")
-                        # CRITICAL: Increment retry_count to prevent infinite retry loop
+                        error_msg = 'Re-queue attempt returned no order_id'
+                        
+                        # Check if max retries exceeded (consistent with other retry paths)
+                        if retry_count + 1 >= MAX_RETRY_ATTEMPTS:
+                            logger.error(f"❌ Order {order_id} failed after {retry_count + 1} attempts: {error_msg}")
+                            self._mark_order_failed(order_id, f'{error_msg} - max retries exceeded')
+                            return {'success': False, 'order_id': order_id, 'error': error_msg}
+                        
+                        logger.warning(f"⚠️ Order {order_id} re-queue failed (retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS}): {error_msg}")
                         self.supabase.table('queued_orders')\
                             .update({
                                 'status': 'pending',
                                 'retry_count': retry_count + 1,
-                                'last_error': 'Re-queue attempt returned no order_id - will retry',
+                                'last_error': f'{error_msg} - will retry',
                                 'updated_at': datetime.now(timezone.utc).isoformat()
                             })\
                             .eq('id', order_id)\
                             .eq('status', 'executing')\
                             .execute()
-                        return {'success': False, 'order_id': order_id, 'error': 'Re-queue failed - no new order_id'}
+                        return {'success': False, 'order_id': order_id, 'error': error_msg, 'will_retry': True}
                     
                     logger.warning(f"⚠️ Order {order_id} was re-queued as {new_order_id} (market closed). Marking original as cancelled.")
                     self.supabase.table('queued_orders')\
