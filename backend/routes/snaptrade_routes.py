@@ -573,7 +573,8 @@ async def get_market_status(
         }
     except Exception as e:
         logger.error(f"Error getting market status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # SECURITY: Don't expose internal error details to users
+        raise HTTPException(status_code=500, detail="Unable to fetch market status. Please try again.")
 
 
 @router.get("/queued-order-executor-status")

@@ -234,7 +234,8 @@ export function TradeInterruptConfirmation({
       const response = JSON.stringify({
         action: 'execute',
         modified: true,
-        ticker: editedTicker,
+        // IMPORTANT: Trim ticker to match validation - prevents failed trades from whitespace
+        ticker: editedTicker.trim().toUpperCase(),
         amount: parseFloat(editedAmount),
         account_id: selectedAccountId,
         account_display: selectedAccount 
