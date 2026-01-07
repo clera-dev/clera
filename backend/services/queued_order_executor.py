@@ -313,13 +313,14 @@ class QueuedOrderExecutor:
                     if not new_order_id:
                         error_msg = 'Re-queue attempt returned no order_id'
                         
-                        # Check if max retries exceeded (consistent with other retry paths)
-                        if retry_count + 1 >= MAX_RETRY_ATTEMPTS:
+                        # Check if max retries exceeded (consistent with other retry paths at lines 370, 417)
+                        # Uses same pattern: check < MAX before incrementing, allowing MAX+1 total attempts
+                        if retry_count >= MAX_RETRY_ATTEMPTS:
                             logger.error(f"❌ Order {order_id} failed after {retry_count + 1} attempts: {error_msg}")
                             self._mark_order_failed(order_id, f'{error_msg} - max retries exceeded')
                             return {'success': False, 'order_id': order_id, 'error': error_msg}
                         
-                        logger.warning(f"⚠️ Order {order_id} re-queue failed (retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS}): {error_msg}")
+                        logger.warning(f"⚠️ Order {order_id} re-queue failed (retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS + 1}): {error_msg}")
                         self.supabase.table('queued_orders')\
                             .update({
                                 'status': 'pending',
