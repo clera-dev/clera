@@ -184,13 +184,25 @@ export function TradeInterruptConfirmation({
             
             // Select matching account or first healthy account
             const healthyAccounts = accountsList.filter((acc: TradeAccount) => acc.connection_status === 'active');
-            if (matchingAccount && matchingAccount.connection_status === 'active') {
-              setSelectedAccountId(matchingAccount.account_id);
-              // Track original account for modification detection
+            
+            // CRITICAL: Always track the AI-suggested account as "original" for modification detection
+            // Even if the suggested account is broken, we need to detect that we're using a different one
+            if (matchingAccount) {
+              // Track the AI's suggestion as the original (even if broken)
               setOriginalAccountId(matchingAccount.account_id);
+              
+              if (matchingAccount.connection_status === 'active') {
+                // AI suggestion is healthy - use it
+                setSelectedAccountId(matchingAccount.account_id);
+              } else if (healthyAccounts.length > 0) {
+                // AI suggestion is broken - fall back to healthy account
+                // selectedAccountId != originalAccountId will trigger isModified = true
+                setSelectedAccountId(healthyAccounts[0].account_id);
+              }
             } else if (healthyAccounts.length > 0) {
+              // No matching account found - use first healthy
+              // Both will be the same since there's no AI suggestion to track
               setSelectedAccountId(healthyAccounts[0].account_id);
-              // Track original account for modification detection
               setOriginalAccountId(healthyAccounts[0].account_id);
             }
           }
