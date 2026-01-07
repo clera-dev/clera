@@ -44,6 +44,206 @@ snaptrade_client = SnapTrade(
 )
 
 
+def _parse_and_validate_trade_confirmation(
+    user_confirmation: str,
+    original_ticker: str,
+    original_amount: float,
+    original_account_id: str,
+    original_account_type: str,
+    user_id: str,
+    is_sell: bool = False
+) -> Tuple[Optional[str], str, float, str, str, str]:
+    """
+    Parse and validate modified trade confirmation from user.
+    
+    Extracts a shared helper to avoid DRY violations between buy/sell.
+    Handles JSON parsing, input validation, and account ownership verification.
+    
+    Args:
+        user_confirmation: Raw confirmation string from user (could be JSON or text)
+        original_ticker: Original ticker proposed by agent
+        original_amount: Original dollar amount proposed by agent
+        original_account_id: Original account ID
+        original_account_type: Original account type ('alpaca' or 'snaptrade')
+        user_id: Authenticated user ID for ownership verification
+        is_sell: Whether this is a SELL order (requires holdings check on ticker change)
+    
+    Returns:
+        Tuple of (error_message, final_ticker, final_amount, final_account_id, final_account_type, final_confirmation)
+        - error_message: None if valid, error string if validation failed
+        - final_*: Validated values to use for trade execution
+        - final_confirmation: Normalized confirmation string ('yes'/'no'/original)
+    """
+    import json
+    
+    modified_ticker = original_ticker
+    modified_amount = original_amount
+    modified_account_id = original_account_id
+    modified_account_type = original_account_type
+    final_confirmation = user_confirmation
+    
+    try:
+        if user_confirmation.startswith('{'):
+            modified_data = json.loads(user_confirmation)
+            if modified_data.get('action') == 'execute':
+                # User confirmed with modifications
+                if modified_data.get('modified'):
+                    # SECURITY: Re-validate all modified inputs
+                    new_ticker = str(modified_data.get('ticker', original_ticker)).strip().upper()
+                    new_amount = modified_data.get('amount', original_amount)
+                    # SECURITY: Convert account_id to string to prevent AttributeError
+                    # if malformed JSON sends integer (e.g., "account_id": 123)
+                    raw_account_id = modified_data.get('account_id')
+                    new_account_id = str(raw_account_id) if raw_account_id is not None else None
+                    
+                    # Validate ticker format
+                    if not new_ticker or not new_ticker.isalnum():
+                        return (f"Error: Invalid ticker symbol '{new_ticker}'. Ticker symbols must be alphanumeric.",
+                                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                    modified_ticker = new_ticker
+                    
+                    # Validate amount
+                    try:
+                        new_amount = float(new_amount)
+                        # SECURITY: Check for NaN, Infinity which bypass < comparison
+                        import math
+                        if not math.isfinite(new_amount) or new_amount < 1:
+                            return (f"Error: Invalid dollar amount '{new_amount}'. Minimum order is $1.00.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        modified_amount = new_amount
+                    except (ValueError, TypeError):
+                        return (f"Error: Invalid dollar amount '{new_amount}'. Please provide a valid number.",
+                                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                    
+                    # SECURITY: Validate account ownership if user changed account
+                    # Normalize account_id comparison (strip prefixes for consistent comparison)
+                    normalized_original = original_account_id.replace('snaptrade_', '').replace('alpaca_', '')
+                    normalized_new = new_account_id.replace('snaptrade_', '').replace('alpaca_', '') if new_account_id else None
+                    
+                    # CRITICAL: Initialize supabase BEFORE any conditional blocks that may need it
+                    # Both account verification and SELL holdings checks require database access
+                    from utils.supabase.db_client import get_supabase_client
+                    supabase = get_supabase_client()
+                    
+                    if normalized_new and normalized_new != normalized_original:
+                        
+                        # Verify account belongs to this user
+                        account_check = supabase.table('user_investment_accounts')\
+                            .select('provider_account_id, provider')\
+                            .eq('user_id', user_id)\
+                            .eq('provider_account_id', normalized_new)\
+                            .execute()
+                        
+                        if not account_check.data:
+                            logger.warning(f"[Trade Agent] SECURITY: User {user_id} attempted to use unauthorized account {new_account_id}")
+                            return ("Error: You don't have permission to trade with that account.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        
+                        # Set account type based on actual provider
+                        account_provider = account_check.data[0].get('provider', 'snaptrade')
+                        if account_provider == 'alpaca':
+                            modified_account_id = normalized_new
+                            modified_account_type = 'alpaca'
+                        else:
+                            modified_account_id = f"snaptrade_{normalized_new}" if not new_account_id.startswith('snaptrade_') else new_account_id
+                            modified_account_type = 'snaptrade'
+                    
+                    # For SELL orders: verify holdings if ticker OR account was changed
+                    # Must verify the target account actually holds the stock
+                    account_changed = normalized_new and normalized_new != normalized_original
+                    if is_sell and (modified_ticker != original_ticker or account_changed):
+                        # CRITICAL: Fetch holdings BEFORE if/else branching
+                        # This data is needed in both branches
+                        symbol_upper = modified_ticker.upper()
+                        holdings_result = supabase.table('user_aggregated_holdings')\
+                            .select('account_contributions')\
+                            .eq('user_id', user_id)\
+                            .eq('symbol', symbol_upper)\
+                            .execute()
+                        
+                        if not holdings_result.data:
+                            return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        
+                        # Parse account_contributions (used by both if/else branches)
+                        account_contributions = holdings_result.data[0].get('account_contributions', [])
+                        if isinstance(account_contributions, str):
+                            import json as json_mod
+                            try:
+                                account_contributions = json_mod.loads(account_contributions)
+                            except json_mod.JSONDecodeError as parse_error:
+                                # SECURITY: Corrupted DB data - do NOT allow trade without verification
+                                logger.error(f"[Trade Agent] Failed to parse account_contributions: {parse_error}")
+                                return (f"Error: Unable to verify holdings. Please try again.",
+                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        
+                        if account_changed:
+                            # CRITICAL FIX: Verify the SPECIFIC selected account holds the stock
+                            # Don't use detect_symbol_account which returns the FIRST matching account
+                            # User might hold same stock in multiple accounts
+                            
+                            # Check if user's selected account holds this symbol
+                            account_found = False
+                            for contrib in account_contributions:
+                                contrib_account_id = contrib.get('account_id', '')
+                                contrib_normalized = contrib_account_id.replace('snaptrade_', '').replace('alpaca_', '')
+                                contrib_quantity = float(contrib.get('quantity', 0))
+                                if contrib_normalized == normalized_new and contrib_quantity > 0:
+                                    account_found = True
+                                    break
+                            
+                            if not account_found:
+                                return (f"Error: The selected account doesn't hold {modified_ticker}. Please select an account that holds this stock.",
+                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                            
+                            logger.info(f"[Trade Agent] SELL account changed - verified holdings on account {modified_account_id}")
+                        else:
+                            # Ticker changed but not account - check if ORIGINAL account holds new ticker
+                            # account_contributions is for the NEW ticker, check if original account is in it
+                            original_account_holds_new_ticker = False
+                            for contrib in account_contributions:
+                                contrib_account_id = contrib.get('account_id', '')
+                                contrib_normalized = contrib_account_id.replace('snaptrade_', '').replace('alpaca_', '')
+                                contrib_quantity = float(contrib.get('quantity', 0))
+                                if contrib_normalized == normalized_original and contrib_quantity > 0:
+                                    original_account_holds_new_ticker = True
+                                    break
+                            
+                            if original_account_holds_new_ticker:
+                                # Original account holds the new ticker - keep using it
+                                logger.info(f"[Trade Agent] SELL ticker changed - original account {original_account_id} also holds {modified_ticker}")
+                            else:
+                                # Original account doesn't hold new ticker - find one that does
+                                # detect_symbol_account returns (account_id, account_type, account_info) tuple
+                                found_account_id, found_account_type, found_account_info = TradeRoutingService.detect_symbol_account(
+                                    modified_ticker, user_id
+                                )
+                                
+                                if not found_account_id:
+                                    return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
+                                            original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                
+                                modified_account_id = found_account_id
+                                modified_account_type = found_account_type or 'snaptrade'
+                                logger.info(f"[Trade Agent] SELL ticker changed - verified holdings on account {modified_account_id}")
+                    
+                    action_type = "SELL" if is_sell else "BUY"
+                    logger.info(f"[Trade Agent] User MODIFIED {action_type} trade: {modified_ticker} ${modified_amount:.2f} via {modified_account_id}")
+                
+                # Valid confirmation
+                final_confirmation = "yes"
+                
+    except json.JSONDecodeError:
+        # Not JSON - treat as regular text response (e.g., "yes", "no")
+        logger.debug(f"[Trade Agent] Confirmation not JSON, treating as text: {user_confirmation[:50]}")
+    except (ValueError, TypeError) as e:
+        # SECURITY: Validation error during processing - do NOT proceed with trade
+        # This prevents trades from bypassing validation if errors occur mid-processing
+        logger.error(f"[Trade Agent] Validation error during trade confirmation: {e}")
+        return (f"Error: Invalid trade data. Please try again.",
+                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+    
+    return (None, modified_ticker, modified_amount, modified_account_id, modified_account_type, final_confirmation)
 
 
 @tool("execute_buy_market_order")
@@ -126,26 +326,43 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         )
         
         og_user_confirmation = interrupt(confirmation_prompt)
-        user_confirmation = str(og_user_confirmation).lower().strip()
+        user_confirmation = str(og_user_confirmation).strip()
         logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
+        # Parse and validate any modifications from the confirmation popup
+        error_msg, modified_ticker, modified_amount, modified_account_id, modified_account_type, user_confirmation = \
+            _parse_and_validate_trade_confirmation(
+                user_confirmation=user_confirmation,
+                original_ticker=ticker,
+                original_amount=notional_amount,
+                original_account_id=account_id,
+                original_account_type=account_type,
+                user_id=user_id,
+                is_sell=False
+            )
+        
+        if error_msg:
+            return error_msg
+        
+        user_confirmation_lower = user_confirmation.lower()
+
         # Check rejection
-        if any(rejection in user_confirmation for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
+        if any(rejection in user_confirmation_lower for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
             logger.info(f"[Trade Agent] Trade CANCELED by user")
             return "Trade canceled: You chose not to proceed with this transaction."
 
         # Check explicit confirmation
-        if not any(approval in user_confirmation for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
+        if not any(approval in user_confirmation_lower for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
             return "Trade not executed: Unclear confirmation. Please try again with a clear 'yes' or 'no'."
 
-        # Execute trade based on account type
+        # Execute trade with potentially modified values
         try:
-            if account_type == 'alpaca':
-                logger.info(f"[Trade Agent] Executing BUY via Alpaca")
-                result = _submit_alpaca_market_order(account_id, ticker, notional_amount, OrderSide.BUY)
+            if modified_account_type == 'alpaca':
+                logger.info(f"[Trade Agent] Executing BUY via Alpaca: {modified_ticker} ${modified_amount:.2f}")
+                result = _submit_alpaca_market_order(modified_account_id, modified_ticker, modified_amount, OrderSide.BUY)
             else:  # snaptrade
-                logger.info(f"[Trade Agent] Executing BUY via SnapTrade")
-                result = _submit_snaptrade_market_order(user_id, account_id, ticker, notional_amount, 'BUY')
+                logger.info(f"[Trade Agent] Executing BUY via SnapTrade: {modified_ticker} ${modified_amount:.2f}")
+                result = _submit_snaptrade_market_order(user_id, modified_account_id, modified_ticker, modified_amount, 'BUY')
             
             logger.info(f"[Trade Agent] BUY order result: {result}")
             return result
@@ -239,26 +456,44 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
         )
         
         og_user_confirmation = interrupt(confirmation_prompt)
-        user_confirmation = str(og_user_confirmation).lower().strip()
+        user_confirmation = str(og_user_confirmation).strip()
         logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
+        # Parse and validate any modifications from the confirmation popup
+        # Note: is_sell=True enables holdings verification if ticker changes
+        error_msg, modified_ticker, modified_amount, modified_account_id, modified_account_type, user_confirmation = \
+            _parse_and_validate_trade_confirmation(
+                user_confirmation=user_confirmation,
+                original_ticker=ticker,
+                original_amount=notional_amount,
+                original_account_id=account_id,
+                original_account_type=account_type,
+                user_id=user_id,
+                is_sell=True
+            )
+        
+        if error_msg:
+            return error_msg
+        
+        user_confirmation_lower = user_confirmation.lower()
+
         # Check rejection
-        if any(rejection in user_confirmation for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
+        if any(rejection in user_confirmation_lower for rejection in ["no", "nah", "nope", "cancel", "reject", "deny"]):
             logger.info(f"[Trade Agent] Trade CANCELED by user")
             return "Trade canceled: You chose not to proceed with this transaction."
 
         # Check explicit confirmation
-        if not any(approval in user_confirmation for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
+        if not any(approval in user_confirmation_lower for approval in ["yes", "approve", "confirm", "execute", "proceed", "ok"]):
             return "Trade not executed: Unclear confirmation. Please try again with a clear 'yes' or 'no'."
 
-        # Execute trade based on account type
+        # Execute trade with potentially modified values
         try:
-            if account_type == 'alpaca':
-                logger.info(f"[Trade Agent] Executing SELL via Alpaca")
-                result = _submit_alpaca_market_order(account_id, ticker, notional_amount, OrderSide.SELL)
+            if modified_account_type == 'alpaca':
+                logger.info(f"[Trade Agent] Executing SELL via Alpaca: {modified_ticker} ${modified_amount:.2f}")
+                result = _submit_alpaca_market_order(modified_account_id, modified_ticker, modified_amount, OrderSide.SELL)
             else:  # snaptrade
-                logger.info(f"[Trade Agent] Executing SELL via SnapTrade")
-                result = _submit_snaptrade_market_order(user_id, account_id, ticker, notional_amount, 'SELL')
+                logger.info(f"[Trade Agent] Executing SELL via SnapTrade: {modified_ticker} ${modified_amount:.2f}")
+                result = _submit_snaptrade_market_order(user_id, modified_account_id, modified_ticker, modified_amount, 'SELL')
             
             logger.info(f"[Trade Agent] SELL order result: {result}")
             return result

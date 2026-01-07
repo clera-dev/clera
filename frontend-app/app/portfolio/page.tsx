@@ -218,14 +218,23 @@ export default function PortfolioPage() {
     }
   };
 
-  // Function to refresh orders data
+  // Function to refresh orders data - supports both brokerage and aggregation modes
   const refreshOrders = async () => {
-    if (!accountId) return;
-    
     try {
-      const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
-      const refreshedOrders = await fetchData(ordersUrl);
-      setOrders(refreshedOrders);
+      if (portfolioMode === 'aggregation') {
+        // Aggregation mode: Fetch from SnapTrade (includes locally queued orders)
+        // Use buildFilteredUrl to apply account filter consistently
+        const pendingOrdersUrl = buildFilteredUrl('/api/snaptrade/pending-orders');
+        const data = await fetchData(pendingOrdersUrl);
+        // Handle SnapTrade response format: { orders: [...] }
+        const ordersData = data?.orders || [];
+        setOrders(ordersData);
+      } else if (portfolioMode === 'brokerage' && accountId) {
+        // Brokerage mode: Fetch from Alpaca
+        const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
+        const refreshedOrders = await fetchData(ordersUrl);
+        setOrders(refreshedOrders);
+      }
     } catch (error) {
       console.error('Error refreshing orders:', error);
     }

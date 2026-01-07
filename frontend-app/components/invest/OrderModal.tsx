@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Terminal, TrendingUp, TrendingDown, XCircle, Building2, Wallet, Clock, DollarSign, Hash } from "lucide-react";
+import { Loader2, Terminal, TrendingUp, TrendingDown, XCircle, Building2, Wallet, Clock, DollarSign, Hash, AlertCircle, RefreshCw } from "lucide-react";
 import toast from 'react-hot-toast';
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getMarketStatus } from "@/utils/market-hours";
+import { safeOpenUrl } from "@/utils/url-validation";
 
 // Webull requires a minimum of $5 for fractional share orders
 const MINIMUM_ORDER_AMOUNT = 5;
@@ -50,6 +51,9 @@ interface TradeAccount {
   buying_power: number;
   type: 'snaptrade' | 'alpaca';
   is_trade_enabled: boolean;
+  connection_status?: 'active' | 'error';  // Connection health status
+  connection_error?: string;  // Error message if connection is broken
+  reconnect_url?: string;  // URL to reconnect a broken connection
 }
 
 export default function OrderModal({ 
@@ -98,23 +102,27 @@ export default function OrderModal({
         throw new Error('Failed to fetch trade accounts');
       }
 
-      const allAccounts = [];
+      const allAccounts: TradeAccount[] = [];
       
       // Add Alpaca account if it exists (future hybrid mode)
       if (result.alpaca_account) {
         allAccounts.push(result.alpaca_account);
       }
       
-      // Add SnapTrade accounts
+      // Add SnapTrade accounts (including those with broken connections so we can show warnings)
       if (result.accounts && result.accounts.length > 0) {
         allAccounts.push(...result.accounts);
       }
 
       setTradeAccounts(allAccounts);
       
-      // Auto-select first account if available
-      if (allAccounts.length > 0) {
-        setSelectedAccount(allAccounts[0].account_id);
+      // Auto-select first HEALTHY account if available (skip accounts with broken connections)
+      const healthyAccounts = allAccounts.filter(acc => acc.connection_status !== 'error');
+      if (healthyAccounts.length > 0) {
+        setSelectedAccount(healthyAccounts[0].account_id);
+      } else if (allAccounts.length > 0) {
+        // If all accounts are broken, show error but don't select any
+        toast.error('All brokerage connections need to be refreshed. Please go to the Dashboard to reconnect.');
       }
     } catch (error) {
       console.error('Error fetching trade accounts:', error);
@@ -409,11 +417,25 @@ export default function OrderModal({
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 min-h-0">
           <div className="space-y-3">
             {/* Market Closed Banner */}
-            {!marketStatus.isOpen && (
-              <Alert className="border-amber-500/50 bg-amber-500/10">
+            {/* Market Status Indicator */}
+            {marketStatus.isOpen ? (
+              <Alert className="border-green-500/50 bg-green-500/10 py-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <AlertDescription className="text-sm text-green-700 dark:text-green-400 font-medium">
+                    Market Open — Orders execute immediately
+                  </AlertDescription>
+                </div>
+              </Alert>
+            ) : (
+              <Alert className="border-amber-500/50 bg-amber-500/10 py-2">
                 <Clock className="h-4 w-4 text-amber-600" />
                 <AlertDescription className="text-sm text-amber-700 dark:text-amber-400">
-                  {marketStatus.message}
+                  <span className="font-medium">
+                    {marketStatus.status === 'pre_market' ? 'Pre-Market' : 
+                     marketStatus.status === 'after_hours' ? 'After-Hours' : 'Market Closed'}
+                  </span>
+                  {' — '}Your order will be queued and execute {marketStatus.nextOpenTime ? `at ${marketStatus.nextOpenTime}` : 'at next market open'}
                 </AlertDescription>
               </Alert>
             )}
@@ -447,38 +469,122 @@ export default function OrderModal({
                   </AlertDescription>
                 </Alert>
               ) : (
-                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                  <SelectTrigger className="w-full bg-background">
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[200]">
-                    <SelectGroup>
-                      {selectedAccountData && (
-                        <SelectLabel className="text-xs text-muted-foreground px-2 py-1 flex items-center gap-1">
-                          <Wallet className="h-3 w-3" />
-                          Available: {formatCurrency(selectedAccountData.buying_power)}
-                        </SelectLabel>
-                      )}
-                      {tradeAccounts.map((account) => (
-                        <SelectItem key={account.account_id} value={account.account_id}>
-                          <div className="flex items-center justify-between gap-3 w-full">
-                            <div className="flex items-center gap-2">
-                              <Building2 className="h-4 w-4 text-muted-foreground" />
-                              <div>
-                                <div className="font-medium">{account.institution_name}</div>
-                                <div className="text-xs text-muted-foreground">{account.account_name}</div>
+                <>
+                  <Select 
+                    value={selectedAccount} 
+                    onValueChange={(value) => {
+                      // Don't allow selecting broken accounts
+                      const account = tradeAccounts.find(a => a.account_id === value);
+                      if (account?.connection_status === 'error') {
+                        toast.error('This connection needs to be refreshed. Go to the Dashboard to reconnect.');
+                        return;
+                      }
+                      setSelectedAccount(value);
+                    }}
+                  >
+                    <SelectTrigger className="w-full bg-background">
+                      <SelectValue placeholder="Select account" />
+                    </SelectTrigger>
+                    <SelectContent className="z-[200]">
+                      <SelectGroup>
+                        {selectedAccountData && selectedAccountData.connection_status !== 'error' && (
+                          <SelectLabel className="text-xs text-muted-foreground px-2 py-1 flex items-center gap-1">
+                            <Wallet className="h-3 w-3" />
+                            Available: {formatCurrency(selectedAccountData.buying_power)}
+                          </SelectLabel>
+                        )}
+                        {tradeAccounts.map((account) => (
+                          <SelectItem 
+                            key={account.account_id} 
+                            value={account.account_id}
+                            disabled={account.connection_status === 'error'}
+                            className={account.connection_status === 'error' ? 'opacity-60' : ''}
+                          >
+                            <div className="flex items-center justify-between gap-3 w-full">
+                              <div className="flex items-center gap-2">
+                                {account.connection_status === 'error' ? (
+                                  <AlertCircle className="h-4 w-4 text-destructive" />
+                                ) : (
+                                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                                )}
+                                <div>
+                                  <div className="font-medium">{account.institution_name}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {account.connection_status === 'error' 
+                                      ? 'Connection expired - needs refresh' 
+                                      : account.account_name}
+                                  </div>
+                                </div>
                               </div>
+                              {account.connection_status !== 'error' && (
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                  <Wallet className="h-3 w-3" />
+                                  {formatCurrency(account.buying_power)}
+                                </div>
+                              )}
+                              {account.connection_status === 'error' && (
+                                <RefreshCw className="h-3 w-3 text-destructive" />
+                              )}
                             </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Wallet className="h-3 w-3" />
-                              {formatCurrency(account.buying_power)}
-                            </div>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  
+                  {/* Show reconnect UI for ALL broken accounts (not just selected) */}
+                  {/* Since broken accounts can't be selected, we show this for any broken accounts in the list */}
+                  {tradeAccounts.filter(a => a.connection_status === 'error').length > 0 && (
+                    <Alert variant="destructive" className="py-3 mt-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm flex flex-col gap-2">
+                        <span>
+                          {tradeAccounts.filter(a => a.connection_status === 'error').length === 1
+                            ? 'One of your brokerage connections has expired and needs to be refreshed.'
+                            : `${tradeAccounts.filter(a => a.connection_status === 'error').length} brokerage connections have expired and need to be refreshed.`
+                          }
+                        </span>
+                        <div className="flex flex-col gap-2">
+                          {tradeAccounts
+                            .filter(a => a.connection_status === 'error')
+                            .map((brokenAccount) => (
+                              brokenAccount.reconnect_url ? (
+                                <Button
+                                  key={brokenAccount.account_id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full bg-background hover:bg-muted"
+                                  onClick={() => {
+                                    // SECURITY: Use centralized URL validation
+                                    safeOpenUrl(brokenAccount.reconnect_url, () => {
+                                      toast.error('Invalid reconnect URL. Please contact support.');
+                                    });
+                                  }}
+                                >
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  Reconnect {brokenAccount.institution_name}
+                                </Button>
+                              ) : (
+                                <Button
+                                  key={brokenAccount.account_id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full bg-background hover:bg-muted"
+                                  onClick={() => {
+                                    window.location.href = '/dashboard';
+                                  }}
+                                >
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  Go to Dashboard to Reconnect {brokenAccount.institution_name}
+                                </Button>
+                              )
+                            ))
+                          }
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </>
               )}
             </div>
 
@@ -632,20 +738,20 @@ export default function OrderModal({
           <Button 
             type="button"
             size="lg"
-            className={`w-full ${!marketStatus.isOpen ? 'bg-gray-400 hover:bg-gray-400' : buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
+            className={`w-full ${buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || !marketStatus.isOpen || (inputMode === 'shares' && !Number.isInteger(parsedAmount))}
+            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || (inputMode === 'shares' && !Number.isInteger(parsedAmount))}
           >
             {isSubmitting ? (
-              <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> Placing Order...</>
-            ) : !marketStatus.isOpen ? (
-              <><Clock className="mr-2 h-4 w-4" /> Market Closed</>
+              <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> {marketStatus.isOpen ? 'Placing Order...' : 'Queueing Order...'}</>
             ) : isBelowMinimum ? (
               inputMode === 'shares' ? 'Minimum 1 share required' : `Minimum $${MINIMUM_ORDER_AMOUNT} required`
             ) : inputMode === 'shares' && !Number.isInteger(parsedAmount) ? (
               'Whole shares only'
-            ) : (
+            ) : marketStatus.isOpen ? (
               `Place ${isBuyOrder ? 'Buy' : 'Sell'} Order`
+            ) : (
+              <><Clock className="mr-2 h-4 w-4" /> Queue {isBuyOrder ? 'Buy' : 'Sell'} Order</>
             )}
           </Button>
         </div>

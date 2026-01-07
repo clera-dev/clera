@@ -142,7 +142,7 @@ const getTransactionType = (item: OrderData): string => {
     if (item.activity_type) {
         switch (item.activity_type) {
             case 'FILL':
-                return item.side === 'buy' ? 'Buy' : 'Sell';
+                return item.side?.toLowerCase() === 'buy' ? 'Buy' : 'Sell';
             case 'DIV':
                 return 'Dividend';
             case 'ACATC':
@@ -158,9 +158,9 @@ const getTransactionType = (item: OrderData): string => {
         }
     }
     
-    // Handle orders
+    // Handle orders (normalize to lowercase for comparison - handles both 'buy'/'sell' and 'BUY'/'SELL')
     if (item.side) {
-        return item.side === 'buy' ? 'Buy' : 'Sell';
+        return item.side.toLowerCase() === 'buy' ? 'Buy' : 'Sell';
     }
     
     return 'Unknown';
@@ -183,9 +183,14 @@ const getTransactionAmount = (item: OrderData): number => {
         return parseFloat(item.qty) * parseFloat(item.limit_price);
     }
     
-    // For unfilled orders with notional amount
+    // For unfilled orders with notional amount (string format from Alpaca)
     if (item.notional) {
         return parseFloat(item.notional);
+    }
+    
+    // For queued orders with notional_value (number format from our queue)
+    if (item.notional_value) {
+        return item.notional_value;
     }
     
     return 0;
@@ -451,11 +456,12 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
                   // Use a shortened version of the ID for display
                   const shortId = item.id ? item.id.substring(0, 12) : '--';
                   
-                  // Determine appropriate colors based on transaction type
+                  // Determine appropriate colors based on transaction type (handle both 'buy'/'sell' and 'BUY'/'SELL')
                   let typeColor = '';
-                  if (item.side === 'buy' || item.activity_type === 'DEP' || item.activity_type === 'DIV') {
+                  const sideLower = item.side?.toLowerCase();
+                  if (sideLower === 'buy' || item.activity_type === 'DEP' || item.activity_type === 'DIV') {
                     typeColor = 'text-green-500';
-                  } else if (item.side === 'sell') {
+                  } else if (sideLower === 'sell') {
                     typeColor = 'text-red-500';
                   }
 

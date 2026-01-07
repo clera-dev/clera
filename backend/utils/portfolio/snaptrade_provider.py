@@ -685,16 +685,21 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
         user_id: str,
         broker: Optional[str] = None,
         connection_type: str = 'trade',
-        redirect_url: Optional[str] = None
+        redirect_url: Optional[str] = None,
+        reconnect: Optional[str] = None
     ) -> str:
         """
-        Get SnapTrade connection portal URL for user to connect brokerage.
+        Get SnapTrade connection portal URL for user to connect or reconnect brokerage.
         
         Args:
             user_id: User ID
             broker: Optional broker slug (e.g., 'ALPACA', 'SCHWAB')
             connection_type: 'read' or 'trade' (default: 'trade')
             redirect_url: Optional redirect URL after connection
+            reconnect: Optional authorization ID to reconnect an existing disabled connection.
+                       When provided, sends user directly to the reconnection flow for that
+                       specific brokerage connection instead of creating a new one.
+                       (SnapTrade documentation: https://docs.snaptrade.com/docs/fix-broken-connections)
             
         Returns:
             Connection portal URL
@@ -710,18 +715,24 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
                 user_secret = user_credentials['user_secret']
             
             # Get connection portal URL using SnapTrade SDK
+            # PRODUCTION-GRADE: Pass reconnect parameter when fixing a broken connection
+            # This directs user to re-auth flow for existing connection instead of new one
             login_response = self.client.authentication.login_snap_trade_user(
                 user_id=user_id,
                 user_secret=user_secret,
                 broker=broker if broker else None,
                 connection_type=connection_type,
-                custom_redirect=redirect_url if redirect_url else None
+                custom_redirect=redirect_url if redirect_url else None,
+                reconnect=reconnect if reconnect else None
             )
             
             # The response body contains redirectURI
             connection_url = login_response.body.get('redirectURI', '')
             
-            logger.info(f"Generated connection portal URL for user {user_id}")
+            if reconnect:
+                logger.info(f"Generated RECONNECT portal URL for user {user_id}, authorization {reconnect}")
+            else:
+                logger.info(f"Generated connection portal URL for user {user_id}")
             return connection_url
             
         except Exception as e:

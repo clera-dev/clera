@@ -8,6 +8,27 @@ import UserAvatar from './UserAvatar';
 
 import ReactMarkdown from 'react-markdown';
 
+/**
+ * Strip LangGraph supervisor's inline agent name XML tags from message content.
+ * When include_agent_name="inline" is set, messages get wrapped in <name>AgentName</name><content>...</content>
+ * This function removes those wrapper tags to show clean content to users.
+ */
+function stripAgentNameTags(content: string): string {
+  if (!content) return content;
+  
+  let cleaned = content;
+  
+  // Strip <name>AgentName</name> tags
+  cleaned = cleaned.replace(/<name>[^<]*<\/name>/g, '');
+  
+  // Strip <content> and </content> tags (handle cases with or without closing tag)
+  cleaned = cleaned.replace(/<\/?content>/g, '');
+  
+  // Return the cleaned content, or empty string if nothing remains
+  // (don't fall back to original content which may have XML tags)
+  return cleaned.trim();
+}
+
 export interface ChatMessageProps {
   message: Message;
   isLast: boolean;
@@ -100,7 +121,7 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
               code: ({children}) => <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">{children}</code>,
             }}
           >
-            {message.content}
+            {stripAgentNameTags(message.content)}
           </ReactMarkdown>
         </div>
       </div>
