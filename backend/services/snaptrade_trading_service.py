@@ -997,6 +997,24 @@ class SnapTradeTradingService:
             error_str = str(e)
             logger.error(f"Error placing order: {e}", exc_info=True)
             
+            # PRODUCTION-GRADE: If market closed during order placement, queue it
+            # This catches the edge case where impact validation passed but order placement failed
+            # (rare but possible if market closes between the two calls)
+            if is_market_closed_error(error_str):
+                logger.info(f"Market closed during order placement - queueing order for {action} {symbol}")
+                return self.queue_order(
+                    user_id=user_id,
+                    account_id=account_id,
+                    symbol=symbol,
+                    action=action,
+                    order_type=order_type,
+                    time_in_force=time_in_force,
+                    notional_value=notional_value,
+                    units=units,
+                    price=price,
+                    stop_price=stop
+                )
+            
             # PRODUCTION-GRADE: Handle specific brokerage error messages with user-friendly responses
             if 'FRACT_NOT_CLOSE_INT_POSITION' in error_str or 'fractional shares trading is not available' in error_str.lower():
                 return {
