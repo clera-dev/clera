@@ -206,9 +206,15 @@ def _parse_and_validate_trade_confirmation(
                 # Valid confirmation
                 final_confirmation = "yes"
                 
-    except (json.JSONDecodeError, ValueError, TypeError) as e:
-        # Not JSON or invalid - treat as regular text response
-        logger.debug(f"[Trade Agent] Confirmation not JSON: {e}")
+    except json.JSONDecodeError:
+        # Not JSON - treat as regular text response (e.g., "yes", "no")
+        logger.debug(f"[Trade Agent] Confirmation not JSON, treating as text: {user_confirmation[:50]}")
+    except (ValueError, TypeError) as e:
+        # SECURITY: Validation error during processing - do NOT proceed with trade
+        # This prevents trades from bypassing validation if errors occur mid-processing
+        logger.error(f"[Trade Agent] Validation error during trade confirmation: {e}")
+        return (f"Error: Invalid trade data. Please try again.",
+                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
     
     return (None, modified_ticker, modified_amount, modified_account_id, modified_account_type, final_confirmation)
 

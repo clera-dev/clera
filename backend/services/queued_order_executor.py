@@ -432,9 +432,16 @@ class QueuedOrderExecutor:
     
     def _is_retriable_error(self, error_msg: str) -> bool:
         """Check if an error is retriable (transient network issues, etc.)."""
+        # CRITICAL: First check for connection-disabled errors (3003)
+        # These require user action (reconnecting brokerage) and will NEVER succeed on retry
+        # Retrying these wastes 15+ minutes before users learn the real issue
+        from services.snaptrade_trading_service import is_connection_disabled_error
+        if is_connection_disabled_error(error_msg):
+            return False
+        
         retriable_indicators = [
             'timeout',
-            'connection',
+            'connection',  # Network connection issues (not brokerage connection disabled)
             'network',
             'temporary',
             'try again',

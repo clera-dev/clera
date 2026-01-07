@@ -223,7 +223,9 @@ export default function PortfolioPage() {
     try {
       if (portfolioMode === 'aggregation') {
         // Aggregation mode: Fetch from SnapTrade (includes locally queued orders)
-        const data = await fetchData('/api/snaptrade/pending-orders');
+        // Use buildFilteredUrl to apply account filter consistently
+        const pendingOrdersUrl = buildFilteredUrl('/api/snaptrade/pending-orders');
+        const data = await fetchData(pendingOrdersUrl);
         // Handle SnapTrade response format: { orders: [...] }
         const ordersData = data?.orders || [];
         setOrders(ordersData);
