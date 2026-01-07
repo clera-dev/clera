@@ -13,27 +13,25 @@
 -- so we use pg_attribute join to reliably find CHECK constraints on the status column.
 DO $$
 DECLARE
-    constraint_name_var TEXT;
+    constraint_rec RECORD;
 BEGIN
-    -- Find CHECK constraints that reference the 'status' column
-    -- Join with pg_attribute to reliably identify the column, avoiding LIKE pattern issues
-    -- with PostgreSQL's internal constraint definition format
-    SELECT c.conname INTO constraint_name_var
-    FROM pg_constraint c
-    JOIN pg_class t ON c.conrelid = t.oid
-    JOIN pg_namespace n ON t.relnamespace = n.oid
-    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
-    WHERE t.relname = 'queued_orders'
-      AND n.nspname = 'public'
-      AND c.contype = 'c'  -- CHECK constraint
-      AND a.attname = 'status'
-    LIMIT 1;  -- In case there are multiple, take the first (shouldn't happen for our use case)
-    
-    -- Drop the existing constraint if found
-    IF constraint_name_var IS NOT NULL THEN
-        EXECUTE 'ALTER TABLE queued_orders DROP CONSTRAINT ' || quote_ident(constraint_name_var);
-        RAISE NOTICE 'Dropped existing status constraint: %', constraint_name_var;
-    END IF;
+    -- Find and drop ALL CHECK constraints that reference the 'status' column
+    -- Using a loop ensures no orphan constraints are left behind
+    -- Join with pg_attribute to reliably identify the column
+    FOR constraint_rec IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        JOIN pg_namespace n ON t.relnamespace = n.oid
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
+        WHERE t.relname = 'queued_orders'
+          AND n.nspname = 'public'
+          AND c.contype = 'c'  -- CHECK constraint
+          AND a.attname = 'status'
+    LOOP
+        EXECUTE 'ALTER TABLE queued_orders DROP CONSTRAINT ' || quote_ident(constraint_rec.conname);
+        RAISE NOTICE 'Dropped status constraint: %', constraint_rec.conname;
+    END LOOP;
 END $$;
 
 -- Add new constraint with 'needs_review' status included
@@ -41,8 +39,10 @@ ALTER TABLE queued_orders ADD CONSTRAINT queued_orders_status_check
     CHECK (status IN ('pending', 'executing', 'executed', 'failed', 'cancelled', 'needs_review'));
 
 -- Add retry tracking columns
+-- NOT NULL with DEFAULT 0 ensures retry_count < MAX_RETRIES comparisons work correctly
+-- (NULL comparisons evaluate to unknown, not true/false)
 ALTER TABLE queued_orders 
-ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;
+ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
 
 ALTER TABLE queued_orders 
 ADD COLUMN IF NOT EXISTS last_error TEXT;

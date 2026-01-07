@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getMarketStatus } from "@/utils/market-hours";
-import { isValidReconnectUrl } from "@/utils/url-validation";
+import { safeOpenUrl } from "@/utils/url-validation";
 
 // Webull requires a minimum of $5 for fractional share orders
 const MINIMUM_ORDER_AMOUNT = 5;
@@ -555,12 +555,10 @@ export default function OrderModal({
                                   size="sm"
                                   className="w-full bg-background hover:bg-muted"
                                   onClick={() => {
-                                    // SECURITY: Validate URL before opening
-                                    if (isValidReconnectUrl(brokenAccount.reconnect_url!)) {
-                                      window.open(brokenAccount.reconnect_url, '_blank', 'noopener,noreferrer');
-                                    } else {
+                                    // SECURITY: Use centralized URL validation
+                                    safeOpenUrl(brokenAccount.reconnect_url, () => {
                                       toast.error('Invalid reconnect URL. Please contact support.');
-                                    }
+                                    });
                                   }}
                                 >
                                   <RefreshCw className="h-4 w-4 mr-2" />

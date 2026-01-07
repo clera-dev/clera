@@ -179,12 +179,17 @@ export function TradeInterruptConfirmation({
           
           // Auto-select the first healthy account or match by display name
           if (accountsList.length > 0 && initialDetails) {
-            // Try to find matching account by display name
-            const matchingAccount = accountsList.find((acc: TradeAccount) => 
-              `${acc.institution_name} - ${acc.account_name}`.toLowerCase().includes(
-                initialDetails.accountDisplay.toLowerCase().split(' - ')[0]
-              )
-            );
+            // Try to find matching account by FULL display name
+            // CRITICAL: Compare full display name to avoid matching wrong account
+            // when user has multiple accounts at same institution (e.g., "Webull - IRA" vs "Webull - Individual Margin")
+            const aiDisplayLower = initialDetails.accountDisplay.toLowerCase().trim();
+            const matchingAccount = accountsList.find((acc: TradeAccount) => {
+              const accDisplayLower = `${acc.institution_name} - ${acc.account_name}`.toLowerCase().trim();
+              // First try exact match, then partial (for cases where AI abbreviates)
+              return accDisplayLower === aiDisplayLower || 
+                     accDisplayLower.includes(aiDisplayLower) ||
+                     aiDisplayLower.includes(accDisplayLower);
+            });
             
             // Select matching account or first healthy account
             const healthyAccounts = accountsList.filter((acc: TradeAccount) => acc.connection_status === 'active');

@@ -192,19 +192,38 @@ def _parse_and_validate_trade_confirmation(
                             
                             logger.info(f"[Trade Agent] SELL account changed - verified holdings on account {modified_account_id}")
                         else:
-                            # Ticker changed but not account - use detect_symbol_account to find the right account
-                            # detect_symbol_account returns (account_id, account_type, account_info) tuple
-                            found_account_id, found_account_type, found_account_info = TradeRoutingService.detect_symbol_account(
-                                modified_ticker, user_id
-                            )
+                            # Ticker changed but not account - first check if ORIGINAL account holds new ticker
+                            # before falling back to detect_symbol_account (which might find a different account)
+                            original_account_holds_new_ticker = False
+                            try:
+                                for contrib in json.loads(account_contributions):
+                                    contrib_symbol = contrib.get('symbol', '')
+                                    contrib_quantity = float(contrib.get('quantity', 0))
+                                    contrib_normalized = contrib_symbol.upper().strip()
+                                    normalized_new = modified_ticker.upper().strip()
+                                    if contrib_normalized == normalized_new and contrib_quantity > 0:
+                                        original_account_holds_new_ticker = True
+                                        break
+                            except (json.JSONDecodeError, ValueError, TypeError):
+                                pass  # Fall through to detect_symbol_account
                             
-                            if not found_account_id:
-                                return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
-                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
-                            
-                            modified_account_id = found_account_id
-                            modified_account_type = found_account_type or 'snaptrade'
-                            logger.info(f"[Trade Agent] SELL ticker changed - verified holdings on account {modified_account_id}")
+                            if original_account_holds_new_ticker:
+                                # Original account holds the new ticker - keep using it
+                                logger.info(f"[Trade Agent] SELL ticker changed - original account {original_account_id} also holds {modified_ticker}")
+                            else:
+                                # Original account doesn't hold new ticker - find one that does
+                                # detect_symbol_account returns (account_id, account_type, account_info) tuple
+                                found_account_id, found_account_type, found_account_info = TradeRoutingService.detect_symbol_account(
+                                    modified_ticker, user_id
+                                )
+                                
+                                if not found_account_id:
+                                    return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
+                                            original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                
+                                modified_account_id = found_account_id
+                                modified_account_type = found_account_type or 'snaptrade'
+                                logger.info(f"[Trade Agent] SELL ticker changed - verified holdings on account {modified_account_id}")
                     
                     action_type = "SELL" if is_sell else "BUY"
                     logger.info(f"[Trade Agent] User MODIFIED {action_type} trade: {modified_ticker} ${modified_amount:.2f} via {modified_account_id}")
