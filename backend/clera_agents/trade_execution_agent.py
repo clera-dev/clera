@@ -149,32 +149,35 @@ def _parse_and_validate_trade_confirmation(
                     # Must verify the target account actually holds the stock
                     account_changed = normalized_new and normalized_new != normalized_original
                     if is_sell and (modified_ticker != original_ticker or account_changed):
+                        # CRITICAL: Fetch holdings BEFORE if/else branching
+                        # This data is needed in both branches
+                        symbol_upper = modified_ticker.upper()
+                        holdings_result = supabase.table('user_aggregated_holdings')\
+                            .select('account_contributions')\
+                            .eq('user_id', user_id)\
+                            .eq('symbol', symbol_upper)\
+                            .execute()
+                        
+                        if not holdings_result.data:
+                            return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        
+                        # Parse account_contributions (used by both if/else branches)
+                        account_contributions = holdings_result.data[0].get('account_contributions', [])
+                        if isinstance(account_contributions, str):
+                            import json as json_mod
+                            try:
+                                account_contributions = json_mod.loads(account_contributions)
+                            except json_mod.JSONDecodeError as parse_error:
+                                # SECURITY: Corrupted DB data - do NOT allow trade without verification
+                                logger.error(f"[Trade Agent] Failed to parse account_contributions: {parse_error}")
+                                return (f"Error: Unable to verify holdings. Please try again.",
+                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                        
                         if account_changed:
                             # CRITICAL FIX: Verify the SPECIFIC selected account holds the stock
                             # Don't use detect_symbol_account which returns the FIRST matching account
                             # User might hold same stock in multiple accounts
-                            symbol_upper = modified_ticker.upper()
-                            holdings_result = supabase.table('user_aggregated_holdings')\
-                                .select('account_contributions')\
-                                .eq('user_id', user_id)\
-                                .eq('symbol', symbol_upper)\
-                                .execute()
-                            
-                            if not holdings_result.data:
-                                return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
-                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
-                            
-                            # Check if the SPECIFIC selected account is in the account_contributions
-                            account_contributions = holdings_result.data[0].get('account_contributions', [])
-                            if isinstance(account_contributions, str):
-                                import json as json_mod
-                                try:
-                                    account_contributions = json_mod.loads(account_contributions)
-                                except json_mod.JSONDecodeError as parse_error:
-                                    # SECURITY: Corrupted DB data - do NOT allow trade without verification
-                                    logger.error(f"[Trade Agent] Failed to parse account_contributions: {parse_error}")
-                                    return (f"Error: Unable to verify holdings. Please try again.",
-                                            original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
                             
                             # Check if user's selected account holds this symbol
                             account_found = False
@@ -192,20 +195,16 @@ def _parse_and_validate_trade_confirmation(
                             
                             logger.info(f"[Trade Agent] SELL account changed - verified holdings on account {modified_account_id}")
                         else:
-                            # Ticker changed but not account - first check if ORIGINAL account holds new ticker
-                            # before falling back to detect_symbol_account (which might find a different account)
+                            # Ticker changed but not account - check if ORIGINAL account holds new ticker
+                            # account_contributions is for the NEW ticker, check if original account is in it
                             original_account_holds_new_ticker = False
-                            try:
-                                for contrib in json.loads(account_contributions):
-                                    contrib_symbol = contrib.get('symbol', '')
-                                    contrib_quantity = float(contrib.get('quantity', 0))
-                                    contrib_normalized = contrib_symbol.upper().strip()
-                                    normalized_new = modified_ticker.upper().strip()
-                                    if contrib_normalized == normalized_new and contrib_quantity > 0:
-                                        original_account_holds_new_ticker = True
-                                        break
-                            except (json.JSONDecodeError, ValueError, TypeError):
-                                pass  # Fall through to detect_symbol_account
+                            for contrib in account_contributions:
+                                contrib_account_id = contrib.get('account_id', '')
+                                contrib_normalized = contrib_account_id.replace('snaptrade_', '').replace('alpaca_', '')
+                                contrib_quantity = float(contrib.get('quantity', 0))
+                                if contrib_normalized == normalized_original and contrib_quantity > 0:
+                                    original_account_holds_new_ticker = True
+                                    break
                             
                             if original_account_holds_new_ticker:
                                 # Original account holds the new ticker - keep using it
