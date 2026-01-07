@@ -303,19 +303,21 @@ class QueuedOrderExecutor:
                 # When market closes mid-processing, trading service returns {success: True, queued: True}
                 # We should NOT mark re-queued orders as 'executed'
                 if result.get('queued'):
-                    # Order was re-queued (market closed during processing)
-                    # Keep it as 'pending' - it will be picked up next market open
-                    logger.warning(f"⚠️ Order {order_id} was re-queued (market closed). Keeping as pending.")
+                    # CRITICAL: Order was re-queued by the trading service
+                    # The trading service already created a NEW queued_order record
+                    # Mark the ORIGINAL order as 'cancelled' to prevent duplicate execution
+                    new_order_id = result.get('order_id', 'unknown')
+                    logger.warning(f"⚠️ Order {order_id} was re-queued as {new_order_id} (market closed). Marking original as cancelled.")
                     self.supabase.table('queued_orders')\
                         .update({
-                            'status': 'pending',
-                            'last_error': 'Re-queued: Market closed during execution attempt',
+                            'status': 'cancelled',
+                            'last_error': f'Superseded by new queued order {new_order_id} (market closed during execution)',
                             'updated_at': datetime.now(timezone.utc).isoformat()
                         })\
                         .eq('id', order_id)\
                         .eq('status', 'executing')\
                         .execute()
-                    return {'success': False, 'order_id': order_id, 'requeued': True}
+                    return {'success': False, 'order_id': order_id, 'requeued': True, 'new_order_id': new_order_id}
                 
                 # Order was actually executed
                 # CRITICAL: Mark order as placed BEFORE attempting DB update

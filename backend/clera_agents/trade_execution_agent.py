@@ -168,7 +168,13 @@ def _parse_and_validate_trade_confirmation(
                             account_contributions = holdings_result.data[0].get('account_contributions', [])
                             if isinstance(account_contributions, str):
                                 import json as json_mod
-                                account_contributions = json_mod.loads(account_contributions)
+                                try:
+                                    account_contributions = json_mod.loads(account_contributions)
+                                except json_mod.JSONDecodeError as parse_error:
+                                    # SECURITY: Corrupted DB data - do NOT allow trade without verification
+                                    logger.error(f"[Trade Agent] Failed to parse account_contributions: {parse_error}")
+                                    return (f"Error: Unable to verify holdings. Please try again.",
+                                            original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
                             
                             # Check if user's selected account holds this symbol
                             account_found = False

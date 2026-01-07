@@ -1,6 +1,13 @@
 -- Migration 016: Add retry tracking columns to queued_orders
 -- These columns support the production-grade queued order executor with retry logic.
 
+-- CRITICAL: Update CHECK constraint to include 'needs_review' status
+-- This is used by the stuck order recovery system to flag orders for manual review
+-- Without this, setting status='needs_review' will fail at runtime
+ALTER TABLE queued_orders DROP CONSTRAINT IF EXISTS queued_orders_status_check;
+ALTER TABLE queued_orders ADD CONSTRAINT queued_orders_status_check 
+    CHECK (status IN ('pending', 'executing', 'executed', 'failed', 'cancelled', 'needs_review'));
+
 -- Add retry tracking columns
 ALTER TABLE queued_orders 
 ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;

@@ -611,9 +611,13 @@ async def get_queued_order_executor_status(
         from services.queued_order_executor import get_queued_order_executor
         executor = get_queued_order_executor()
         
+        # PERFORMANCE: Run synchronous DB queries in thread pool
+        # to avoid blocking the async event loop
+        status = await asyncio.to_thread(executor.get_status, user_id=user_id)
+        
         return {
             "success": True,
-            "executor": executor.get_status(user_id=user_id)
+            "executor": status
         }
     except Exception as e:
         logger.error(f"Error getting executor status: {e}", exc_info=True)
