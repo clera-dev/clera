@@ -4,7 +4,32 @@
 -- CRITICAL: Update CHECK constraint to include 'needs_review' status
 -- This is used by the stuck order recovery system to flag orders for manual review
 -- Without this, setting status='needs_review' will fail at runtime
-ALTER TABLE queued_orders DROP CONSTRAINT IF EXISTS queued_orders_status_check;
+-- 
+-- NOTE: PostgreSQL auto-generates constraint names for inline CHECK constraints.
+-- The name format is typically {table}_{column}_check but this isn't guaranteed.
+-- We must dynamically find and drop the actual constraint name from pg_constraint.
+DO $$
+DECLARE
+    constraint_name_var TEXT;
+BEGIN
+    -- Find the CHECK constraint on the status column
+    SELECT conname INTO constraint_name_var
+    FROM pg_constraint c
+    JOIN pg_class t ON c.conrelid = t.oid
+    JOIN pg_namespace n ON t.relnamespace = n.oid
+    WHERE t.relname = 'queued_orders'
+      AND n.nspname = 'public'
+      AND c.contype = 'c'  -- CHECK constraint
+      AND pg_get_constraintdef(c.oid) LIKE '%status%IN%';
+    
+    -- Drop the existing constraint if found
+    IF constraint_name_var IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE queued_orders DROP CONSTRAINT ' || quote_ident(constraint_name_var);
+        RAISE NOTICE 'Dropped existing status constraint: %', constraint_name_var;
+    END IF;
+END $$;
+
+-- Add new constraint with 'needs_review' status included
 ALTER TABLE queued_orders ADD CONSTRAINT queued_orders_status_check 
     CHECK (status IN ('pending', 'executing', 'executed', 'failed', 'cancelled', 'needs_review'));
 

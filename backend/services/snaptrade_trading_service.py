@@ -1001,6 +1001,15 @@ class SnapTradeTradingService:
             # This catches the edge case where impact validation passed but order placement failed
             # (rare but possible if market closes between the two calls)
             if is_market_closed_error(error_str):
+                # CRITICAL: When using trade_id method (Method 1), symbol and action may be None
+                # We cannot queue an order without these required fields
+                if not symbol or not action:
+                    logger.error(f"Cannot queue order: missing symbol ({symbol}) or action ({action})")
+                    return {
+                        'success': False,
+                        'error': 'Market is closed and order could not be queued. Please try again when the market opens (9:30 AM - 4:00 PM ET).'
+                    }
+                
                 logger.info(f"Market closed during order placement - queueing order for {action} {symbol}")
                 return self.queue_order(
                     user_id=user_id,

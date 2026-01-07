@@ -306,7 +306,23 @@ class QueuedOrderExecutor:
                     # CRITICAL: Order was re-queued by the trading service
                     # The trading service already created a NEW queued_order record
                     # Mark the ORIGINAL order as 'cancelled' to prevent duplicate execution
-                    new_order_id = result.get('order_id', 'unknown')
+                    new_order_id = result.get('order_id')
+                    
+                    # CRITICAL: Only cancel original if we have a valid new order ID
+                    # If order_id is missing, keep original as 'pending' to avoid order loss
+                    if not new_order_id:
+                        logger.error(f"⚠️ Order {order_id} was re-queued but no new order_id returned. Keeping original as pending.")
+                        self.supabase.table('queued_orders')\
+                            .update({
+                                'status': 'pending',
+                                'last_error': 'Re-queue attempt returned no order_id - will retry',
+                                'updated_at': datetime.now(timezone.utc).isoformat()
+                            })\
+                            .eq('id', order_id)\
+                            .eq('status', 'executing')\
+                            .execute()
+                        return {'success': False, 'order_id': order_id, 'error': 'Re-queue failed - no new order_id'}
+                    
                     logger.warning(f"⚠️ Order {order_id} was re-queued as {new_order_id} (market closed). Marking original as cancelled.")
                     self.supabase.table('queued_orders')\
                         .update({
