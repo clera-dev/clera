@@ -364,7 +364,7 @@ export function TradeInterruptConfirmation({
                 <Input
                   type="number"
                   step="0.01"
-                  min="1"
+                  min={MINIMUM_ORDER_AMOUNT}
                   value={editedAmount}
                   onChange={(e) => setEditedAmount(e.target.value)}
                   className="pl-9 text-lg font-semibold"

@@ -923,8 +923,9 @@ class SnapTradeTradingService:
                             account_id=account_id,
                             symbol=symbol,
                             action=action,
-                            order_type=order_type,
-                            time_in_force=time_in_force,
+                            # Use defaults if None to prevent overriding queue_order's defaults
+                            order_type=order_type or 'Market',
+                            time_in_force=time_in_force or 'Day',
                             notional_value=notional_value,
                             units=units,
                             price=price,
@@ -1016,8 +1017,9 @@ class SnapTradeTradingService:
                     account_id=account_id,
                     symbol=symbol,
                     action=action,
-                    order_type=order_type,
-                    time_in_force=time_in_force,
+                    # Use defaults if None to prevent overriding queue_order's defaults
+                    order_type=order_type or 'Market',
+                    time_in_force=time_in_force or 'Day',
                     notional_value=notional_value,
                     units=units,
                     price=price,

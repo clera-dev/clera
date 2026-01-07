@@ -496,6 +496,7 @@ class QueuedOrderExecutor:
         # Get pending order count filtered by user
         pending_count = 0
         needs_review_count = 0
+        db_error = False
         try:
             result = self.supabase.table('queued_orders')\
                 .select('id', count='exact')\
@@ -511,13 +512,16 @@ class QueuedOrderExecutor:
                 .eq('user_id', user_id)\
                 .execute()
             needs_review_count = review_result.count or 0
-        except Exception:
-            pass
+        except Exception as e:
+            # Log error so failures aren't silently swallowed
+            logger.error(f"Failed to fetch order counts for user {user_id}: {e}")
+            db_error = True
         
         return {
             'is_running': self._is_running,
             'pending_orders': pending_count,
             'needs_review_orders': needs_review_count,
+            'db_error': db_error,  # Flag so callers know counts may be inaccurate
             'jobs': [
                 {
                     'id': job.id,
