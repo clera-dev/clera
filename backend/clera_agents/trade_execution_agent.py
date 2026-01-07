@@ -120,9 +120,12 @@ def _parse_and_validate_trade_confirmation(
                     normalized_original = original_account_id.replace('snaptrade_', '').replace('alpaca_', '')
                     normalized_new = new_account_id.replace('snaptrade_', '').replace('alpaca_', '') if new_account_id else None
                     
+                    # CRITICAL: Initialize supabase BEFORE any conditional blocks that may need it
+                    # Both account verification and SELL holdings checks require database access
+                    from utils.supabase.db_client import get_supabase_client
+                    supabase = get_supabase_client()
+                    
                     if normalized_new and normalized_new != normalized_original:
-                        from utils.supabase.db_client import get_supabase_client
-                        supabase = get_supabase_client()
                         
                         # Verify account belongs to this user
                         account_check = supabase.table('user_investment_accounts')\
