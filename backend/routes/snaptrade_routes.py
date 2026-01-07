@@ -10,6 +10,7 @@ This module provides REST API endpoints for:
 
 import logging
 import os
+import asyncio
 from fastapi import APIRouter, HTTPException, Request, Depends, Header
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -76,9 +77,13 @@ def validate_redirect_url(url: Optional[str]) -> bool:
             allowed_hosts.append(parsed_frontend.netloc)
         
         # Add Vercel preview URLs if configured
+        # IMPORTANT: Parse the same way as FRONTEND_URL to extract just the host
         vercel_url = os.getenv('VERCEL_URL')
         if vercel_url:
-            allowed_hosts.append(vercel_url)
+            # Handle both full URLs (https://my-app.vercel.app) and bare hosts (my-app.vercel.app)
+            parsed_vercel = urlparse(vercel_url if '://' in vercel_url else f'https://{vercel_url}')
+            if parsed_vercel.netloc:
+                allowed_hosts.append(parsed_vercel.netloc)
         
         # Add any additional allowed domains from env (filter empty)
         additional_hosts = os.getenv('ALLOWED_REDIRECT_HOSTS', '').split(',')
@@ -206,7 +211,10 @@ async def get_trade_enabled_accounts(
             if authorization_id:
                 try:
                     logger.info(f"📊 Checking authorization health for {account['institution_name']} (auth: {authorization_id})")
-                    auth_response = provider.client.connections.detail_brokerage_authorization(
+                    # PERFORMANCE: Run blocking SnapTrade API call in thread pool
+                    # to avoid blocking the async event loop
+                    auth_response = await asyncio.to_thread(
+                        provider.client.connections.detail_brokerage_authorization,
                         authorization_id=authorization_id,
                         user_id=snaptrade_user_id,
                         user_secret=user_secret
@@ -250,7 +258,9 @@ async def get_trade_enabled_accounts(
             # Fetch balance (only if connection is healthy)
             if connection_status == 'active':
                 try:
-                    balances_response = provider.client.account_information.get_user_account_balance(
+                    # PERFORMANCE: Run blocking SnapTrade API call in thread pool
+                    balances_response = await asyncio.to_thread(
+                        provider.client.account_information.get_user_account_balance,
                         user_id=snaptrade_user_id,
                         user_secret=user_secret,
                         account_id=account_id
@@ -782,7 +792,8 @@ async def create_reconnect_url(
         raise
     except Exception as e:
         logger.error(f"Error creating reconnect URL: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # SECURITY: Don't expose internal error details to users
+        raise HTTPException(status_code=500, detail="Unable to create reconnect URL. Please try again or contact support.")
 
 
 @router.post("/webhook")
