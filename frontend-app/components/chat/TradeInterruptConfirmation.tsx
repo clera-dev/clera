@@ -15,6 +15,10 @@ import { InterruptConfirmation } from './InterruptConfirmation';
 import { isValidReconnectUrl } from '@/utils/url-validation';
 import toast from 'react-hot-toast';
 
+// Webull requires a minimum of $5 for fractional share orders
+// Must match OrderModal.tsx to prevent broker-level failures
+const MINIMUM_ORDER_AMOUNT = 5;
+
 interface TradeAccount {
   account_id: string;
   institution_name: string;
@@ -287,7 +291,8 @@ export function TradeInterruptConfirmation({
   // Uses Number.isFinite() to catch both NaN and Infinity (which bypass isNaN check)
   const parsedAmount = parseFloat(editedAmount);
   const isValidTicker = editedTicker.trim() && /^[A-Za-z0-9]+$/.test(editedTicker.trim());
-  const isValidAmount = Number.isFinite(parsedAmount) && parsedAmount >= 1;
+  // Use same minimum as OrderModal ($5 for Webull fractional shares)
+  const isValidAmount = Number.isFinite(parsedAmount) && parsedAmount >= MINIMUM_ORDER_AMOUNT;
   const isSubmitDisabled = isLoading || !selectedAccountId || !isValidTicker || !isValidAmount;
 
   return (
