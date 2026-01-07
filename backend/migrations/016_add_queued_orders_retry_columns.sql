@@ -8,19 +8,26 @@
 -- NOTE: PostgreSQL auto-generates constraint names for inline CHECK constraints.
 -- The name format is typically {table}_{column}_check but this isn't guaranteed.
 -- We must dynamically find and drop the actual constraint name from pg_constraint.
+--
+-- IMPORTANT: PostgreSQL normalizes 'IN (...)' to '= ANY (ARRAY[...])' in system catalogs,
+-- so we use pg_attribute join to reliably find CHECK constraints on the status column.
 DO $$
 DECLARE
     constraint_name_var TEXT;
 BEGIN
-    -- Find the CHECK constraint on the status column
-    SELECT conname INTO constraint_name_var
+    -- Find CHECK constraints that reference the 'status' column
+    -- Join with pg_attribute to reliably identify the column, avoiding LIKE pattern issues
+    -- with PostgreSQL's internal constraint definition format
+    SELECT c.conname INTO constraint_name_var
     FROM pg_constraint c
     JOIN pg_class t ON c.conrelid = t.oid
     JOIN pg_namespace n ON t.relnamespace = n.oid
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
     WHERE t.relname = 'queued_orders'
       AND n.nspname = 'public'
       AND c.contype = 'c'  -- CHECK constraint
-      AND pg_get_constraintdef(c.oid) LIKE '%status%IN%';
+      AND a.attname = 'status'
+    LIMIT 1;  -- In case there are multiple, take the first (shouldn't happen for our use case)
     
     -- Drop the existing constraint if found
     IF constraint_name_var IS NOT NULL THEN

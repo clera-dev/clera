@@ -312,9 +312,11 @@ class QueuedOrderExecutor:
                     # If order_id is missing, keep original as 'pending' to avoid order loss
                     if not new_order_id:
                         logger.error(f"⚠️ Order {order_id} was re-queued but no new order_id returned. Keeping original as pending.")
+                        # CRITICAL: Increment retry_count to prevent infinite retry loop
                         self.supabase.table('queued_orders')\
                             .update({
                                 'status': 'pending',
+                                'retry_count': retry_count + 1,
                                 'last_error': 'Re-queue attempt returned no order_id - will retry',
                                 'updated_at': datetime.now(timezone.utc).isoformat()
                             })\
