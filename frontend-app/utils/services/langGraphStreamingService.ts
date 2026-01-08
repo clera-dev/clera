@@ -37,6 +37,8 @@ export interface LangGraphStreamingOptions {
   onToolStart?: (runId: string, toolKey: string, toolLabel: string, agent?: string) => Promise<void>;
   onToolComplete?: (runId: string, toolKey: string, status?: 'complete' | 'error') => Promise<void>;
   onRunFinalize?: (runId: string, status: 'complete' | 'error') => Promise<void>;
+  // Citation storage callback (optional - stores citations when run completes)
+  onCitationsCollected?: (runId: string, threadId: string, userId: string, citations: string[]) => Promise<void>;
 }
 
 /**
@@ -143,6 +145,8 @@ export class LangGraphStreamingService {
 
           const eventCounts: Record<string, number> = {};
           const startedTools = new Set<string>(); // per-stream tool-start tracking
+          const collectedCitations: string[] = []; // Track citations for this stream/run
+          const processedMessageIds = new Set<string>(); // CRITICAL: Track processed messages to prevent duplicate citation extraction
 
           for await (const chunk of langGraphStream) {
             // Debug log raw chunk metadata (sanitized)
@@ -156,17 +160,36 @@ export class LangGraphStreamingService {
             //   dataType: typeof (chunk as any)?.data
             // });
 
-            const processedChunk = serviceInstance.processStreamChunk(chunk);
+            const processedChunk = serviceInstance.processStreamChunk(chunk, processedMessageIds);
             
             if (processedChunk) {
-              // console.log('[LangGraphStreamingService] Sending processed chunk to client:', { 
+              // console.log('[LangGraphStreamingService] Sending processed chunk to client:', {
               //   type: processedChunk.type,
               //   hasData: !!processedChunk.data,
               //   metadata: processedChunk.metadata
               // });
-              
+
               const chunkText = `data: ${JSON.stringify(processedChunk)}\n\n`;
               controller.enqueue(new TextEncoder().encode(chunkText));
+
+              // CITATIONS FIX: Collect citations from processed chunks for persistence
+              // Only collect from messages_complete events which have the final citation list
+              if (processedChunk.type === 'messages_complete' && processedChunk.metadata?.citations) {
+                const newCitations = processedChunk.metadata.citations as string[];
+                if (newCitations && newCitations.length > 0) {
+                  // Add unique citations only
+                  for (const citation of newCitations) {
+                    if (citation && !collectedCitations.includes(citation)) {
+                      collectedCitations.push(citation);
+                    }
+                  }
+                  console.log('[LangGraphStreamingService] Collected citations for persistence:', {
+                    newCount: newCitations.length,
+                    totalCount: collectedCitations.length,
+                    runId: options.runId
+                  });
+                }
+              }
             }
 
             // Additionally, attempt to derive tool/agent events for UI instrumentation
@@ -267,7 +290,29 @@ export class LangGraphStreamingService {
 
           // console.log('[LangGraphStreamingService] Stream completed successfully');
           controller.close();
-          
+
+          // CITATIONS FIX: Persist collected citations before finalizing run
+          if (options.onCitationsCollected && options.runId && options.userId && collectedCitations.length > 0) {
+            try {
+              console.log('[LangGraphStreamingService] Persisting citations:', {
+                runId: options.runId,
+                threadId: options.threadId,
+                citationCount: collectedCitations.length
+              });
+              const p = options.onCitationsCollected(
+                options.runId,
+                options.threadId,
+                options.userId,
+                collectedCitations
+              );
+              Promise.resolve(p).catch((err) => {
+                console.error('[LangGraphStreamingService] Failed to persist citations:', err);
+              });
+            } catch (err) {
+              console.error('[LangGraphStreamingService] Failed to invoke citation persistence callback:', err);
+            }
+          }
+
           // Finalize run on successful completion (fire-and-forget)
           if (options.runId && options.onRunFinalize) {
             try {
@@ -331,7 +376,7 @@ export class LangGraphStreamingService {
    * @param chunk Raw chunk from LangGraph stream
    * @returns Processed chunk data or null if chunk should be ignored
    */
-  private processStreamChunk(chunk: any): LangGraphChunk | null {
+  private processStreamChunk(chunk: any, processedMessageIds: Set<string>): LangGraphChunk | null {
     // CRITICAL DEBUG: Log EVERY chunk to see structure
     console.log('[LangGraphStreamingService] 🔍 Raw chunk received:', {
       chunkType: typeof chunk,
@@ -446,10 +491,32 @@ export class LangGraphStreamingService {
 
         // Only extract citations from messages AFTER the last user message
         // These are the tool responses and AI messages from the current request only
+        // CRITICAL: Use processedMessageIds to prevent duplicate extraction across multiple messages events
         const allCitations: string[] = [];
         data.forEach((item: any, index: number) => {
           // Only process messages that come after the last user message (current request)
           if (index > lastUserMessageIndex && item && typeof item === 'object') {
+            // Generate a stable ID for this message to prevent duplicate processing
+            let msgId = item.id || item.tool_call_id;
+            if (!msgId && item.content) {
+              // Create a content-based fingerprint for messages without IDs
+              const contentStr = typeof item.content === 'string'
+                ? item.content
+                : JSON.stringify(item.content).substring(0, 200);
+              msgId = `${item.type || 'msg'}-${item.name || 'unknown'}-${contentStr.length}-${contentStr.substring(0, 100)}`;
+            }
+
+            // Skip if we've already processed this message in this stream
+            if (msgId && processedMessageIds.has(msgId)) {
+              // console.log(`[LangGraphStreamingService] Skipping already processed message ${index}`);
+              return;
+            }
+
+            // Mark as processed
+            if (msgId) {
+              processedMessageIds.add(msgId);
+            }
+
             // Log what we're processing for debugging
             console.log(`[LangGraphStreamingService] Processing message ${index}:`, {
               type: item.type,
@@ -549,9 +616,29 @@ export class LangGraphStreamingService {
         });
 
         // Extract citations from messages AFTER the last user message
+        // CRITICAL: Use processedMessageIds to prevent duplicate extraction
         const allCitations: string[] = [];
         data.forEach((item: any, index: number) => {
           if (index > lastUserMessageIndex && item && typeof item === 'object') {
+            // Generate a stable ID for this message to prevent duplicate processing
+            let msgId = item.id || item.tool_call_id;
+            if (!msgId && item.content) {
+              const contentStr = typeof item.content === 'string'
+                ? item.content
+                : JSON.stringify(item.content).substring(0, 200);
+              msgId = `${item.type || 'msg'}-${item.name || 'unknown'}-${contentStr.length}-${contentStr.substring(0, 100)}`;
+            }
+
+            // Skip if we've already processed this message in this stream
+            if (msgId && processedMessageIds.has(msgId)) {
+              return;
+            }
+
+            // Mark as processed
+            if (msgId) {
+              processedMessageIds.add(msgId);
+            }
+
             console.log(`[LangGraphStreamingService] Processing message ${index} (legacy):`, {
               type: item.type,
               name: item.name,

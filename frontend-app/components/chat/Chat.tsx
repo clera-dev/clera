@@ -172,10 +172,10 @@ export default function Chat({
       
       if (currentThreadId) {
         try {
-          // Fetch the existing messages for this thread
-          const threadMessages = await getThreadMessages(currentThreadId);
+          // Fetch the existing messages for this thread (includes tool fingerprints)
+          const { messages: threadMessages, toolFingerprints } = await getThreadMessages(currentThreadId);
           //console.log(`Loaded ${threadMessages.length} messages for thread ${currentThreadId}`);
-          
+
           // CRITICAL FIX: Don't overwrite existing messages if we already have content
           // This prevents wiping out user messages + status when a new thread is created
           const currentMessages = chatClient.state.messages;
@@ -183,7 +183,14 @@ export default function Chat({
             //console.log(`Not overwriting ${currentMessages.length} existing messages with 0 thread messages`);
             return; // Keep existing messages (user input + status)
           }
-          
+
+          // CITATION FIX: Pre-populate tool fingerprints BEFORE setting messages
+          // This ensures that when new requests are made, the client knows which
+          // tool messages are historical and should not have their citations re-extracted
+          if (toolFingerprints && toolFingerprints.length > 0) {
+            chatClient.prePopulateProcessedToolFingerprints(toolFingerprints);
+          }
+
           chatClient.setMessages(threadMessages);
           // PRODUCTION FIX: Clear any persistent errors when loading existing chat
           chatClient.clearErrorOnChatLoad();

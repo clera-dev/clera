@@ -34,6 +34,7 @@ export interface SecureChatClient {
   cleanup: () => void;
   clearCitations: () => void; // NEW: Clear citations for new chat
   getCurrentRunId: () => string | null; // NEW: Get current run ID for request tracking
+  prePopulateProcessedToolFingerprints: (fingerprints: string[]) => void; // NEW: Pre-populate fingerprints from history
 }
 
 // ToolActivity is defined centrally in '@/types/chat'.
@@ -375,10 +376,12 @@ export class SecureChatClientImpl implements SecureChatClient {
 
       this.setState({ isLoading: true, error: null }); // Reset state for each new request
 
-      // CRITICAL: Clear citations from previous request to prevent accumulation
+      // CRITICAL FIX: Reset currentRequestCitations for new request but DO NOT clear processedToolMessageIds!
+      // processedToolMessageIds tracks ALL tool messages ever seen in this session (including historical ones).
+      // This prevents re-extraction of citations from historical tool messages when they appear in node_update events.
+      // Historical tool fingerprints are pre-populated when loading chat history via prePopulateProcessedToolMessageIds().
       this.currentRequestCitations = [];
-      this.processedToolMessageIds.clear();
-      console.log('[SecureChatClient] ✓ Cleared citations and processed tool IDs at start of new request (runId:', this.currentQueryRunId, ')');
+      // NOTE: We intentionally DO NOT clear processedToolMessageIds here to prevent citation accumulation
 
       // Status message is now added by the caller before startStream is called
       // This prevents timing issues with React batching
@@ -638,20 +641,18 @@ export class SecureChatClientImpl implements SecureChatClient {
   }
 
   private handleStreamChunk(chunk: any, context?: { userId: string }) {
-    // console.log('[SecureChatClient] handleStreamChunk called with:', {
-    //   type: chunk.type,
-    //   hasData: !!chunk.data,
-    //   dataType: typeof chunk.data,
-    //   dataLength: Array.isArray(chunk.data) ? chunk.data.length : 'not array',
-    //   currentState: {
-    //     isStreaming: this.isStreaming,
-    //     hasReceivedRealContent: this.hasReceivedRealContent,
-    //     hasReceivedInterrupt: this.hasReceivedInterrupt,
-    //     streamCompletedSuccessfully: this.streamCompletedSuccessfully,
-    //     messageCount: this._state.messages.length,
-    //     isLoading: this._state.isLoading
-    //   }
-    // });
+    // DEBUG: Log ALL incoming chunks to understand the streaming flow
+    console.log('[SecureChatClient] 📨 handleStreamChunk received:', {
+      type: chunk.type,
+      hasData: !!chunk.data,
+      dataType: typeof chunk.data,
+      dataIsArray: Array.isArray(chunk.data),
+      dataLength: Array.isArray(chunk.data) ? chunk.data.length : (chunk.data ? Object.keys(chunk.data).length : 0),
+      hasMetadata: !!chunk.metadata,
+      metadataKeys: chunk.metadata ? Object.keys(chunk.metadata) : [],
+      hasCitationsInMetadata: !!(chunk.metadata?.citations),
+      citationsCount: chunk.metadata?.citations?.length || 0
+    });
     
     // Handle different chunk types with simplified, standardized logic
     
@@ -730,8 +731,10 @@ export class SecureChatClientImpl implements SecureChatClient {
       const nodeName = chunk.data.nodeName;
       // console.log(`[SecureChatClient] Node update for: ${nodeName}, hasReceivedRealContent: ${this.hasReceivedRealContent}`);
 
-      // CITATIONS FIX: Extract citations directly from tool response content
-      // This is more reliable than relying on metadata which may not be populated correctly
+      // CITATION EXTRACTION: Extract citations from node_update events using processedToolMessageIds deduplication
+      // The processedToolMessageIds set persists across requests and is pre-populated with historical
+      // tool fingerprints when loading chat history. This prevents re-extraction of citations from
+      // historical tool messages, ensuring only NEW tool messages contribute citations.
       this.extractCitationsFromNodeUpdate(chunk);
 
       // CRITICAL FIX: Only show status messages if we haven't received real content yet
@@ -770,6 +773,41 @@ export class SecureChatClientImpl implements SecureChatClient {
         citationCount: chunk.metadata?.citations?.length || 0,
         allMessageTypes: chunk.data.map((msg: any) => ({ type: msg?.type, name: msg?.name, hasContent: !!msg?.content }))
       });
+
+      // DEBUG: Also try to extract citations directly from the messages in this chunk
+      // This is a fallback in case metadata.citations is empty
+      // IMPORTANT: Only extract from tool messages AFTER the last human message to prevent accumulation
+      const directCitations: string[] = [];
+
+      // Find the last human message index
+      let lastHumanIdx = -1;
+      for (let i = chunk.data.length - 1; i >= 0; i--) {
+        if (chunk.data[i]?.type === 'human') {
+          lastHumanIdx = i;
+          break;
+        }
+      }
+
+      console.log('[SecureChatClient] Direct extraction: last human at index', lastHumanIdx, 'of', chunk.data.length, 'messages');
+
+      // Only process tool messages after the last human message
+      for (let i = lastHumanIdx + 1; i < chunk.data.length; i++) {
+        const msg = chunk.data[i];
+        if (msg?.type === 'tool' && msg?.content) {
+          const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+          const citationRegex = /<!--\s*CITATIONS:\s*([^>]+)\s*-->/g;
+          let match;
+          while ((match = citationRegex.exec(content)) !== null) {
+            if (match[1]) {
+              const urls = match[1].split(',').map((url: string) => url.trim()).filter((url: string) => url);
+              directCitations.push(...urls);
+            }
+          }
+        }
+      }
+      if (directCitations.length > 0) {
+        console.log('[SecureChatClient] 🔍 Found citations directly in messages_complete data:', directCitations);
+      }
       
       // Process all AI messages from Clera
       const newMessages: Message[] = [];
@@ -869,22 +907,32 @@ export class SecureChatClientImpl implements SecureChatClient {
         // Mark that we've received real content BEFORE state update
         this.hasReceivedRealContent = true;
 
-        // CITATIONS FIX: Use citations collected from node_update tool responses
-        // These are extracted directly from the tool response content (<!-- CITATIONS: --> markers)
-        // which is more reliable than the metadata which may not be populated correctly
-        const metadataCitations = chunk.metadata?.citations || [];
+        // CITATION FIX: Try multiple sources for citations in priority order:
+        // 1. currentRequestCitations (from node_update extraction)
+        // 2. directCitations (extracted directly from messages_complete data above)
+        // 3. metadata.citations (from server)
+        const clientCitations = [...this.currentRequestCitations];
+        const serverCitations = (chunk.metadata?.citations || []) as string[];
 
-        // Prefer currentRequestCitations (directly extracted from tool content)
-        // Fall back to metadata citations if currentRequestCitations is empty
-        const allCitations = this.currentRequestCitations.length > 0
-          ? [...this.currentRequestCitations]  // Use our directly extracted citations
-          : metadataCitations;  // Fall back to metadata if no direct extraction
+        let allCitations: string[];
+        let citationSource: string;
+
+        if (clientCitations.length > 0) {
+          allCitations = clientCitations;
+          citationSource = 'client (node_update)';
+        } else if (directCitations.length > 0) {
+          allCitations = directCitations;
+          citationSource = 'direct (messages_complete data)';
+        } else {
+          allCitations = serverCitations;
+          citationSource = 'server (metadata)';
+        }
 
         console.log('[SecureChatClient] Citations for message:', {
-          fromDirectExtraction: this.currentRequestCitations.length,
-          fromMetadata: metadataCitations.length,
-          usingSource: this.currentRequestCitations.length > 0 ? 'directExtraction' : 'metadata',
-          totalCitations: allCitations.length,
+          clientCitationCount: clientCitations.length,
+          directCitationCount: directCitations.length,
+          serverCitationCount: serverCitations.length,
+          usingSource: citationSource,
           citations: allCitations
         });
 
@@ -898,9 +946,9 @@ export class SecureChatClientImpl implements SecureChatClient {
           }
         }
 
-        // Clear current request citations for next request
+        // Clear currentRequestCitations for the next request, but DO NOT clear processedToolMessageIds.
+        // processedToolMessageIds must persist across requests to prevent re-extraction of historical citations.
         this.currentRequestCitations = [];
-        this.processedToolMessageIds.clear();
 
         // Update state with all new messages, ensuring status messages are removed
         this.setState({
@@ -1075,31 +1123,78 @@ export class SecureChatClientImpl implements SecureChatClient {
   /**
    * Extracts citations from node_update chunks
    * This extracts citations directly from tool response content (the <!-- CITATIONS: --> markers)
-   * rather than relying on accumulated metadata
+   *
+   * NEW APPROACH: Find the last human message in the data, then only extract citations
+   * from tool messages that come AFTER it. This scopes extraction to the current request only.
    */
   private extractCitationsFromNodeUpdate(chunk: any): void {
-    const nodeData = chunk.data?.nodeData;
-    if (!nodeData) return;
+    // DEBUG: Log the full chunk structure to understand what we're receiving
+    console.log('[SecureChatClient] 🔍 extractCitationsFromNodeUpdate called with chunk:', {
+      hasData: !!chunk.data,
+      dataKeys: chunk.data ? Object.keys(chunk.data) : [],
+      hasNodeData: !!chunk.data?.nodeData,
+      nodeDataType: typeof chunk.data?.nodeData,
+      nodeDataKeys: chunk.data?.nodeData ? Object.keys(chunk.data.nodeData) : [],
+      nodeName: chunk.data?.nodeName
+    });
 
-    // Look for tool messages in the node data
-    const messages = nodeData.messages || (Array.isArray(nodeData) ? nodeData : []);
+    // Try multiple paths to find the messages array
+    let messages: any[] = [];
 
-    if (!Array.isArray(messages)) return;
+    // Path 1: chunk.data.nodeData.messages
+    if (chunk.data?.nodeData?.messages && Array.isArray(chunk.data.nodeData.messages)) {
+      messages = chunk.data.nodeData.messages;
+      console.log('[SecureChatClient] Found messages at chunk.data.nodeData.messages:', messages.length);
+    }
+    // Path 2: chunk.data.nodeData is an array directly
+    else if (Array.isArray(chunk.data?.nodeData)) {
+      messages = chunk.data.nodeData;
+      console.log('[SecureChatClient] Found messages at chunk.data.nodeData (array):', messages.length);
+    }
+    // Path 3: chunk.data.messages
+    else if (chunk.data?.messages && Array.isArray(chunk.data.messages)) {
+      messages = chunk.data.messages;
+      console.log('[SecureChatClient] Found messages at chunk.data.messages:', messages.length);
+    }
+    // Path 4: chunk.data is an array directly
+    else if (Array.isArray(chunk.data)) {
+      messages = chunk.data;
+      console.log('[SecureChatClient] Found messages at chunk.data (array):', messages.length);
+    }
 
-    for (const msg of messages) {
+    if (messages.length === 0) {
+      console.log('[SecureChatClient] No messages found in node_update, trying to log full structure');
+      console.log('[SecureChatClient] Full chunk.data:', JSON.stringify(chunk.data, null, 2).substring(0, 1000));
+      return;
+    }
+
+    // Log message structure for debugging
+    console.log('[SecureChatClient] Message types in node_update:', messages.map((m: any, i: number) => ({
+      index: i,
+      type: m?.type,
+      name: m?.name,
+      hasContent: !!m?.content,
+      contentPreview: typeof m?.content === 'string' ? m.content.substring(0, 100) : typeof m?.content
+    })));
+
+    // NEW APPROACH: Find the LAST human message index
+    // Only process tool messages that come AFTER the last human message (current request)
+    let lastHumanIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.type === 'human') {
+        lastHumanIndex = i;
+        break;
+      }
+    }
+
+    console.log('[SecureChatClient] Last human message index:', lastHumanIndex, 'of', messages.length, 'messages');
+
+    // Process only tool messages AFTER the last human message
+    for (let i = lastHumanIndex + 1; i < messages.length; i++) {
+      const msg = messages[i];
+
       // Only process tool messages (web_search results contain citations)
       if (!msg || msg.type !== 'tool') continue;
-
-      // Generate a unique ID for this tool message to avoid duplicate processing
-      const msgId = msg.id || msg.tool_call_id || `${msg.name}-${Date.now()}`;
-
-      // Skip if we've already processed this message
-      if (this.processedToolMessageIds.has(msgId)) {
-        continue;
-      }
-
-      // Mark as processed
-      this.processedToolMessageIds.add(msgId);
 
       // Get content from the message
       let content = '';
@@ -1114,6 +1209,24 @@ export class SecureChatClientImpl implements SecureChatClient {
       }
 
       if (!content) continue;
+
+      // Generate fingerprint for deduplication (within this request only)
+      const fingerprint = msg.id || msg.tool_call_id || `${msg.name || 'tool'}-${content.length}-${content.substring(0, 200)}`;
+
+      // Skip if we've already processed this exact message in this request
+      if (this.processedToolMessageIds.has(fingerprint)) {
+        console.log('[SecureChatClient] Skipping already processed tool message at index', i);
+        continue;
+      }
+
+      // Mark as processed
+      this.processedToolMessageIds.add(fingerprint);
+
+      console.log('[SecureChatClient] Processing tool message at index', i, ':', {
+        name: msg.name,
+        contentLength: content.length,
+        hasCitationMarker: content.includes('<!-- CITATIONS:')
+      });
 
       // Extract citations from HTML comment markers: <!-- CITATIONS: url1,url2,url3 -->
       const citationRegex = /<!--\s*CITATIONS:\s*([^>]+)\s*-->/g;
@@ -1134,7 +1247,7 @@ export class SecureChatClientImpl implements SecureChatClient {
 
         if (uniqueNew.length > 0) {
           this.currentRequestCitations.push(...uniqueNew);
-          console.log('[SecureChatClient] ✓ Extracted', uniqueNew.length, 'NEW citations from tool response:', uniqueNew);
+          console.log('[SecureChatClient] ✓ Extracted', uniqueNew.length, 'NEW citations from tool at index', i, ':', uniqueNew);
           console.log('[SecureChatClient] Total citations for current request:', this.currentRequestCitations.length);
         }
       }
@@ -1262,6 +1375,29 @@ export class SecureChatClientImpl implements SecureChatClient {
 
   getCurrentRunId() {
     return this.currentQueryRunId;
+  }
+
+  /**
+   * Pre-populate processedToolMessageIds with fingerprints from historical tool messages.
+   * This is called when loading chat history to ensure that historical tool messages
+   * are marked as "already processed" before any new requests are made.
+   * This prevents the citation accumulation bug where node_update events containing
+   * historical tool messages would have their citations re-extracted.
+   */
+  prePopulateProcessedToolFingerprints(fingerprints: string[]): void {
+    if (!fingerprints || fingerprints.length === 0) {
+      console.log('[SecureChatClient] No fingerprints to pre-populate');
+      return;
+    }
+
+    for (const fp of fingerprints) {
+      if (fp && typeof fp === 'string') {
+        this.processedToolMessageIds.add(fp);
+      }
+    }
+
+    console.log('[SecureChatClient] Pre-populated', fingerprints.length, 'tool fingerprints from history');
+    console.log('[SecureChatClient] Total processedToolMessageIds:', this.processedToolMessageIds.size);
   }
 
   cleanup() {

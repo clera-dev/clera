@@ -4,6 +4,7 @@ import { LangGraphStreamingService } from '@/utils/services/langGraphStreamingSe
 import { ConversationAuthService } from '@/utils/api/conversation-auth';
 import { createClient as createServerSupabase } from '@/utils/supabase/server';
 import { ToolEventStore } from '@/lib/server/ToolEventStore';
+import { CitationStore } from '@/lib/server/CitationStore';
 
 // CRITICAL FIX: Set maximum duration for LangGraph agent processing (up to 800 seconds on Pro/Enterprise)
 export const maxDuration = 299; // ~5 minutes for complex agent workflows
@@ -110,6 +111,15 @@ export async function POST(request: NextRequest) {
       },
       onRunFinalize: async (runId, status) => {
         await ToolEventStore.finalizeRun({ runId, status });
+      },
+      // CITATIONS FIX: Persist citations when collected during streaming
+      onCitationsCollected: async (runId, threadId, userId, citations) => {
+        await CitationStore.storeCitations({
+          runId,
+          threadId,
+          userId,
+          citations,
+        });
       },
     });
 
