@@ -200,6 +200,41 @@ def get_authenticated_user_id(
     )
 
 
+def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -> str:
+    """
+    FastAPI dependency for API key verification.
+    
+    SECURITY: Uses constant-time comparison (hmac.compare_digest) to prevent
+    timing attacks that could allow API key guessing.
+    
+    Args:
+        x_api_key: The API key from the X-API-Key header
+        
+    Returns:
+        The validated API key
+        
+    Raises:
+        HTTPException: If API key is missing, not configured, or invalid
+    """
+    expected_key = config("BACKEND_API_KEY", default=None)
+    
+    if not expected_key:
+        logger.error("BACKEND_API_KEY not configured - rejecting request")
+        raise HTTPException(status_code=500, detail="API key not configured")
+    
+    if not x_api_key:
+        logger.warning("API key verification failed - no API key provided")
+        raise HTTPException(status_code=401, detail="API key required")
+    
+    # Use constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(x_api_key, expected_key):
+        logger.warning("API key verification failed - invalid API key")
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    logger.debug("API key verified successfully")
+    return x_api_key
+
+
 def verify_account_ownership(
     account_id: str,
     user_id: str = Depends(get_authenticated_user_id)
