@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from typing import Dict, List, Any, Optional, Union
 from dotenv import load_dotenv
+from utils.citation_extractor import extract_citations_from_text, extract_citations_from_messages
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -343,30 +344,64 @@ async def run_thread_stream(
          logger.error(f"Unexpected error during stream processing for thread {thread_id}: {e}", exc_info=True)
          raise
 
-# --- format_messages_for_frontend remains unchanged --- 
-def format_messages_for_frontend(history: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+# --- format_messages_for_frontend with citation extraction --- 
+def format_messages_for_frontend(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Format thread history (checkpoints) into a sequence of messages for the frontend.
     Extracts messages from the 'values' field within each history checkpoint,
     using message IDs for deduplication and handling various message types.
+    Also extracts citations from tool results and adds them to assistant messages.
     
     Args:
         history (List[Dict]): List of checkpoints from LangGraph thread history.
     
     Returns:
-        List[Dict]: Formatted messages for frontend [{"role": ..., "content": ...}]
+        List[Dict]: Formatted messages for frontend [{"role": ..., "content": ..., "citations": [...]}]
     """
     processed_messages = []
     seen_message_ids = set()
+    # Track citations from tool results to associate with assistant messages
+    citations_by_message = {}  # Map message_id -> list of citations
+    all_tool_citations = []  # Aggregate citations from all tool results
 
-    # Iterate through checkpoints in chronological order (history is newest first)
+    # First pass: Extract citations from tool messages
     for checkpoint in reversed(history):
         values = checkpoint.get("values")
         if not values:
             continue
 
-        # Find the messages list within the state values.
-        messages_key = 'messages' # Adjust if your graph stores messages differently
+        messages_key = 'messages'
+        checkpoint_messages = values.get(messages_key)
+
+        if not isinstance(checkpoint_messages, list):
+            continue
+            
+        for msg in checkpoint_messages:
+            msg_type = None
+            content = None
+            
+            if isinstance(msg, dict):
+                msg_type = msg.get("type")
+                content = msg.get("content")
+            elif hasattr(msg, 'type') and hasattr(msg, 'content'):
+                msg_type = msg.type
+                content = msg.content
+            
+            # Extract citations from tool results
+            if msg_type == "tool":
+                if isinstance(content, str):
+                    _, citations = extract_citations_from_text(content)
+                    if citations:
+                        all_tool_citations.extend(citations)
+                        logger.info(f"Extracted {len(citations)} citations from tool result")
+
+    # Second pass: Process messages for display and attach citations
+    for checkpoint in reversed(history):
+        values = checkpoint.get("values")
+        if not values:
+            continue
+
+        messages_key = 'messages'
         checkpoint_messages = values.get(messages_key)
 
         if not isinstance(checkpoint_messages, list):
@@ -378,6 +413,8 @@ def format_messages_for_frontend(history: List[Dict[str, Any]]) -> List[Dict[str
             content = None
             role = None
             tool_calls = []
+            additional_kwargs = {}
+            response_metadata = {}
 
             # --- Extract common fields --- 
             if isinstance(msg, dict):
@@ -385,11 +422,15 @@ def format_messages_for_frontend(history: List[Dict[str, Any]]) -> List[Dict[str
                 msg_type = msg.get("type")
                 content = msg.get("content")
                 tool_calls = msg.get("tool_calls", [])
+                additional_kwargs = msg.get("additional_kwargs", {})
+                response_metadata = msg.get("response_metadata", {})
             elif hasattr(msg, 'id') and hasattr(msg, 'type') and hasattr(msg, 'content'): # Handle BaseMessage objects
                 msg_id = msg.id
                 msg_type = msg.type
                 content = msg.content
-                tool_calls = getattr(msg, 'tool_calls', []) # Get tool calls if they exist
+                tool_calls = getattr(msg, 'tool_calls', [])
+                additional_kwargs = getattr(msg, 'additional_kwargs', {}) or {}
+                response_metadata = getattr(msg, 'response_metadata', {}) or {}
             else:
                 logger.warning(f"Skipping unrecognized message format: {type(msg)}")
                 continue
@@ -405,19 +446,13 @@ def format_messages_for_frontend(history: List[Dict[str, Any]]) -> List[Dict[str
                 role = "assistant"
                 # If content is empty but there are tool calls, maybe skip or format differently?
                 # For now, we'll show the content even if it's empty alongside tool calls.
-                # We will filter out the raw tool call representation below.
                 if not content and tool_calls:
-                     # Option 1: Skip this message entirely if it ONLY contains tool calls
-                     # continue 
-                     # Option 2: Provide placeholder text
-                     # content = "[Assistant is using a tool...]"
-                     # Option 3: Just use the (potentially empty) content - current behavior
                      pass 
             elif msg_type == "system":
                 # Usually skip system messages for display
                 continue 
             elif msg_type == "tool":
-                # Skip tool results for display
+                # Skip tool results for display (already processed for citations)
                 continue
             else:
                  logger.warning(f"Skipping message with unhandled type '{msg_type}': {msg_id}")
@@ -427,19 +462,59 @@ def format_messages_for_frontend(history: List[Dict[str, Any]]) -> List[Dict[str
             # Ensure content is a string, handle None
             final_content = str(content) if content is not None else "" 
             
+            # Extract citations from content (in case they're embedded)
+            cleaned_content, content_citations = extract_citations_from_text(final_content)
+            final_content = cleaned_content
+            
+            # Collect citations from multiple sources
+            message_citations = []
+            
+            # Citations from content
+            if content_citations:
+                message_citations.extend(content_citations)
+            
+            # Citations from additional_kwargs
+            if additional_kwargs and 'citations' in additional_kwargs:
+                citations_from_kwargs = additional_kwargs['citations']
+                if isinstance(citations_from_kwargs, list):
+                    message_citations.extend(citations_from_kwargs)
+            
+            # Citations from response_metadata
+            if response_metadata and 'citations' in response_metadata:
+                citations_from_metadata = response_metadata['citations']
+                if isinstance(citations_from_metadata, list):
+                    message_citations.extend(citations_from_metadata)
+            
+            # For assistant messages, also include aggregated tool citations
+            if role == "assistant" and all_tool_citations:
+                message_citations.extend(all_tool_citations)
+            
+            # Deduplicate citations
+            seen_citations = set()
+            unique_citations = []
+            for citation in message_citations:
+                if citation and citation not in seen_citations:
+                    seen_citations.add(citation)
+                    unique_citations.append(citation)
+            
             # Avoid showing raw function/tool call syntax if it bled into content
             if final_content.startswith("<function=") or final_content.startswith("<tool_code>"):
                  logger.warning(f"Skipping message content that looks like raw tool call: {msg_id}")
-                 # Decide: skip message entirely or show placeholder?
-                 # continue # Option to skip
-                 final_content = "[Assistant performed an action]" # Option for placeholder
+                 final_content = "[Assistant performed an action]"
                  
             # --- Add to list --- 
             if role:
-                 processed_messages.append({
+                 message_dict = {
                     "role": role,
                     "content": final_content
-                 })
+                 }
+                 
+                 # Add citations if available
+                 if unique_citations:
+                     message_dict["citations"] = unique_citations
+                     logger.info(f"Added {len(unique_citations)} citations to message {msg_id}")
+                 
+                 processed_messages.append(message_dict)
                  seen_message_ids.add(msg_id)
             
     logger.info(f"Formatted {len(processed_messages)} messages for frontend from history using ID deduplication.")

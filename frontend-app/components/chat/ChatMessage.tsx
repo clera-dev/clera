@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Message } from '@/utils/api/chat-client';
-import { CheckIcon } from 'lucide-react';
+import { CheckIcon, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import UserAvatar from './UserAvatar';
 
@@ -39,6 +39,23 @@ export interface ChatMessageProps {
 export default function ChatMessage({ message, isLast, isMobileMode = false, isSidebarMode = false }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isStatus = message.isStatus;
+
+  // DEBUG: Log message citations for debugging
+  if (!isUser && message.citations) {
+    console.log('[ChatMessage] Rendering assistant message with citations:', {
+      messageId: message.id,
+      runId: message.runId,
+      citationCount: message.citations.length,
+      citations: message.citations,
+      contentPreview: message.content.substring(0, 100) + '...'
+    });
+  } else if (!isUser && !message.citations) {
+    console.log('[ChatMessage] Rendering assistant message WITHOUT citations:', {
+      messageId: message.id,
+      runId: message.runId,
+      contentPreview: message.content.substring(0, 100) + '...'
+    });
+  }
 
   // Special styling for status messages
   if (isStatus) {
@@ -119,10 +136,50 @@ export default function ChatMessage({ message, isLast, isMobileMode = false, isS
               strong: ({children}) => <strong className="font-semibold">{children}</strong>,
               em: ({children}) => <em className="italic">{children}</em>,
               code: ({children}) => <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">{children}</code>,
+              // Citation links - render as clickable links that open in new tab
+              a: ({node, ...props}) => (
+                <a
+                  {...props}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline decoration-dotted underline-offset-2 hover:decoration-solid transition-all duration-200"
+                />
+              ),
             }}
           >
             {stripAgentNameTags(message.content)}
           </ReactMarkdown>
+          
+          {/* Display citations if available */}
+          {!isUser && message.citations && message.citations.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="text-xs font-semibold text-muted-foreground mb-2">
+                Research Sources ({message.citations.length})
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {message.citations.map((citation, index) => (
+                  <a
+                    key={index}
+                    href={citation}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    <span className="max-w-[200px] truncate">
+                      {(() => {
+                        try {
+                          return new URL(citation).hostname.replace(/^www\./, '');
+                        } catch {
+                          return citation;
+                        }
+                      })()}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

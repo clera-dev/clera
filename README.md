@@ -130,7 +130,7 @@ The backend powers Clera's core functionalities, built primarily with Python.
 *   LLMs: Groq, Perplexity, Anthropic Claude
 *   Vector DB: Pinecone
 *   Broker API: Alpaca
-*   Bank Integration: Plaid
+*   Bank Integration: Snaptrade/ Stripe
 *   Voice: LiveKit, Deepgram, Cartesia, Retell
 *   Database: Supabase (via API)
 

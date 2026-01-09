@@ -9,6 +9,7 @@ export type Message = {
   content: string;
   isStatus?: boolean; // For temporary status/progress messages
   runId?: string; // Anchor tool activities to a specific user query
+  citations?: string[]; // Source URLs from web search (for citation rendering)
 };
 
 export type ChatRequest = {
@@ -422,14 +423,23 @@ export async function getChatSessions(
 }
 
 /**
+ * Response type for getThreadMessages including tool fingerprints for citation deduplication
+ */
+export type ThreadMessagesResponse = {
+  messages: Message[];
+  toolFingerprints: string[]; // Used to pre-populate processedToolMessageIds to prevent citation accumulation
+};
+
+/**
  * Get thread messages via API route
+ * Returns messages along with tool fingerprints for citation deduplication
  */
 export async function getThreadMessages(
   threadId: string
-): Promise<Message[]> {
+): Promise<ThreadMessagesResponse> {
   try {
     console.log(`Fetching messages for thread: ${threadId}`);
-    
+
     const response = await fetch('/api/conversations/get-thread-messages', {
       method: 'POST',
       headers: {
@@ -446,10 +456,13 @@ export async function getThreadMessages(
     }
 
     const data = await response.json();
-    return data.messages || [];
+    return {
+      messages: data.messages || [],
+      toolFingerprints: data.toolFingerprints || []
+    };
   } catch (error) {
     console.error(`Error getting thread messages for ${threadId}:`, error);
-    return [];
+    return { messages: [], toolFingerprints: [] };
   }
 }
 

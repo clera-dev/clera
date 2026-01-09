@@ -18,6 +18,7 @@ import pandas as pd
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 import numpy as np
+from openai import OpenAI
 
 # Make sure we load environment variables first
 load_dotenv(override=True)
@@ -80,49 +81,189 @@ deep_research_perplexity = ChatPerplexity(
     temperature=0.4
 )
 
+# Initialize Perplexity client for web search (direct API access for citations)
+# Use OpenAI-compatible client with Perplexity base URL
+pplx_client = OpenAI(
+    api_key=os.getenv("PPLX_API_KEY") or os.getenv("OPENAI_API_KEY"),
+    base_url="https://api.perplexity.ai"
+)
+
 @tool("web_search")
 def web_search(query: str) -> str:
     """Simple one-step search tool for financial information.
-    
+
     Args:
         query (str): The search query
-        
+
     Returns:
         str: Search results
     """
+    print("=" * 100)
+    print(f"[WEB_SEARCH] FUNCTION CALLED WITH QUERY: {query}")
+    print("=" * 100)
+
     # Determine if in-depth research is requested
     is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
     current_date = datetime.now().strftime("%Y-%m-%d")
     current_year = datetime.now().year
 
     if is_in_depth_query:
-        research_prompt = f"""You are the world's BEST financial news analyst. 
-        The user has asked for DETAILED/IN-DEPTH research. 
-        Provide a thorough, comprehensive analysis with actionable insights on the query below. 
-        Focus on concrete facts, figures, sources, and causal relationships. 
-        Avoid generic advice. Use recent AND credible financial news sources. 
+        research_prompt = (f"""You are the world's BEST financial news analyst.
+        The user has asked for DETAILED/IN-DEPTH research.
+        Provide a thorough, comprehensive analysis with actionable insights on the query below.
+        Focus on concrete facts, figures, sources, and causal relationships.
+        Avoid generic advice. Use recent AND credible financial news sources.
         Today's date is {current_date}. Current year is {current_year}.
-        
-        CRITICAL: Always prioritize information from {current_year} and recent months. 
+
+        CRITICAL: Always prioritize information from {current_year} and recent months.
+        If referencing older data, clearly state the time period.
+
+Query: {query}
+""")
+        model_name = "sonar-pro"
+    else:
+        research_prompt = (f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
+
+IMPORTANT: Today's date is {current_date}. Current year is {current_year}.
+Always prioritize recent information from {current_year} and clearly indicate time periods for any data you reference.
+
+Query: {query}
+""")
+        model_name = "sonar"
+    
+    messages = [
+        {"role": "system", "content": research_prompt},
+        {"role": "user", "content": query}
+    ]
+    
+    try:
+        # Call Perplexity Chat Completions API directly to get citations
+        print(f"[WEB_SEARCH] Calling Perplexity API with model: {model_name}")
+        response = pplx_client.chat.completions.create(messages=messages, model=model_name)
+        answer_text = response.choices[0].message.content  # The answer text
+        print(f"[WEB_SEARCH] Got response, answer length: {len(answer_text)}")
+
+        # Extract citations from response - Perplexity returns them at the top level
+        citations = getattr(response, "citations", None)
+
+        # If not found, try accessing from response object directly
+        if not citations and hasattr(response, 'citations'):
+            citations = response.citations
+
+        print(f"[WEB_SEARCH] Extracted citations: {citations}")
+        print(f"[WEB_SEARCH] Response type: {type(response)}")
+        if hasattr(response, '__dict__'):
+            print(f"[WEB_SEARCH] Response keys: {list(response.__dict__.keys())}")
+
+        # Return clean text without embedded citation markers
+        # Remove any existing citation markers from the text
+        import re
+        # Remove [1], [2], etc. markers but keep the content
+        clean_text = re.sub(r'\[\d+\]', '', answer_text)
+
+        # If we have citations, append them as HTML comment for frontend extraction
+        if citations and len(citations) > 0:
+            print(f"[DEBUG] Adding {len(citations)} citations as HTML comment")
+            citations_str = ','.join(citations)
+            return f"{clean_text}\n\n<!-- CITATIONS: {citations_str} -->"
+
+        print("[DEBUG] No citations found in response")
+        return clean_text
+    except Exception as e:
+        print(f"[ERROR] Exception in web_search: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error searching for information: {e}"
+
+
+@tool("web_search_streaming")
+def web_search_streaming(query: str, stream_callback=None) -> str:
+    """Streaming web search tool for financial information.
+
+    Args:
+        query (str): The search query
+        stream_callback (callable): Optional callback function to handle streaming chunks
+
+    Returns:
+        str: Complete search results
+    """
+    print("=" * 100)
+    print(f"[WEB_SEARCH_STREAMING] FUNCTION CALLED WITH QUERY: {query}")
+    print("=" * 100)
+
+    # Determine if in-depth research is requested
+    is_in_depth_query = "in-depth" in query.lower() or "detailed" in query.lower()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    current_year = datetime.now().year
+
+    if is_in_depth_query:
+        research_prompt = f"""You are the world's BEST financial news analyst.
+        The user has asked for DETAILED/IN-DEPTH research.
+        Provide a thorough, comprehensive analysis with actionable insights on the query below.
+        Focus on concrete facts, figures, sources, and causal relationships.
+        Avoid generic advice. Use recent AND credible financial news sources.
+        Today's date is {current_date}. Current year is {current_year}.
+
+        CRITICAL: Always prioritize information from {current_year} and recent months.
         If referencing older data, clearly state the time period.
 
 Query: {query}
 """
+        model_name = "sonar-pro"
     else:
-        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations. 
+        research_prompt = f"""You are an efficient financial news assistant. Provide a concise, factual, and up-to-date summary addressing the query below. Focus on the key information and latest developments. Avoid unnecessary jargon or lengthy explanations.
 
-IMPORTANT: Today's date is {current_date}. Current year is {current_year}. 
+IMPORTANT: Today's date is {current_date}. Current year is {current_year}.
 Always prioritize recent information from {current_year} and clearly indicate time periods for any data you reference.
 
 Query: {query}
 """
+        model_name = "sonar"
 
-    messages = [SystemMessage(content=research_prompt), HumanMessage(content=query)]
+    messages = [
+        {"role": "system", "content": research_prompt},
+        {"role": "user", "content": query}
+    ]
+
     try:
-        # Use the standard perplexity model for efficiency unless deep research is needed?
-        # For now, standard model should handle prompt instructions.
-        response = chat_perplexity.invoke(messages)
-        return response.content
+        # Stream the response
+        answer_text = ""
+
+        stream = pplx_client.chat.completions.create(messages=messages, model=model_name, stream=True)
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                partial_text = chunk.choices[0].delta.content
+                answer_text += partial_text
+
+                # Call the streaming callback if provided
+                if stream_callback:
+                    stream_callback(partial_text)
+
+        # Get citations from the final response if available
+        try:
+            # For streaming, we need to make a separate non-streaming call to get citations
+            # This is a limitation of Perplexity's streaming API
+            print(f"[WEB_SEARCH_STREAMING] Making non-streaming call to get citations...")
+            non_stream_response = pplx_client.chat.completions.create(messages=messages, model=model_name, stream=False)
+            citations = getattr(non_stream_response, "citations", None)
+            print(f"[WEB_SEARCH_STREAMING] Extracted citations: {citations}")
+        except Exception as e:
+            print(f"[WEB_SEARCH_STREAMING] Warning: Could not retrieve citations: {e}")
+            citations = None
+
+        # Return clean text without embedded citation markers
+        # Remove any existing citation markers from the text
+        import re
+        # Remove [1], [2], etc. markers but keep the content
+        clean_text = re.sub(r'\[\d+\]', '', answer_text)
+
+        # If we have citations, append them as HTML comment for frontend extraction
+        if citations and len(citations) > 0:
+            print(f"[DEBUG] Adding {len(citations)} citations as HTML comment")
+            citations_str = ','.join(citations)
+            return f"{clean_text}\n\n<!-- CITATIONS: {citations_str} -->"
+
+        return clean_text
     except Exception as e:
         return f"Error searching for information: {e}"
 
@@ -137,11 +278,24 @@ def get_stock_price(ticker: str) -> str:
     Returns:
         str: The current stock price information
     """
-
-    stock_quote = get_stock_quote(ticker)
-    price = stock_quote[0]['price']
-
-    return f"The current price of {ticker} is {price}."
+    try:
+        stock_quote = get_stock_quote(ticker)
+        
+        # Check if we got valid data
+        if not stock_quote or len(stock_quote) == 0:
+            return f"Unable to retrieve price data for {ticker}. The symbol may be invalid or the market data service may be unavailable."
+        
+        # Extract price from the first item in the list
+        quote_data = stock_quote[0] if isinstance(stock_quote, list) else stock_quote
+        price = quote_data.get('price')
+        
+        if price is None:
+            return f"Price data for {ticker} is not available. The symbol may be invalid or trading may be halted."
+        
+        return f"The current price of {ticker} is ${price:.2f}."
+    except Exception as e:
+        logger.error(f"Error getting stock price for {ticker}: {e}")
+        return f"Error retrieving price data for {ticker}: {str(e)}"
 
 ###############################################################################
 # Performance Analysis Functions (moved from portfolio_management_agent.py)
