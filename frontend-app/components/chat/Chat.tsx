@@ -720,11 +720,11 @@ export default function Chat({
               isLoading={isProcessing}
             />
           ) : (
-            <InterruptConfirmation
-              interrupt={interrupt}
-              onConfirm={(response: boolean) => handleInterruptConfirmation(response ? 'yes' : 'no')}
-              isLoading={isProcessing}
-            />
+          <InterruptConfirmation
+            interrupt={interrupt}
+            onConfirm={(response: boolean) => handleInterruptConfirmation(response ? 'yes' : 'no')}
+            isLoading={isProcessing}
+          />
           )
         )}
         

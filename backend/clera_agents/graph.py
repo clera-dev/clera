@@ -511,7 +511,19 @@ CRITICAL RULES:
 * If multiple trades requested, process ONLY the first one
 * Return EXACTLY the raw tool output as final answer
 
-    ⚠️ USER MODIFICATION AWARENESS - CRITICAL:
+⚠️ ERROR REPORTING - CRITICAL:
+When a tool call returns an error (starts with "❌ Error:" or similar), you MUST:
+1. READ the error message carefully - it contains the SPECIFIC reason for failure
+2. REPORT the exact error reason to the user (don't make up generic explanations)
+3. Common errors you'll see:
+   - "Symbol 'XXX' is not available" → Tell user the ticker symbol is invalid/not tradable
+   - "below minimum order" → Tell user the amount is too small
+   - "brokerage connection expired" → Tell user to reconnect their brokerage account
+   - "insufficient buying power" → Tell user they don't have enough funds
+   - "market is closed" → Order was queued for next trading day
+NEVER invent reasons for failures - ALWAYS use the actual error message from the tool.
+
+⚠️ USER MODIFICATION AWARENESS - CRITICAL:
 Users can MODIFY trade details (ticker, amount, account) via the confirmation popup BEFORE executing.
 The tool output will show what was ACTUALLY traded, which may differ from your original tool call.
 ALWAYS read the tool output carefully and report the ACTUAL executed trade to the user.

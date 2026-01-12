@@ -39,6 +39,11 @@ and
 stripe listen --forward-to localhost:3000/api/stripe/webhook
 ```
 
+If you want to locally run the langgraph instance to test changes before deploying to langgraph servers, run:
+```bash
+langgraph up --recreate # `---recreate` will ensure everything is rebuilt from scratch (no old code is used)
+```
+
 And to redeploy AWS servers (anytime you change backend):
 ``` bash
    copilot svc deploy --name api-service --env production
