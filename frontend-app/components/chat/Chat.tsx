@@ -558,10 +558,12 @@ export default function Chat({
   }, [isProcessing, isInterrupting]);
 
   // Handle auto-submission of initial prompt
+  // NOTE: accountId is optional (undefined for SnapTrade/aggregation mode users)
+  // Only userId is required for chat functionality
   useEffect(() => {
-    if (initialPrompt && initialPrompt.trim() && !isFirstMessageSent && accountId && userId && !autoSubmissionTriggered.current) {
+    if (initialPrompt && initialPrompt.trim() && !isFirstMessageSent && userId && !autoSubmissionTriggered.current) {
       const submitTimer = setTimeout(async () => {
-        if (!isProcessing && !isInterrupting && accountId && userId) {
+        if (!isProcessing && !isInterrupting && userId) {
           try {
             autoSubmissionTriggered.current = true; // set right before attempting
             setInput(initialPrompt);
@@ -582,10 +584,12 @@ export default function Chat({
   }, [initialPrompt, isFirstMessageSent, handleSendMessage, accountId, userId, isProcessing, isInterrupting]);
 
   // Listen for Clera Assist prompts (fallback for runtime events)
+  // NOTE: accountId is optional (undefined for SnapTrade/aggregation mode users)
+  // Only userId is required for chat functionality
   useEffect(() => {
     const handleCleraAssistPrompt = (event: CustomEvent) => {
       const { prompt, context } = event.detail;
-      if (prompt && prompt.trim() && accountId && userId) {
+      if (prompt && prompt.trim() && userId) {
         // Skip if this is the same prompt as initialPrompt (already handled by primary useEffect)
         if (initialPrompt && prompt === initialPrompt) {
           return;
@@ -594,7 +598,7 @@ export default function Chat({
         // Set the prompt as input and submit using the value directly
         setInput(prompt);
         setTimeout(() => {
-          if (!isProcessing && !isInterrupting && accountId && userId) {
+          if (!isProcessing && !isInterrupting && userId) {
             handleSendMessage(prompt);
             // Don't set isFirstMessageSent here - let the session creation flow handle it
           }
