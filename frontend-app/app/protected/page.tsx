@@ -205,6 +205,32 @@ export default function ProtectedPageClient() {
   // If user has completed onboarding but hasn't connected any accounts yet (aggregation mode)
   // Show them the SnapTrade connection step, NOT the Alpaca funding flow
   if (isAggregationMode && !hasFunding) {
+    // Callback that properly triggers state re-fetch after SnapTrade connection
+    // CRITICAL FIX: router.refresh() alone doesn't trigger useEffect re-run
+    // because the dependency is [router], not a state variable.
+    // We need to manually re-fetch the data to update hasFunding state.
+    const handleConnectionComplete = async () => {
+      setLoading(true);
+      try {
+        const modeResponse = await fetch('/api/portfolio/connection-status');
+        if (modeResponse.ok) {
+          const modeData = await modeResponse.json();
+          const snaptradeAccounts = modeData.snaptrade_accounts || [];
+          const plaidAccounts = modeData.plaid_accounts || [];
+          
+          if (snaptradeAccounts.length > 0 || plaidAccounts.length > 0) {
+            // User has connected accounts - redirect to portfolio
+            setHasFunding(true);
+            router.replace('/invest');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking connection status after SnapTrade connect:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
     return (
       <div className="flex-1 w-full flex flex-col">
         <div className="flex-grow pb-16">
@@ -212,10 +238,7 @@ export default function ProtectedPageClient() {
           <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
             <div className="bg-card border border-border/40 rounded-xl shadow-lg overflow-hidden">
               <SnapTradeConnectionStep 
-                onComplete={() => {
-                  // After connecting, refresh to check connection status
-                  router.refresh();
-                }}
+                onComplete={handleConnectionComplete}
               />
             </div>
           </div>

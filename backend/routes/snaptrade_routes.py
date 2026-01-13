@@ -945,7 +945,15 @@ async def sync_all_connections(
             brokerage = auth.get('brokerage', {})
             brokerage_name = brokerage.get('name', 'Unknown') if isinstance(brokerage, dict) else str(brokerage)
             
-            logger.info(f"Processing authorization {authorization_id} for brokerage {brokerage_name}")
+            # CRITICAL FIX: Determine actual connection_type from brokerage capabilities
+            # SnapTrade's Brokerage object has 'allows_trading' field that indicates
+            # whether the brokerage supports trade execution vs read-only access
+            allows_trading = False
+            if isinstance(brokerage, dict):
+                allows_trading = brokerage.get('allows_trading', False)
+            actual_connection_type = 'trade' if allows_trading else 'read'
+            
+            logger.info(f"Processing authorization {authorization_id} for brokerage {brokerage_name} (connection_type={actual_connection_type})")
             
             # Fetch accounts for this authorization
             accounts_response = provider.client.account_information.list_user_accounts(
@@ -967,13 +975,13 @@ async def sync_all_connections(
                 if account_auth_id == authorization_id:
                     accounts_for_auth.append(account)
             
-            # Store connection
+            # Store connection with correct connection_type based on brokerage capabilities
             connection_data = {
                 'user_id': user_id,
                 'authorization_id': authorization_id,
                 'brokerage_slug': brokerage_name.lower().replace(' ', '_'),
                 'brokerage_name': brokerage_name,
-                'connection_type': 'trade',
+                'connection_type': actual_connection_type,  # CRITICAL: Use actual capability, not hardcoded 'trade'
                 'status': 'active',
                 'accounts_count': len(accounts_for_auth),
                 'created_at': datetime.now().isoformat()
@@ -1023,13 +1031,13 @@ async def sync_all_connections(
                     'account_type': account.get('type', 'investment'),
                     'account_subtype': account.get('type', 'investment'),
                     'account_mode': 'snaptrade',
-                    'connection_type': 'trade',
+                    'connection_type': actual_connection_type,  # CRITICAL: Use actual capability
                     'connection_status': 'active',
                     'is_active': True,
                     'sync_status': 'success',
                     'last_synced': datetime.now().isoformat(),
-                    'cash_balance': cash_balance,  # NEW: For trade validation
-                    'buying_power': buying_power   # NEW: For trade validation
+                    'cash_balance': cash_balance,
+                    'buying_power': buying_power
                 }
                 
                 supabase.table('user_investment_accounts')\
@@ -1038,7 +1046,7 @@ async def sync_all_connections(
                 
                 accounts_synced += 1
             
-            logger.info(f"✅ Synced {len(accounts_for_auth)} accounts for authorization {authorization_id}")
+            logger.info(f"✅ Synced {len(accounts_for_auth)} accounts for authorization {authorization_id} (connection_type={actual_connection_type})")
         
         # Update user_onboarding status to 'submitted'
         from datetime import timezone
@@ -1173,6 +1181,25 @@ async def sync_connection(
             user_secret=user_secret
         )
         
+        # CRITICAL FIX: Fetch authorization details to get actual connection_type
+        # The brokerage object contains 'allows_trading' that determines capability
+        actual_connection_type = 'read'  # Default to read-only (safer)
+        try:
+            auth_detail = provider.client.connections.detail_brokerage_authorization(
+                authorization_id=authorization_id,
+                user_id=snaptrade_user_id,
+                user_secret=user_secret
+            )
+            if auth_detail.body:
+                brokerage_obj = auth_detail.body.get('brokerage', {})
+                if isinstance(brokerage_obj, dict):
+                    allows_trading = brokerage_obj.get('allows_trading', False)
+                    actual_connection_type = 'trade' if allows_trading else 'read'
+                    logger.info(f"Brokerage {brokerage_obj.get('name', 'Unknown')} allows_trading={allows_trading}")
+        except Exception as auth_detail_error:
+            logger.warning(f"Could not fetch authorization details for {authorization_id}: {auth_detail_error}")
+            # Fall back to 'read' as safer default
+        
         # Find the account(s) associated with this authorization
         from datetime import datetime
         accounts_for_auth = []
@@ -1190,13 +1217,13 @@ async def sync_connection(
         if accounts_for_auth:
             brokerage_name = accounts_for_auth[0].get('institution', broker or 'Unknown')
         
-        # Store connection in snaptrade_brokerage_connections
+        # Store connection in snaptrade_brokerage_connections with actual capability
         connection_data = {
             'user_id': user_id,
             'authorization_id': authorization_id,
             'brokerage_slug': broker or brokerage_name,
             'brokerage_name': brokerage_name,
-            'connection_type': 'trade',
+            'connection_type': actual_connection_type,  # CRITICAL: Use actual capability
             'status': 'active',
             'accounts_count': len(accounts_for_auth),
             'created_at': datetime.now().isoformat()
@@ -1247,13 +1274,13 @@ async def sync_connection(
                 'account_type': account.get('type', 'investment'),
                 'account_subtype': account.get('type', 'investment'),
                 'account_mode': 'snaptrade',
-                'connection_type': 'trade',
+                'connection_type': actual_connection_type,  # CRITICAL: Use actual capability
                 'connection_status': 'active',
                 'is_active': True,
                 'sync_status': 'success',
                 'last_synced': datetime.now().isoformat(),
-                'cash_balance': cash_balance,  # NEW: For trade validation
-                'buying_power': buying_power   # NEW: For trade validation
+                'cash_balance': cash_balance,
+                'buying_power': buying_power
             }
             
             supabase.table('user_investment_accounts')\
@@ -1262,7 +1289,7 @@ async def sync_connection(
             
             accounts_synced += 1
         
-        logger.info(f"✅ Synced {accounts_synced} accounts for authorization {authorization_id}")
+        logger.info(f"✅ Synced {accounts_synced} accounts for authorization {authorization_id} (connection_type={actual_connection_type})")
         
         # Update user_onboarding status to 'submitted'
         from datetime import timezone
@@ -1582,6 +1609,23 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
         snaptrade_user_id = user_creds.data[0]['snaptrade_user_id']
         user_secret = user_creds.data[0]['snaptrade_user_secret']
         
+        # CRITICAL FIX: Fetch authorization details to get actual connection_type
+        actual_connection_type = 'read'  # Default to read-only (safer)
+        try:
+            auth_detail = provider.client.connections.detail_brokerage_authorization(
+                authorization_id=authorization_id,
+                user_id=snaptrade_user_id,
+                user_secret=user_secret
+            )
+            if auth_detail.body:
+                brokerage_obj = auth_detail.body.get('brokerage', {})
+                if isinstance(brokerage_obj, dict):
+                    allows_trading = brokerage_obj.get('allows_trading', False)
+                    actual_connection_type = 'trade' if allows_trading else 'read'
+                    logger.info(f"Brokerage {brokerage_obj.get('name', 'Unknown')} allows_trading={allows_trading}")
+        except Exception as auth_detail_error:
+            logger.warning(f"Could not fetch authorization details for {authorization_id}: {auth_detail_error}")
+        
         # Get all accounts
         accounts_response = provider.client.account_information.list_user_accounts(
             user_id=snaptrade_user_id,
@@ -1599,6 +1643,12 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
             return
         
         brokerage_name = connection_info.data[0]['brokerage_name']
+        
+        # Update connection with actual connection_type
+        supabase.table('snaptrade_brokerage_connections')\
+            .update({'connection_type': actual_connection_type})\
+            .eq('authorization_id', authorization_id)\
+            .execute()
         
         # Store each account associated with this authorization
         accounts_stored = 0
@@ -1643,13 +1693,13 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
                     'account_type': account.get('type', 'investment'),
                     'account_subtype': account.get('type', 'investment'),
                     'account_mode': 'snaptrade',
-                    'connection_type': 'trade',
+                    'connection_type': actual_connection_type,  # CRITICAL: Use actual capability
                     'connection_status': 'active',
                     'is_active': True,
                     'sync_status': 'success',
                     'last_synced': datetime.now().isoformat(),
-                    'cash_balance': cash_balance,  # NEW: For trade validation
-                    'buying_power': buying_power   # NEW: For trade validation
+                    'cash_balance': cash_balance,
+                    'buying_power': buying_power
                 }
                 
                 # Use upsert to handle duplicates
@@ -1665,7 +1715,7 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
             .eq('authorization_id', authorization_id)\
             .execute()
         
-        logger.info(f"✅ Synced {accounts_stored} accounts for authorization {authorization_id}")
+        logger.info(f"✅ Synced {accounts_stored} accounts for authorization {authorization_id} (connection_type={actual_connection_type})")
         
     except Exception as e:
         logger.error(f"Error syncing connection accounts: {e}", exc_info=True)

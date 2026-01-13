@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
-// Safe default response when backend is unavailable
+// Safe default response when backend is unavailable at RUNTIME
 // ARCHITECTURE: Default to aggregation mode to allow users to proceed without KYC
 // This enables a graceful degradation when backend is down
 const DEFAULT_CONNECTION_STATUS = {
@@ -13,6 +13,25 @@ const DEFAULT_CONNECTION_STATUS = {
 };
 
 export async function GET(request: Request) {
+  // FAIL FAST: Validate required environment variables BEFORE any try block
+  // Configuration errors should return 500, not be masked with defaults
+  // This prevents silent misconfiguration from appearing as "working"
+  if (!process.env.BACKEND_API_KEY) {
+    console.error('CRITICAL: BACKEND_API_KEY environment variable is not configured');
+    return NextResponse.json(
+      { error: 'Server configuration error' },
+      { status: 500 }
+    );
+  }
+  
+  if (!process.env.BACKEND_API_URL) {
+    console.error('CRITICAL: BACKEND_API_URL environment variable is not configured');
+    return NextResponse.json(
+      { error: 'Server configuration error' },
+      { status: 500 }
+    );
+  }
+
   try {
     // Authenticate user with Supabase
     const supabase = await createClient();
@@ -33,13 +52,6 @@ export async function GET(request: Request) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     
-    // FAIL FAST: Validate required environment variables before making request
-    // Missing API key is a configuration error that should be caught early, not masked
-    if (!process.env.BACKEND_API_KEY) {
-      console.error('CRITICAL: BACKEND_API_KEY environment variable is not configured');
-      throw new Error('Backend API key not configured');
-    }
-    
     try {
       const backendResponse = await fetch(backendUrl, {
         method: 'GET',
@@ -57,7 +69,7 @@ export async function GET(request: Request) {
         const errorData = await backendResponse.text();
         console.error('Backend error getting connection status:', errorData);
         
-        // Return default values if backend returns error
+        // Return default values if backend returns error (runtime error, not config error)
         return NextResponse.json(DEFAULT_CONNECTION_STATUS);
       }
 
@@ -84,14 +96,15 @@ export async function GET(request: Request) {
         }
       }
       
-      // Return safe defaults on fetch error (timeout, network error, etc.)
+      // Return safe defaults on RUNTIME fetch errors (timeout, network error, etc.)
+      // These are expected in production when backend is temporarily unavailable
       return NextResponse.json(DEFAULT_CONNECTION_STATUS);
     }
 
   } catch (error) {
     console.error('Error in connection status route:', error);
     
-    // Return safe defaults on any error
+    // Return safe defaults on RUNTIME errors only
     return NextResponse.json(DEFAULT_CONNECTION_STATUS);
   }
 }
