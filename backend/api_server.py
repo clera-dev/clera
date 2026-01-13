@@ -316,9 +316,11 @@ app = FastAPI(
 from routes.account_filtering_routes import router as account_filtering_router
 from routes.snaptrade_routes import router as snaptrade_router
 from routes.portfolio_freshness import router as portfolio_freshness_router
+from routes.market_routes import router as market_router
 app.include_router(account_filtering_router)
 app.include_router(snaptrade_router)
 app.include_router(portfolio_freshness_router)
+app.include_router(market_router)
 
 # Add CORS middleware with restricted origins
 app.add_middleware(
