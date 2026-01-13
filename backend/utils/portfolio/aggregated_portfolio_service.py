@@ -130,13 +130,13 @@ class AggregatedPortfolioService:
                             has_cash_holdings = True
                 
                 if has_cash_holdings and total_cash > 0:
-                    # CASH-ONLY PORTFOLIO: Return semantically correct scores
-                    # - Risk: 1.0 (cash is the safest asset)
-                    # - Diversification: 1.0 (all in one asset class = poorly diversified)
-                    logger.info(f"Cash-only portfolio for user {user_id}: ${total_cash:.2f} cash, returning 1.0/1.0 scores")
-                    return {"risk_score": "1.0", "diversification_score": "1.0"}
+                    # CASH-ONLY PORTFOLIO: Return 0/0 scores (consistent with api_server.py)
+                    # - Risk Score 0 = No market risk (cash has no volatility)
+                    # - Diversification Score 0 = Can't diversify when holding only cash
+                    logger.info(f"Cash-only portfolio for user {user_id}: ${total_cash:.2f} cash, returning 0/0 scores")
+                    return {"risk_score": "0.0", "diversification_score": "0.0"}
                 else:
-                    # TRULY EMPTY PORTFOLIO: No data
+                    # TRULY EMPTY PORTFOLIO: No data (also 0/0)
                     logger.warning(f"No aggregated holdings found for user {user_id}")
                     return {"risk_score": "0.0", "diversification_score": "0.0"}
             
