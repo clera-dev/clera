@@ -88,6 +88,10 @@ class AggregatedPortfolioService:
         """
         Calculate portfolio analytics (risk and diversification scores) from aggregated data.
         
+        PRODUCTION-GRADE: Properly handles cash-only portfolios by returning
+        semantically correct scores (1.0/1.0 = low risk, low diversification)
+        instead of (0.0/0.0 = no data).
+        
         Args:
             user_id: User ID to calculate analytics for
             
@@ -96,6 +100,13 @@ class AggregatedPortfolioService:
         """
         try:
             supabase = self._get_supabase_client()
+            
+            # CRITICAL: First check if user has any holdings at all (including cash)
+            # This determines if they have a "cash-only" portfolio vs "empty" portfolio
+            all_holdings_result = supabase.table('user_aggregated_holdings')\
+                .select('symbol, security_type, total_market_value')\
+                .eq('user_id', user_id)\
+                .execute()
             
             # Get aggregated holdings for analytics (EXCLUDE CASH POSITIONS)
             result = supabase.table('user_aggregated_holdings')\
@@ -106,8 +117,28 @@ class AggregatedPortfolioService:
                 .execute()
             
             if not result.data:
-                logger.warning(f"No aggregated holdings found for user {user_id}")
-                return {"risk_score": "0.0", "diversification_score": "0.0"}
+                # CRITICAL: Distinguish between "cash-only" and "truly empty" portfolios
+                # - Cash-only: User has cash but no securities → low risk, low diversification
+                # - Truly empty: User has no holdings at all → no data
+                has_cash_holdings = False
+                total_cash = 0.0
+                
+                if all_holdings_result.data:
+                    for holding in all_holdings_result.data:
+                        if holding.get('security_type') == 'cash' or holding.get('symbol') == 'U S Dollar':
+                            total_cash += float(holding.get('total_market_value', 0) or 0)
+                            has_cash_holdings = True
+                
+                if has_cash_holdings and total_cash > 0:
+                    # CASH-ONLY PORTFOLIO: Return semantically correct scores
+                    # - Risk: 1.0 (cash is the safest asset)
+                    # - Diversification: 1.0 (all in one asset class = poorly diversified)
+                    logger.info(f"Cash-only portfolio for user {user_id}: ${total_cash:.2f} cash, returning 1.0/1.0 scores")
+                    return {"risk_score": "1.0", "diversification_score": "1.0"}
+                else:
+                    # TRULY EMPTY PORTFOLIO: No data
+                    logger.warning(f"No aggregated holdings found for user {user_id}")
+                    return {"risk_score": "0.0", "diversification_score": "0.0"}
             
             # Use modular calculation function
             from .aggregated_calculations import calculate_portfolio_analytics

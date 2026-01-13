@@ -2265,8 +2265,27 @@ async def get_portfolio_analytics(
         alpaca_positions = client.get_all_positions_for_account(account_id=account_uuid)
 
         if not alpaca_positions:
-            logger.info(f"No positions found for account {account_id}. Returning default scores.")
-            # Return default scores if no positions
+            # CRITICAL: Distinguish between "cash-only" and "truly empty" accounts
+            # - Cash-only: User has cash but no securities → low risk, low diversification
+            # - Truly empty: User has no holdings at all → no data
+            try:
+                # Fetch account cash balance to determine if this is a cash-only portfolio
+                account_info = client.get_account_by_id(account_id=account_uuid)
+                cash_balance = getattr(account_info, 'cash', None) or getattr(account_info, 'buying_power', None)
+                
+                if cash_balance:
+                    cash_value = float(cash_balance) if isinstance(cash_balance, (int, float, str, Decimal)) else 0
+                    if cash_value > 0:
+                        # CASH-ONLY PORTFOLIO: Return semantically correct scores
+                        # - Risk: 1.0 (cash is the safest asset)
+                        # - Diversification: 1.0 (all in one asset class = poorly diversified)
+                        logger.info(f"Cash-only portfolio for account {account_id}: ${cash_value:.2f} cash, returning 1.0/1.0 scores")
+                        return PortfolioAnalyticsResponse(risk_score=Decimal('1.0'), diversification_score=Decimal('1.0'))
+            except Exception as cash_err:
+                logger.warning(f"Could not fetch cash balance for account {account_id}: {cash_err}")
+            
+            # TRULY EMPTY PORTFOLIO: No data
+            logger.info(f"No positions and no cash found for account {account_id}. Returning default scores.")
             return PortfolioAnalyticsResponse(risk_score=Decimal('0'), diversification_score=Decimal('0'))
 
         # 2. Fetch Asset details for relevant positions (e.g., equities) to aid mapping

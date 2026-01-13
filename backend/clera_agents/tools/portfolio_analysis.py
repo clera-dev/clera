@@ -468,7 +468,11 @@ class PortfolioAnalyticsEngine:
     """Advanced portfolio analytics including risk, diversification, and returns attribution."""
     
     @classmethod
-    def calculate_diversification_score(cls, positions: List[PortfolioPosition]) -> Decimal:
+    def calculate_diversification_score(
+        cls, 
+        positions: List[PortfolioPosition],
+        cash_balance: Optional[Decimal] = None
+    ) -> Decimal:
         """Calculate a diversification score from 1-10 based on portfolio composition.
         
         Higher scores indicate better diversification across asset classes and securities.
@@ -478,14 +482,24 @@ class PortfolioAnalyticsEngine:
         3. Number of securities within each asset class
         4. Concentration in individual positions
         
+        PRODUCTION-GRADE: Properly handles cash-only portfolios by returning
+        diversification score of 1.0 (poorly diversified - all in one asset class)
+        instead of 0.0 (no data).
+        
         Args:
             positions: List of portfolio positions
+            cash_balance: Optional cash balance for proper scoring
             
         Returns:
-            Decimal: Diversification score from 1-10
+            Decimal: Diversification score from 1-10, 0 means no data
         """
+        # CRITICAL: Handle cash-only portfolios correctly
+        # Cash-only means low diversification (score = 1.0), not "no data" (score = 0.0)
         if not positions:
-            return Decimal('0')
+            # If there's cash but no positions, return low diversification score (1.0)
+            if cash_balance is not None and cash_balance > 0:
+                return Decimal('1.0')  # Cash-only = poorly diversified
+            return Decimal('0')  # Truly empty portfolio = no data
             
         # Count asset classes and securities
         asset_classes = set()
@@ -559,7 +573,8 @@ class PortfolioAnalyticsEngine:
     def calculate_risk_score(
         cls, 
         positions: List[PortfolioPosition],
-        historical_volatility: Optional[Dict[str, float]] = None
+        historical_volatility: Optional[Dict[str, float]] = None,
+        cash_balance: Optional[Decimal] = None
     ) -> Decimal:
         """Calculate a risk score from 1-10 based on portfolio composition.
         
@@ -567,16 +582,26 @@ class PortfolioAnalyticsEngine:
         1. Asset class allocation (e.g., more fixed income = lower risk)
         2. Security type allocation (e.g., individual stocks = higher risk)
         3. Historical volatility of specific securities if available
+        4. Cash holdings (lowest risk - score of 1)
+        
+        PRODUCTION-GRADE: Properly handles cash-only portfolios by returning
+        risk score of 1.0 (lowest risk) instead of 0.0 (no data).
         
         Args:
             positions: List of portfolio positions
             historical_volatility: Optional dictionary mapping symbols to volatility values
+            cash_balance: Optional cash balance for cash-inclusive risk calculation
             
         Returns:
-            Decimal: Risk score from 1-10 where 10 is highest risk
+            Decimal: Risk score from 1-10 where 10 is highest risk, 0 means no data
         """
+        # CRITICAL: Handle cash-only portfolios correctly
+        # Cash has the lowest risk (score = 1.0), not "no data" (score = 0.0)
         if not positions:
-            return Decimal('0')
+            # If there's cash but no positions, return low risk score (1.0)
+            if cash_balance is not None and cash_balance > 0:
+                return Decimal('1.0')  # Cash is the safest asset
+            return Decimal('0')  # Truly empty portfolio = no data
             
         # Asset class risk weights (on a scale of 1-10)
         asset_class_risk = {
