@@ -231,9 +231,9 @@ export default function PortfolioPage() {
         setOrders(ordersData);
       } else if (portfolioMode === 'brokerage' && accountId) {
         // Brokerage mode: Fetch from Alpaca
-        const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
-        const refreshedOrders = await fetchData(ordersUrl);
-        setOrders(refreshedOrders);
+      const ordersUrl = `/api/portfolio/orders?accountId=${accountId}&status=all&limit=100&nested=true&include_activities=true`;
+      const refreshedOrders = await fetchData(ordersUrl);
+      setOrders(refreshedOrders);
       }
     } catch (error) {
       console.error('Error refreshing orders:', error);

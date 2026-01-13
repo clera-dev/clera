@@ -190,36 +190,36 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
                   const isConnectionBroken = account.connection_status === 'error';
                   
                   return (
-                    <div 
-                      key={account.id} 
+                  <div 
+                    key={account.id} 
                       className={`flex items-center justify-between text-sm p-2 rounded-lg transition-colors group ${
                         isConnectionBroken 
                           ? 'bg-destructive/10 border border-destructive/20' 
                           : 'bg-muted/50 hover:bg-muted'
                       }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                         {isConnectionBroken ? (
                           <AlertTriangle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />
                         ) : (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
                         )}
-                        <div className="min-w-0 flex-1">
-                          <span className="font-medium truncate block">
-                            {account.institution_name}
-                          </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium truncate block">
+                          {account.institution_name}
+                        </span>
                           {isConnectionBroken ? (
                             <span className="text-xs text-destructive truncate block">
                               Connection expired - needs reconnection
                             </span>
                           ) : account.account_name && (
-                            <span className="text-xs text-muted-foreground truncate block">
-                              {account.account_name}
-                            </span>
-                          )}
-                        </div>
+                          <span className="text-xs text-muted-foreground truncate block">
+                            {account.account_name}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
                         {isConnectionBroken && account.reconnect_url ? (
                           <Button
                             variant="outline"
@@ -239,24 +239,24 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
                             Reconnect
                           </Button>
                         ) : (
-                          <Badge 
-                            variant={account.is_active ? "default" : "secondary"} 
-                            className="text-xs hidden sm:inline-flex"
-                          >
-                            {account.is_active ? "Active" : "Inactive"}
-                          </Badge>
+                      <Badge 
+                        variant={account.is_active ? "default" : "secondary"} 
+                        className="text-xs hidden sm:inline-flex"
+                      >
+                        {account.is_active ? "Active" : "Inactive"}
+                      </Badge>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => handleDisconnectClick(account)}
-                          title="Disconnect account"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => handleDisconnectClick(account)}
+                        title="Disconnect account"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
+                  </div>
                   );
                 })}
               </div>

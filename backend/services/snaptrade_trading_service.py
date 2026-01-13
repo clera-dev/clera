@@ -659,10 +659,13 @@ class SnapTradeTradingService:
                 universal_symbol_id=universal_symbol_id,
                 order_type=order_type,
                 time_in_force=time_in_force,
-                notional_value=float(notional_value) if notional_value is not None else None,
-                units=float(units) if units is not None else None,
-                price=float(price) if price is not None else None,
-                stop=float(stop) if stop is not None else None
+                # CRITICAL: Format as string to avoid floating-point precision issues
+                # Python's round() still stores imprecise binary - SDK validation via Decimal sees full precision
+                # String formatting produces clean values that SDK accepts
+                notional_value=f"{float(notional_value):.2f}" if notional_value is not None else None,
+                units=f"{float(units):.6f}" if units is not None else None,  # 6 decimal places for fractional shares
+                price=f"{float(price):.2f}" if price is not None else None,
+                stop=f"{float(stop):.2f}" if stop is not None else None
             )
             
             # Parse response
@@ -887,15 +890,17 @@ class SnapTradeTradingService:
                     }
                     
                     if order_units is not None:
-                        order_params['units'] = float(order_units)
+                        # Format as string to avoid float precision issues
+                        order_params['units'] = f"{float(order_units):.6f}"
                     elif notional_value is not None:
-                        # Fallback to notional if units conversion failed
-                        order_params['notional_value'] = float(notional_value)
+                        # CRITICAL: Format as string to avoid float precision issues
+                        # SDK validates with Decimal which exposes full binary precision of floats
+                        order_params['notional_value'] = f"{float(notional_value):.2f}"
                     
                     if price is not None:
-                        order_params['price'] = float(price)
+                        order_params['price'] = f"{float(price):.2f}"
                     if stop is not None:
-                        order_params['stop'] = float(stop)
+                        order_params['stop'] = f"{float(stop):.2f}"
                     
                     impact_response = self.client.trading.get_order_impact(**order_params)
                     

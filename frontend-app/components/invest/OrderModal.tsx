@@ -482,33 +482,33 @@ export default function OrderModal({
                       setSelectedAccount(value);
                     }}
                   >
-                    <SelectTrigger className="w-full bg-background">
-                      <SelectValue placeholder="Select account" />
-                    </SelectTrigger>
-                    <SelectContent className="z-[200]">
-                      <SelectGroup>
+                  <SelectTrigger className="w-full bg-background">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[200]">
+                    <SelectGroup>
                         {selectedAccountData && selectedAccountData.connection_status !== 'error' && (
-                          <SelectLabel className="text-xs text-muted-foreground px-2 py-1 flex items-center gap-1">
-                            <Wallet className="h-3 w-3" />
-                            Available: {formatCurrency(selectedAccountData.buying_power)}
-                          </SelectLabel>
-                        )}
-                        {tradeAccounts.map((account) => (
+                        <SelectLabel className="text-xs text-muted-foreground px-2 py-1 flex items-center gap-1">
+                          <Wallet className="h-3 w-3" />
+                          Available: {formatCurrency(selectedAccountData.buying_power)}
+                        </SelectLabel>
+                      )}
+                      {tradeAccounts.map((account) => (
                           <SelectItem 
                             key={account.account_id} 
                             value={account.account_id}
                             disabled={account.connection_status === 'error'}
                             className={account.connection_status === 'error' ? 'opacity-60' : ''}
                           >
-                            <div className="flex items-center justify-between gap-3 w-full">
-                              <div className="flex items-center gap-2">
+                          <div className="flex items-center justify-between gap-3 w-full">
+                            <div className="flex items-center gap-2">
                                 {account.connection_status === 'error' ? (
                                   <AlertCircle className="h-4 w-4 text-destructive" />
                                 ) : (
-                                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                              <Building2 className="h-4 w-4 text-muted-foreground" />
                                 )}
-                                <div>
-                                  <div className="font-medium">{account.institution_name}</div>
+                              <div>
+                                <div className="font-medium">{account.institution_name}</div>
                                   <div className="text-xs text-muted-foreground">
                                     {account.connection_status === 'error' 
                                       ? 'Connection expired - needs refresh' 
@@ -517,20 +517,20 @@ export default function OrderModal({
                                 </div>
                               </div>
                               {account.connection_status !== 'error' && (
-                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                  <Wallet className="h-3 w-3" />
-                                  {formatCurrency(account.buying_power)}
-                                </div>
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Wallet className="h-3 w-3" />
+                              {formatCurrency(account.buying_power)}
+                            </div>
                               )}
                               {account.connection_status === 'error' && (
                                 <RefreshCw className="h-3 w-3 text-destructive" />
                               )}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
                   
                   {/* Show reconnect UI for ALL broken accounts (not just selected) */}
                   {/* Since broken accounts can't be selected, we show this for any broken accounts in the list */}
