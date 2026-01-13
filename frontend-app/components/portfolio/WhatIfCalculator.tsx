@@ -98,7 +98,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioValue = 0 }) => {
     // PRODUCTION-GRADE: Initialize from current portfolio value with proper defaults
-    const initialInvestmentValue = Math.round(currentPortfolioValue ?? 10000); // Default to $10k if no portfolio
+    // Use $10,000 default when portfolio value is 0, null, or undefined
+    const initialInvestmentValue = currentPortfolioValue && currentPortfolioValue > 0 
+        ? Math.round(currentPortfolioValue) 
+        : 10000; // Default to $10k for new users or empty portfolios
     const [initialInvestment, setInitialInvestment] = useState<number>(initialInvestmentValue);
     const [monthlyInvestment, setMonthlyInvestment] = useState<number>(500);
     const [timeHorizon, setTimeHorizon] = useState<number>(20); // years
@@ -302,10 +305,15 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                             type="text"
                             value={timeHorizonInput}
                             onChange={(e) => setTimeHorizonInput(e.target.value)}
-                            onBlur={(e) => handleTimeHorizonChange(parseInt(e.target.value) || 20)}
+                            onBlur={(e) => {
+                                const parsed = parseInt(e.target.value);
+                                // If NaN (non-numeric input), default to 20. Otherwise clamp to valid range.
+                                handleTimeHorizonChange(isNaN(parsed) ? 20 : parsed);
+                            }}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
-                                    handleTimeHorizonChange(parseInt(timeHorizonInput) || 20);
+                                    const parsed = parseInt(timeHorizonInput);
+                                    handleTimeHorizonChange(isNaN(parsed) ? 20 : parsed);
                                 }
                             }}
                             className="w-20 text-sm"

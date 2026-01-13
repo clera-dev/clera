@@ -64,13 +64,10 @@ const getDiversificationTextColor = (score: number): string => {
 };
 
 // PRODUCTION-GRADE: Detect special portfolio states
-const isCashOnlyPortfolio = (riskScore: number, divScore: number): boolean => {
-    // Cash-only portfolios return 1.0/1.0 (lowest risk, lowest diversification)
-    return riskScore === 1 && divScore === 1;
-};
-
-const isEmptyPortfolio = (riskScore: number, divScore: number): boolean => {
-    // Empty portfolios return 0.0/0.0 (no data)
+// Both cash-only and empty portfolios return 0/0 from backend
+// The differentiator is whether we have valid analyticsData
+const isZeroScorePortfolio = (riskScore: number, divScore: number): boolean => {
+    // Returns true for both cash-only and empty portfolios (both return 0/0)
     return riskScore === 0 && divScore === 0;
 };
 
@@ -174,11 +171,14 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
     }
 
     // PRODUCTION-GRADE: Handle special portfolio states
-    const isCashOnly = isCashOnlyPortfolio(riskScore, diversificationScore);
-    const isEmpty = isEmptyPortfolio(riskScore, diversificationScore);
+    // Both cash-only and empty portfolios return 0/0 from backend
+    // Differentiator: analyticsData exists = cash-only, no analyticsData = truly empty
+    const hasZeroScores = isZeroScorePortfolio(riskScore, diversificationScore);
+    const isCashOnly = analyticsData !== null && hasZeroScores;
+    const isEmpty = analyticsData === null || (!analyticsData && hasZeroScores);
 
-    // Empty portfolio - show helpful message instead of 0/0 scores
-    if (isEmpty) {
+    // Empty portfolio (no data at all) - show connect message
+    if (isEmpty && !analyticsData) {
         return (
             <div className="space-y-4">
                 <div className="text-center py-6 px-4 rounded-lg bg-muted/50">
@@ -190,16 +190,29 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
         );
     }
 
+    // Cash-only portfolio (has data but 0/0 scores) - show informative message
+    if (isCashOnly) {
+        return (
+            <div className="space-y-4">
+                <div className="text-center py-6 px-4 rounded-lg bg-muted/50 border border-dashed border-muted-foreground/30">
+                    <p className="text-sm font-medium text-foreground mb-2">
+                        💰 100% Cash Portfolio
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        You&apos;re currently all in cash. Risk and diversification scores apply once you invest in securities.
+                    </p>
+                    <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
+                        <span>Risk: <span className="text-green-500 font-medium">0/10</span> (no market risk)</span>
+                        <span>Diversification: <span className="text-gray-400 font-medium">N/A</span></span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <TooltipProvider>
             <div className="space-y-4">
-                {/* Cash-only portfolio notice */}
-                {isCashOnly && (
-                    <div className="text-xs text-muted-foreground bg-muted/30 rounded-md p-2 mb-2">
-                        💡 Your portfolio is currently all cash. Risk is very low, but diversification will improve when you invest in securities.
-                    </div>
-                )}
-
                 {/* Risk Score */}
                 <div>
                     <Tooltip>
@@ -223,7 +236,6 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
                         Your portfolio is <span className={getRiskTextColor(riskScore)}>{getRiskDescription(riskScore).toLowerCase()}</span>
-                        {isCashOnly && ' (cash only)'}
                     </p>
                 </div>
 

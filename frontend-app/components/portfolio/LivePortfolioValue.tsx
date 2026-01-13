@@ -439,6 +439,11 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         intervalRef.current.fallbackCheck = setInterval(() => {
             if (useFallbackRef.current) {
                 console.log('Fallback interval: Using polling for portfolio data');
+                // CRITICAL: Abort any in-flight request before starting a new one
+                // Prevents race conditions where stale data could overwrite fresh data
+                if (abortControllerRef.current) {
+                    abortControllerRef.current.abort();
+                }
                 const controller = new AbortController();
                 abortControllerRef.current = controller;
                 fetchPortfolioData(debouncedFilterAccount, controller.signal);
