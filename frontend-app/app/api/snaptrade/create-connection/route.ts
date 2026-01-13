@@ -18,7 +18,9 @@ export async function POST(request: Request) {
     // Get request body
     const body = await request.json();
     const { 
-      connectionType = 'trade', 
+      // ARCHITECTURE: Default to undefined to show ALL brokerages
+      // Only pass connectionType if explicitly specified for filtering
+      connectionType, 
       broker, 
       redirectUrl 
     } = body;
@@ -39,7 +41,8 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         user_id: user.id,
-        connection_type: connectionType,
+        // Only include connection_type if explicitly provided, otherwise omit to show all brokerages
+        ...(connectionType && { connection_type: connectionType }),
         broker: broker || null,
         redirect_url: finalRedirectUrl,
       }),

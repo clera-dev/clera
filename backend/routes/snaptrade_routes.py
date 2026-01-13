@@ -637,7 +637,7 @@ async def create_connection_url(
     
     Request body:
         {
-            "connection_type": "read" | "trade",  // default: "trade"
+            "connection_type": Optional["read" | "trade"],  // default: None (shows ALL brokerages)
             "broker": Optional[str],  // e.g., "SCHWAB", "FIDELITY"
             "redirect_url": Optional[str]
         }
@@ -648,10 +648,17 @@ async def create_connection_url(
             "connection_url": str,
             "user_id": str
         }
+    
+    ARCHITECTURE NOTE:
+    - When connection_type is None/omitted: Shows ALL available brokerages (recommended for onboarding)
+    - When connection_type is 'read': Shows only brokerages that support read access
+    - When connection_type is 'trade': Shows only brokerages that support trading
     """
     try:
         body = await request.json()
-        connection_type = body.get('connection_type', 'trade')
+        # ARCHITECTURE: Default to None to show ALL brokerages
+        # Only filter when explicitly requested (e.g., for trade-specific flows)
+        connection_type = body.get('connection_type')  # None = show all
         broker = body.get('broker')
         redirect_url = body.get('redirect_url')
         

@@ -684,7 +684,7 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
         self, 
         user_id: str,
         broker: Optional[str] = None,
-        connection_type: str = 'trade',
+        connection_type: Optional[str] = None,
         redirect_url: Optional[str] = None,
         reconnect: Optional[str] = None
     ) -> str:
@@ -694,7 +694,10 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
         Args:
             user_id: User ID
             broker: Optional broker slug (e.g., 'ALPACA', 'SCHWAB')
-            connection_type: 'read' or 'trade' (default: 'trade')
+            connection_type: Optional filter for brokerage capabilities:
+                - None: Shows ALL brokerages (recommended for onboarding)
+                - 'read': Shows only read-capable brokerages
+                - 'trade': Shows only trading-capable brokerages
             redirect_url: Optional redirect URL after connection
             reconnect: Optional authorization ID to reconnect an existing disabled connection.
                        When provided, sends user directly to the reconnection flow for that
@@ -717,11 +720,12 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
             # Get connection portal URL using SnapTrade SDK
             # PRODUCTION-GRADE: Pass reconnect parameter when fixing a broken connection
             # This directs user to re-auth flow for existing connection instead of new one
+            # ARCHITECTURE: connection_type=None shows ALL brokerages (including read-only)
             login_response = self.client.authentication.login_snap_trade_user(
                 user_id=user_id,
                 user_secret=user_secret,
                 broker=broker if broker else None,
-                connection_type=connection_type,
+                connection_type=connection_type if connection_type else None,  # None = show all
                 custom_redirect=redirect_url if redirect_url else None,
                 reconnect=reconnect if reconnect else None
             )

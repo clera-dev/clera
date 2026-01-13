@@ -23,13 +23,17 @@ export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTrad
       setError(null);
 
       // Get connection URL from backend
+      // ARCHITECTURE: Don't filter by connection type during onboarding to show ALL brokerages
+      // This gives users a holistic view of their investments by including both read-only 
+      // and trading-enabled brokerages. Trading capability is handled at the platform level
+      // based on each brokerage's actual capabilities.
       const response = await fetch('/api/snaptrade/create-connection', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          connectionType: 'trade',
+          // No connectionType filter = show all available brokerages
           redirectUrl: `${window.location.origin}/onboarding/snaptrade-callback`,
         }),
       });
