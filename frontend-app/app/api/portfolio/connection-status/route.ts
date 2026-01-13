@@ -33,12 +33,19 @@ export async function GET(request: Request) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     
+    // FAIL FAST: Validate required environment variables before making request
+    // Missing API key is a configuration error that should be caught early, not masked
+    if (!process.env.BACKEND_API_KEY) {
+      console.error('CRITICAL: BACKEND_API_KEY environment variable is not configured');
+      throw new Error('Backend API key not configured');
+    }
+    
     try {
       const backendResponse = await fetch(backendUrl, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': process.env.BACKEND_API_KEY || '',
+          'X-API-Key': process.env.BACKEND_API_KEY,
           'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`,
         },
         signal: controller.signal,
