@@ -760,11 +760,11 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
                 return "❌ Market is currently closed and we couldn't queue the order. The US stock market is open 9:30 AM - 4:00 PM Eastern Time, Monday through Friday. Please ask the user to try again during market hours."
         
         # Handle Webull minimum order amount for fractional shares ($5 minimum, code 1119)
-        if '1119' in error_str or 'FRACT_AMOUNT_GREAT_5' in error_str or 'minimum order amount' in error_str.lower():
+        if '1119' in error_str or 'fract_amount_great_5' in error_str.lower() or 'minimum order amount' in error_str.lower():
             return "❌ Webull requires a minimum of $5.00 for fractional share orders. Please increase the order amount to at least $5.00."
         
         # Handle fractional share error (action-aware message)
-        if 'FRACT_NOT_CLOSE_INT_POSITION' in error_str or 'fractional shares' in error_str.lower():
+        if 'fract_not_close_int_position' in error_str.lower() or 'fractional shares' in error_str.lower():
             if action == 'SELL':
                 return "❌ This brokerage requires selling whole shares only. The user needs to sell at least 1 full share. Please ask them to increase the sell amount to cover at least 1 whole share."
             else:
