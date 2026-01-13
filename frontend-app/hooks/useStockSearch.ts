@@ -183,8 +183,11 @@ export function useStockSearch(options: UseStockSearchOptions = {}): UseStockSea
       clearTimeout(debounceTimerRef.current);
     }
 
-    // If empty search term, clear results immediately
+    // If empty search term, clear results immediately and invalidate in-flight requests
     if (!searchTerm.trim()) {
+      // Increment requestRef to invalidate any in-flight search requests
+      // This prevents stale responses from repopulating results after user cleared input
+      searchRequestRef.current++;
       setResults([]);
       setIsSearching(false);
       return;

@@ -37,6 +37,14 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Validate max length (matches backend constraint of 50 chars)
+    if (query.trim().length > 50) {
+      return NextResponse.json({ 
+        error: 'Search query too long. Maximum 50 characters allowed.',
+        success: false 
+      }, { status: 400 });
+    }
+
     // SECURITY: Parse and validate limit as integer to prevent query injection
     let limit = 30; // default
     if (limitParam) {
