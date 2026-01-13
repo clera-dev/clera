@@ -733,7 +733,7 @@ def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, n
             'not open for trading', 'market hours', 'non_trading_hours',
             'NON_TRADING_HOURS', '1019', 'CAN_NOT_TRADING_FOR_NON_TRADING_HOURS',
             # Webull-specific: fractional shares only allowed during market hours
-            'FRACT_ONLT_CORE_TIME', 'only available during regular trading hours',
+            'FRACT_ONLY_CORE_TIME', 'only available during regular trading hours',
             'fractional share orders at this moment'
         ]
         if any(indicator.lower() in error_str.lower() for indicator in market_closed_indicators):
