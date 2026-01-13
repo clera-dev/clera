@@ -25,16 +25,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
     }
 
-    // 2. Get query parameters
+    // 2. Get and validate query parameters
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q');
-    const limit = searchParams.get('limit') || '30';
+    const limitParam = searchParams.get('limit');
 
     if (!query || query.trim().length === 0) {
       return NextResponse.json({ 
         error: 'Search query is required',
         success: false 
       }, { status: 400 });
+    }
+
+    // SECURITY: Parse and validate limit as integer to prevent query injection
+    let limit = 30; // default
+    if (limitParam) {
+      const parsedLimit = parseInt(limitParam, 10);
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+        return NextResponse.json({ 
+          error: 'Invalid limit parameter. Must be an integer between 1 and 100.',
+          success: false 
+        }, { status: 400 });
+      }
+      limit = parsedLimit;
     }
 
     // 3. Proxy the request to backend
@@ -46,7 +59,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
     }
 
-    const targetUrl = `${backendUrl}/api/market/search?q=${encodeURIComponent(query)}&limit=${limit}`;
+    const targetUrl = `${backendUrl}/api/market/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(String(limit))}`;
 
     const response = await fetch(targetUrl, {
       method: 'GET',

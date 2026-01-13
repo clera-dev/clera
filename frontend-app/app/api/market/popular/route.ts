@@ -23,9 +23,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
     }
 
-    // 2. Get query parameters
+    // 2. Get and validate query parameters
     const searchParams = request.nextUrl.searchParams;
-    const limit = searchParams.get('limit') || '50';
+    const limitParam = searchParams.get('limit');
+    
+    // SECURITY: Parse and validate limit as integer to prevent query injection
+    let limit = 50; // default
+    if (limitParam) {
+      const parsedLimit = parseInt(limitParam, 10);
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+        return NextResponse.json({ 
+          error: 'Invalid limit parameter. Must be an integer between 1 and 100.',
+          success: false 
+        }, { status: 400 });
+      }
+      limit = parsedLimit;
+    }
 
     // 3. Proxy the request to backend
     const backendUrl = process.env.BACKEND_API_URL;
@@ -36,7 +49,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Backend service is not configured.' }, { status: 500 });
     }
 
-    const targetUrl = `${backendUrl}/api/market/popular?limit=${limit}`;
+    const targetUrl = `${backendUrl}/api/market/popular?limit=${encodeURIComponent(String(limit))}`;
 
     const response = await fetch(targetUrl, {
       method: 'GET',

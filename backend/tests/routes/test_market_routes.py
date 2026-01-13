@@ -12,12 +12,12 @@ import pytest
 import json
 import os
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
 # Import the router and internal functions
-from routes.market_routes import router, _score_asset, _load_cached_assets
+from routes.market_routes import router, _score_asset, _asset_cache
 
 
 # Create test app with the router
@@ -60,6 +60,14 @@ def temp_cache_file(sample_assets):
     # Cleanup
     if os.path.exists(temp_path):
         os.unlink(temp_path)
+
+
+@pytest.fixture(autouse=True)
+def reset_cache():
+    """Reset the cache before each test."""
+    _asset_cache.reload()
+    yield
+    _asset_cache.reload()
 
 
 # --- Unit Tests for _score_asset ---
@@ -172,10 +180,10 @@ class TestScoreAssetEdgeCases:
 class TestSearchEndpoint:
     """Tests for the /api/market/search endpoint."""
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_returns_correct_format(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_returns_correct_format(self, mock_get_assets, sample_assets):
         """Search should return properly formatted response."""
-        mock_load.return_value = sample_assets
+        mock_get_assets.return_value = sample_assets
         
         response = client.get("/api/market/search?q=AAPL")
         assert response.status_code == 200
@@ -186,10 +194,10 @@ class TestSearchEndpoint:
         assert "total_matches" in data
         assert data["query"] == "AAPL"
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_exact_symbol_first(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_exact_symbol_first(self, mock_get_assets, sample_assets):
         """Exact symbol match should be first result."""
-        mock_load.return_value = sample_assets
+        mock_get_assets.return_value = sample_assets
         
         response = client.get("/api/market/search?q=AAPL")
         data = response.json()
@@ -198,28 +206,28 @@ class TestSearchEndpoint:
         assert len(data["results"]) > 0
         assert data["results"][0]["symbol"] == "AAPL"
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_respects_limit(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_respects_limit(self, mock_get_assets, sample_assets):
         """Search should respect the limit parameter."""
-        mock_load.return_value = sample_assets
+        mock_get_assets.return_value = sample_assets
         
         response = client.get("/api/market/search?q=a&limit=5")
         data = response.json()
         
         assert len(data["results"]) <= 5
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_empty_query_rejected(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_empty_query_rejected(self, mock_get_assets, sample_assets):
         """Empty query should be rejected."""
-        mock_load.return_value = sample_assets
+        mock_get_assets.return_value = sample_assets
         
         response = client.get("/api/market/search?q=")
         assert response.status_code == 422  # Validation error
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_case_insensitive(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_case_insensitive(self, mock_get_assets, sample_assets):
         """Search should be case-insensitive."""
-        mock_load.return_value = sample_assets
+        mock_get_assets.return_value = sample_assets
         
         response_upper = client.get("/api/market/search?q=AAPL")
         response_lower = client.get("/api/market/search?q=aapl")
@@ -230,10 +238,10 @@ class TestSearchEndpoint:
         # Both should return the same first result
         assert data_upper["results"][0]["symbol"] == data_lower["results"][0]["symbol"]
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_multi_word_query(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_multi_word_query(self, mock_get_assets, sample_assets):
         """Multi-word query should work correctly."""
-        mock_load.return_value = sample_assets
+        mock_get_assets.return_value = sample_assets
         
         response = client.get("/api/market/search?q=coca%20cola")
         data = response.json()
@@ -242,10 +250,10 @@ class TestSearchEndpoint:
         # Should find Coca-Cola related stocks
         assert any("coca" in r["name"].lower() or "KO" in r["symbol"] for r in data["results"])
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_no_results(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_no_results(self, mock_get_assets, sample_assets):
         """Search with no matches should return empty results."""
-        mock_load.return_value = sample_assets
+        mock_get_assets.return_value = sample_assets
         
         response = client.get("/api/market/search?q=xyznonexistent")
         data = response.json()
@@ -254,10 +262,10 @@ class TestSearchEndpoint:
         assert len(data["results"]) == 0
         assert data["total_matches"] == 0
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_handles_empty_cache(self, mock_load):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_handles_empty_cache(self, mock_get_assets):
         """Search should handle empty cache gracefully."""
-        mock_load.return_value = []
+        mock_get_assets.return_value = []
         
         response = client.get("/api/market/search?q=AAPL")
         data = response.json()
@@ -271,10 +279,10 @@ class TestSearchEndpoint:
 class TestPopularStocksEndpoint:
     """Tests for the /api/market/popular endpoint."""
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_popular_returns_correct_format(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_asset_lookup', new_callable=AsyncMock)
+    def test_popular_returns_correct_format(self, mock_get_lookup, sample_assets):
         """Popular stocks should return properly formatted response."""
-        mock_load.return_value = sample_assets
+        mock_get_lookup.return_value = {a['symbol']: a for a in sample_assets}
         
         response = client.get("/api/market/popular")
         assert response.status_code == 200
@@ -284,10 +292,10 @@ class TestPopularStocksEndpoint:
         assert "assets" in data
         assert "count" in data
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_popular_returns_well_known_stocks(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_asset_lookup', new_callable=AsyncMock)
+    def test_popular_returns_well_known_stocks(self, mock_get_lookup, sample_assets):
         """Popular stocks should include well-known companies."""
-        mock_load.return_value = sample_assets
+        mock_get_lookup.return_value = {a['symbol']: a for a in sample_assets}
         
         response = client.get("/api/market/popular")
         data = response.json()
@@ -298,20 +306,20 @@ class TestPopularStocksEndpoint:
         found_well_known = [s for s in well_known if s in symbols]
         assert len(found_well_known) > 0
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_popular_respects_limit(self, mock_load, sample_assets):
+    @patch('routes.market_routes._get_asset_lookup', new_callable=AsyncMock)
+    def test_popular_respects_limit(self, mock_get_lookup, sample_assets):
         """Popular stocks should respect the limit parameter."""
-        mock_load.return_value = sample_assets
+        mock_get_lookup.return_value = {a['symbol']: a for a in sample_assets}
         
         response = client.get("/api/market/popular?limit=5")
         data = response.json()
         
         assert len(data["assets"]) <= 5
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_popular_handles_empty_cache(self, mock_load):
+    @patch('routes.market_routes._get_asset_lookup', new_callable=AsyncMock)
+    def test_popular_handles_empty_cache(self, mock_get_lookup):
         """Popular stocks should handle empty cache gracefully."""
-        mock_load.return_value = []
+        mock_get_lookup.return_value = {}
         
         response = client.get("/api/market/popular")
         data = response.json()
@@ -325,8 +333,8 @@ class TestPopularStocksEndpoint:
 class TestPerformance:
     """Performance-related tests."""
 
-    @patch('routes.market_routes._load_cached_assets')
-    def test_search_with_large_dataset(self, mock_load):
+    @patch('routes.market_routes._get_cached_assets', new_callable=AsyncMock)
+    def test_search_with_large_dataset(self, mock_get_assets):
         """Search should be efficient with large datasets."""
         # Generate a large dataset (10,000 assets)
         large_assets = [
@@ -338,7 +346,7 @@ class TestPerformance:
             {"symbol": "AAPL", "name": "Apple Inc."},
             {"symbol": "MSFT", "name": "Microsoft Corporation"},
         ])
-        mock_load.return_value = large_assets
+        mock_get_assets.return_value = large_assets
         
         import time
         start = time.time()

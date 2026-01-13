@@ -9,6 +9,8 @@ import os
 import json
 import logging
 import re
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import JSONResponse
@@ -18,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 # Asset cache configuration
 ASSET_CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'tradable_assets.json')
+
+# Thread pool for blocking I/O operations
+_executor = ThreadPoolExecutor(max_workers=2)
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -37,18 +42,92 @@ class StockSearchResponse(BaseModel):
     query: str
 
 
-def _load_cached_assets() -> List[dict]:
-    """Load assets from cache file."""
-    if not os.path.exists(ASSET_CACHE_FILE):
-        logger.warning(f"Asset cache file not found: {ASSET_CACHE_FILE}")
-        return []
+# In-memory cache for assets to avoid blocking I/O on every request
+class AssetCache:
+    """
+    Thread-safe in-memory cache for tradable assets.
     
-    try:
-        with open(ASSET_CACHE_FILE, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Error reading asset cache: {e}")
-        return []
+    Loads assets once from disk and caches them in memory.
+    Provides async-safe access without blocking the event loop.
+    """
+    _instance: Optional['AssetCache'] = None
+    _lock = asyncio.Lock()
+    
+    def __init__(self):
+        self._assets: List[dict] = []
+        self._loaded = False
+        self._asset_lookup: dict = {}
+    
+    @classmethod
+    def get_instance(cls) -> 'AssetCache':
+        """Get or create singleton instance."""
+        if cls._instance is None:
+            cls._instance = AssetCache()
+        return cls._instance
+    
+    def _load_from_disk_sync(self) -> List[dict]:
+        """Synchronous file read - to be run in executor."""
+        if not os.path.exists(ASSET_CACHE_FILE):
+            logger.warning(f"Asset cache file not found: {ASSET_CACHE_FILE}")
+            return []
+        
+        try:
+            with open(ASSET_CACHE_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error reading asset cache: {e}")
+            return []
+    
+    async def get_assets(self) -> List[dict]:
+        """
+        Get cached assets, loading from disk if needed.
+        
+        Uses asyncio lock to prevent multiple concurrent loads.
+        Runs disk I/O in thread pool to avoid blocking event loop.
+        """
+        if self._loaded:
+            return self._assets
+        
+        async with self._lock:
+            # Double-check after acquiring lock
+            if self._loaded:
+                return self._assets
+            
+            # Run blocking I/O in thread pool
+            loop = asyncio.get_event_loop()
+            self._assets = await loop.run_in_executor(
+                _executor, 
+                self._load_from_disk_sync
+            )
+            self._asset_lookup = {a['symbol']: a for a in self._assets}
+            self._loaded = True
+            logger.info(f"Loaded {len(self._assets)} assets into memory cache")
+            return self._assets
+    
+    async def get_asset_lookup(self) -> dict:
+        """Get symbol -> asset lookup dictionary."""
+        await self.get_assets()  # Ensure loaded
+        return self._asset_lookup
+    
+    def reload(self) -> None:
+        """Force reload on next access."""
+        self._loaded = False
+        self._assets = []
+        self._asset_lookup = {}
+
+
+# Module-level cache instance
+_asset_cache = AssetCache.get_instance()
+
+
+async def _get_cached_assets() -> List[dict]:
+    """Get assets from in-memory cache (async-safe)."""
+    return await _asset_cache.get_assets()
+
+
+async def _get_asset_lookup() -> dict:
+    """Get asset lookup dictionary from cache (async-safe)."""
+    return await _asset_cache.get_asset_lookup()
 
 
 def _score_asset(asset: dict, search_term: str, normalized_search: str, search_words: List[str]) -> int:
@@ -144,7 +223,8 @@ async def search_stocks(
     - "coca cola" - multi-word search
     """
     try:
-        assets = _load_cached_assets()
+        # Use async cache to avoid blocking event loop
+        assets = await _get_cached_assets()
         
         if not assets:
             return JSONResponse({
@@ -211,17 +291,15 @@ async def get_popular_stocks(
     ]
     
     try:
-        assets = _load_cached_assets()
+        # Use async cache with pre-built lookup for O(1) access
+        asset_lookup = await _get_asset_lookup()
         
-        if not assets:
+        if not asset_lookup:
             return JSONResponse({
                 "success": True,
                 "assets": [],
                 "count": 0
             })
-        
-        # Build a lookup dictionary for O(1) access
-        asset_lookup = {a['symbol']: a for a in assets}
         
         # Get popular stocks that exist in our asset list
         popular_assets = []
