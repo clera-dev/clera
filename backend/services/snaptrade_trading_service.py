@@ -629,7 +629,7 @@ class SnapTradeTradingService:
             # PRODUCTION-GRADE: Use account-specific lookup to get the correct exchange
             # (e.g., NYSE JNJ instead of German SWB JNJ)
             try:
-            universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
+                universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
             except SnapTradeConnectionError as conn_error:
                 # Connection is disabled - return user-friendly error
                 logger.error(f"Connection disabled for account {account_id}: {conn_error.message}")
@@ -783,7 +783,7 @@ class SnapTradeTradingService:
                 # PRODUCTION-GRADE: Use account-specific lookup to get the correct exchange
                 # (e.g., NYSE JNJ instead of German SWB JNJ)
                 try:
-                universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
+                    universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
                 except SnapTradeConnectionError as conn_error:
                     # Connection is disabled - return user-friendly error
                     logger.error(f"Connection disabled for account {account_id}: {conn_error.message}")

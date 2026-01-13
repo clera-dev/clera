@@ -732,7 +732,7 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
             if reconnect:
                 logger.info(f"Generated RECONNECT portal URL for user {user_id}, authorization {reconnect}")
             else:
-            logger.info(f"Generated connection portal URL for user {user_id}")
+                logger.info(f"Generated connection portal URL for user {user_id}")
             return connection_url
             
         except Exception as e:
