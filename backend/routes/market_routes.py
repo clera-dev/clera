@@ -49,14 +49,20 @@ class AssetCache:
     
     Loads assets once from disk and caches them in memory.
     Provides async-safe access without blocking the event loop.
+    
+    NOTE: The asyncio.Lock is lazily initialized to avoid Python 3.10+ 
+    deprecation warnings about creating locks outside of async context.
     """
     _instance: Optional['AssetCache'] = None
-    _lock = asyncio.Lock()
     
     def __init__(self):
         self._assets: List[dict] = []
         self._loaded = False
         self._asset_lookup: dict = {}
+        # IMPORTANT: Lock must be lazily initialized inside async context
+        # Creating asyncio.Lock() at class/module level causes issues in Python 3.10+
+        # because it binds to an event loop that may not be the one uvicorn uses
+        self._lock: Optional[asyncio.Lock] = None
     
     @classmethod
     def get_instance(cls) -> 'AssetCache':
@@ -64,6 +70,17 @@ class AssetCache:
         if cls._instance is None:
             cls._instance = AssetCache()
         return cls._instance
+    
+    def _get_lock(self) -> asyncio.Lock:
+        """
+        Lazily initialize the asyncio lock.
+        
+        Must be called from within an async context (inside a running event loop).
+        This ensures the lock is bound to the correct event loop.
+        """
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
     
     def _load_from_disk_sync(self) -> List[dict]:
         """Synchronous file read - to be run in executor."""
@@ -88,13 +105,16 @@ class AssetCache:
         if self._loaded:
             return self._assets
         
-        async with self._lock:
+        # Get or create lock (lazily initialized in async context)
+        lock = self._get_lock()
+        
+        async with lock:
             # Double-check after acquiring lock
             if self._loaded:
                 return self._assets
             
             # Run blocking I/O in thread pool
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             self._assets = await loop.run_in_executor(
                 _executor, 
                 self._load_from_disk_sync
@@ -114,6 +134,8 @@ class AssetCache:
         self._loaded = False
         self._assets = []
         self._asset_lookup = {}
+        # Reset lock so it can be recreated in the correct event loop if needed
+        self._lock = None
 
 
 # Module-level cache instance
