@@ -948,12 +948,16 @@ async def sync_all_connections(
             # CRITICAL FIX: Determine actual connection_type from brokerage capabilities
             # SnapTrade's Brokerage object has 'allows_trading' field that indicates
             # whether the brokerage supports trade execution vs read-only access
-            allows_trading = False
-            if isinstance(brokerage, dict):
-                allows_trading = brokerage.get('allows_trading', False)
-            actual_connection_type = 'trade' if allows_trading else 'read'
+            # IMPORTANT: If field is missing, don't default to 'read' - leave as None for retry
+            actual_connection_type = None
+            connection_type_determined = False
+            if isinstance(brokerage, dict) and 'allows_trading' in brokerage:
+                allows_trading = brokerage.get('allows_trading')
+                actual_connection_type = 'trade' if allows_trading else 'read'
+                connection_type_determined = True
             
-            logger.info(f"Processing authorization {authorization_id} for brokerage {brokerage_name} (connection_type={actual_connection_type})")
+            conn_type_status = f"connection_type={actual_connection_type}" if connection_type_determined else "connection_type=UNKNOWN (field missing)"
+            logger.info(f"Processing authorization {authorization_id} for brokerage {brokerage_name} ({conn_type_status})")
             
             # Fetch accounts for this authorization
             accounts_response = provider.client.account_information.list_user_accounts(
@@ -981,11 +985,14 @@ async def sync_all_connections(
                 'authorization_id': authorization_id,
                 'brokerage_slug': brokerage_name.lower().replace(' ', '_'),
                 'brokerage_name': brokerage_name,
-                'connection_type': actual_connection_type,  # CRITICAL: Use actual capability, not hardcoded 'trade'
                 'status': 'active',
                 'accounts_count': len(accounts_for_auth),
                 'created_at': datetime.now().isoformat()
             }
+            
+            # CRITICAL: Only set connection_type if we determined it - don't default to 'read'
+            if connection_type_determined and actual_connection_type:
+                connection_data['connection_type'] = actual_connection_type
             
             supabase.table('snaptrade_brokerage_connections')\
                 .upsert(connection_data, on_conflict='authorization_id')\
@@ -1031,7 +1038,6 @@ async def sync_all_connections(
                     'account_type': account.get('type', 'investment'),
                     'account_subtype': account.get('type', 'investment'),
                     'account_mode': 'snaptrade',
-                    'connection_type': actual_connection_type,  # CRITICAL: Use actual capability
                     'connection_status': 'active',
                     'is_active': True,
                     'sync_status': 'success',
@@ -1040,13 +1046,17 @@ async def sync_all_connections(
                     'buying_power': buying_power
                 }
                 
+                # CRITICAL: Only set connection_type if determined - preserve existing on missing field
+                if connection_type_determined and actual_connection_type:
+                    account_data['connection_type'] = actual_connection_type
+                
                 supabase.table('user_investment_accounts')\
                     .upsert(account_data, on_conflict='provider,provider_account_id,user_id')\
                     .execute()
                 
                 accounts_synced += 1
             
-            logger.info(f"✅ Synced {len(accounts_for_auth)} accounts for authorization {authorization_id} (connection_type={actual_connection_type})")
+            logger.info(f"✅ Synced {len(accounts_for_auth)} accounts for authorization {authorization_id} ({conn_type_status})")
         
         # Update user_onboarding status to 'submitted'
         from datetime import timezone

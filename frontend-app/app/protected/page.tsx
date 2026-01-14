@@ -206,29 +206,26 @@ export default function ProtectedPageClient() {
   // Show them the SnapTrade connection step, NOT the Alpaca funding flow
   if (isAggregationMode && !hasFunding) {
     // Callback that handles both "Skip for now" AND successful connection
-    // CRITICAL FIX: Must allow users to skip without connecting any accounts
-    // AND properly redirect when accounts are connected
+    // CRITICAL FIX: Must allow users to skip WITHOUT waiting
     // NOTE: Do NOT use setLoading() here - it would unmount SnapTradeConnectionStep mid-execution
-    const handleConnectionComplete = async () => {
-      try {
-        // Check connection status in background (for analytics/state update)
-        // but don't block the redirect
-        const modeResponse = await fetch('/api/portfolio/connection-status');
-        if (modeResponse.ok) {
-          const modeData = await modeResponse.json();
-          const snaptradeAccounts = modeData.snaptrade_accounts || [];
-          const plaidAccounts = modeData.plaid_accounts || [];
-          
-          if (snaptradeAccounts.length > 0 || plaidAccounts.length > 0) {
-            // User has connected accounts - update state for proper redirect handling
-            setHasFunding(true);
+    const handleConnectionComplete = () => {
+      // Fire-and-forget: Check connection status in background for analytics
+      // This does NOT block the redirect - users skip immediately
+      fetch('/api/portfolio/connection-status')
+        .then(response => response.ok ? response.json() : null)
+        .then(modeData => {
+          if (modeData) {
+            const snaptradeAccounts = modeData.snaptrade_accounts || [];
+            const plaidAccounts = modeData.plaid_accounts || [];
+            if (snaptradeAccounts.length > 0 || plaidAccounts.length > 0) {
+              setHasFunding(true);
+            }
           }
-        }
-      } catch (error) {
-        console.error('Error checking connection status:', error);
-      }
-      // CRITICAL: Always redirect to /invest - allow users to skip and explore
-      // They can connect accounts later from the portfolio page
+        })
+        .catch(error => console.error('Error checking connection status:', error));
+      
+      // CRITICAL: Redirect immediately - don't wait for fetch
+      // Users can connect accounts later from the portfolio page
       router.replace('/invest');
     };
     
