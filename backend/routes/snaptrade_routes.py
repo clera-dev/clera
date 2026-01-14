@@ -1205,11 +1205,14 @@ async def sync_connection(
             )
             if auth_detail.body:
                 brokerage_obj = auth_detail.body.get('brokerage', {})
-                if isinstance(brokerage_obj, dict):
-                    allows_trading = brokerage_obj.get('allows_trading', False)
+                # CRITICAL: Only set connection_type if field EXISTS - don't default to False
+                if isinstance(brokerage_obj, dict) and 'allows_trading' in brokerage_obj:
+                    allows_trading = brokerage_obj.get('allows_trading')
                     actual_connection_type = 'trade' if allows_trading else 'read'
                     connection_type_determined = True
                     logger.info(f"Brokerage {brokerage_obj.get('name', 'Unknown')} allows_trading={allows_trading}")
+                else:
+                    logger.warning(f"Brokerage object missing 'allows_trading' field - will retry on next sync")
         except Exception as auth_detail_error:
             # CRITICAL: Do NOT default to 'read' on transient errors - this would permanently disable trading
             # Keep as None (unknown) so it can be retried on next sync
@@ -1645,11 +1648,14 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
             )
             if auth_detail.body:
                 brokerage_obj = auth_detail.body.get('brokerage', {})
-                if isinstance(brokerage_obj, dict):
-                    allows_trading = brokerage_obj.get('allows_trading', False)
+                # CRITICAL: Only set connection_type if field EXISTS - don't default to False
+                if isinstance(brokerage_obj, dict) and 'allows_trading' in brokerage_obj:
+                    allows_trading = brokerage_obj.get('allows_trading')
                     actual_connection_type = 'trade' if allows_trading else 'read'
                     connection_type_determined = True
                     logger.info(f"Brokerage {brokerage_obj.get('name', 'Unknown')} allows_trading={allows_trading}")
+                else:
+                    logger.warning(f"Brokerage object missing 'allows_trading' field - will retry on next sync")
         except Exception as auth_detail_error:
             # CRITICAL: Do NOT default to 'read' on transient errors - this would permanently disable trading
             logger.warning(f"Could not fetch authorization details for {authorization_id}: {auth_detail_error} - will retry on next sync")
