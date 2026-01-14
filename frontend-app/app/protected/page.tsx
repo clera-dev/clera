@@ -205,10 +205,9 @@ export default function ProtectedPageClient() {
   // If user has completed onboarding but hasn't connected any accounts yet (aggregation mode)
   // Show them the SnapTrade connection step, NOT the Alpaca funding flow
   if (isAggregationMode && !hasFunding) {
-    // Callback that properly triggers state re-fetch after SnapTrade connection
-    // CRITICAL FIX: router.refresh() alone doesn't trigger useEffect re-run
-    // because the dependency is [router], not a state variable.
-    // We need to manually re-fetch the data to update hasFunding state.
+    // Callback that handles both "Skip for now" AND successful connection
+    // CRITICAL FIX: Must allow users to skip without connecting any accounts
+    // AND properly redirect when accounts are connected
     const handleConnectionComplete = async () => {
       setLoading(true);
       try {
@@ -221,13 +220,15 @@ export default function ProtectedPageClient() {
           if (snaptradeAccounts.length > 0 || plaidAccounts.length > 0) {
             // User has connected accounts - redirect to portfolio
             setHasFunding(true);
-            router.replace('/invest');
           }
         }
       } catch (error) {
-        console.error('Error checking connection status after SnapTrade connect:', error);
+        console.error('Error checking connection status:', error);
       } finally {
         setLoading(false);
+        // CRITICAL: Always redirect to /invest - allow users to skip and explore
+        // They can connect accounts later from the portfolio page
+        router.replace('/invest');
       }
     };
     
