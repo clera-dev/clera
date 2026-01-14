@@ -48,6 +48,11 @@ export async function GET(request: Request) {
     // PRODUCTION-GRADE: Add timeout to prevent long waits when backend is unavailable
     const backendUrl = `${process.env.BACKEND_API_URL}/api/portfolio/connection-status`;
     
+    // CRITICAL: Get session BEFORE starting timeout to ensure full 5s applies only to backend fetch
+    // If getSession() is slow, we don't want it eating into the backend timeout
+    const sessionData = await supabase.auth.getSession();
+    const accessToken = sessionData.data.session?.access_token || '';
+    
     // Create AbortController for timeout (5 seconds is reasonable for this endpoint)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -58,7 +63,7 @@ export async function GET(request: Request) {
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': process.env.BACKEND_API_KEY,
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`,
+          'Authorization': `Bearer ${accessToken}`,
         },
         signal: controller.signal,
       });
