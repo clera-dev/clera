@@ -89,8 +89,9 @@ class AggregatedPortfolioService:
         Calculate portfolio analytics (risk and diversification scores) from aggregated data.
         
         PRODUCTION-GRADE: Properly handles cash-only portfolios by returning
-        semantically correct scores (1.0/1.0 = low risk, low diversification)
-        instead of (0.0/0.0 = no data).
+        0.0/0.0 scores (consistent with api_server.py for cross-provider consistency):
+        - Risk Score 0 = No market risk (cash has no volatility)
+        - Diversification Score 0 = Can't diversify when holding only cash
         
         Args:
             user_id: User ID to calculate analytics for

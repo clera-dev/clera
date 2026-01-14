@@ -54,7 +54,10 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
     
     const timeoutRef = useRef<TimerRefs>({});
     const intervalRef = useRef<TimerRefs>({});
-    const abortControllerRef = useRef<AbortController | null>(null); // For canceling in-flight requests
+    // CRITICAL: Separate abort controllers for polling vs user-initiated fetches
+    // This prevents polling from aborting user-initiated filter changes
+    const pollingAbortControllerRef = useRef<AbortController | null>(null);
+    const userAbortControllerRef = useRef<AbortController | null>(null);
     const supabase = useMemo(() => createClient(), []); // Create supabase client instance once
     
     // For aggregation mode, always use fallback API (no real-time websockets)
@@ -63,15 +66,18 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
     }, [portfolioMode]);
 
     // Refs to hold the latest values of state for intervals/timeouts
+    // CRITICAL: Using refs prevents stale closure bugs in polling intervals
     const socketRef = useRef<WebSocket | null>(socket);
     const isConnectedRef = useRef<boolean>(isConnected);
     const useFallbackRef = useRef<boolean>(useFallback);
     const connectionAttemptsRef = useRef<number>(connectionAttempts);
     const isLoadingRef = useRef<boolean>(isLoading);
+    const debouncedFilterAccountRef = useRef<string | null>(debouncedFilterAccount);
 
     // Keep refs synchronized with state
     useEffect(() => { socketRef.current = socket; }, [socket]);
     useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
+    useEffect(() => { debouncedFilterAccountRef.current = debouncedFilterAccount; }, [debouncedFilterAccount]);
     useEffect(() => { useFallbackRef.current = useFallback; }, [useFallback]);
     useEffect(() => { connectionAttemptsRef.current = connectionAttempts; }, [connectionAttempts]);
     useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
@@ -388,9 +394,9 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         if (portfolioMode === 'aggregation') {
             console.log("Aggregation mode: Skipping WebSocket, using fallback API for portfolio value");
             setUseFallback(true);
-            // Initial fetch with current filter (debounced value will be used in the filter effect)
+            // Initial fetch - use userAbortController since this is user-initiated
             const controller = new AbortController();
-            abortControllerRef.current = controller;
+            userAbortControllerRef.current = controller;
             fetchPortfolioData(debouncedFilterAccount, controller.signal);
         } else if (websocketUrl && !useFallbackRef.current && shouldUseWebSocket) {
             console.log("Brokerage/Hybrid mode: Attempting WebSocket connection", websocketUrl);
@@ -399,7 +405,7 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
             console.log("Effect triggered: No valid WebSocket URL or fallback mode active, using API fetch.", { accountId, websocketUrl, useFallback: useFallbackRef.current });
             setUseFallback(true); // Ensure fallback state is set
             const controller = new AbortController();
-            abortControllerRef.current = controller;
+            userAbortControllerRef.current = controller;
             fetchPortfolioData(debouncedFilterAccount, controller.signal);
         }
         
@@ -439,14 +445,15 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         intervalRef.current.fallbackCheck = setInterval(() => {
             if (useFallbackRef.current) {
                 console.log('Fallback interval: Using polling for portfolio data');
-                // CRITICAL: Abort any in-flight request before starting a new one
-                // Prevents race conditions where stale data could overwrite fresh data
-                if (abortControllerRef.current) {
-                    abortControllerRef.current.abort();
+                // CRITICAL: Use separate polling abort controller to avoid aborting user-initiated requests
+                // Also use ref for filter to avoid stale closure bug
+                if (pollingAbortControllerRef.current) {
+                    pollingAbortControllerRef.current.abort();
                 }
                 const controller = new AbortController();
-                abortControllerRef.current = controller;
-                fetchPortfolioData(debouncedFilterAccount, controller.signal);
+                pollingAbortControllerRef.current = controller;
+                // Use REF to get the latest filter value (avoids stale closure)
+                fetchPortfolioData(debouncedFilterAccountRef.current, controller.signal);
                 
                 // Try to switch back to WebSocket mode occasionally
                 const lastAttemptTime = timeoutRef.current.reconnect ? Date.now() : 0; // Crude way to track last reconnect attempt
@@ -463,16 +470,20 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
                 if (isLoadingRef.current && !isConnectedRef.current) { // Double check connection status
                     console.warn('Initial WebSocket connection taking too long, fetching data via API (parallel fetch)');
                     const controller = new AbortController();
-                    abortControllerRef.current = controller;
-                    await fetchPortfolioData(debouncedFilterAccount, controller.signal);
+                    userAbortControllerRef.current = controller;
+                    await fetchPortfolioData(debouncedFilterAccountRef.current, controller.signal);
                 } 
             }, 8000); // Increased timeout slightly
         }
         
         return () => {
             clearAllTimers();
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
+            // Abort both polling and user-initiated requests on cleanup
+            if (pollingAbortControllerRef.current) {
+                pollingAbortControllerRef.current.abort();
+            }
+            if (userAbortControllerRef.current) {
+                userAbortControllerRef.current.abort();
             }
             if (socketRef.current) {
                 console.log('Component unmounting, closing WebSocket connection');
@@ -505,14 +516,15 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
             // Show switching indicator but keep current values visible
             setIsSwitchingAccount(true);
             
-            // Cancel any in-flight requests
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
+            // Cancel any in-flight USER requests (not polling)
+            // This ensures filter changes take priority
+            if (userAbortControllerRef.current) {
+                userAbortControllerRef.current.abort();
             }
             
             // Start new fetch with updated filter
             const controller = new AbortController();
-            abortControllerRef.current = controller;
+            userAbortControllerRef.current = controller;
             fetchPortfolioData(debouncedFilterAccount, controller.signal);
         }
     }, [debouncedFilterAccount, portfolioMode, fetchPortfolioData]);
