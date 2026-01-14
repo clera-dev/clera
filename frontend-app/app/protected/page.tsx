@@ -208,9 +208,11 @@ export default function ProtectedPageClient() {
     // Callback that handles both "Skip for now" AND successful connection
     // CRITICAL FIX: Must allow users to skip without connecting any accounts
     // AND properly redirect when accounts are connected
+    // NOTE: Do NOT use setLoading() here - it would unmount SnapTradeConnectionStep mid-execution
     const handleConnectionComplete = async () => {
-      setLoading(true);
       try {
+        // Check connection status in background (for analytics/state update)
+        // but don't block the redirect
         const modeResponse = await fetch('/api/portfolio/connection-status');
         if (modeResponse.ok) {
           const modeData = await modeResponse.json();
@@ -218,18 +220,16 @@ export default function ProtectedPageClient() {
           const plaidAccounts = modeData.plaid_accounts || [];
           
           if (snaptradeAccounts.length > 0 || plaidAccounts.length > 0) {
-            // User has connected accounts - redirect to portfolio
+            // User has connected accounts - update state for proper redirect handling
             setHasFunding(true);
           }
         }
       } catch (error) {
         console.error('Error checking connection status:', error);
-      } finally {
-        setLoading(false);
-        // CRITICAL: Always redirect to /invest - allow users to skip and explore
-        // They can connect accounts later from the portfolio page
-        router.replace('/invest');
       }
+      // CRITICAL: Always redirect to /invest - allow users to skip and explore
+      // They can connect accounts later from the portfolio page
+      router.replace('/invest');
     };
     
     return (
