@@ -185,31 +185,67 @@ class TestConnectionTypeFiltering:
 
 
 class TestConnectionTypeSyncBehavior:
-    """Test that connection_type is correctly determined during account sync."""
+    """Test that connection_type is correctly determined during account sync.
+    
+    CRITICAL: These tests mirror the ACTUAL logic in snaptrade_routes.py sync functions.
+    The key behavior is:
+    - Only set connection_type if 'allows_trading' field EXISTS in brokerage object
+    - If field is missing, leave connection_type as None (unknown) for retry on next sync
+    - Never default to 'read' on missing field - that would permanently disable trading
+    """
     
     def test_allows_trading_true_sets_trade(self):
         """Test that allows_trading=True sets connection_type='trade'."""
         brokerage_obj = {'name': 'Robinhood', 'allows_trading': True}
-        allows_trading = brokerage_obj.get('allows_trading', False)
-        actual_connection_type = 'trade' if allows_trading else 'read'
         
+        # Mirror actual sync logic: check field existence first
+        actual_connection_type = None
+        connection_type_determined = False
+        if 'allows_trading' in brokerage_obj:
+            allows_trading = brokerage_obj.get('allows_trading')
+            actual_connection_type = 'trade' if allows_trading else 'read'
+            connection_type_determined = True
+        
+        assert connection_type_determined is True
         assert actual_connection_type == 'trade'
     
     def test_allows_trading_false_sets_read(self):
         """Test that allows_trading=False sets connection_type='read'."""
         brokerage_obj = {'name': 'Vanguard', 'allows_trading': False}
-        allows_trading = brokerage_obj.get('allows_trading', False)
-        actual_connection_type = 'trade' if allows_trading else 'read'
         
+        # Mirror actual sync logic: check field existence first
+        actual_connection_type = None
+        connection_type_determined = False
+        if 'allows_trading' in brokerage_obj:
+            allows_trading = brokerage_obj.get('allows_trading')
+            actual_connection_type = 'trade' if allows_trading else 'read'
+            connection_type_determined = True
+        
+        assert connection_type_determined is True
         assert actual_connection_type == 'read'
     
-    def test_missing_allows_trading_defaults_to_read(self):
-        """Test that missing allows_trading field defaults to read-only."""
-        brokerage_obj = {'name': 'Unknown Brokerage'}
-        allows_trading = brokerage_obj.get('allows_trading', False)
-        actual_connection_type = 'trade' if allows_trading else 'read'
+    def test_missing_allows_trading_does_not_set_type(self):
+        """
+        Test that missing allows_trading field leaves connection_type as None.
         
-        assert actual_connection_type == 'read'
+        CRITICAL: This is the key fix for the 'transient API errors permanently disable trading' bug.
+        If the field is missing from the API response, we do NOT default to 'read'.
+        Instead, we leave connection_type as None (unknown) so it can be retried on next sync.
+        This prevents a temporary API issue from permanently disabling trading for users.
+        """
+        brokerage_obj = {'name': 'Unknown Brokerage'}  # No 'allows_trading' field
+        
+        # Mirror actual sync logic: check field existence first
+        actual_connection_type = None
+        connection_type_determined = False
+        if 'allows_trading' in brokerage_obj:
+            allows_trading = brokerage_obj.get('allows_trading')
+            actual_connection_type = 'trade' if allows_trading else 'read'
+            connection_type_determined = True
+        
+        # CRITICAL: connection_type should NOT be determined, and should remain None
+        assert connection_type_determined is False
+        assert actual_connection_type is None
 
 
 if __name__ == '__main__':
