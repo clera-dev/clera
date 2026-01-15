@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import OnboardingFlow from '@/components/onboarding/OnboardingFlow';
+import SnapTradeConnectionStep from '@/components/onboarding/SnapTradeConnectionStep';
 import { getOnboardingDataAction } from '@/app/actions';
-import { InfoIcon } from 'lucide-react';
 import ManualBankEntry from '@/components/funding/ManualBankEntry';
 
 import { Skeleton } from '@/components/ui/skeleton';
@@ -193,10 +193,59 @@ export default function ProtectedPageClient() {
     );
   }
 
-  // If onboarding is complete but funding is not, show funding flow
+  // If onboarding is complete but funding is not, show appropriate next step
   // If both are complete, user was already redirected to /invest above via useEffect
 
-  // Welcome step - "Almost there!" page
+  // ARCHITECTURE: Determine which flow to show based on portfolio mode
+  // - Aggregation mode (no Alpaca account): Show SnapTrade connection step
+  // - Brokerage mode (has Alpaca account): Show Alpaca funding flow
+  const hasAlpacaAccount = !!onboardingData?.alpaca_account_id;
+  const isAggregationMode = portfolioMode === 'aggregation' || !hasAlpacaAccount;
+
+  // If user has completed onboarding but hasn't connected any accounts yet (aggregation mode)
+  // Show them the SnapTrade connection step, NOT the Alpaca funding flow
+  if (isAggregationMode && !hasFunding) {
+    // Callback that handles both "Skip for now" AND successful connection
+    // CRITICAL FIX: Must allow users to skip WITHOUT waiting
+    // NOTE: Do NOT use setLoading() here - it would unmount SnapTradeConnectionStep mid-execution
+    const handleConnectionComplete = () => {
+      // Fire-and-forget: Check connection status in background for analytics
+      // This does NOT block the redirect - users skip immediately
+      fetch('/api/portfolio/connection-status')
+        .then(response => response.ok ? response.json() : null)
+        .then(modeData => {
+          if (modeData) {
+            const snaptradeAccounts = modeData.snaptrade_accounts || [];
+            const plaidAccounts = modeData.plaid_accounts || [];
+            if (snaptradeAccounts.length > 0 || plaidAccounts.length > 0) {
+              setHasFunding(true);
+            }
+          }
+        })
+        .catch(error => console.error('Error checking connection status:', error));
+      
+      // CRITICAL: Redirect immediately - don't wait for fetch
+      // Users can connect accounts later from the portfolio page
+      router.replace('/invest');
+    };
+    
+    return (
+      <div className="flex-1 w-full flex flex-col">
+        <div className="flex-grow pb-16">
+          {/* Import and show SnapTradeConnectionStep directly for aggregation users */}
+          <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
+            <div className="bg-card border border-border/40 rounded-xl shadow-lg overflow-hidden">
+              <SnapTradeConnectionStep 
+                onComplete={handleConnectionComplete}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Welcome step - "Almost there!" page (for brokerage/hybrid mode with Alpaca account)
   if (fundingStep === 'welcome') {
     return (
       <div className="flex-1 w-full flex flex-col min-h-screen">

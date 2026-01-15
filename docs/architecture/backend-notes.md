@@ -1,5 +1,7 @@
 # Clera Backend Documentation
 
+> **⚠️ SOURCE OF TRUTH**: For the most up-to-date architectural overview as of 2026 (including SnapTrade and LangGraph 4.5 details), please refer to **[codebase-catchup.md](./codebase-catchup.md)**.
+
 ## Overview
 
 Clera is a financial AI platform that leverages advanced language models and agent-based architecture to provide financial analysis, portfolio management, and conversational capabilities. The backend is built using Python with FastAPI, LangGraph for agent orchestration, and various AI services for natural language understanding and generation.

@@ -1,5 +1,7 @@
 # Clera Frontend Documentation
 
+> **⚠️ SOURCE OF TRUTH**: For the most up-to-date architectural overview as of 2026 (including SnapTrade and the Next.js 15 proxy pattern), please refer to **[codebase-catchup.md](./codebase-catchup.md)**.
+
 ## Overview
 
 The Clera frontend is built using Next.js with TypeScript, following the App Router architecture. The application integrates with Supabase for authentication and database access, and uses TailwindCSS for styling. The frontend provides a user interface for Clera's financial AI platform, including authentication flows and protected routes.

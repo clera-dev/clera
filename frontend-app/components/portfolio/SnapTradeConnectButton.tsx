@@ -5,6 +5,12 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 
 interface SnapTradeConnectButtonProps {
+  /**
+   * Filter for brokerage capabilities:
+   * - undefined: Shows ALL brokerages (recommended for onboarding)
+   * - 'read': Shows only read-capable brokerages
+   * - 'trade': Shows only trading-capable brokerages (default for dashboard "Add Account")
+   */
   connectionType?: 'read' | 'trade';
   broker?: string;
   onSuccess?: () => void;
@@ -13,6 +19,8 @@ interface SnapTradeConnectButtonProps {
 }
 
 export function SnapTradeConnectButton({
+  // Default to 'trade' for dashboard context where users want to add trading-capable accounts
+  // For onboarding, use undefined/omit to show all brokerages
   connectionType = 'trade',
   broker,
   onSuccess,

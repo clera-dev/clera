@@ -23,13 +23,17 @@ export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTrad
       setError(null);
 
       // Get connection URL from backend
+      // ARCHITECTURE: Don't filter by connection type during onboarding to show ALL brokerages
+      // This gives users a holistic view of their investments by including both read-only 
+      // and trading-enabled brokerages. Trading capability is handled at the platform level
+      // based on each brokerage's actual capabilities.
       const response = await fetch('/api/snaptrade/create-connection', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          connectionType: 'trade',
+          // No connectionType filter = show all available brokerages
           redirectUrl: `${window.location.origin}/onboarding/snaptrade-callback`,
         }),
       });
@@ -81,8 +85,8 @@ export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTrad
               Connect Your Investment Accounts
             </h2>
             <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-              Link your brokerage accounts to view and manage your entire portfolio in one place.
-              You'll be able to see all your holdings and execute trades across all your accounts.
+              Link your brokerage accounts to view your entire portfolio in one place.
+              Trading is available on supported brokerages.
             </p>
           </div>
         </div>
@@ -188,8 +192,8 @@ export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTrad
           <Alert className="border-green-500/20 bg-green-500/10 backdrop-blur-xl">
             <CheckCircle2 className="h-4 w-4 text-green-400" />
             <AlertDescription className="text-green-300">
-              Successfully connected! You can now view and trade from your brokerage accounts.
-              Proceeding to next step...
+              Successfully connected! Your holdings are now synced.
+              Trading availability depends on your brokerage's capabilities.
             </AlertDescription>
           </Alert>
         )}

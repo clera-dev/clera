@@ -1,676 +1,718 @@
-# Clera Codebase Catchup Guide
+# Clera Codebase Catchup Guide (January 2026)
+
+> **📚 This is the canonical "Source of Truth"** for understanding Clera's architecture. All other documentation files should be treated as supplementary.
+
+---
+
+## Table of Contents
+1. [Project Overview](#project-overview)
+2. [Architecture At-a-Glance](#architecture-at-a-glance)
+3. [Strategic Brokerage Integration: SnapTrade vs Alpaca](#strategic-brokerage-integration-snaptrade-vs-alpaca)
+4. [AI Multi-Agent System (LangGraph)](#ai-multi-agent-system-langgraph)
+5. [Frontend Deep Dive](#frontend-deep-dive)
+6. [Backend Deep Dive](#backend-deep-dive)
+7. [Database Schema (Supabase)](#database-schema-supabase)
+8. [Frontend–Backend Integration Patterns](#frontendbackend-integration-patterns)
+9. [Chat & Streaming Implementation](#chat--streaming-implementation)
+10. [Real-Time Portfolio System](#real-time-portfolio-system)
+11. [Environment Configuration](#environment-configuration)
+12. [Development Workflow](#development-workflow)
+13. [Testing Strategy](#testing-strategy)
+14. [Common Gotchas & Troubleshooting](#common-gotchas--troubleshooting)
+15. [Quick Reference](#quick-reference)
+
+---
 
 ## Project Overview
 
-**Clera** is an AI-powered financial platform that combines:
-- **AI Agent Technology**: Multi-agent system using LangGraph for financial analysis, portfolio management, and trade execution
-- **Commission-Free Brokerage**: Integration with Alpaca's Broker API for account creation and trading
-- **Real-Time Portfolio Tracking**: WebSocket-based live updates during market hours
-- **Banking Integration**: Plaid and manual bank account connection for ACH funding
+**Clera** is an AI-powered financial platform that enables users to:
+- **Connect any brokerage** (Robinhood, Webull, Fidelity, etc.) via SnapTrade
+- **Chat with an AI advisor** that can analyze portfolios, research stocks, and execute trades
+- **View aggregated portfolios** across all connected accounts in real-time
+- **Execute trades** through natural conversation with confirmation flows
 
-## Architecture Overview
-
-### Frontend (Next.js)
-- **Path**: `frontend-app/`
-- **Tech Stack**: Next.js 15.3 + TypeScript + TailwindCSS + Supabase Auth
-- **Deployment**: Vercel (Production: `app.clera.ai`)
-
-### Backend (Python)
-- **Path**: `backend/`
-- **Tech Stack**: FastAPI + LangGraph + Redis + PostgreSQL
-- **Deployment**: AWS ECS via Copilot (Production: `api.askclera.com`)
-
-### AI Agents (LangGraph)
-- **Config**: `langgraph.json`
-- **Deployment**: Dedicated LangGraph servers
-- **Purpose**: Financial analysis, portfolio management, trade execution
+### Tech Stack Summary
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Next.js 15, TypeScript, TailwindCSS, Framer Motion |
+| **Backend** | FastAPI (Python), Redis, PostgreSQL (Supabase) |
+| **AI Orchestration** | LangGraph with Claude 4.5 (Sonnet + Haiku) |
+| **Auth** | Supabase Auth (Session + JWT dual-pattern) |
+| **Brokerage** | SnapTrade (primary), Alpaca (legacy/internal) |
+| **Payments** | Stripe |
+| **Deployment** | Vercel (frontend), AWS ECS via Copilot (backend) |
 
 ---
 
-## Software Engineering Principles: SOLID, Modularity, and Testability
+## Architecture At-a-Glance
 
-Clera’s codebase is designed with **modern software engineering best practices** to ensure maintainability, modularity, and testability:
-
-- **SOLID Principles:** Both backend and frontend code follow SOLID principles:
-  - **Single Responsibility:** Each module, service, and utility class handles a single concern (e.g., authentication, authorization, PII management, API communication).
-  - **Open/Closed & Liskov Substitution:** Service abstractions and interfaces allow for easy extension and safe substitution in tests.
-  - **Interface Segregation & Dependency Inversion:** Business logic is decoupled from framework code, and dependencies are injected for easier testing.
-
-- **Separation of Concerns:** 
-  - **Backend:** All business logic is extracted from the main API server into dedicated modules under `backend/utils/` (e.g., `authentication.py`, `authorization.py`, `alpaca/`, `supabase/`, `email/`).
-  - **Frontend:** API communication, authentication, and business logic are separated into service classes and hooks under `frontend-app/utils/` and `frontend-app/lib/`.
-
-- **Modularity:** 
-  - Shared logic and helpers are placed in `utils/` and `lib/` directories, making code reusable and easy to test.
-  - Each feature (e.g., account closure, PII management, bank funding) has its own service or utility module.
-
-- **Testability:** 
-  - Both backend and frontend are designed for testability, with extensive use of dependency injection, mocking, and isolated unit/integration tests.
-  - Tests avoid anti-patterns like direct path modification and instead use proper package structure and fixtures.
-
-- **Dependency Injection:** 
-  - Factory functions and service classes are used to inject dependencies, making it easy to swap implementations for testing.
-
-**Example Patterns:**
-- Backend: `PIIManagementService`, `AuthenticationService`, and `AuthorizationService` are each in their own files and tested in isolation.
-- Frontend: `AuthService` and `BackendService` are separated, and API routes use factory functions for dependency injection.
-
-This approach is enforced throughout the codebase and is a key part of Clera's maintainability and reliability.
-
----
-
-## Frontend–Backend Integration: API Proxy Pattern
-
-### How the Frontend Talks to the Backend
-
-Clera uses a **proxy pattern** for all frontend-to-backend communication:
-- **React components** do NOT call the backend directly.
-- Instead, they call **Next.js API routes** (in `frontend-app/app/api/`).
-- These API routes:
-  - Authenticate and authorize the user (using Supabase Auth)
-  - Proxy the request to the backend FastAPI server (using environment variables for the backend URL and API key)
-  - Return the backend response to the frontend
-
-#### Why?
-- This pattern centralizes authentication/authorization and keeps backend API keys secret.
-- It also allows for custom logic, caching, and error handling in the API route layer.
-
-### Key API Route Mappings
-
-| Frontend API Route                              | Backend Endpoint                                 | Purpose                                 |
-|------------------------------------------------|--------------------------------------------------|-----------------------------------------|
-| `/api/portfolio/positions`                     | `/api/portfolio/{account_id}/positions`          | Get user's portfolio positions          |
-| `/api/portfolio/orders`                        | `/api/portfolio/{account_id}/orders`             | Get user's order history                |
-| `/api/portfolio/analytics`                     | `/api/portfolio/{account_id}/analytics`          | Get portfolio analytics                 |
-| `/api/portfolio/history`                       | `/api/portfolio/{account_id}/history`            | Get portfolio value history             |
-| `/api/portfolio/sector-allocation`             | `/api/portfolio/sector-allocation`               | Get sector allocation                   |
-| `/api/assets/[assetId]`                        | `/api/assets/{symbol_or_asset_id}`               | Get asset details                       |
-| `/api/market/quotes/batch`                     | `/api/market/quotes/batch`                       | Get batch quotes (true batching)       |
-| `/api/watchlist/[accountId]`                   | `/api/watchlist/{account_id}`                    | Get user's watchlist                    |
-| `/api/watchlist/[accountId]/add`/`/remove`     | `/api/watchlist/{account_id}/add`/`/remove`      | Add/remove symbol from watchlist        |
-| `/api/account/[accountId]/balance`             | `/get-account-balance/{account_id}`              | Get account balance                     |
-| `/api/account/[accountId]/pii`                 | `/api/account/{account_id}/pii`                  | Get/update PII data                     |
-| `/api/broker/account-summary`                  | `/get-ach-relationships`                         | Get ACH relationships                   |
-| `/api/account-closure/check-readiness/[accountId]` | `/account-closure/check-readiness/{account_id}` | Check if account can be closed          |
-| `/api/account-closure/initiate/[accountId]`    | `/account-closure/initiate/{account_id}`         | Initiate account closure                |
-| `/api/account-closure/progress/[accountId]`    | `/account-closure/progress/{account_id}`         | Get closure progress                    |
-| `/api/trade`                                   | `/api/trade`                                     | Place a trade order                     |
-| `/api/chat`                                    | `/api/chat-with-account`                         | AI chat with account context            |
-| `/api/chat-stream`                             | `/api/chat-stream`                               | AI chat streaming                       |
-| `/api/conversations/save`                      | `/save-conversation`                             | Save chat conversation                  |
-| `/api/conversations/history`                   | `/get-conversations`                             | Get chat history                        |
-| `/api/investment/research`                     | `/api/investment/research`                       | Get investment research                 |
-| `/api/news/trending`                           | `/api/news/trending`                             | Get trending news                       |
-| `/api/news/portfolio-summary`                  | `/api/news/portfolio-summary`                    | Get portfolio news summary              |
-| `/api/companies/profiles/[symbol]`             | `/api/companies/profiles/{symbol}`               | Get company profile                     |
-| `/api/broker/transfer`                         | `/api/broker/transfer`                           | Initiate ACH transfer                   |
-| `/api/market/assets`                           | `/api/market/assets`                             | List tradable assets                    |
-| `/api/market/latest-trade/[symbol]`            | `/api/market/latest-trade/{symbol}`              | Get latest trade price                  |
-| `/api/market/quote/[symbol]`                   | `/api/market/quote/{symbol}`                     | Get market quote                        |
-| `/api/ws/portfolio/[accountId]`                | `/ws/portfolio/{account_id}`                     | WebSocket proxy for real-time updates   |
-
-> **Note:** Not all backend endpoints are exposed to the frontend; only those listed above are actively used.
-
-### Authentication & Authorization Flow
-
-**Dual Authentication Pattern (Industry Best Practice):**
-The system supports both authentication patterns for maximum compatibility:
-
-1. **Session-based (Cookies)** - For client-side fetch requests from React components
-   - Uses Supabase session cookies automatically
-   - No manual token management required
-   - Example: `fetch('/api/account/123/balance')`
-
-2. **JWT-based (Authorization Header)** - For service-to-service calls with explicit tokens
-   - Uses `Authorization: Bearer <token>` headers
-   - Required for BackendService, ApiProxyService, and internal API proxying
-   - Example: `BackendService.placeTrade(accountId, userId, data, authToken)`
-
-**Implementation:**
-- **Frontend API routes** use `AuthService.authenticateAndAuthorize()` which automatically detects and validates both patterns
-- **Backend endpoints** require BOTH:
-  - **API key** for service authentication (never exposed to browser)
-  - **JWT token** for user authentication (cryptographically signed by Supabase)
-- **WebSocket connections** are proxied through a Next.js API route for auth, then connect to the backend's WebSocket service.
-
-#### **CRITICAL SECURITY REQUIREMENT**: All Frontend → Backend Communication
-
-**ALL frontend API routes MUST send both headers when calling backend endpoints:**
-
-```typescript
-// ✅ REQUIRED: Secure authentication pattern
-headers: {
-  'Content-Type': 'application/json',
-  'X-API-KEY': process.env.BACKEND_API_KEY,        // Service authentication
-  'Authorization': `Bearer ${user.access_token}`,  // User authentication (JWT)
-}
 ```
-
-**❌ FORBIDDEN: Never use client-supplied user identifiers:**
-```typescript
-// ❌ SECURITY VULNERABILITY - Never do this:
-headers: {
-  'X-API-KEY': backendApiKey,
-  'X-User-ID': user.id  // Enables account takeover attacks!
-}
-```
-
-**Secure Implementation Patterns:**
-
-1. **For new routes** - Use `AuthService.authenticateAndAuthorize()`:
-```typescript
-// Secure pattern for account-specific routes
-const authContext = await AuthService.authenticateAndAuthorize(request, accountId);
-// authContext.authToken contains the validated JWT
-```
-
-2. **For general routes** - Use `authenticateWithJWT()`:
-```typescript
-// Secure pattern for general routes  
-const { user, accessToken } = await authenticateWithJWT(request);
-const headers = await createSecureBackendHeaders(accessToken);
-```
-
-### Adding a New API Feature
-1. **Implement the backend endpoint** in FastAPI (`backend/api_server.py`).
-   - Use `get_authenticated_user_id()` dependency for JWT validation
-   - Use `verify_account_ownership()` for account-specific endpoints
-2. **Add a Next.js API route** in `frontend-app/app/api/` to:
-   - **ALWAYS authenticate with JWT**: Use `AuthService` or `authenticateWithJWT()`  
-   - **Send secure headers**: Include both API key and JWT token to backend
-   - Proxy the request following the secure patterns above
-3. **Call the new API route** from your React component or hook.
-4. **Test end-to-end** security:
-   - Verify JWT token is required (401 without it)
-   - Verify account ownership is enforced  
-   - Test the complete flow (frontend → Next.js API route → backend → response)
-
----
-
-## Troubleshooting: API Errors & Configuration Issues
-
-### When You Get 404/401/500 API Errors
-
-**ALWAYS check these configuration files first:**
-
-1. **`frontend-app/next.config.mjs`** - Check for problematic rewrite rules
-   - **Problem**: Rewrite rules can bypass Next.js API routes entirely
-   - **Example**: `/api/account/:path*` → `backend/api/account/:path*` would bypass authentication
-   - **Solution**: Remove or modify rewrite rules that conflict with API routes
-
-2. **`frontend-app/middleware.ts`** - Check authentication and routing logic
-   - **Problem**: Middleware can block API routes or redirect incorrectly
-   - **Check**: Route configurations, authentication logic, onboarding status checks
-   - **Solution**: Ensure API routes are properly configured in middleware
-
-3. **`frontend-app/next.config.ts`** - Check for duplicate configurations
-   - **Problem**: Multiple config files can cause conflicts
-   - **Solution**: Use only one config file (prefer `.mjs` for rewrites)
-
-### Common Configuration Issues
-
-#### Rewrite Rules Bypassing API Routes
-```javascript
-// ❌ PROBLEMATIC - bypasses Next.js API routes
-{
-  source: '/api/account/:path*',
-  destination: `${backendUrl}/api/account/:path*`,
-}
-
-// ✅ CORRECT - let Next.js handle API routes
-// Remove or comment out problematic rewrites
-```
-
-#### Middleware Blocking API Routes
-```typescript
-// ❌ PROBLEMATIC - blocks all API routes
-if (path.startsWith('/api/')) {
-  return new NextResponse({ error: 'Blocked' }, { status: 403 });
-}
-
-// ✅ CORRECT - allow specific API routes
-const allowedApiPaths = ['/api/portfolio', '/api/broker'];
-if (path.startsWith('/api/') && !allowedApiPaths.some(p => path.startsWith(p))) {
-  // Handle appropriately
-}
-```
-
-#### Environment Variables Not Loading
-- Check `frontend-app/.env.local` for correct variable names
-- Ensure variables are prefixed correctly (`BACKEND_API_URL`, not `NEXT_PUBLIC_BACEKEND_API_URL` for server-side)
-- Restart Next.js dev server after environment changes
-
-### Debugging Steps
-
-1. **Check Next.js API route logs** in the frontend terminal
-2. **Check backend logs** for incoming requests
-3. **Verify rewrite rules** aren't bypassing API routes
-4. **Test with curl** to isolate frontend vs backend issues
-5. **Check middleware logs** for authentication/authorization issues
-
-Note: Use the following structure to test frontend api endpoints (pull JWT from Inspect > Application > cookies)
-``` bash
-curl -i "http://localhost:3000/api/fmp/chart/AAPL?interval=5min&from=2025-01-30&to=2025-01-30" -H "Cookie: <JWT>"
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              FRONTEND                                   │
+│  Next.js 15 (Vercel)  │  app.clera.ai                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│  /chat        │  /portfolio    │  /invest      │  /settings            │
+│  Chat.tsx     │  HoldingsTable │  OrderModal   │  PIISection           │
+│  ↓ streams    │  ↓ WebSocket   │  ↓ POST       │  ↓ forms              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                    Next.js API Routes (Proxy Layer)                     │
+│  /api/conversations/stream-chat  │  /api/portfolio/*  │  /api/trade   │
+│  → LangGraph Cloud               │  → Backend API     │  → Backend    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                              BACKEND                                    │
+│  FastAPI (AWS ECS)  │  api.askclera.com                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│  api_server.py  │  routes/snaptrade_routes.py  │  services/*           │
+│       ↓                    ↓                           ↓               │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │  Portfolio Provider Abstraction Layer                            │  │
+│  │  AbstractPortfolioProvider → SnapTradeProvider / AlpacaProvider  │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                         AI AGENT LAYER                                  │
+│  LangGraph Cloud  │  Dedicated LangGraph servers                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Supervisor (Sonnet 4.5)                                               │
+│       ├── Financial Analyst Agent (Haiku 4.5) → web_search, prices    │
+│       ├── Portfolio Management Agent (Haiku 4.5) → holdings, risk     │
+│       └── Trade Execution Agent (Haiku 4.5) → buy/sell orders         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Key Directory Structure
+## Strategic Brokerage Integration: SnapTrade vs Alpaca
 
+### The Big Picture
+Clera migrated from "Alpaca-first" to **"SnapTrade-first"** to enable users to connect their *existing* brokerage accounts instead of requiring them to open new accounts.
+
+| Feature | SnapTrade (Primary) | Alpaca (Secondary/Legacy) |
+|---------|---------------------|---------------------------|
+| **Reach** | 20+ External Brokerages (Robinhood, Webull, Fidelity, etc.) | Internal Clera-managed accounts |
+| **Access** | Read + Write (Trading) | Read + Write (Trading) |
+| **Connection** | OAuth redirect → SnapTrade Portal | Native Alpaca Broker API |
+| **Data Sync** | Real-time Webhooks + On-demand | Real-time WebSocket feed |
+| **Use Case** | "Bring your own brokerage" | "Let Clera manage everything" |
+
+### Portfolio Provider Abstraction
+All portfolio data flows through a provider abstraction (`backend/utils/portfolio/`):
+
+```python
+# abstract_provider.py - Interface all providers implement
+class AbstractPortfolioProvider:
+    def get_positions(user_id, account_id) -> List[Position]
+    def get_account_balance(user_id, account_id) -> Balance
+    def place_order(user_id, account_id, order) -> OrderResult
+
+# Concrete implementations:
+# - snaptrade_provider.py (745 lines) - Primary provider for external brokerages
+# - alpaca_provider.py - For Clera-native accounts  
+# - plaid_provider.py - Read-only banking/investment aggregation
 ```
-clera/
-├── frontend-app/           # Next.js frontend application
-│   ├── app/               # Next.js App Router pages
-│   ├── components/        # Reusable UI components
-│   ├── utils/            # Client utilities and API helpers
-│   └── .env.local        # Environment variables
-├── backend/              # Python backend services
-│   ├── api_server.py     # Main FastAPI server (REST API)
-│   ├── clera_agents/     # LangGraph agent implementations
-│   ├── portfolio_realtime/ # Real-time portfolio tracking system
-│   ├── utils/            # Backend utilities (Alpaca, Plaid)
-│   ├── copilot/          # AWS deployment configuration
-│   └── .env             # Backend environment variables
-└── docs/                # Documentation
+
+### SnapTrade Connection Flow
+```
+1. User clicks "Connect Brokerage" 
+2. Frontend calls /api/snaptrade/connect → Backend generates redirect URL
+3. User completes OAuth in SnapTrade Portal → Selects their brokerage
+4. SnapTrade sends webhook to /api/snaptrade/webhook
+5. Backend verifies HMAC signature → Triggers SnapTradeSyncService
+6. Holdings synced to user_aggregated_holdings table
 ```
 
 ---
 
-## Architectural Patterns: Proper Batching Implementation
+## AI Multi-Agent System (LangGraph)
 
-### Batch API Pattern (Anti-N+1)
+### Architecture Decision: Why Multi-Agent?
+Clera uses a **Multi-Agent Supervisor Pattern** rather than a single agent because:
+1. **Security**: Trade execution is isolated with its own validation logic
+2. **Cost**: Haiku (cheap) handles specialized tasks, Sonnet (smart) only routes/synthesizes
+3. **Reliability**: Each agent has focused tools, reducing tool confusion errors
+4. **Compliance**: Financial regulations require clear audit trails
 
-**Problem Solved**: The `/api/market/quotes/batch` endpoint exemplifies proper batching architecture:
+### Agent Structure (from `backend/clera_agents/graph.py`)
 
-- **Before**: Frontend made N individual backend requests (N+1 anti-pattern)
-- **After**: Frontend makes 1 backend request, backend makes 1 external API call
-- **Impact**: Reduced latency, eliminated backend overload, proper service boundaries
-
-**Implementation Pattern**:
-```typescript
-// ❌ ANTI-PATTERN: N+1 requests
-symbols.map(symbol => fetch(`/api/quote/${symbol}`))  // N backend calls
-
-// ✅ CORRECT: True batching
-fetch('/api/market/quotes/batch', { 
-  body: JSON.stringify({ symbols }) 
-})  // 1 backend call
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SUPERVISOR (Claude Sonnet 4.5)               │
+│  Role: Route queries, synthesize responses, maintain flow       │
+│  Prompt: create_personalized_supervisor_prompt()                │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+         ┌────────────────┼────────────────┐
+         ▼                ▼                ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ FINANCIAL       │ │ PORTFOLIO       │ │ TRADE           │
+│ ANALYST         │ │ MANAGEMENT      │ │ EXECUTION       │
+│ (Haiku 4.5)     │ │ (Haiku 4.5)     │ │ (Haiku 4.5)     │
+├─────────────────┤ ├─────────────────┤ ├─────────────────┤
+│ Tools:          │ │ Tools:          │ │ Tools:          │
+│ • web_search    │ │ • get_portfolio │ │ • execute_buy   │
+│ • get_stock_    │ │   _summary      │ │   _market_order │
+│   price         │ │ • rebalance_    │ │ • execute_sell  │
+│ • calculate_    │ │   instructions  │ │   _market_order │
+│   investment_   │ │ • get_account_  │ │                 │
+│   performance   │ │   activities    │ │ Uses: interrupt │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
 ```
 
-**Key Principles**:
-- Batch endpoints must make single external API calls, not iterate over individual calls
-- Maintain batch contract even when external API fails (return empty, don't fallback to N+1)
-- Document architectural patterns clearly to prevent regression
+### Trade Execution Flow with Interrupts
+The Trade Execution Agent uses LangGraph's `interrupt()` to require user confirmation:
 
-## Core Features & Flows
+```python
+# From trade_execution_agent.py (856 lines)
+@tool
+def execute_buy_market_order(ticker: str, notional_amount: float, config: RunnableConfig):
+    # 1. Validate account ownership
+    # 2. Check buying power across SnapTrade/Alpaca
+    # 3. Get current stock price
+    # 4. INTERRUPT: Request user confirmation with order details
+    user_confirmation = interrupt({
+        "action": "trade_confirmation",
+        "ticker": ticker,
+        "amount": notional_amount,
+        "estimated_shares": shares,
+        "account": account_name
+    })
+    # 5. Parse confirmation (supports modified orders)
+    # 6. Execute via SnapTradeTradingService or AlpacaProvider
+    # 7. Trigger background portfolio sync
+```
 
-### 1. User Authentication
-- **Frontend**: Supabase Auth with email/password
-- **Protection**: Middleware-based route protection
-- **Key Files**: 
-  - `frontend-app/app/actions.ts` (auth server actions)
-  - `frontend-app/middleware.ts` (route protection)
-  - `frontend-app/utils/supabase/` (auth clients)
+### Tool Implementations
+| Tool | Location | Purpose |
+|------|----------|---------|
+| `web_search` | `financial_analyst_agent.py` | Perplexity-powered market research |
+| `get_stock_price` | `financial_analyst_agent.py` | Real-time quotes via Alpaca Market Data |
+| `get_portfolio_summary` | `portfolio_management_agent.py` | Aggregated holdings across all accounts |
+| `execute_buy_market_order` | `trade_execution_agent.py` | Multi-provider trade routing |
 
-### 2. Brokerage Account Onboarding
-- **Purpose**: Create Alpaca brokerage accounts for users
-- **Flow**: Multi-step form → Alpaca API → Supabase storage
-- **Key Components**:
-  - `frontend-app/components/onboarding/OnboardingFlow.tsx`
-  - `frontend-app/app/api/broker/create-account/` (API route)
-  - `backend/utils/alpaca/` (Alpaca integration)
+---
 
-### 3. Bank Account Connection & Funding
-- **Methods**: Manual entry
-- **Flow**: Connect bank → Create ACH relationship → Transfer funds
-- **Key Components**:
-  - `frontend-app/components/dashboard/BankConnectionButton.tsx`
-  - `frontend-app/components/dashboard/ManualBankForm.tsx`
-  - `frontend-app/app/api/broker/connect-bank/` (Plaid integration)
-  - `backend/utils/alpaca/bank_funding.py` (ACH utilities)
+## Frontend Deep Dive
 
-### 4. Real-Time Portfolio Tracking
-- **Architecture**: Distributed microservices with Redis messaging
-- **Components**:
-  - `backend/portfolio_realtime/symbol_collector.py` (collect symbols)
-  - `backend/portfolio_realtime/market_data_consumer.py` (price feeds)
-  - `backend/portfolio_realtime/portfolio_calculator.py` (calculate values)
-  - `backend/portfolio_realtime/websocket_server.py` (client connections)
-- **Frontend**: WebSocket connection to `wss://ws.askclera.com`
+### Directory Structure
+```
+frontend-app/
+├── app/                      # Next.js App Router
+│   ├── (auth-pages)/         # Sign-in, sign-up, forgot-password
+│   ├── account/              # Account settings, add funds
+│   ├── api/                  # 100+ API route handlers
+│   ├── chat/                 # AI chat page
+│   ├── dashboard/            # Main dashboard
+│   ├── invest/               # Stock research & trading
+│   ├── portfolio/            # Holdings, transactions, charts
+│   └── settings/             # User preferences
+├── components/               # 180+ React components
+│   ├── chat/                 # Chat UI (Chat.tsx, ChatMessage.tsx, etc.)
+│   ├── invest/               # Trading UI (OrderModal.tsx, StockChart.tsx)
+│   ├── portfolio/            # Portfolio UI (HoldingsTable.tsx, etc.)
+│   └── ui/                   # Shadcn UI primitives
+├── hooks/                    # 24 custom hooks
+└── utils/                    # Services, API clients, helpers
+```
 
-### 5. AI Agent System
-- **Agents**:
-  - Financial Analyst Agent (company analysis, recommendations)
-  - Portfolio Management Agent (portfolio optimization, purchase history analysis)
-  - Trade Execution Agent (order management)
-- **Implementation**: Fixed import errors and consolidated duplicate functions across agents
-- **Orchestration**: LangGraph workflows in `backend/clera_agents/graph.py`
+### Key Components (What's Actually Used)
+
+#### Chat System (`components/chat/`)
+| Component | Purpose |
+|-----------|---------|
+| `Chat.tsx` (883 lines) | Main chat container with message handling, interrupts, query limits |
+| `ChatMessageList.tsx` | Renders messages with tool activity details |
+| `TradeInterruptConfirmation.tsx` | Trade confirmation modal with amount editing |
+| `SuggestedQuestions.tsx` | Starter prompts for new conversations |
+| `TimelineRenderer.tsx` | Shows agent activity (e.g., "Analyzing portfolio...") |
+
+#### Portfolio System (`components/portfolio/`)
+| Component | Purpose |
+|-----------|---------|
+| `HoldingsTable.tsx` | Main holdings grid with Clera Assist buttons |
+| `SnapTradeConnectButton.tsx` | Initiates SnapTrade OAuth flow |
+| `LivePortfolioValue.tsx` | Real-time value via WebSocket |
+| `PortfolioHistoryChart.tsx` | Performance chart over time |
+| `AccountBreakdownSelector.tsx` | Filter by brokerage account |
+
+#### Trading System (`components/invest/`)
+| Component | Purpose |
+|-----------|---------|
+| `OrderModal.tsx` | Primary trade entry (supports SnapTrade + Alpaca) |
+| `StockChart.tsx` | Price charts via FMP API |
+| `StockSearchBar.tsx` | Ticker search with autocomplete |
+| `StockWatchlist.tsx` | User's watchlist with real-time prices |
+
+### Key Custom Hooks (`hooks/`)
+| Hook | Purpose |
+|------|---------|
+| `useQueryLimit.ts` | Manages daily AI query limits with Stripe integration |
+| `useMarketPercentages.ts` | Calculates portfolio % changes |
+| `useToolActivitiesHydration.ts` | Hydrates chat history with tool details |
+| `useWatchlistData.ts` | Fetches and caches watchlist with prices |
+| `usePortfolioStatus.ts` | Checks if user has connected accounts |
+
+### Key Services (`utils/services/`)
+| Service | Purpose |
+|---------|---------|
+| `LangGraphStreamingService.ts` (945 lines) | Handles AI chat streaming, tool events, citations |
+| `TimelineBuilder.ts` | Builds activity timeline from LangGraph events |
+| `QueryLimitService.ts` | Client-side query limit enforcement |
+| `MarketDataService.ts` | Batch market data fetching |
+
+---
+
+## Backend Deep Dive
+
+### Directory Structure
+```
+backend/
+├── api_server.py             # Main FastAPI server (5500+ lines)
+├── clera_agents/             # LangGraph agent implementations
+│   ├── graph.py              # Agent workflow definition
+│   ├── financial_analyst_agent.py
+│   ├── portfolio_management_agent.py
+│   ├── trade_execution_agent.py
+│   ├── services/             # Agent support services
+│   │   ├── trade_routing_service.py  # Routes trades to correct provider
+│   │   └── portfolio_data_provider.py
+│   └── tools/                # Tool implementations
+├── routes/                   # FastAPI route modules
+│   ├── snaptrade_routes.py   # SnapTrade API (2000+ lines)
+│   ├── market_routes.py      # Market data endpoints
+│   └── account_filtering_routes.py
+├── services/                 # Business logic services
+│   ├── snaptrade_trading_service.py  # Trade execution via SnapTrade
+│   ├── smart_snaptrade_sync_service.py
+│   ├── queued_order_executor.py      # After-hours order queue
+│   └── portfolio_history_reconstructor.py
+├── utils/                    # Utilities
+│   └── portfolio/            # Portfolio provider abstraction
+│       ├── abstract_provider.py
+│       ├── snaptrade_provider.py
+│       ├── alpaca_provider.py
+│       └── snaptrade_sync_service.py
+└── portfolio_realtime/       # Real-time price system
+    ├── symbol_collector.py
+    ├── market_data_consumer.py
+    ├── portfolio_calculator.py
+    └── websocket_server.py
+```
+
+### Key Backend Services
+
+#### Trade Execution (`services/snaptrade_trading_service.py`)
+```python
+class SnapTradeTradingService:
+    def check_order_impact(user_id, account_id, symbol, amount)  # Pre-trade validation
+    def place_order(user_id, account_id, symbol, amount, side)   # Execute trade
+    def cancel_order(user_id, account_id, order_id)              # Cancel pending
+    def get_account_orders(user_id, account_id, status)          # Order history
+```
+
+#### Smart Sync (`services/smart_snaptrade_sync_service.py`)
+Intelligent syncing that avoids over-fetching:
+- Tracks last sync time per account
+- Only syncs when holdings might have changed
+- Respects SnapTrade rate limits
+
+#### Queued Orders (`services/queued_order_executor.py`)
+Handles orders placed outside market hours:
+- Stores in `queued_orders` table
+- Background job executes at market open
+- Retries with exponential backoff
+
+---
 
 ## Database Schema (Supabase)
 
 ### Core Tables
-1. **user_onboarding**: Stores onboarding data and Alpaca account info
-2. **user_bank_connections**: Bank account relationships
-3. **user_transfers**: ACH transfer history
 
-### RLS Policies
-- All tables use Row-Level Security
-- Users can only access their own data
+| Table | Purpose |
+|-------|---------|
+| `user_onboarding` | Core user profile, Alpaca account ID, onboarding status |
+| `user_investment_accounts` | Connected brokerage accounts (SnapTrade, Alpaca, Plaid) |
+| `user_aggregated_holdings` | **Critical**: Unified holdings across ALL providers |
+| `snaptrade_connections` | SnapTrade OAuth tokens and connection status |
+| `portfolio_snapshots_daily` | Daily portfolio value snapshots |
+| `portfolio_snapshots_intraday` | Intraday snapshots (every 30 min during market hours) |
+| `user_watchlist` | User's stock watchlist |
+| `queued_orders` | Orders waiting for market open |
+| `chat_runs` | AI conversation runs with tool activities |
+| `message_citations` | Citation URLs extracted from AI responses |
+| `user_rate_limits` | Daily AI query limits |
+| `user_payments` | Stripe subscription status |
+
+### Aggregated Holdings Schema (Most Important!)
+```sql
+-- From 002_create_aggregated_holdings.sql
+CREATE TABLE user_aggregated_holdings (
+    user_id UUID NOT NULL,
+    symbol TEXT NOT NULL,
+    security_name TEXT,
+    security_type TEXT,  -- 'equity', 'etf', 'crypto', etc.
+    
+    -- Aggregated across all accounts
+    total_quantity DECIMAL(20, 8),
+    total_market_value DECIMAL(20, 2),
+    total_cost_basis DECIMAL(20, 2),
+    
+    -- Per-account breakdown (JSON)
+    account_contributions JSONB,  -- [{account_id, quantity, value, institution}]
+    institution_breakdown JSONB,  -- {Robinhood: {qty, value}, Fidelity: {...}}
+    
+    UNIQUE(user_id, symbol)
+);
+```
+
+### Row-Level Security (RLS)
+Every table has RLS enabled with policies like:
+```sql
+CREATE POLICY "Users can only access their own data"
+ON user_aggregated_holdings
+FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+```
+
+---
+
+## Frontend–Backend Integration Patterns
+
+### The Proxy Pattern (CRITICAL!)
+**React components NEVER call the backend directly.** All requests go through Next.js API routes.
+
+```
+React Component
+      │
+      ▼
+Next.js API Route (/api/portfolio/positions)
+      │ 
+      ├── 1. Authenticate via Supabase (session or JWT)
+      ├── 2. Verify account ownership
+      ├── 3. Add secure headers (X-API-KEY + Authorization: Bearer)
+      │
+      ▼
+FastAPI Backend (/api/portfolio/{account_id}/positions)
+      │
+      ├── 1. Validate API key
+      ├── 2. Validate JWT → Extract user_id
+      ├── 3. Verify user owns account_id
+      │
+      ▼
+Return data
+```
+
+### Secure Header Pattern
+```typescript
+// REQUIRED for ALL frontend → backend calls
+const headers = {
+  'Content-Type': 'application/json',
+  'X-API-KEY': process.env.BACKEND_API_KEY,        // Service auth
+  'Authorization': `Bearer ${user.access_token}`,  // User auth (JWT)
+};
+```
+
+### Key API Route Mappings
+
+| Frontend Route | Backend Endpoint | Purpose |
+|----------------|------------------|---------|
+| `/api/portfolio/aggregated` | `/api/portfolio/aggregated-holdings` | All holdings across brokerages |
+| `/api/snaptrade/connect` | `/api/snaptrade/login` | Get OAuth redirect URL |
+| `/api/snaptrade/trade-enabled-accounts` | `/api/snaptrade/accounts?connection_type=trade` | Accounts that can trade |
+| `/api/trade` | `/api/trade` | Place order (auto-routes to provider) |
+| `/api/conversations/stream-chat` | LangGraph Cloud | AI chat streaming |
+| `/api/market/quotes/batch` | `/api/market/quotes/batch` | Batch stock quotes |
+| `/api/ws/portfolio/[accountId]` | `/ws/portfolio/{account_id}` | Real-time WebSocket |
+
+---
+
+## Chat & Streaming Implementation
+
+### How AI Chat Works (End-to-End)
+
+```
+1. User types "Buy $500 of AAPL"
+2. Chat.tsx calls handleSendMessage()
+3. Creates/gets LangGraph thread ID
+4. Calls chatClient.startStream(threadId, input, userId, accountId)
+5. Frontend API route /api/conversations/stream-chat:
+   - Authenticates user
+   - Creates secure LangGraph config
+   - Calls LangGraphStreamingService.createStreamingResponse()
+6. LangGraph Cloud processes:
+   - Supervisor routes to Trade Execution Agent
+   - Agent calls execute_buy_market_order tool
+   - Tool calls interrupt() for user confirmation
+7. Stream sends interrupt event to frontend
+8. TradeInterruptConfirmation.tsx renders confirmation UI
+9. User confirms → handleInterruptConfirmation('yes')
+10. LangGraph resumes → Order executed
+11. Stream sends completion → Chat displays result
+```
+
+### LangGraphStreamingService Events
+The streaming service (`utils/services/langGraphStreamingService.ts`) processes these event types:
+
+| Event Type | Purpose |
+|------------|---------|
+| `messages_complete` | Final AI response with citations |
+| `node_update` | Agent activity (e.g., "Analyzing portfolio...") |
+| `tool_update` | Tool execution status (start/complete) |
+| `agent_transfer` | Supervisor routing to specialist |
+| `interrupt` | Trade confirmation needed |
+| `error` | Error handling |
+
+### Citation Extraction
+Citations are extracted from tool responses and persisted:
+```typescript
+// Citations stored in message_citations table
+// Format: <!-- CITATIONS: url1,url2,url3 -->
+const citations = extractCitationsFromMessage(message);
+await onCitationsCollected(runId, threadId, userId, citations);
+```
+
+---
+
+## Real-Time Portfolio System
+
+### Architecture
+```
+┌───────────────────┐     ┌───────────────────┐
+│  SymbolCollector  │────▶│  Redis (pub/sub)  │
+│  (collects tickers│     └────────┬──────────┘
+│   from all users) │              │
+└───────────────────┘              ▼
+                          ┌───────────────────┐
+┌───────────────────┐     │ MarketDataConsumer│
+│  Price Providers  │────▶│  (Alpaca stream)  │
+│  (Alpaca, etc.)   │     └────────┬──────────┘
+└───────────────────┘              │
+                                   ▼
+                          ┌───────────────────┐
+                          │PortfolioCalculator│
+                          │  (per-user calc)  │
+                          └────────┬──────────┘
+                                   │
+                                   ▼
+                          ┌───────────────────┐
+                          │  WebSocketServer  │────▶ Frontend clients
+                          │  (port 8001)      │
+                          └───────────────────┘
+```
+
+### Starting Real-Time Services
+```bash
+cd backend
+python -m portfolio_realtime.run_services
+```
+
+---
 
 ## Environment Configuration
 
-### Frontend (.env.local)
+### Frontend (`frontend-app/.env.local`)
 ```env
 # Supabase
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 
-# Backend API
-BACKEND_API_URL=
+# Backend (server-side only - no NEXT_PUBLIC_)
+BACKEND_API_URL=http://localhost:8000
+BACKEND_API_KEY=your-secret-key
 
-# Plaid
-PLAID_CLIENT_ID=
-PLAID_SECRET=
-PLAID_ENV=sandbox|production
+# LangGraph
+LANGGRAPH_API_URL=https://your-deployment.langchain.dev
+LANGGRAPH_API_KEY=lch_xxx
+LANGGRAPH_ASSISTANT_ID=agent
+
+# Feature Flags
+NEXT_PUBLIC_ENABLE_ADD_FUNDS=true
+
+# Stripe
+STRIPE_SECRET_KEY=sk_test_xxx
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
 ```
 
-### Backend (.env)
+### Backend (`backend/.env`)
 ```env
-# AI Services
-OPENAI_API_KEY=
-GROQ_API_KEY=
+# AI
+ANTHROPIC_API_KEY=sk-ant-xxx
+OPENAI_API_KEY=sk-xxx
+PERPLEXITY_API_KEY=pplx-xxx
 
-# Broker & Banking
-ALPACA_API_KEY=
-ALPACA_SECRET_KEY=
-PLAID_CLIENT_ID=
-PLAID_SECRET=
+# SnapTrade (PRIMARY)
+SNAPTRADE_CONSUMER_KEY=xxx
+SNAPTRADE_CLIENT_ID=xxx
+SNAPTRADE_WEBHOOK_SECRET=xxx
 
-# Database & Cache
-SUPABASE_URL=
-REDIS_HOST=
+# Alpaca (SECONDARY)
+ALPACA_API_KEY=xxx
+ALPACA_SECRET_KEY=xxx
+
+# Supabase
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_KEY=eyJ...
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Security
+BACKEND_API_KEY=your-secret-key
 ```
+
+---
 
 ## Development Workflow
 
-### Local Development Setup
-1. **Backend**:
-   ```bash
-   cd backend
-   source venv/bin/activate
-   source .watchfiles.env  # Reduces file watcher spam
-   python api_server.py
-   ```
-
-2. **Frontend**:
-   ```bash
-   cd frontend-app
-   npm run dev
-   ```
-
-3. **Real-time Portfolio** (if needed):
-   ```bash
-   cd backend
-   python -m portfolio_realtime.run_services
-   ```
-
-### Testing
-
-#### Frontend Testing
-The frontend uses Jest with React Testing Library and has a production-grade configuration that separates Jest Babel configuration from Next.js SWC.
-
-**Working Test Commands:**
+### Local Setup
 ```bash
-# Run all tests
+# 1. Backend
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python api_server.py  # Runs on port 8000
+
+# 2. Frontend (new terminal)
 cd frontend-app
-npm test
+npm install
+npm run dev  # Runs on port 3000
 
-# Run specific JavaScript test file
-npm test -- --testPathPattern="market-data-service.test.js"
-
-# Run specific test by name
-npm test -- --testPathPattern="market-data-service.test.js" --testNamePattern="should calculate percentage correctly"
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run tests with coverage
-npm run test:coverage
-
-# Run middleware tests only
-npm run test:middleware
-```
-
-**Production Configuration:**
-- **Jest Config**: `frontend-app/jest.config.js`
-- **Test Setup**: `frontend-app/tests/setup.js`
-- **Jest Babel Config**: `frontend-app/babel.config.jest.js` (Jest-specific, doesn't interfere with Next.js)
-- **Next.js**: Uses SWC for builds (no Babel conflict)
-
-**Key Features:**
-- **Separation of Concerns**: Jest uses Babel, Next.js uses SWC
-- **No Conflicts**: No `.babelrc` file prevents SWC conflicts
-- **Optimal Performance**: SWC provides faster builds than Babel
-- **TypeScript Support**: Full TypeScript/JSX support in tests
-
-**Test Structure:**
-```
-frontend-app/tests/
-├── components/          # Component tests (some have React 18 issues)
-├── api/                # API route tests
-├── hooks/              # Custom hook tests
-├── integration/        # Integration tests
-├── middleware/         # Middleware tests
-├── security/           # Security tests
-├── utils/              # Utility function tests
-├── setup.js           # Jest setup file
-└── run-all-tests.js   # Custom test runner
-```
-
-#### Backend Testing
-```bash
+# 3. Real-time (optional, new terminal)
 cd backend
-pytest
+source venv/bin/activate
+python -m portfolio_realtime.run_services  # WebSocket on port 8001
 ```
 
-### File Watcher Configuration
-- Uses `.watchfiles.env` to ignore virtual environment changes
-- Prevents excessive terminal spam during development
-
-## Deployment
-
-### Production URLs
-- **Frontend**: `https://app.clera.ai` (Vercel)
-- **Backend API**: `https://api.askclera.com` (AWS ECS)
-- **WebSocket**: `wss://ws.askclera.com` (AWS ECS)
-
-### AWS Architecture
-- **API Service**: ECS service for REST API (port 8000)
-- **WebSocket Service**: ECS service for real-time connections (port 8001)
-- **Load Balancer**: ALB with SSL termination
-- **Secrets**: AWS SSM Parameter Store
-
-### Deployment Commands
+### Running Tests
 ```bash
-# Backend deployment
+# Backend
 cd backend
-copilot svc deploy --name api-service --env production
-copilot svc deploy --name websocket-service --env production
+pytest                                    # All tests
+pytest tests/services/                    # Service tests only
+pytest -k "snaptrade"                     # SnapTrade tests
 
-# Frontend deployment
-# Automatic via Vercel on git push to main
+# Frontend
+cd frontend-app
+npm test                                  # All tests
+npm test -- --testPathPattern="Chat"      # Chat tests
+npm run test:coverage                     # With coverage
 ```
 
-## API Integration Points
-
-### External Services
-1. **Alpaca Broker API**: Account creation, trading, portfolio data
-2. **Plaid API**: Bank account connection and ACH transfers
-3. **Financial Data APIs**: Market data and company information
-4. **LangGraph**: AI agent orchestration and execution
-
-### Internal APIs
-- **REST API**: Standard CRUD operations via FastAPI
-- **WebSocket API**: Real-time portfolio updates
-- **Server Actions**: Next.js server actions for form handling
-
-## Common Development Patterns
-
-### Frontend Patterns
-- **Server Actions**: For form submissions and database operations
-- **Client Components**: Marked with "use client" for interactivity
-- **API Routes**: Next.js API routes for external service integration
-- **Supabase Integration**: Separate client/server utilities
-
-### Backend Patterns
-- **Agent Tools**: Modular tools in `clera_agents/tools/`
-- **Utility Functions**: Reusable utilities in `utils/`
-- **Error Handling**: Comprehensive try/catch with logging
-- **Environment Variables**: Centralized configuration management
-
-## Security Considerations
-
-### Authentication
-- **Frontend**: Supabase JWT tokens
-- **Backend**: API key authentication
-- **WebSocket**: JWT query parameter authentication
-
-### Data Protection
-- **RLS Policies**: Database-level access control
-- **Environment Variables**: Sensitive data in SSM/Vercel
-- **HTTPS/WSS**: Encrypted communication in production
-
-### LangGraph Integration Security
-- **CRITICAL**: Never trust client-supplied config objects in LangGraph endpoints
-- **Required**: Always construct config server-side using authenticated values only
-- **Reference**: See `docs/architecture/security-patterns.md` for detailed implementation requirements
-- **Compliance**: All LangGraph endpoints must follow secure config construction patterns
-
-## Debugging & Monitoring
-
-### Development
-- **Frontend**: Browser dev tools + React DevTools
-- **Backend**: FastAPI automatic docs at `/docs`
-- **WebSocket**: Browser WebSocket inspector
-- **Database**: Supabase dashboard
-
-### Production
-- **AWS CloudWatch**: Logs and metrics
-- **Vercel Analytics**: Frontend performance
-- **Supabase Dashboard**: Database monitoring
-
-## Common Issues & Solutions
-
-### Health Check Failures
-- **Problem**: ECS deployment failing health checks
-- **Solution**: Increase timeout settings, check health endpoints
-
-### WebSocket Connection Issues
-- **Problem**: Real-time updates not working
-- **Solution**: Check Redis connectivity, verify JWT authentication
-
-### Plaid Integration Issues
-- **Problem**: Bank connection failures
-- **Solution**: Verify environment (sandbox vs production), check OAuth flow
-
-### Database Connection Issues
-- **Problem**: Supabase connection failures
-- **Solution**: Check RLS policies, verify environment variables
+---
 
 ## Testing Strategy
 
-### Frontend Testing
-- **Unit Tests**: Component testing with Jest/React Testing Library
-- **Integration Tests**: API route testing
-- **E2E Tests**: User flow testing with Playwright
-
 ### Backend Testing
-- **Unit Tests**: pytest for individual functions
-- **Integration Tests**: FastAPI test client
-- **Agent Tests**: LangGraph workflow testing
+- **Unit tests**: `backend/tests/` (pytest)
+- **Service mocks**: Mock SnapTrade/Alpaca clients
+- **Agent tests**: `backend/clera_agents/tests/`
 
-## Performance Optimization
+### Frontend Testing
+- **Unit tests**: Jest + React Testing Library
+- **API route tests**: `frontend-app/tests/api/`
+- **Hook tests**: `frontend-app/hooks/__tests__/`
 
-### Frontend
-- **Next.js Optimizations**: Image optimization, static generation
-- **Bundle Analysis**: Regular bundle size monitoring
-- **Caching**: Appropriate cache headers and strategies
+### Key Test Files
+```
+backend/tests/
+├── services/
+│   └── test_snaptrade_sync_service.py
+├── test_trade_routing_service.py
+└── test_portfolio_provider.py
 
-### Backend
-- **Redis Caching**: Shared state and session management
-- **Database Indexing**: Optimized queries and indexes
-- **Connection Pooling**: Efficient database connections
+frontend-app/tests/
+├── api/
+│   └── portfolio-aggregated.test.ts
+├── hooks/
+│   └── useMarketPercentages.test.ts
+└── utils/
+    └── market-data-service.test.js
+```
 
-## Key Files to Know
+---
 
-### Frontend Core Files
-- `frontend-app/app/layout.tsx` - Root layout
-- `frontend-app/middleware.ts` - Auth middleware
-- `frontend-app/next.config.mjs` - Next.js configuration (rewrites, etc.)
-- `frontend-app/components/onboarding/OnboardingFlow.tsx` - Account creation
-- `frontend-app/app/dashboard/page.tsx` - Main dashboard
+## Common Gotchas & Troubleshooting
 
-### Backend Core Files
-- `backend/api_server.py` - Main API server
-- `backend/clera_agents/graph.py` - AI agent orchestration
-- `backend/utils/alpaca/` - Broker integration
-- `backend/portfolio_realtime/` - Real-time tracking system
+### 1. "401 Unauthorized" on API Routes
+**Check these in order:**
+1. Is the user logged in? (Check Supabase session)
+2. Is `BACKEND_API_KEY` set in both frontend and backend `.env`?
+3. Is the JWT being passed? (Check `Authorization` header)
 
-### Configuration Files
-- `frontend-app/.env.local` - Frontend environment
-- `backend/.env` - Backend environment
-- `backend/copilot/` - AWS deployment config
-- `langgraph.json` - AI agent deployment config
-
-## Quick Reference Commands
-
-### Development
+### 2. SnapTrade Sync Not Working
 ```bash
-# Start full local environment
-cd backend && source venv/bin/activate && python api_server.py &
+# Check webhook secret matches
+echo $SNAPTRADE_WEBHOOK_SECRET
+
+# Manually trigger sync
+curl -X POST http://localhost:8000/api/snaptrade/sync \
+  -H "Authorization: Bearer $JWT" \
+  -H "X-API-KEY: $BACKEND_API_KEY"
+```
+
+### 3. Chat Not Streaming
+1. Check `LANGGRAPH_API_URL` and `LANGGRAPH_API_KEY` are set
+2. Check LangGraph deployment is running
+3. Look for errors in browser Network tab → EventStream
+
+### 4. WebSocket Connection Fails
+1. Is Redis running? (`redis-cli ping`)
+2. Is `portfolio_realtime` service running?
+3. Check `ws://localhost:8001` is accessible
+
+### 5. Trade Execution Fails
+1. Is the account trade-enabled? (Check `connection_type='trade'`)
+2. Does user have sufficient buying power?
+3. Is market open? (Check `queued_orders` for after-hours trades)
+
+### 6. Next.js Config Conflicts
+- **Only use `next.config.mjs`** (not `.ts`)
+- Rewrite rules can bypass API routes - check for conflicts
+- Restart dev server after `.env` changes
+
+---
+
+## Quick Reference
+
+### Production URLs
+| Service | URL |
+|---------|-----|
+| Frontend | https://app.clera.ai |
+| Backend API | https://api.askclera.com |
+| WebSocket | wss://ws.askclera.com |
+| LangGraph | https://clera.langchain.dev |
+
+### Key Commands
+```bash
+# Development
+cd backend && source venv/bin/activate && python api_server.py
 cd frontend-app && npm run dev
 
-# Run tests
+# Testing
 cd backend && pytest
 cd frontend-app && npm test
 
-# Run specific frontend tests
-cd frontend-app && npm test -- --testPathPattern="market-data-service.test.js"
-cd frontend-app && npm test -- --testPathPattern="market-data-service.test.js" --testNamePattern="should calculate percentage correctly"
+# Deployment
+cd backend && copilot svc deploy --name api-service --env production
+# Frontend: Auto-deploys via Vercel on push to main
 
-# Run tests in watch mode
-cd frontend-app && npm run test:watch
-
-# Run tests with coverage
-cd frontend-app && npm run test:coverage
-
-# Check logs
+# Logs
 copilot svc logs --name api-service --follow
 ```
 
-### Deployment
-```bash
-# Deploy backend
-cd backend && copilot svc deploy --name api-service --env production
+### Key Files to Know
+| File | Purpose |
+|------|---------|
+| `backend/api_server.py` | Main API entry point |
+| `backend/clera_agents/graph.py` | LangGraph workflow |
+| `backend/routes/snaptrade_routes.py` | SnapTrade API |
+| `backend/utils/portfolio/snaptrade_provider.py` | SnapTrade data provider |
+| `frontend-app/components/chat/Chat.tsx` | Main chat UI |
+| `frontend-app/utils/services/langGraphStreamingService.ts` | AI streaming |
+| `frontend-app/utils/api/auth-service.ts` | Authentication helper |
 
-# Frontend deploys automatically via Vercel
-```
+---
 
-This guide provides the essential knowledge needed to effectively work on the Clera codebase. Refer to the detailed documentation in `backend-notes.md` and `frontend-notes.md` for comprehensive implementation details. 
-
-
-# Alpaca
-Here are the functions available to Alpaca's python broker API:
-``` bash
-cd backend && python -c "from alpaca.broker import BrokerClient; print(dir(Brokecd backend && python -c "from alpaca.broker import BrokerClient; print(dir(BrokerClient))"
-['__abstractmethods__', '__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__getstate__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', '_abc_impl', '_get_account_activities_iterator', '_get_auth_headers', '_get_default_headers', '_get_marketdata', '_get_sse_headers', '_get_transfers_iterator', '_iterate_over_pages', '_one_request', '_parse_activity', '_request', '_validate_credentials', '_validate_pagination', 'add_asset_to_watchlist_for_account_by_id', 'cancel_journal_by_id', 'cancel_order_for_account_by_id', 'cancel_orders_for_account', 'cancel_run_by_id', 'cancel_transfer_for_account', 'close_account', 'close_all_positions_for_account', 'close_position_for_account', 'create_account', 'create_ach_relationship_for_account', 'create_bank_for_account', 'create_batch_journal', 'create_journal', 'create_manual_run', 'create_portfolio', 'create_reverse_batch_journal', 'create_subscription', 'create_transfer_for_account', 'create_watchlist_for_account', 'delete', 'delete_account', 'delete_ach_relationship_for_account', 'delete_bank_for_account', 'delete_watchlist_from_account_by_id', 'download_trade_document_for_account_by_id', 'exercise_options_position_for_account_by_id', 'get', 'get_account_activities', 'get_account_by_id', 'get_account_status_events', 'get_ach_relationships_for_account', 'get_all_accounts_positions', 'get_all_assets', 'get_all_portfolios', 'get_all_positions_for_account', 'get_all_runs', 'get_all_subscriptions', 'get_asset', 'get_banks_for_account', 'get_calendar', 'get_cip_data_for_account_by_id', 'get_clock', 'get_corporate_announcement_by_id', 'get_corporate_announcements', 'get_journal_by_id', 'get_journal_events', 'get_journals', 'get_non_trading_activity_events', 'get_open_position_for_account', 'get_order_for_account_by_client_id', 'get_order_for_account_by_id', 'get_orders_for_account', 'get_portfolio_by_id', 'get_portfolio_history_for_account', 'get_run_by_id', 'get_subscription_by_id', 'get_trade_account_by_id', 'get_trade_configuration_for_account', 'get_trade_document_for_account_by_id', 'get_trade_documents_for_account', 'get_trade_events', 'get_transfer_events', 'get_transfers_for_account', 'get_watchlist_for_account_by_id', 'get_watchlists_for_account', 'inactivate_portfolio_by_id', 'list_accounts', 'patch', 'post', 'put', 'remove_asset_from_watchlist_for_account_by_id', 'replace_order_for_account_by_id', 'response_wrapper', 'submit_order_for_account', 'unsubscribe_account', 'update_account', 'update_portfolio_by_id', 'update_trade_configuration_for_account', 'update_watchlist_for_account_by_id', 'upload_cip_data_for_account_by_id', 'upload_documents_to_account']
-```
-
-
-# NOTE:
-
-## Sample frontend query 
-
-```bash
-curl -i "http://localhost:3000/api/user/status" -H "Accept: application/json" -H "Cookie: sb-jdvvppewgxajwgnzdovm-auth-token=base64-eyJhY2Nlc3NfdG..." -L
-```
+*Last Updated: January 2026*
+*For detailed SnapTrade implementation, see `docs/integrations/snaptrade/`*

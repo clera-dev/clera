@@ -637,7 +637,7 @@ async def create_connection_url(
     
     Request body:
         {
-            "connection_type": "read" | "trade",  // default: "trade"
+            "connection_type": Optional["read" | "trade"],  // default: None (shows ALL brokerages)
             "broker": Optional[str],  // e.g., "SCHWAB", "FIDELITY"
             "redirect_url": Optional[str]
         }
@@ -648,10 +648,17 @@ async def create_connection_url(
             "connection_url": str,
             "user_id": str
         }
+    
+    ARCHITECTURE NOTE:
+    - When connection_type is None/omitted: Shows ALL available brokerages (recommended for onboarding)
+    - When connection_type is 'read': Shows only brokerages that support read access
+    - When connection_type is 'trade': Shows only brokerages that support trading
     """
     try:
         body = await request.json()
-        connection_type = body.get('connection_type', 'trade')
+        # ARCHITECTURE: Default to None to show ALL brokerages
+        # Only filter when explicitly requested (e.g., for trade-specific flows)
+        connection_type = body.get('connection_type')  # None = show all
         broker = body.get('broker')
         redirect_url = body.get('redirect_url')
         
@@ -938,7 +945,19 @@ async def sync_all_connections(
             brokerage = auth.get('brokerage', {})
             brokerage_name = brokerage.get('name', 'Unknown') if isinstance(brokerage, dict) else str(brokerage)
             
-            logger.info(f"Processing authorization {authorization_id} for brokerage {brokerage_name}")
+            # CRITICAL FIX: Determine actual connection_type from brokerage capabilities
+            # SnapTrade's Brokerage object has 'allows_trading' field that indicates
+            # whether the brokerage supports trade execution vs read-only access
+            # IMPORTANT: If field is missing, don't default to 'read' - leave as None for retry
+            actual_connection_type = None
+            connection_type_determined = False
+            if isinstance(brokerage, dict) and 'allows_trading' in brokerage:
+                allows_trading = brokerage.get('allows_trading')
+                actual_connection_type = 'trade' if allows_trading else 'read'
+                connection_type_determined = True
+            
+            conn_type_status = f"connection_type={actual_connection_type}" if connection_type_determined else "connection_type=UNKNOWN (field missing)"
+            logger.info(f"Processing authorization {authorization_id} for brokerage {brokerage_name} ({conn_type_status})")
             
             # Fetch accounts for this authorization
             accounts_response = provider.client.account_information.list_user_accounts(
@@ -960,17 +979,20 @@ async def sync_all_connections(
                 if account_auth_id == authorization_id:
                     accounts_for_auth.append(account)
             
-            # Store connection
+            # Store connection with correct connection_type based on brokerage capabilities
             connection_data = {
                 'user_id': user_id,
                 'authorization_id': authorization_id,
                 'brokerage_slug': brokerage_name.lower().replace(' ', '_'),
                 'brokerage_name': brokerage_name,
-                'connection_type': 'trade',
                 'status': 'active',
                 'accounts_count': len(accounts_for_auth),
                 'created_at': datetime.now().isoformat()
             }
+            
+            # CRITICAL: Only set connection_type if we determined it - don't default to 'read'
+            if connection_type_determined and actual_connection_type:
+                connection_data['connection_type'] = actual_connection_type
             
             supabase.table('snaptrade_brokerage_connections')\
                 .upsert(connection_data, on_conflict='authorization_id')\
@@ -1016,14 +1038,17 @@ async def sync_all_connections(
                     'account_type': account.get('type', 'investment'),
                     'account_subtype': account.get('type', 'investment'),
                     'account_mode': 'snaptrade',
-                    'connection_type': 'trade',
                     'connection_status': 'active',
                     'is_active': True,
                     'sync_status': 'success',
                     'last_synced': datetime.now().isoformat(),
-                    'cash_balance': cash_balance,  # NEW: For trade validation
-                    'buying_power': buying_power   # NEW: For trade validation
+                    'cash_balance': cash_balance,
+                    'buying_power': buying_power
                 }
+                
+                # CRITICAL: Only set connection_type if determined - preserve existing on missing field
+                if connection_type_determined and actual_connection_type:
+                    account_data['connection_type'] = actual_connection_type
                 
                 supabase.table('user_investment_accounts')\
                     .upsert(account_data, on_conflict='provider,provider_account_id,user_id')\
@@ -1031,7 +1056,7 @@ async def sync_all_connections(
                 
                 accounts_synced += 1
             
-            logger.info(f"✅ Synced {len(accounts_for_auth)} accounts for authorization {authorization_id}")
+            logger.info(f"✅ Synced {len(accounts_for_auth)} accounts for authorization {authorization_id} ({conn_type_status})")
         
         # Update user_onboarding status to 'submitted'
         from datetime import timezone
@@ -1166,6 +1191,33 @@ async def sync_connection(
             user_secret=user_secret
         )
         
+        # CRITICAL FIX: Fetch authorization details to get actual connection_type
+        # The brokerage object contains 'allows_trading' that determines capability
+        # Use asyncio.to_thread() to avoid blocking the event loop
+        actual_connection_type = None  # NULL = unknown, will be determined on next sync
+        connection_type_determined = False
+        try:
+            auth_detail = await asyncio.to_thread(
+                provider.client.connections.detail_brokerage_authorization,
+                authorization_id=authorization_id,
+                user_id=snaptrade_user_id,
+                user_secret=user_secret
+            )
+            if auth_detail.body:
+                brokerage_obj = auth_detail.body.get('brokerage', {})
+                # CRITICAL: Only set connection_type if field EXISTS - don't default to False
+                if isinstance(brokerage_obj, dict) and 'allows_trading' in brokerage_obj:
+                    allows_trading = brokerage_obj.get('allows_trading')
+                    actual_connection_type = 'trade' if allows_trading else 'read'
+                    connection_type_determined = True
+                    logger.info(f"Brokerage {brokerage_obj.get('name', 'Unknown')} allows_trading={allows_trading}")
+                else:
+                    logger.warning(f"Brokerage object missing 'allows_trading' field - will retry on next sync")
+        except Exception as auth_detail_error:
+            # CRITICAL: Do NOT default to 'read' on transient errors - this would permanently disable trading
+            # Keep as None (unknown) so it can be retried on next sync
+            logger.warning(f"Could not fetch authorization details for {authorization_id}: {auth_detail_error} - will retry on next sync")
+        
         # Find the account(s) associated with this authorization
         from datetime import datetime
         accounts_for_auth = []
@@ -1183,17 +1235,21 @@ async def sync_connection(
         if accounts_for_auth:
             brokerage_name = accounts_for_auth[0].get('institution', broker or 'Unknown')
         
-        # Store connection in snaptrade_brokerage_connections
+        # Store connection in snaptrade_brokerage_connections with actual capability
         connection_data = {
             'user_id': user_id,
             'authorization_id': authorization_id,
             'brokerage_slug': broker or brokerage_name,
             'brokerage_name': brokerage_name,
-            'connection_type': 'trade',
             'status': 'active',
             'accounts_count': len(accounts_for_auth),
             'created_at': datetime.now().isoformat()
         }
+        
+        # CRITICAL: Only set connection_type if we successfully determined it
+        # If None (unknown due to API error), preserve existing value for retry on next sync
+        if connection_type_determined and actual_connection_type:
+            connection_data['connection_type'] = actual_connection_type
         
         # Use upsert to handle duplicates (unique constraint is on authorization_id only)
         supabase.table('snaptrade_brokerage_connections')\
@@ -1240,14 +1296,17 @@ async def sync_connection(
                 'account_type': account.get('type', 'investment'),
                 'account_subtype': account.get('type', 'investment'),
                 'account_mode': 'snaptrade',
-                'connection_type': 'trade',
                 'connection_status': 'active',
                 'is_active': True,
                 'sync_status': 'success',
                 'last_synced': datetime.now().isoformat(),
-                'cash_balance': cash_balance,  # NEW: For trade validation
-                'buying_power': buying_power   # NEW: For trade validation
+                'cash_balance': cash_balance,
+                'buying_power': buying_power
             }
+            
+            # CRITICAL: Only set connection_type if determined - preserve existing on API failure
+            if connection_type_determined and actual_connection_type:
+                account_data['connection_type'] = actual_connection_type
             
             supabase.table('user_investment_accounts')\
                 .upsert(account_data, on_conflict='provider,provider_account_id,user_id')\
@@ -1255,7 +1314,8 @@ async def sync_connection(
             
             accounts_synced += 1
         
-        logger.info(f"✅ Synced {accounts_synced} accounts for authorization {authorization_id}")
+        conn_type_status = f"connection_type={actual_connection_type}" if connection_type_determined else "connection_type=UNKNOWN (will retry)"
+        logger.info(f"✅ Synced {accounts_synced} accounts for authorization {authorization_id} ({conn_type_status})")
         
         # Update user_onboarding status to 'submitted'
         from datetime import timezone
@@ -1575,6 +1635,31 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
         snaptrade_user_id = user_creds.data[0]['snaptrade_user_id']
         user_secret = user_creds.data[0]['snaptrade_user_secret']
         
+        # CRITICAL FIX: Fetch authorization details to get actual connection_type
+        # Use asyncio.to_thread() to avoid blocking the event loop
+        actual_connection_type = None  # NULL = unknown, will retry on next sync
+        connection_type_determined = False
+        try:
+            auth_detail = await asyncio.to_thread(
+                provider.client.connections.detail_brokerage_authorization,
+                authorization_id=authorization_id,
+                user_id=snaptrade_user_id,
+                user_secret=user_secret
+            )
+            if auth_detail.body:
+                brokerage_obj = auth_detail.body.get('brokerage', {})
+                # CRITICAL: Only set connection_type if field EXISTS - don't default to False
+                if isinstance(brokerage_obj, dict) and 'allows_trading' in brokerage_obj:
+                    allows_trading = brokerage_obj.get('allows_trading')
+                    actual_connection_type = 'trade' if allows_trading else 'read'
+                    connection_type_determined = True
+                    logger.info(f"Brokerage {brokerage_obj.get('name', 'Unknown')} allows_trading={allows_trading}")
+                else:
+                    logger.warning(f"Brokerage object missing 'allows_trading' field - will retry on next sync")
+        except Exception as auth_detail_error:
+            # CRITICAL: Do NOT default to 'read' on transient errors - this would permanently disable trading
+            logger.warning(f"Could not fetch authorization details for {authorization_id}: {auth_detail_error} - will retry on next sync")
+        
         # Get all accounts
         accounts_response = provider.client.account_information.list_user_accounts(
             user_id=snaptrade_user_id,
@@ -1592,6 +1677,14 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
             return
         
         brokerage_name = connection_info.data[0]['brokerage_name']
+        
+        # CRITICAL: Only update connection_type if successfully determined
+        # If None (API failure), preserve existing value for retry on next sync
+        if connection_type_determined and actual_connection_type:
+            supabase.table('snaptrade_brokerage_connections')\
+                .update({'connection_type': actual_connection_type})\
+                .eq('authorization_id', authorization_id)\
+                .execute()
         
         # Store each account associated with this authorization
         accounts_stored = 0
@@ -1636,14 +1729,17 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
                     'account_type': account.get('type', 'investment'),
                     'account_subtype': account.get('type', 'investment'),
                     'account_mode': 'snaptrade',
-                    'connection_type': 'trade',
                     'connection_status': 'active',
                     'is_active': True,
                     'sync_status': 'success',
                     'last_synced': datetime.now().isoformat(),
-                    'cash_balance': cash_balance,  # NEW: For trade validation
-                    'buying_power': buying_power   # NEW: For trade validation
+                    'cash_balance': cash_balance,
+                    'buying_power': buying_power
                 }
+                
+                # CRITICAL: Only set connection_type if determined - preserve existing on API failure
+                if connection_type_determined and actual_connection_type:
+                    account_data['connection_type'] = actual_connection_type
                 
                 # Use upsert to handle duplicates
                 supabase.table('user_investment_accounts')\
@@ -1658,7 +1754,8 @@ async def sync_connection_accounts(user_id: str, authorization_id: str):
             .eq('authorization_id', authorization_id)\
             .execute()
         
-        logger.info(f"✅ Synced {accounts_stored} accounts for authorization {authorization_id}")
+        conn_type_status = f"connection_type={actual_connection_type}" if connection_type_determined else "connection_type=UNKNOWN (will retry)"
+        logger.info(f"✅ Synced {accounts_stored} accounts for authorization {authorization_id} ({conn_type_status})")
         
     except Exception as e:
         logger.error(f"Error syncing connection accounts: {e}", exc_info=True)
