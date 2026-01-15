@@ -170,6 +170,23 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
          );
     }
 
+    // CRITICAL: Show error state before empty check
+    // Otherwise API errors get masked as "Connect a brokerage account"
+    if (error && !analyticsData) {
+        return (
+            <div className="space-y-4">
+                <div className="text-center py-6 px-4 rounded-lg bg-destructive/10 border border-destructive/30">
+                    <p className="text-sm text-destructive">
+                        Failed to load portfolio analytics: {error}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                        Please try refreshing the page or check your connection.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     // PRODUCTION-GRADE: Handle special portfolio states
     // Both cash-only and empty portfolios return 0/0 from backend
     // Differentiator: analyticsData exists = cash-only, no analyticsData = truly empty

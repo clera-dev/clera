@@ -482,24 +482,22 @@ class PortfolioAnalyticsEngine:
         3. Number of securities within each asset class
         4. Concentration in individual positions
         
-        PRODUCTION-GRADE: Properly handles cash-only portfolios by returning
-        diversification score of 1.0 (poorly diversified - all in one asset class)
-        instead of 0.0 (no data).
+        PRODUCTION-GRADE: Cash-only portfolios return 0 (consistent with api_server.py
+        and aggregated_portfolio_service.py). Score of 0 means "cannot diversify with
+        only cash" - diversification requires having securities to diversify.
         
         Args:
             positions: List of portfolio positions
-            cash_balance: Optional cash balance for proper scoring
+            cash_balance: Optional cash balance (unused - kept for API compatibility)
             
         Returns:
-            Decimal: Diversification score from 1-10, 0 means no data
+            Decimal: Diversification score from 1-10, 0 for cash-only/empty portfolios
         """
-        # CRITICAL: Handle cash-only portfolios correctly
-        # Cash-only means low diversification (score = 1.0), not "no data" (score = 0.0)
+        # CRITICAL: Cash-only portfolios return 0 (consistent with all other services)
+        # - 0 means "no diversification possible" (need securities to diversify)
+        # - This matches api_server.py and aggregated_portfolio_service.py
         if not positions:
-            # If there's cash but no positions, return low diversification score (1.0)
-            if cash_balance is not None and cash_balance > 0:
-                return Decimal('1.0')  # Cash-only = poorly diversified
-            return Decimal('0')  # Truly empty portfolio = no data
+            return Decimal('0')  # Cash-only or empty = cannot diversify
             
         # Count asset classes and securities
         asset_classes = set()
