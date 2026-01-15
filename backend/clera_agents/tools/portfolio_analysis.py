@@ -623,10 +623,18 @@ class PortfolioAnalyticsEngine:
         }
         
         total_value = sum(position.market_value for position in positions)
-        if total_value == Decimal('0'):
+        cash_value = Decimal('0')
+        if cash_balance is not None:
+            try:
+                cash_value = Decimal(str(cash_balance))
+            except Exception:
+                cash_value = Decimal('0')
+        
+        total_with_cash = total_value + cash_value
+        if total_with_cash == Decimal('0'):
             return Decimal('0')
         
-        # Calculate weighted risk score
+        # Calculate weighted risk score (include cash at lowest risk)
         weighted_risk_score = Decimal('0')
         for position in positions:
             # Skip positions without asset class
@@ -641,8 +649,13 @@ class PortfolioAnalyticsEngine:
             position_risk = min(max(base_risk + modifier, 1), 10)  # Keep within 1-10 range
             
             # Apply position weight
-            position_weight = position.market_value / total_value
+            position_weight = position.market_value / total_with_cash
             weighted_risk_score += Decimal(str(position_risk)) * position_weight
+        
+        # Include cash weight if present (cash risk = 1)
+        if cash_value > 0:
+            cash_weight = cash_value / total_with_cash
+            weighted_risk_score += Decimal('1') * cash_weight
         
         # Round to 1 decimal place
         return Decimal(str(round(float(weighted_risk_score), 1)))

@@ -15,14 +15,9 @@ These tests ensure production-grade behavior for users who:
 - Have external accounts with cash waiting to be invested
 """
 
-import sys
-import os
 import pytest
 from decimal import Decimal
 from unittest.mock import Mock, MagicMock, patch
-
-# Add parent directories to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 
 class TestCashOnlyPortfolioAnalytics:
