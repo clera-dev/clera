@@ -114,10 +114,12 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
 
     // CRITICAL: Update initial investment when portfolio value changes (auto-populate)
     React.useEffect(() => {
-        if (currentPortfolioValue !== null && currentPortfolioValue !== undefined && currentPortfolioValue > 0) {
-            const rounded = Math.round(currentPortfolioValue);
-            setInitialInvestment(rounded);
-            setInitialInvestmentInput(formatCurrency(rounded));
+        if (currentPortfolioValue !== null && currentPortfolioValue !== undefined) {
+            const nextValue = currentPortfolioValue > 0
+                ? Math.round(currentPortfolioValue)
+                : 10000; // reset to default when non-positive
+            setInitialInvestment(nextValue);
+            setInitialInvestmentInput(formatCurrency(nextValue));
         }
     }, [currentPortfolioValue]);
 

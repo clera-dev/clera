@@ -580,10 +580,10 @@ class PortfolioAnalyticsEngine:
         1. Asset class allocation (e.g., more fixed income = lower risk)
         2. Security type allocation (e.g., individual stocks = higher risk)
         3. Historical volatility of specific securities if available
-        4. Cash holdings (lowest risk - score of 1)
+        4. Cash holdings (lowest risk)
         
-        PRODUCTION-GRADE: Properly handles cash-only portfolios by returning
-        risk score of 1.0 (lowest risk) instead of 0.0 (no data).
+        PRODUCTION-GRADE: Cash-only portfolios return 0 (no market risk) to stay
+        consistent across providers (api_server.py, aggregated_portfolio_service.py).
         
         Args:
             positions: List of portfolio positions
@@ -591,15 +591,12 @@ class PortfolioAnalyticsEngine:
             cash_balance: Optional cash balance for cash-inclusive risk calculation
             
         Returns:
-            Decimal: Risk score from 1-10 where 10 is highest risk, 0 means no data
+            Decimal: Risk score from 1-10 where 10 is highest risk, 0 means no data / cash-only
         """
-        # CRITICAL: Handle cash-only portfolios correctly
-        # Cash has the lowest risk (score = 1.0), not "no data" (score = 0.0)
+        # CRITICAL: Cash-only portfolios must return 0 (no market risk)
+        # This keeps frontend and backend consistent (0/0 for cash-only)
         if not positions:
-            # If there's cash but no positions, return low risk score (1.0)
-            if cash_balance is not None and cash_balance > 0:
-                return Decimal('1.0')  # Cash is the safest asset
-            return Decimal('0')  # Truly empty portfolio = no data
+            return Decimal('0')
             
         # Asset class risk weights (on a scale of 1-10)
         asset_class_risk = {
