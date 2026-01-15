@@ -63,6 +63,14 @@ const getDiversificationTextColor = (score: number): string => {
     return "text-green-500";
 };
 
+// PRODUCTION-GRADE: Detect special portfolio states
+// Both cash-only and empty portfolios return 0/0 from backend
+// The differentiator is whether we have valid analyticsData
+const isZeroScorePortfolio = (riskScore: number, divScore: number): boolean => {
+    // Returns true for both cash-only and empty portfolios (both return 0/0)
+    return riskScore === 0 && divScore === 0;
+};
+
 const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
     accountId,
     // apiKey, // Remove apiKey from destructuring
@@ -162,6 +170,63 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
          );
     }
 
+    // CRITICAL: Show error state before empty check
+    // Otherwise API errors get masked as "Connect a brokerage account"
+    if (error && !analyticsData) {
+        return (
+            <div className="space-y-4">
+                <div className="text-center py-6 px-4 rounded-lg bg-destructive/10 border border-destructive/30">
+                    <p className="text-sm text-destructive">
+                        Failed to load portfolio analytics: {error}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                        Please try refreshing the page or check your connection.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // PRODUCTION-GRADE: Handle special portfolio states
+    // Both cash-only and empty portfolios return 0/0 from backend
+    // Differentiator: analyticsData exists = cash-only, no analyticsData = truly empty
+    const hasZeroScores = isZeroScorePortfolio(riskScore, diversificationScore);
+    const isCashOnly = analyticsData !== null && hasZeroScores;
+    const isEmpty = analyticsData === null || (!analyticsData && hasZeroScores);
+
+    // Empty portfolio (no data at all) - show connect message
+    if (isEmpty && !analyticsData) {
+        return (
+            <div className="space-y-4">
+                <div className="text-center py-6 px-4 rounded-lg bg-muted/50">
+                    <p className="text-sm text-muted-foreground">
+                        Connect a brokerage account or make your first investment to see your portfolio analytics.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // Cash-only portfolio (has data but 0/0 scores) - show informative message
+    if (isCashOnly) {
+        return (
+            <div className="space-y-4">
+                <div className="text-center py-6 px-4 rounded-lg bg-muted/50 border border-dashed border-muted-foreground/30">
+                    <p className="text-sm font-medium text-foreground mb-2">
+                        💰 100% Cash Portfolio
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        You&apos;re currently all in cash. Risk and diversification scores apply once you invest in securities.
+                    </p>
+                    <div className="flex justify-center gap-4 mt-3 text-xs text-muted-foreground">
+                        <span>Risk: <span className="text-green-500 font-medium">0/10</span> (no market risk)</span>
+                        <span>Diversification: <span className="text-gray-400 font-medium">N/A</span></span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <TooltipProvider>
             <div className="space-y-4">
@@ -180,7 +245,7 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
                             <p>{getRiskDescription(riskScore)} (Higher = More Risk)</p>
                         </TooltipContent>
                     </Tooltip>
-                    <div className="relative w-full h-4 bg-gradient-to-r from-red-600 to-red-300 rounded-full overflow-hidden">
+                    <div className="relative w-full h-4 bg-gradient-to-r from-green-500 to-red-500 rounded-full overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-full flex items-center">
                             <div className="bg-background h-full" style={{ width: `${100 - scoreToPercentage(riskScore)}%`, marginLeft: `${scoreToPercentage(riskScore)}%` }}></div>
                         </div>
@@ -206,7 +271,7 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
                             <p>{getDiversificationDescription(diversificationScore)} (Higher = Better Diversified)</p>
                         </TooltipContent>
                     </Tooltip>
-                    <div className="relative w-full h-4 bg-gradient-to-r from-red-600 to-red-300 rounded-full overflow-hidden">
+                    <div className="relative w-full h-4 bg-gradient-to-r from-red-500 to-green-500 rounded-full overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-full flex items-center">
                             <div className="bg-background h-full" style={{ width: `${100 - scoreToPercentage(diversificationScore)}%`, marginLeft: `${scoreToPercentage(diversificationScore)}%` }}></div>
                         </div>
@@ -214,6 +279,7 @@ const RiskDiversificationScores: React.FC<RiskDiversificationScoresProps> = ({
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
                         Your portfolio is <span className={getDiversificationTextColor(diversificationScore)}>{getDiversificationDescription(diversificationScore).toLowerCase()}</span>
+                        {isCashOnly && ' (invest to diversify)'}
                     </p>
                 </div>
 

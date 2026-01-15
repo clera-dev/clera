@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // Removed direct import of useWebSocket as we are using native WebSocket now
 // import useWebSocket, { ReadyState } from 'react-use-websocket';
@@ -22,17 +22,42 @@ const WEBSOCKET_URL_TEMPLATE = process.env.NODE_ENV === 'development'
   ? (process.env.NEXT_PUBLIC_WEBSOCKET_URL_DEV || 'ws://localhost:8001/ws/portfolio/{accountId}') // Template includes placeholder
   : (process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD || 'wss://ws.askclera.com/ws/portfolio/{accountId}'); // Template includes placeholder
 
+// PERFORMANCE: Debounce filter changes to prevent rapid API calls
+function useDebounce<T>(value: T, delay: number): T {
+    const [debouncedValue, setDebouncedValue] = useState<T>(value);
+    
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedValue(value);
+        }, delay);
+        
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [value, delay]);
+    
+    return debouncedValue;
+}
+
 const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, portfolioMode = 'brokerage', filterAccount = null }) => {
     const [totalValue, setTotalValue] = useState<string>("$0.00");
     const [todayReturn, setTodayReturn] = useState<string>("+$0.00 (0.00%)");
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [isConnected, setIsConnected] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isSwitchingAccount, setIsSwitchingAccount] = useState<boolean>(false); // Separate state for filter switches
     const [connectionAttempts, setConnectionAttempts] = useState<number>(0);
     const [useFallback, setUseFallback] = useState<boolean>(portfolioMode === 'aggregation');
     
+    // PERFORMANCE: Debounce filter account changes to prevent rapid re-fetches
+    const debouncedFilterAccount = useDebounce(filterAccount, 150);
+    
     const timeoutRef = useRef<TimerRefs>({});
     const intervalRef = useRef<TimerRefs>({});
+    // CRITICAL: Separate abort controllers for polling vs user-initiated fetches
+    // This prevents polling from aborting user-initiated filter changes
+    const pollingAbortControllerRef = useRef<AbortController | null>(null);
+    const userAbortControllerRef = useRef<AbortController | null>(null);
     const supabase = useMemo(() => createClient(), []); // Create supabase client instance once
     
     // For aggregation mode, always use fallback API (no real-time websockets)
@@ -41,15 +66,18 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
     }, [portfolioMode]);
 
     // Refs to hold the latest values of state for intervals/timeouts
+    // CRITICAL: Using refs prevents stale closure bugs in polling intervals
     const socketRef = useRef<WebSocket | null>(socket);
     const isConnectedRef = useRef<boolean>(isConnected);
     const useFallbackRef = useRef<boolean>(useFallback);
     const connectionAttemptsRef = useRef<number>(connectionAttempts);
     const isLoadingRef = useRef<boolean>(isLoading);
+    const debouncedFilterAccountRef = useRef<string | null>(debouncedFilterAccount);
 
     // Keep refs synchronized with state
     useEffect(() => { socketRef.current = socket; }, [socket]);
     useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
+    useEffect(() => { debouncedFilterAccountRef.current = debouncedFilterAccount; }, [debouncedFilterAccount]);
     useEffect(() => { useFallbackRef.current = useFallback; }, [useFallback]);
     useEffect(() => { connectionAttemptsRef.current = connectionAttempts; }, [connectionAttempts]);
     useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
@@ -72,19 +100,19 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         intervalRef.current = {};
     };
 
-    const fetchPortfolioData = async () => {
+    const fetchPortfolioData = useCallback(async (filterValue: string | null, signal?: AbortSignal) => {
         // For aggregation mode, use aggregated endpoint + calculate today's return from history
         if (portfolioMode === 'aggregation') {
             try {
                 // Build URLs with optional filter_account parameter
-                const filterParam = filterAccount && filterAccount !== 'total' 
-                    ? `&filter_account=${encodeURIComponent(filterAccount)}` 
+                const filterParam = filterValue && filterValue !== 'total' 
+                    ? `&filter_account=${encodeURIComponent(filterValue)}` 
                     : '';
                 
                 // Fetch both current value and 1W history in parallel to calculate today's return
                 const [positionsRes, historyRes] = await Promise.all([
-                    fetch(`/api/portfolio/aggregated${filterParam ? `?${filterParam.substring(1)}` : ''}`),
-                    fetch(`/api/portfolio/history?accountId=null&period=1W${filterParam}`)
+                    fetch(`/api/portfolio/aggregated${filterParam ? `?${filterParam.substring(1)}` : ''}`, { signal }),
+                    fetch(`/api/portfolio/history?accountId=null&period=1W${filterParam}`, { signal })
                 ]);
                 
                 if (positionsRes.ok && historyRes.ok) {
@@ -134,14 +162,21 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
                     }
                     
                     setIsLoading(false);
+                    setIsSwitchingAccount(false);
                     return true;
                 } else {
                     console.error(`Failed to fetch aggregation data: positions=${positionsRes.status}, history=${historyRes.status}`);
                 }
             } catch (error) {
+                // Don't log abort errors - they're expected when switching accounts
+                if (error instanceof Error && error.name === 'AbortError') {
+                    console.log('Portfolio data fetch aborted (account switch in progress)');
+                    return false;
+                }
                 console.error('Error fetching aggregated portfolio data:', error);
             }
             setIsLoading(false);
+            setIsSwitchingAccount(false);
             return false;
         }
         
@@ -149,27 +184,35 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         if (!accountId || accountId === 'undefined' || accountId === 'null') {
             console.error('No valid account ID provided for fetching brokerage portfolio data');
             setIsLoading(false);
+            setIsSwitchingAccount(false);
             return false;
         }
 
         try {
-            const response = await fetch(`/api/portfolio/value?accountId=${accountId}`);
+            const response = await fetch(`/api/portfolio/value?accountId=${accountId}`, { signal });
             if (response.ok) {
                 const data = await response.json();
                 setTotalValue(data.total_value);
                 setTodayReturn(data.today_return);
                 setIsLoading(false);
+                setIsSwitchingAccount(false);
                 return true;
             } else {
                 console.error(`Failed to fetch brokerage portfolio data: ${response.status} ${response.statusText}`);
             }
         } catch (error) {
+            // Don't log abort errors - they're expected when switching accounts
+            if (error instanceof Error && error.name === 'AbortError') {
+                console.log('Brokerage data fetch aborted (account switch in progress)');
+                return false;
+            }
             console.error('Error fetching brokerage portfolio data:', error);
         }
         
-        setIsLoading(false); // Ensure loading is set to false even on error
+        setIsLoading(false);
+        setIsSwitchingAccount(false);
         return false;
-    };
+    }, [portfolioMode, accountId]);
 
     const connectWebSocket = async (urlToConnect: string) => {
         if (socketRef.current && (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING)) {
@@ -333,6 +376,8 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         }
     };
 
+    // PERFORMANCE: Separate effect for initial setup (accountId/portfolioMode changes)
+    // This handles WebSocket connections and doesn't re-run on filter changes
     useEffect(() => {
         clearAllTimers();
         if (socketRef.current) {
@@ -343,20 +388,25 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         setIsLoading(true);
         setConnectionAttempts(0);
 
-        console.log("Running effect for accountId:", accountId, "Portfolio mode:", portfolioMode, "filterAccount:", filterAccount, "Calculated websocketUrl:", websocketUrl);
+        console.log("Running INITIAL effect for accountId:", accountId, "Portfolio mode:", portfolioMode, "Calculated websocketUrl:", websocketUrl);
 
         // Skip websockets for aggregation mode - use fallback API
         if (portfolioMode === 'aggregation') {
             console.log("Aggregation mode: Skipping WebSocket, using fallback API for portfolio value");
             setUseFallback(true);
-            fetchPortfolioData();
+            // Initial fetch - use userAbortController since this is user-initiated
+            const controller = new AbortController();
+            userAbortControllerRef.current = controller;
+            fetchPortfolioData(debouncedFilterAccount, controller.signal);
         } else if (websocketUrl && !useFallbackRef.current && shouldUseWebSocket) {
             console.log("Brokerage/Hybrid mode: Attempting WebSocket connection", websocketUrl);
             connectWebSocket(websocketUrl); // Pass the generated base URL (token added inside connectWebSocket)
         } else {
             console.log("Effect triggered: No valid WebSocket URL or fallback mode active, using API fetch.", { accountId, websocketUrl, useFallback: useFallbackRef.current });
             setUseFallback(true); // Ensure fallback state is set
-            fetchPortfolioData();
+            const controller = new AbortController();
+            userAbortControllerRef.current = controller;
+            fetchPortfolioData(debouncedFilterAccount, controller.signal);
         }
         
         intervalRef.current.heartbeat = setInterval(() => {
@@ -395,7 +445,15 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         intervalRef.current.fallbackCheck = setInterval(() => {
             if (useFallbackRef.current) {
                 console.log('Fallback interval: Using polling for portfolio data');
-                fetchPortfolioData();
+                // CRITICAL: Use separate polling abort controller to avoid aborting user-initiated requests
+                // Also use ref for filter to avoid stale closure bug
+                if (pollingAbortControllerRef.current) {
+                    pollingAbortControllerRef.current.abort();
+                }
+                const controller = new AbortController();
+                pollingAbortControllerRef.current = controller;
+                // Use REF to get the latest filter value (avoids stale closure)
+                fetchPortfolioData(debouncedFilterAccountRef.current, controller.signal);
                 
                 // Try to switch back to WebSocket mode occasionally
                 const lastAttemptTime = timeoutRef.current.reconnect ? Date.now() : 0; // Crude way to track last reconnect attempt
@@ -411,13 +469,22 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
             timeoutRef.current.initialFallback = setTimeout(async () => {
                 if (isLoadingRef.current && !isConnectedRef.current) { // Double check connection status
                     console.warn('Initial WebSocket connection taking too long, fetching data via API (parallel fetch)');
-                    await fetchPortfolioData();
+                    const controller = new AbortController();
+                    userAbortControllerRef.current = controller;
+                    await fetchPortfolioData(debouncedFilterAccountRef.current, controller.signal);
                 } 
             }, 8000); // Increased timeout slightly
         }
         
         return () => {
             clearAllTimers();
+            // Abort both polling and user-initiated requests on cleanup
+            if (pollingAbortControllerRef.current) {
+                pollingAbortControllerRef.current.abort();
+            }
+            if (userAbortControllerRef.current) {
+                userAbortControllerRef.current.abort();
+            }
             if (socketRef.current) {
                 console.log('Component unmounting, closing WebSocket connection');
                 socketRef.current.close(1000, 'Component unmounted');
@@ -425,9 +492,42 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
             setSocket(null);
         };
     // Main effect depends on accountId (to recalculate URL) and websocketUrl (to trigger connection)
-    // We don't include connectWebSocket directly as it causes loops
-    // filterAccount triggers re-fetch when user switches between accounts in the dropdown
-    }, [accountId, websocketUrl, supabase, filterAccount]); // Add supabase, filterAccount to dependency array
+    // We EXCLUDE debouncedFilterAccount here - it's handled in a separate effect below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [accountId, websocketUrl, supabase, portfolioMode, shouldUseWebSocket]);
+    
+    // PERFORMANCE: Separate effect for filter account changes only
+    // This allows smooth account switching without resetting WebSocket connections
+    // Uses debounced filter to prevent rapid re-fetches during quick selections
+    const prevFilterRef = useRef<string | null>(debouncedFilterAccount);
+    
+    useEffect(() => {
+        // Skip initial render (handled by main effect above)
+        if (prevFilterRef.current === debouncedFilterAccount) {
+            return;
+        }
+        
+        console.log("Filter account changed:", prevFilterRef.current, "→", debouncedFilterAccount);
+        prevFilterRef.current = debouncedFilterAccount;
+        
+        // Only re-fetch if we're in aggregation mode (filter applies to aggregated data)
+        // For brokerage mode, the WebSocket handles real-time updates
+        if (portfolioMode === 'aggregation') {
+            // Show switching indicator but keep current values visible
+            setIsSwitchingAccount(true);
+            
+            // Cancel any in-flight USER requests (not polling)
+            // This ensures filter changes take priority
+            if (userAbortControllerRef.current) {
+                userAbortControllerRef.current.abort();
+            }
+            
+            // Start new fetch with updated filter
+            const controller = new AbortController();
+            userAbortControllerRef.current = controller;
+            fetchPortfolioData(debouncedFilterAccount, controller.signal);
+        }
+    }, [debouncedFilterAccount, portfolioMode, fetchPortfolioData]);
 
     // PRODUCTION-GRADE: Color logic for Today's Return
     // Grey for $0.00 (market closed), Green for positive, Red for negative
@@ -444,8 +544,8 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
         <div className="space-y-4">
             <div className="flex justify-between items-baseline">
                 <span className="text-sm text-muted-foreground">Current Value</span>
-                <span className="text-2xl font-bold">
-                    {isLoading ? 
+                <span className={`text-2xl font-bold transition-opacity duration-200 ${isSwitchingAccount ? 'opacity-50' : ''}`}>
+                    {isLoading && !isSwitchingAccount ? 
                         <div className="h-7 w-24 bg-gray-200 animate-pulse rounded-md"></div> :
                         totalValue
                     }
@@ -453,8 +553,8 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
             </div>
             <div className="flex justify-between items-baseline">
                 <span className="text-sm text-muted-foreground">Today's Return</span>
-                <span className={`text-xl font-medium ${isLoading ? '' : returnColor}`}>
-                    {isLoading ? 
+                <span className={`text-xl font-medium transition-opacity duration-200 ${isSwitchingAccount ? 'opacity-50' : ''} ${isLoading && !isSwitchingAccount ? '' : returnColor}`}>
+                    {isLoading && !isSwitchingAccount ? 
                         <div className="h-6 w-32 bg-gray-200 animate-pulse rounded-md"></div> :
                         todayReturn
                     }
@@ -462,7 +562,8 @@ const LivePortfolioValue: React.FC<LivePortfolioValueProps> = ({ accountId, port
             </div>
             {process.env.NODE_ENV === 'development' && (
                 <div className="text-xs text-gray-400 mt-2">
-                    {isLoading ? 'Loading data...' :  
+                    {isSwitchingAccount ? 'Switching accounts...' :
+                     isLoading ? 'Loading data...' :  
                      portfolioMode === 'aggregation' ? 'Portfolio API (aggregated holdings)' :
                      useFallback ? 'Using fallback API (WebSocket unavailable)' : 
                      isConnected ? 'Live updates connected' : 

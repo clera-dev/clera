@@ -468,7 +468,11 @@ class PortfolioAnalyticsEngine:
     """Advanced portfolio analytics including risk, diversification, and returns attribution."""
     
     @classmethod
-    def calculate_diversification_score(cls, positions: List[PortfolioPosition]) -> Decimal:
+    def calculate_diversification_score(
+        cls, 
+        positions: List[PortfolioPosition],
+        cash_balance: Optional[Decimal] = None
+    ) -> Decimal:
         """Calculate a diversification score from 1-10 based on portfolio composition.
         
         Higher scores indicate better diversification across asset classes and securities.
@@ -478,14 +482,22 @@ class PortfolioAnalyticsEngine:
         3. Number of securities within each asset class
         4. Concentration in individual positions
         
+        PRODUCTION-GRADE: Cash-only portfolios return 0 (consistent with api_server.py
+        and aggregated_portfolio_service.py). Score of 0 means "cannot diversify with
+        only cash" - diversification requires having securities to diversify.
+        
         Args:
             positions: List of portfolio positions
+            cash_balance: Optional cash balance (unused - kept for API compatibility)
             
         Returns:
-            Decimal: Diversification score from 1-10
+            Decimal: Diversification score from 1-10, 0 for cash-only/empty portfolios
         """
+        # CRITICAL: Cash-only portfolios return 0 (consistent with all other services)
+        # - 0 means "no diversification possible" (need securities to diversify)
+        # - This matches api_server.py and aggregated_portfolio_service.py
         if not positions:
-            return Decimal('0')
+            return Decimal('0')  # Cash-only or empty = cannot diversify
             
         # Count asset classes and securities
         asset_classes = set()
@@ -559,7 +571,8 @@ class PortfolioAnalyticsEngine:
     def calculate_risk_score(
         cls, 
         positions: List[PortfolioPosition],
-        historical_volatility: Optional[Dict[str, float]] = None
+        historical_volatility: Optional[Dict[str, float]] = None,
+        cash_balance: Optional[Decimal] = None
     ) -> Decimal:
         """Calculate a risk score from 1-10 based on portfolio composition.
         
@@ -567,14 +580,21 @@ class PortfolioAnalyticsEngine:
         1. Asset class allocation (e.g., more fixed income = lower risk)
         2. Security type allocation (e.g., individual stocks = higher risk)
         3. Historical volatility of specific securities if available
+        4. Cash holdings (lowest risk)
+        
+        PRODUCTION-GRADE: Cash-only portfolios return 0 (no market risk) to stay
+        consistent across providers (api_server.py, aggregated_portfolio_service.py).
         
         Args:
             positions: List of portfolio positions
             historical_volatility: Optional dictionary mapping symbols to volatility values
+            cash_balance: Optional cash balance for cash-inclusive risk calculation
             
         Returns:
-            Decimal: Risk score from 1-10 where 10 is highest risk
+            Decimal: Risk score from 1-10 where 10 is highest risk, 0 means no data / cash-only
         """
+        # CRITICAL: Cash-only portfolios must return 0 (no market risk)
+        # This keeps frontend and backend consistent (0/0 for cash-only)
         if not positions:
             return Decimal('0')
             
@@ -603,10 +623,22 @@ class PortfolioAnalyticsEngine:
         }
         
         total_value = sum(position.market_value for position in positions)
-        if total_value == Decimal('0'):
-            return Decimal('0')
+        cash_value = Decimal('0')
+        if cash_balance is not None:
+            try:
+                cash_value = Decimal(str(cash_balance))
+            except Exception:
+                cash_value = Decimal('0')
         
-        # Calculate weighted risk score
+        total_with_cash = total_value + cash_value
+        if total_with_cash == Decimal('0'):
+            # Only short-circuit when there are truly no invested assets and no cash
+            # If positions exist but cash offsets (e.g., margin), fall back to invested value
+            if total_value == Decimal('0'):
+                return Decimal('0')
+            total_with_cash = total_value
+        
+        # Calculate weighted risk score (include cash at lowest risk)
         weighted_risk_score = Decimal('0')
         for position in positions:
             # Skip positions without asset class
@@ -621,8 +653,13 @@ class PortfolioAnalyticsEngine:
             position_risk = min(max(base_risk + modifier, 1), 10)  # Keep within 1-10 range
             
             # Apply position weight
-            position_weight = position.market_value / total_value
+            position_weight = position.market_value / total_with_cash
             weighted_risk_score += Decimal(str(position_risk)) * position_weight
+        
+        # Include cash weight if present (cash risk = 1)
+        if cash_value > 0 and total_with_cash != total_value:
+            cash_weight = cash_value / total_with_cash
+            weighted_risk_score += Decimal('1') * cash_weight
         
         # Round to 1 decimal place
         return Decimal(str(round(float(weighted_risk_score), 1)))

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
     ResponsiveContainer,
     LineChart,
@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { format } from 'date-fns';
 
@@ -26,6 +27,27 @@ const STRATEGY_RETURNS: Record<string, number> = {
     aggressive: 0.10,    // 10%
 };
 
+// PRODUCTION-GRADE: Value limits for larger investors
+const VALUE_LIMITS = {
+    initialInvestment: {
+        min: 0,
+        max: 10_000_000,    // $10M max for high-net-worth investors
+        step: 1000,
+        sliderMax: 1_000_000, // Slider caps at $1M, input allows up to $10M
+    },
+    monthlyInvestment: {
+        min: 0,
+        max: 100_000,       // $100k max monthly contribution
+        step: 100,
+        sliderMax: 10_000,  // Slider caps at $10k, input allows up to $100k
+    },
+    timeHorizon: {
+        min: 1,
+        max: 50,            // Up to 50 years
+        step: 1,
+    },
+};
+
 // Helper to format currency
 const formatCurrency = (value: number | null | undefined, digits = 0): string => {
     if (value === null || value === undefined) return '$--';
@@ -35,6 +57,14 @@ const formatCurrency = (value: number | null | undefined, digits = 0): string =>
         minimumFractionDigits: digits,
         maximumFractionDigits: digits,
     }).format(value);
+};
+
+// Helper to parse currency input (handles "$1,234" format)
+const parseCurrencyInput = (value: string): number => {
+    // Remove $ and commas, then parse
+    const cleaned = value.replace(/[$,\s]/g, '');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
 };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -67,18 +97,55 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioValue = 0 }) => {
-    const initialInvestmentValue = Math.round(currentPortfolioValue ?? 1000); // Round to nearest dollar and default to 1000
+    // PRODUCTION-GRADE: Initialize from current portfolio value with proper defaults
+    // Use $10,000 default when portfolio value is 0, null, or undefined
+    const initialInvestmentValue = currentPortfolioValue && currentPortfolioValue > 0 
+        ? Math.round(currentPortfolioValue) 
+        : 10000; // Default to $10k for new users or empty portfolios
     const [initialInvestment, setInitialInvestment] = useState<number>(initialInvestmentValue);
     const [monthlyInvestment, setMonthlyInvestment] = useState<number>(500);
     const [timeHorizon, setTimeHorizon] = useState<number>(20); // years
     const [investmentStrategy, setInvestmentStrategy] = useState<string>('moderate');
+    
+    // Input field state for typing (allows formatted display while typing)
+    const [initialInvestmentInput, setInitialInvestmentInput] = useState<string>(formatCurrency(initialInvestmentValue));
+    const [monthlyInvestmentInput, setMonthlyInvestmentInput] = useState<string>(formatCurrency(500));
+    const [timeHorizonInput, setTimeHorizonInput] = useState<string>('20');
 
-    // Update initial investment if prop changes after initial render
+    // CRITICAL: Update initial investment when portfolio value changes (auto-populate)
     React.useEffect(() => {
         if (currentPortfolioValue !== null && currentPortfolioValue !== undefined) {
-            setInitialInvestment(Math.round(currentPortfolioValue));
+            const nextValue = currentPortfolioValue > 0
+                ? Math.round(currentPortfolioValue)
+                : 10000; // reset to default when non-positive
+            setInitialInvestment(nextValue);
+            setInitialInvestmentInput(formatCurrency(nextValue));
         }
     }, [currentPortfolioValue]);
+
+    // Handler for initial investment changes (both slider and input)
+    const handleInitialInvestmentChange = useCallback((value: number) => {
+        const clamped = Math.max(VALUE_LIMITS.initialInvestment.min, 
+                                 Math.min(VALUE_LIMITS.initialInvestment.max, value));
+        setInitialInvestment(clamped);
+        setInitialInvestmentInput(formatCurrency(clamped));
+    }, []);
+
+    // Handler for monthly investment changes (both slider and input)
+    const handleMonthlyInvestmentChange = useCallback((value: number) => {
+        const clamped = Math.max(VALUE_LIMITS.monthlyInvestment.min, 
+                                 Math.min(VALUE_LIMITS.monthlyInvestment.max, value));
+        setMonthlyInvestment(clamped);
+        setMonthlyInvestmentInput(formatCurrency(clamped));
+    }, []);
+
+    // Handler for time horizon changes
+    const handleTimeHorizonChange = useCallback((value: number) => {
+        const clamped = Math.max(VALUE_LIMITS.timeHorizon.min, 
+                                 Math.min(VALUE_LIMITS.timeHorizon.max, value));
+        setTimeHorizon(clamped);
+        setTimeHorizonInput(clamped.toString());
+    }, []);
 
     const expectedReturn = STRATEGY_RETURNS[investmentStrategy];
 
@@ -107,40 +174,83 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
         <div className="grid grid-cols-1 2xl:grid-cols-3 gap-4 items-start">
             {/* Inputs Column */}
             <div className="2xl:col-span-1 space-y-4">
+                {/* Initial Investment - Typable + Slider */}
                 <div>
                     <Label htmlFor="initialInvestment" className="text-sm font-medium">
-                        Initial Investment ({formatCurrency(initialInvestment)})
+                        Starting Portfolio Value
                     </Label>
+                    <div className="flex gap-2 mt-1 items-center">
+                        <Input
+                            id="initialInvestmentInput"
+                            type="text"
+                            value={initialInvestmentInput}
+                            onChange={(e) => setInitialInvestmentInput(e.target.value)}
+                            onBlur={(e) => handleInitialInvestmentChange(parseCurrencyInput(e.target.value))}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleInitialInvestmentChange(parseCurrencyInput(initialInvestmentInput));
+                                }
+                            }}
+                            className="w-32 text-sm"
+                            placeholder="$10,000"
+                        />
+                        <span className="text-xs text-muted-foreground">
+                            (up to {formatCurrency(VALUE_LIMITS.initialInvestment.max)})
+                        </span>
+                    </div>
                     <Slider
                         id="initialInvestment"
-                        min={0}
-                        max={50000}
-                        step={100}
-                        value={[initialInvestment]}
-                        onValueChange={(value: number[]) => setInitialInvestment(value[0])}
-                        className="mt-1"
+                        min={VALUE_LIMITS.initialInvestment.min}
+                        max={VALUE_LIMITS.initialInvestment.sliderMax}
+                        step={VALUE_LIMITS.initialInvestment.step}
+                        value={[Math.min(initialInvestment, VALUE_LIMITS.initialInvestment.sliderMax)]}
+                        onValueChange={(value: number[]) => handleInitialInvestmentChange(value[0])}
+                        className="mt-2"
                     />
-                    <p className="text-xs text-muted-foreground">Defaults to current portfolio value.</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Defaults to your current portfolio value. Type for larger amounts.
+                    </p>
                 </div>
 
+                {/* Monthly Investment - Typable + Slider */}
                 <div>
                     <Label htmlFor="monthlyInvestment" className="text-sm font-medium">
-                        Additional Monthly Investment ({formatCurrency(monthlyInvestment)})
+                        Additional Monthly Investment
                     </Label>
+                    <div className="flex gap-2 mt-1 items-center">
+                        <Input
+                            id="monthlyInvestmentInput"
+                            type="text"
+                            value={monthlyInvestmentInput}
+                            onChange={(e) => setMonthlyInvestmentInput(e.target.value)}
+                            onBlur={(e) => handleMonthlyInvestmentChange(parseCurrencyInput(e.target.value))}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleMonthlyInvestmentChange(parseCurrencyInput(monthlyInvestmentInput));
+                                }
+                            }}
+                            className="w-32 text-sm"
+                            placeholder="$500"
+                        />
+                        <span className="text-xs text-muted-foreground">
+                            (up to {formatCurrency(VALUE_LIMITS.monthlyInvestment.max)}/mo)
+                        </span>
+                    </div>
                     <Slider
                         id="monthlyInvestment"
-                        min={0}
-                        max={5000}
-                        step={25}
-                        value={[monthlyInvestment]}
-                        onValueChange={(value: number[]) => setMonthlyInvestment(value[0])}
-                        className="mt-1"
+                        min={VALUE_LIMITS.monthlyInvestment.min}
+                        max={VALUE_LIMITS.monthlyInvestment.sliderMax}
+                        step={VALUE_LIMITS.monthlyInvestment.step}
+                        value={[Math.min(monthlyInvestment, VALUE_LIMITS.monthlyInvestment.sliderMax)]}
+                        onValueChange={(value: number[]) => handleMonthlyInvestmentChange(value[0])}
+                        className="mt-2"
                     />
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground mt-1">
                         Annual: {formatCurrency(monthlyInvestment * 12)}
                     </p>
                 </div>
 
+                {/* Investment Strategy Buttons */}
                 <div>
                     <Label className="text-sm font-medium">Investment Strategy (Expected Return)</Label>
                     <div className="flex gap-1 mt-1">
@@ -186,16 +296,44 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                     </div>
                 </div>
 
+                {/* Time Horizon - Typable + Slider */}
                 <div>
-                    <Label htmlFor="timeHorizon" className="text-sm font-medium">Time Horizon ({timeHorizon} years)</Label>
+                    <Label htmlFor="timeHorizon" className="text-sm font-medium">
+                        Time Horizon
+                    </Label>
+                    <div className="flex gap-2 mt-1 items-center">
+                        <Input
+                            id="timeHorizonInput"
+                            type="text"
+                            value={timeHorizonInput}
+                            onChange={(e) => setTimeHorizonInput(e.target.value)}
+                            onBlur={(e) => {
+                                const parsed = parseInt(e.target.value);
+                                // If NaN (non-numeric input), default to 20. Otherwise clamp to valid range.
+                                handleTimeHorizonChange(isNaN(parsed) ? 20 : parsed);
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const parsed = parseInt(timeHorizonInput);
+                                    handleTimeHorizonChange(isNaN(parsed) ? 20 : parsed);
+                                }
+                            }}
+                            className="w-20 text-sm"
+                            placeholder="20"
+                        />
+                        <span className="text-sm text-muted-foreground">years</span>
+                        <span className="text-xs text-muted-foreground ml-auto">
+                            (1-{VALUE_LIMITS.timeHorizon.max} years)
+                        </span>
+                    </div>
                     <Slider
                         id="timeHorizon"
-                        min={1}
-                        max={40}
-                        step={1}
+                        min={VALUE_LIMITS.timeHorizon.min}
+                        max={VALUE_LIMITS.timeHorizon.max}
+                        step={VALUE_LIMITS.timeHorizon.step}
                         value={[timeHorizon]}
-                        onValueChange={(value: number[]) => setTimeHorizon(value[0])}
-                        className="mt-1"
+                        onValueChange={(value: number[]) => handleTimeHorizonChange(value[0])}
+                        className="mt-2"
                     />
                 </div>
             </div>
@@ -227,9 +365,17 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
                                  tick={{ fontSize: 9 }}
                                  tickLine={false}
                                  axisLine={false}
-                                 tickFormatter={(value: number) => `$${(value / 1000).toFixed(0)}k`}
+                                 tickFormatter={(value: number) => {
+                                     // PRODUCTION-GRADE: Format large values appropriately
+                                     if (value >= 1_000_000) {
+                                         return `$${(value / 1_000_000).toFixed(1)}M`;
+                                     } else if (value >= 1000) {
+                                         return `$${(value / 1000).toFixed(0)}k`;
+                                     }
+                                     return `$${value.toFixed(0)}`;
+                                 }}
                                  domain={['auto', 'auto']}
-                                 width={35}
+                                 width={45}
                              />
                              <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'hsl(var(--foreground))', strokeWidth: 1, strokeDasharray: '3 3' }} />
                              <Line

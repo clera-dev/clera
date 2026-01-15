@@ -2265,8 +2265,11 @@ async def get_portfolio_analytics(
         alpaca_positions = client.get_all_positions_for_account(account_id=account_uuid)
 
         if not alpaca_positions:
-            logger.info(f"No positions found for account {account_id}. Returning default scores.")
-            # Return default scores if no positions
+            # CRITICAL FIX: Cash-only portfolios return 0/0 scores
+            # - Risk Score 0 = No market risk (cash has no volatility)
+            # - Diversification Score 0 = Can't diversify when holding only cash
+            # This matches the behavior in portfolio_analysis.py and aggregated_portfolio_service.py
+            logger.info(f"No positions found for account {account_id}. Cash-only or empty portfolio - returning 0/0 scores.")
             return PortfolioAnalyticsResponse(risk_score=Decimal('0'), diversification_score=Decimal('0'))
 
         # 2. Fetch Asset details for relevant positions (e.g., equities) to aid mapping
