@@ -632,7 +632,11 @@ class PortfolioAnalyticsEngine:
         
         total_with_cash = total_value + cash_value
         if total_with_cash == Decimal('0'):
-            return Decimal('0')
+            # Only short-circuit when there are truly no invested assets and no cash
+            # If positions exist but cash offsets (e.g., margin), fall back to invested value
+            if total_value == Decimal('0'):
+                return Decimal('0')
+            total_with_cash = total_value
         
         # Calculate weighted risk score (include cash at lowest risk)
         weighted_risk_score = Decimal('0')
@@ -653,7 +657,7 @@ class PortfolioAnalyticsEngine:
             weighted_risk_score += Decimal(str(position_risk)) * position_weight
         
         # Include cash weight if present (cash risk = 1)
-        if cash_value > 0:
+        if cash_value > 0 and total_with_cash != total_value:
             cash_weight = cash_value / total_with_cash
             weighted_risk_score += Decimal('1') * cash_weight
         
