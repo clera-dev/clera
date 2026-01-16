@@ -5,6 +5,7 @@ API server for Clera AI. provides endpoints for chat, trade, and company analysi
 """
 
 import os
+import re
 import sys
 import json
 import logging
@@ -377,7 +378,13 @@ class TradeRequest(BaseModel):
             raise ValueError('Please enter an order amount greater than $0 or at least 1 share.')
 
         if self.order_type:
-            order_type = self.order_type.strip().upper()
+            normalized = re.sub(r'[\s_-]+', '', self.order_type.strip().lower())
+            order_type = {
+                'market': 'MARKET',
+                'limit': 'LIMIT',
+                'stop': 'STOP',
+                'stoplimit': 'STOPLIMIT'
+            }.get(normalized, self.order_type.strip().upper())
             if order_type in {"LIMIT", "STOPLIMIT"}:
                 if self.limit_price is None or self.limit_price <= 0:
                     raise ValueError('Limit price is required for limit orders.')

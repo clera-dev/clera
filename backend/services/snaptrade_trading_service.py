@@ -34,8 +34,21 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+def _load_queue_for_open_limit_buffer() -> float:
+    raw_value = os.getenv('QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT', '0.01')
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT '{raw_value}': must be a number") from exc
+    if value <= 0 or value >= 0.5:
+        raise ValueError(
+            f"Invalid QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT '{raw_value}': must be > 0 and < 0.5"
+        )
+    return value
+
+
 # Queue-for-open protective limit buffer (1% default, configurable)
-QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT = float(os.getenv('QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT', '0.01'))
+QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT = _load_queue_for_open_limit_buffer()
 
 
 def is_market_closed_error(error_str: str) -> bool:
