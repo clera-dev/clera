@@ -247,6 +247,15 @@ export function TradeInterruptConfirmation({
     }
   }, [marketStatus, initialDetails, limitPrice]);
 
+  useEffect(() => {
+    if (!marketStatus || marketStatus.is_open || !initialDetails?.currentPrice) return;
+    if (afterHoursPolicy === 'queue_for_open') {
+      const bufferMultiplier = initialDetails.action === 'BUY' ? (1 + DEFAULT_LIMIT_BUFFER_PCT) : (1 - DEFAULT_LIMIT_BUFFER_PCT);
+      const suggestedLimit = Math.max(initialDetails.currentPrice * bufferMultiplier, 0.01);
+      setLimitPrice(suggestedLimit.toFixed(2));
+    }
+  }, [afterHoursPolicy, marketStatus, initialDetails]);
+
   // Check if values have been modified
   // CRITICAL: Compare account_id directly, not institution_name, to detect
   // switching between accounts at the same institution (e.g., "Webull - Margin" vs "Webull - IRA")

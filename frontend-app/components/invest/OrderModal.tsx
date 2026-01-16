@@ -164,6 +164,7 @@ export default function OrderModal({
   // Fetch price and accounts when modal opens
   useEffect(() => {
     if (isOpen) {
+      setMarketPrice(null);
       fetchMarketPrice();
       fetchTradeAccounts();
       setAmount(''); // Reset amount on open
@@ -182,6 +183,14 @@ export default function OrderModal({
       setLimitPrice(suggestedLimit.toFixed(2));
     }
   }, [marketStatus.isOpen, marketPrice, limitPrice, isBuyOrder]);
+
+  useEffect(() => {
+    if (!marketStatus.isOpen && marketPrice && afterHoursPolicy === 'queue_for_open') {
+      const bufferMultiplier = isBuyOrder ? (1 + DEFAULT_LIMIT_BUFFER_PCT) : (1 - DEFAULT_LIMIT_BUFFER_PCT);
+      const suggestedLimit = Math.max(marketPrice * bufferMultiplier, 0.01);
+      setLimitPrice(suggestedLimit.toFixed(2));
+    }
+  }, [afterHoursPolicy, marketStatus.isOpen, marketPrice, isBuyOrder]);
 
   const handleNumberPadInput = (value: string) => {
     if (value === '⌫') {
@@ -259,12 +268,12 @@ export default function OrderModal({
       }
       if (afterHoursPolicy === 'broker_limit_gtc' || afterHoursPolicy === 'queue_for_open') {
         const parsedLimit = parseFloat(limitPrice);
-        if (!marketPrice) {
-          setSubmitError("Unable to load market price for limit order.");
-          return;
-        }
         if (isNaN(parsedLimit) || parsedLimit <= 0) {
           setSubmitError("Please enter a valid limit price.");
+          return;
+        }
+        if (afterHoursPolicy === 'queue_for_open' && !marketPrice) {
+          setSubmitError("Unable to load market price to calculate a protective limit. Please try again.");
           return;
         }
       }

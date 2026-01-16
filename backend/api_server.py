@@ -363,6 +363,7 @@ class TradeRequest(BaseModel):
     order_type: Optional[str] = Field(None, description="Order type (Market, Limit, Stop, StopLimit)")
     time_in_force: Optional[str] = Field(None, description="Time in force (Day, GTC, EHP, etc.)")
     limit_price: Optional[float] = Field(None, description="Limit price for limit/stop-limit orders")
+    stop_price: Optional[float] = Field(None, description="Stop trigger price for stop/stop-limit orders")
     after_hours_policy: Optional[str] = Field(None, description="After-hours handling policy")
     extended_hours: Optional[bool] = Field(False, description="Request extended hours if broker supports it")
     
@@ -380,6 +381,9 @@ class TradeRequest(BaseModel):
             if order_type in {"LIMIT", "STOPLIMIT"}:
                 if self.limit_price is None or self.limit_price <= 0:
                     raise ValueError('Limit price is required for limit orders.')
+            if order_type in {"STOP", "STOPLIMIT"}:
+                if self.stop_price is None or self.stop_price <= 0:
+                    raise ValueError('Stop price is required for stop orders.')
 
         if self.after_hours_policy:
             policy = self.after_hours_policy.strip().lower()
@@ -863,6 +867,7 @@ async def execute_trade(
             order_type = (request.order_type or 'Market').strip()
             time_in_force = (request.time_in_force or 'Day').strip().upper()
             limit_price = request.limit_price
+            stop_price = request.stop_price
             after_hours_policy = request.after_hours_policy
             extended_hours = bool(request.extended_hours)
             
@@ -880,6 +885,7 @@ async def execute_trade(
                 notional_value=order_notional,
                 units=order_units,
                 price=limit_price,
+                stop=stop_price,
                 after_hours_policy=after_hours_policy,
                 extended_hours=extended_hours
             )

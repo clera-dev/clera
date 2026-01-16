@@ -881,6 +881,8 @@ class SnapTradeTradingService:
                     order_type = 'Limit'
                     if market_status.get('status') == 'after_hours':
                         time_in_force = 'EHP'
+                    else:
+                        time_in_force = 'GTC'
 
             if order_type == 'Limit' and (price is None or price <= 0):
                 return {

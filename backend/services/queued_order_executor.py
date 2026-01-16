@@ -515,19 +515,27 @@ class QueuedOrderExecutor:
             )
 
         last_price_at_creation = order.get('last_price_at_creation')
-        if last_price_at_creation:
-            current_price = self._get_current_price(order.get('symbol'))
-            if current_price:
-                deviation = abs(current_price - float(last_price_at_creation)) / float(last_price_at_creation)
-                if deviation > STALE_PRICE_DEVIATION_PCT:
-                    return self._cancel_stale_order(
-                        order=order,
-                        reason_code='price_deviation_exceeded',
-                        reason_message='Order cancelled because the price moved significantly since it was queued.',
-                        current_price=current_price
-                    )
+        if last_price_at_creation is not None:
+            try:
+                last_price_value = float(last_price_at_creation)
+            except (TypeError, ValueError):
+                last_price_value = 0.0
+
+            if last_price_value > 0:
+                current_price = self._get_current_price(order.get('symbol'))
+                if current_price:
+                    deviation = abs(current_price - last_price_value) / last_price_value
+                    if deviation > STALE_PRICE_DEVIATION_PCT:
+                        return self._cancel_stale_order(
+                            order=order,
+                            reason_code='price_deviation_exceeded',
+                            reason_message='Order cancelled because the price moved significantly since it was queued.',
+                            current_price=current_price
+                        )
+                else:
+                    logger.warning(f"Unable to fetch current price for staleness check: {order.get('symbol')}")
             else:
-                logger.warning(f"Unable to fetch current price for staleness check: {order.get('symbol')}")
+                logger.warning(f"Invalid last_price_at_creation for staleness check: {last_price_at_creation}")
 
         return None
 

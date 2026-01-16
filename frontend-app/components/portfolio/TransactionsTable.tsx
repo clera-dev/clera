@@ -170,7 +170,9 @@ const getTransactionType = (item: OrderData): string => {
 };
 
 const getCancellationInfo = (item: OrderData): { label: string; detail?: string } | null => {
-    if (!item.status || item.status.toLowerCase() !== 'cancelled') return null;
+    if (!item.status) return null;
+    const status = item.status.toLowerCase();
+    if (status !== 'cancelled' && status !== 'canceled') return null;
     if (!item.cancellation_reason && !item.last_error) return null;
 
     const reason = item.cancellation_reason || '';
