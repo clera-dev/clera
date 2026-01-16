@@ -470,6 +470,8 @@ async def get_pending_orders(
                     'price': float(queued.get('price') or 0) if queued.get('price') else None,
                     'created_at': queued.get('created_at'),
                     'time_in_force': queued.get('time_in_force', 'Day'),
+                    'after_hours_policy': queued.get('after_hours_policy'),
+                    'extended_hours': bool(queued.get('extended_hours') or False),
                     'is_queued': True,  # Flag to identify queued orders
                     'queued_message': 'Will execute when market opens (9:30 AM ET)'
                 })
@@ -534,6 +536,7 @@ async def cancel_queued_order(
         supabase.table('queued_orders')\
             .update({
                 'status': 'cancelled',
+                'cancellation_reason': 'user_cancelled',
                 'updated_at': datetime.now(timezone.utc).isoformat()
             })\
             .eq('id', order_id)\

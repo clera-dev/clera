@@ -52,7 +52,7 @@ def _parse_and_validate_trade_confirmation(
     original_account_type: str,
     user_id: str,
     is_sell: bool = False
-) -> Tuple[Optional[str], str, float, str, str, str]:
+) -> Tuple[Optional[str], str, float, str, str, str, Optional[str], Optional[float]]:
     """
     Parse and validate modified trade confirmation from user.
     
@@ -69,7 +69,8 @@ def _parse_and_validate_trade_confirmation(
         is_sell: Whether this is a SELL order (requires holdings check on ticker change)
     
     Returns:
-        Tuple of (error_message, final_ticker, final_amount, final_account_id, final_account_type, final_confirmation)
+        Tuple of (error_message, final_ticker, final_amount, final_account_id, final_account_type, final_confirmation,
+        after_hours_policy, limit_price)
         - error_message: None if valid, error string if validation failed
         - final_*: Validated values to use for trade execution
         - final_confirmation: Normalized confirmation string ('yes'/'no'/original)
@@ -81,6 +82,8 @@ def _parse_and_validate_trade_confirmation(
     modified_account_id = original_account_id
     modified_account_type = original_account_type
     final_confirmation = user_confirmation
+    after_hours_policy = None
+    limit_price = None
     
     try:
         if user_confirmation.startswith('{'):
@@ -99,7 +102,7 @@ def _parse_and_validate_trade_confirmation(
                     # Validate ticker format
                     if not new_ticker or not new_ticker.isalnum():
                         return (f"Error: Invalid ticker symbol '{new_ticker}'. Ticker symbols must be alphanumeric.",
-                                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                     modified_ticker = new_ticker
                     
                     # Validate amount
@@ -109,11 +112,11 @@ def _parse_and_validate_trade_confirmation(
                         import math
                         if not math.isfinite(new_amount) or new_amount < 1:
                             return (f"Error: Invalid dollar amount '{new_amount}'. Minimum order is $1.00.",
-                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                         modified_amount = new_amount
                     except (ValueError, TypeError):
                         return (f"Error: Invalid dollar amount '{new_amount}'. Please provide a valid number.",
-                                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                     
                     # SECURITY: Validate account ownership if user changed account
                     # Normalize account_id comparison (strip prefixes for consistent comparison)
@@ -137,7 +140,7 @@ def _parse_and_validate_trade_confirmation(
                         if not account_check.data:
                             logger.warning(f"[Trade Agent] SECURITY: User {user_id} attempted to use unauthorized account {new_account_id}")
                             return ("Error: You don't have permission to trade with that account.",
-                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                         
                         # Set account type based on actual provider
                         account_provider = account_check.data[0].get('provider', 'snaptrade')
@@ -147,6 +150,28 @@ def _parse_and_validate_trade_confirmation(
                         else:
                             modified_account_id = f"snaptrade_{normalized_new}" if not new_account_id.startswith('snaptrade_') else new_account_id
                             modified_account_type = 'snaptrade'
+
+                    # After-hours policy (optional)
+                    raw_policy = modified_data.get('after_hours_policy')
+                    if raw_policy:
+                        policy = str(raw_policy).strip().lower()
+                        if policy not in {'broker_limit_gtc', 'queue_for_open'}:
+                            return (f"Error: Invalid after-hours policy '{policy}'.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
+                        after_hours_policy = policy
+
+                    raw_limit_price = modified_data.get('limit_price')
+                    if raw_limit_price is not None:
+                        try:
+                            import math
+                            parsed_limit = float(raw_limit_price)
+                            if parsed_limit <= 0 or not math.isfinite(parsed_limit):
+                                return (f"Error: Invalid limit price '{raw_limit_price}'. Please provide a valid price.",
+                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
+                            limit_price = parsed_limit
+                        except (ValueError, TypeError):
+                            return (f"Error: Invalid limit price '{raw_limit_price}'. Please provide a valid price.",
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                     
                     # For SELL orders: verify holdings if ticker OR account was changed
                     # Must verify the target account actually holds the stock
@@ -163,7 +188,7 @@ def _parse_and_validate_trade_confirmation(
                         
                         if not holdings_result.data:
                             return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
-                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                    original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                         
                         # Parse account_contributions (used by both if/else branches)
                         account_contributions = holdings_result.data[0].get('account_contributions', [])
@@ -175,7 +200,7 @@ def _parse_and_validate_trade_confirmation(
                                 # SECURITY: Corrupted DB data - do NOT allow trade without verification
                                 logger.error(f"[Trade Agent] Failed to parse account_contributions: {parse_error}")
                                 return (f"Error: Unable to verify holdings. Please try again.",
-                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                         
                         if account_changed:
                             # CRITICAL FIX: Verify the SPECIFIC selected account holds the stock
@@ -194,7 +219,7 @@ def _parse_and_validate_trade_confirmation(
                             
                             if not account_found:
                                 return (f"Error: The selected account doesn't hold {modified_ticker}. Please select an account that holds this stock.",
-                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                        original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                             
                             logger.info(f"[Trade Agent] SELL account changed - verified holdings on account {modified_account_id}")
                         else:
@@ -221,7 +246,7 @@ def _parse_and_validate_trade_confirmation(
                                 
                                 if not found_account_id:
                                     return (f"Error: You don't appear to hold {modified_ticker} in any of your accounts. Cannot sell.",
-                                            original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                                            original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
                                 
                                 modified_account_id = found_account_id
                                 modified_account_type = found_account_type or 'snaptrade'
@@ -241,9 +266,9 @@ def _parse_and_validate_trade_confirmation(
         # This prevents trades from bypassing validation if errors occur mid-processing
         logger.error(f"[Trade Agent] Validation error during trade confirmation: {e}")
         return (f"Error: Invalid trade data. Please try again.",
-                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation)
+                original_ticker, original_amount, original_account_id, original_account_type, user_confirmation, None, None)
     
-    return (None, modified_ticker, modified_amount, modified_account_id, modified_account_type, final_confirmation)
+    return (None, modified_ticker, modified_amount, modified_account_id, modified_account_type, final_confirmation, after_hours_policy, limit_price)
 
 
 @tool("execute_buy_market_order")
@@ -330,7 +355,7 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
         logger.info(f"[Trade Agent] Received confirmation: '{user_confirmation}'")
 
         # Parse and validate any modifications from the confirmation popup
-        error_msg, modified_ticker, modified_amount, modified_account_id, modified_account_type, user_confirmation = \
+        error_msg, modified_ticker, modified_amount, modified_account_id, modified_account_type, user_confirmation, after_hours_policy, limit_price = \
             _parse_and_validate_trade_confirmation(
                 user_confirmation=user_confirmation,
                 original_ticker=ticker,
@@ -362,7 +387,15 @@ def execute_buy_market_order(ticker: str, notional_amount: float, state=None, co
                 result = _submit_alpaca_market_order(modified_account_id, modified_ticker, modified_amount, OrderSide.BUY)
             else:  # snaptrade
                 logger.info(f"[Trade Agent] Executing BUY via SnapTrade: {modified_ticker} ${modified_amount:.2f}")
-                result = _submit_snaptrade_market_order(user_id, modified_account_id, modified_ticker, modified_amount, 'BUY')
+                result = _submit_snaptrade_market_order(
+                    user_id,
+                    modified_account_id,
+                    modified_ticker,
+                    modified_amount,
+                    'BUY',
+                    after_hours_policy=after_hours_policy,
+                    limit_price=limit_price
+                )
             
             logger.info(f"[Trade Agent] BUY order result: {result}")
             return result
@@ -461,7 +494,7 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
 
         # Parse and validate any modifications from the confirmation popup
         # Note: is_sell=True enables holdings verification if ticker changes
-        error_msg, modified_ticker, modified_amount, modified_account_id, modified_account_type, user_confirmation = \
+        error_msg, modified_ticker, modified_amount, modified_account_id, modified_account_type, user_confirmation, after_hours_policy, limit_price = \
             _parse_and_validate_trade_confirmation(
                 user_confirmation=user_confirmation,
                 original_ticker=ticker,
@@ -493,7 +526,15 @@ def execute_sell_market_order(ticker: str, notional_amount: float, state=None, c
                 result = _submit_alpaca_market_order(modified_account_id, modified_ticker, modified_amount, OrderSide.SELL)
             else:  # snaptrade
                 logger.info(f"[Trade Agent] Executing SELL via SnapTrade: {modified_ticker} ${modified_amount:.2f}")
-                result = _submit_snaptrade_market_order(user_id, modified_account_id, modified_ticker, modified_amount, 'SELL')
+                result = _submit_snaptrade_market_order(
+                    user_id,
+                    modified_account_id,
+                    modified_ticker,
+                    modified_amount,
+                    'SELL',
+                    after_hours_policy=after_hours_policy,
+                    limit_price=limit_price
+                )
             
             logger.info(f"[Trade Agent] SELL order result: {result}")
             return result
@@ -538,189 +579,91 @@ def _submit_alpaca_market_order(account_id: str, ticker: str, notional_amount: f
         raise e
 
 
-def _submit_snaptrade_market_order(user_id: str, account_id: str, ticker: str, notional_amount: float, action: str) -> str:
-    """Submit market order via SnapTrade (external brokerages).
-    
-    IMPORTANT: For SELL orders, many brokerages (like Webull) don't support selling
-    fractional shares when you hold whole shares. This function handles that by
-    converting notional amounts to whole share units for SELL orders.
-    """
-    import math
+def _submit_snaptrade_market_order(
+    user_id: str,
+    account_id: str,
+    ticker: str,
+    notional_amount: float,
+    action: str,
+    after_hours_policy: Optional[str] = None,
+    limit_price: Optional[float] = None
+) -> str:
+    """Submit order via SnapTrade using centralized trading service."""
+    order_units: Optional[float] = None
     try:
         from utils.supabase.db_client import get_supabase_client
-        
-        # Get SnapTrade user credentials
-        credentials = TradeRoutingService.get_snaptrade_user_credentials(user_id)
-        if not credentials:
-            return "❌ Error: Brokerage connection expired or not found. The user needs to reconnect their brokerage account via the Portfolio page. Please inform them of this."
-        
-        snaptrade_user_id = credentials['user_id']
-        user_secret = credentials['user_secret']
-        
-        # Clean account ID (remove our prefix) - needed for all SnapTrade API calls
+        from services.snaptrade_trading_service import get_snaptrade_trading_service
+
         clean_account_id = account_id.replace('snaptrade_', '')
-        
-        # Get symbol's universal ID from SnapTrade using account-specific lookup
-        # CRITICAL: Use symbol_search_user_account to get the correct exchange symbol
-        # (e.g., NYSE JNJ instead of German SWB JNJ)
-        logger.info(f"[Trade Agent] Looking up tradeable symbol ID for {ticker} on account {clean_account_id}")
-        
-        # Use symbol_search_user_account to get symbols actually tradeable on this account
-        symbol_response = snaptrade_client.reference_data.symbol_search_user_account(
-            user_id=snaptrade_user_id,
-            user_secret=user_secret,
+        trading_service = get_snaptrade_trading_service()
+
+        order_type = 'Limit' if limit_price is not None else 'Market'
+        result = trading_service.place_order(
+            user_id=user_id,
             account_id=clean_account_id,
-            substring=ticker
+            symbol=ticker,
+            action=action,
+            order_type=order_type,
+            time_in_force='Day',
+            notional_value=notional_amount,
+            price=limit_price,
+            after_hours_policy=after_hours_policy
         )
-        
-        if not symbol_response.body:
-            return f"❌ Error: Symbol '{ticker}' is not available for trading on the user's brokerage. Please verify the ticker symbol is correct (e.g., 'AAPL' for Apple, 'GOOGL' for Google), or try a different stock."
-        
-        # Find exact match for the ticker, prioritizing US exchanges
-        us_exchanges = {'NYSE', 'NASDAQ', 'ARCA', 'BATS', 'AMEX', 'NYSEARCA'}
-        universal_symbol_id = None
-        exact_match = None
-        us_match = None
-        
-        for symbol_data in symbol_response.body:
-            if symbol_data.get('symbol') == ticker:
-                exchange_code = symbol_data.get('exchange', {}).get('code', '')
-                # Prefer US exchanges
-                if exchange_code in us_exchanges:
-                    us_match = symbol_data
-                    break  # Found US match, use it
-                elif exact_match is None:
-                    exact_match = symbol_data
-        
-        best_match = us_match or exact_match
-        if best_match:
-            universal_symbol_id = best_match.get('id')
-            exchange_code = best_match.get('exchange', {}).get('code', 'Unknown')
-            logger.info(f"[Trade Agent] Found tradeable symbol ID for {ticker} on {exchange_code}: {universal_symbol_id}")
-        else:
-            return f"❌ Error: Symbol '{ticker}' is not available for trading on the user's brokerage. Please verify the ticker symbol is correct, or try a different stock - ETFs like VTI, SPY, or QQQ are usually widely supported."
-        
-        # Determine order parameters based on action type
-        # For SELL orders, we need to use units (whole shares) instead of notional_value
-        # because many brokerages don't allow selling fractional shares from whole-share positions
-        order_units = None
-        order_notional = None
-        
-        if action == 'SELL':
-            # Get current price to convert notional to units
-            try:
-                # Use a test order impact call to get the current price
-                test_impact = snaptrade_client.trading.get_order_impact(
-                    user_id=snaptrade_user_id,
-                    user_secret=user_secret,
-                    account_id=clean_account_id,
-                    action=action,
-                    universal_symbol_id=universal_symbol_id,
-                    order_type="Market",
-                    time_in_force="Day",
-                    units=0.001  # Tiny amount just to get price
-                )
-                current_price = test_impact.body.get('trade', {}).get('price')
-                
-                if current_price and current_price > 0:
-                    raw_units = notional_amount / float(current_price)
-                    whole_units = math.floor(raw_units)
-                    
-                    if whole_units == 0:
-                        min_sell_value = float(current_price)
-                        return f"❌ The sell amount ${notional_amount:.2f} equals only {raw_units:.3f} shares of {ticker}. This brokerage requires selling whole shares. The user must sell at least 1 full share, which costs approximately ${min_sell_value:.2f}. Please ask them to increase their sell amount."
-                    
-                    order_units = float(whole_units)
-                    logger.info(f"[Trade Agent] SELL: Converted ${notional_amount} to {order_units} whole shares at ${current_price}/share")
-                else:
-                    # Fallback to notional if we can't get price
-                    # CRITICAL: Format as string to avoid floating-point precision issues
-                    order_notional = f"{float(notional_amount):.2f}"
-                    logger.warning(f"[Trade Agent] Could not get price for {ticker}, using notional_value")
-            except Exception as price_error:
-                logger.warning(f"[Trade Agent] Could not convert notional to units: {price_error}, using notional_value")
-                # CRITICAL: Format as string to avoid floating-point precision issues
-                # e.g., 5.2 as float becomes '5.20000000000000017763568394002504646778106689453125'
-                # String formatting avoids this by producing clean "5.20"
-                order_notional = f"{float(notional_amount):.2f}"
-        else:
-            # BUY orders can use notional_value (fractional shares usually supported for buying)
-            # CRITICAL: Convert to string with 2 decimal places to avoid floating-point precision issues
-            # Python's round() returns a float that still stores imprecise binary representation
-            # When SDK validates via Decimal(float), it sees full precision (e.g., 5.0999999...)
-            # Solution: Format as string which SDK also accepts for notional_value
-            order_notional = f"{float(notional_amount):.2f}"
-        
-        # Place order using SnapTrade
-        logger.info(f"[Trade Agent] Placing {action} order via SnapTrade for {ticker} (units={order_units}, notional={order_notional})")
-        
-        order_params = {
-            'account_id': clean_account_id,
-            'user_id': snaptrade_user_id,
-            'user_secret': user_secret,
-            'action': action,
-            'order_type': "Market",
-            'time_in_force': "Day",
-            'universal_symbol_id': universal_symbol_id,
-        }
-        
-        if order_units is not None:
-            order_params['units'] = order_units
-        else:
-            # Notional value is already formatted as string above to avoid float precision issues
-            order_params['notional_value'] = order_notional
-        
-        order_response = snaptrade_client.trading.place_force_order(**order_params)
-        
-        # Store order in database
-        supabase = get_supabase_client()
-        order_data = {
-            'user_id': user_id,
-            'account_id': clean_account_id,  # CRITICAL FIX: Use clean UUID without 'snaptrade_' prefix
-            'brokerage_order_id': order_response.body.get('brokerage_order_id', ''),
-            'symbol': ticker,
-            'universal_symbol_id': universal_symbol_id,
-            'action': action,
-            'order_type': 'Market',
-            'time_in_force': 'Day',
-            'notional_value': notional_amount,
-            'units': order_units,
-            'status': order_response.body.get('status', 'PENDING'),
-            'raw_order_data': order_response.body
-        }
-        
-        supabase.table('snaptrade_orders').insert(order_data).execute()
-        logger.info(f"[Trade Agent] Order stored in database")
-        
-        # PRODUCTION-GRADE: Trigger portfolio sync after trade in background
-        # Don't block the trade response - user can click Refresh on Portfolio page
-        # The sync will run asynchronously to update holdings
+
+        if not result.get('success'):
+            return f"❌ {result.get('error', 'Order failed. Please try again.')}"
+
+        if result.get('queued'):
+            return result.get(
+                'message',
+                f"⏰ Market is currently closed. The user's {action} order for {ticker} has been queued and will execute at next market open."
+            )
+
+        order = result.get('order', {})
+
+        # Store order in database (best-effort)
+        try:
+            supabase = get_supabase_client()
+            universal_symbol_id = trading_service.get_universal_symbol_id_for_account(ticker, user_id, clean_account_id)
+            supabase.table('snaptrade_orders').insert({
+                'user_id': user_id,
+                'account_id': clean_account_id,
+                'brokerage_order_id': order.get('brokerage_order_id', ''),
+                'symbol': ticker,
+                'universal_symbol_id': universal_symbol_id,
+                'action': action,
+                'order_type': order_type,
+                'time_in_force': order.get('time_in_force') or 'Day',
+                'notional_value': notional_amount,
+                'status': order.get('status', 'PENDING'),
+                'raw_order_data': order
+            }).execute()
+        except Exception as db_error:
+            logger.warning(f"[Trade Agent] Failed to store SnapTrade order: {db_error}")
+
+        # Trigger background portfolio sync
         try:
             from utils.portfolio.snaptrade_sync_service import trigger_full_user_sync
             import asyncio
             import threading
-            
+
             def run_sync_in_background():
-                """Run sync in a background thread to avoid blocking the response."""
                 try:
                     asyncio.run(trigger_full_user_sync(user_id, force_rebuild=True))
                     logger.info(f"[Trade Agent] Background post-trade sync completed for user {user_id}")
                 except Exception as e:
                     logger.warning(f"[Trade Agent] Background post-trade sync failed: {e}")
-            
-            # Start background sync - don't wait for it
+
             sync_thread = threading.Thread(target=run_sync_in_background, daemon=True)
             sync_thread.start()
             logger.info(f"[Trade Agent] Started background sync for user {user_id}")
         except Exception as sync_error:
-            # Don't fail the trade response if sync setup fails - user can refresh manually
             logger.warning(f"[Trade Agent] Failed to start background sync: {sync_error}")
-        
-        # Build success message with refresh hint
-        if order_units is not None:
-            return f"✅ Trade submitted successfully via SnapTrade: {action} {int(order_units)} shares of {ticker}. Click 'Refresh' on the Portfolio page to see updated holdings."
-        else:
-            return f"✅ Trade submitted successfully via SnapTrade: {action} order for ${notional_amount:.2f} of {ticker}. Click 'Refresh' on the Portfolio page to see updated holdings."
+
+        if order_type == 'Limit' and limit_price is not None:
+            return f"✅ Trade submitted successfully via SnapTrade: {action} limit order for ${notional_amount:.2f} of {ticker} at ${limit_price:.2f}. Click 'Refresh' on the Portfolio page to see updated holdings."
+
+        return f"✅ Trade submitted successfully via SnapTrade: {action} order for ${notional_amount:.2f} of {ticker}. Click 'Refresh' on the Portfolio page to see updated holdings."
     
     except SnapTradeApiException as e:
         error_str = str(e)

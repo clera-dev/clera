@@ -142,6 +142,54 @@ def get_user_id_from_email(email: str) -> Optional[str]:
         return None
 
 
+def get_user_email(user_id: str) -> Optional[str]:
+    """
+    Retrieve the email address for a given user ID.
+    
+    Args:
+        user_id (str): The Supabase user ID
+        
+    Returns:
+        Optional[str]: The user's email or None if not found
+    """
+    if not user_id:
+        logger.warning("Empty user_id provided to get_user_email")
+        return None
+    
+    try:
+        supabase = get_supabase_client()
+        
+        # Prefer admin API (works with service role key)
+        try:
+            admin = supabase.auth.admin
+            response = admin.get_user_by_id(user_id)
+            user = getattr(response, "user", None)
+            if user:
+                email = getattr(user, "email", None) or (user.get("email") if isinstance(user, dict) else None)
+                if email:
+                    return email
+        except Exception as admin_error:
+            logger.warning(f"Admin auth lookup failed for user (redacted): {admin_error}")
+        
+        # Fallback: query auth.users directly with service role
+        response = supabase.table("auth.users") \
+            .select("email") \
+            .eq("id", user_id) \
+            .single() \
+            .execute()
+        
+        if response.data:
+            email = response.data.get("email")
+            if email:
+                return email
+        
+        logger.warning("No email found for user (redacted)")
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching user email (redacted): {e}")
+        return None
+
+
 def get_alpaca_account_id_by_email(email: str) -> Optional[str]:
     """
     Retrieve the Alpaca account ID for a user with the given email.

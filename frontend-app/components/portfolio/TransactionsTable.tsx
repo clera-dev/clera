@@ -49,6 +49,8 @@ interface OrderData {
   // Queued order fields (orders placed when market was closed)
   is_queued?: boolean;
   queued_message?: string;
+  cancellation_reason?: string | null;
+  last_error?: string | null;
   // Activity fields
   activity_type?: string;
   net_amount?: string;
@@ -120,6 +122,7 @@ const getStatusVariant = (status: string | undefined, activityType?: string): "d
         case 'partially_filled':
             return 'secondary';
         case 'canceled':
+        case 'cancelled':
         case 'expired':
             return 'secondary';
         case 'rejected':
@@ -164,6 +167,28 @@ const getTransactionType = (item: OrderData): string => {
     }
     
     return 'Unknown';
+};
+
+const getCancellationInfo = (item: OrderData): { label: string; detail?: string } | null => {
+    if (!item.status || item.status.toLowerCase() !== 'cancelled') return null;
+    if (!item.cancellation_reason && !item.last_error) return null;
+
+    const reason = item.cancellation_reason || '';
+    const normalized = reason.toLowerCase();
+    let label = 'Cancelled';
+
+    if (normalized === 'expired_24h') {
+        label = 'Cancelled: order expired';
+    } else if (normalized === 'price_deviation_exceeded') {
+        label = 'Cancelled: price moved';
+    } else if (normalized === 'user_cancelled') {
+        label = 'Cancelled by you';
+    } else if (normalized) {
+        label = `Cancelled: ${normalized.replace(/_/g, ' ')}`;
+    }
+
+    const detail = item.last_error || undefined;
+    return { label, detail };
 };
 
 // Get the transaction amount
@@ -452,6 +477,7 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
                   const transactionType = getTransactionType(item);
                   const status = getStatusText(item);
                   const symbol = getSymbol(item);
+                  const cancellationInfo = getCancellationInfo(item);
                   
                   // Use a shortened version of the ID for display
                   const shortId = item.id ? item.id.substring(0, 12) : '--';
@@ -511,9 +537,27 @@ const TransactionsTable: React.FC<TransactionsTableProps> = ({ initialOrders, ac
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge variant={getStatusVariant(item.status, item.activity_type)}>
-                          {status}
-                        </Badge>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge variant={getStatusVariant(item.status, item.activity_type)}>
+                            {status}
+                          </Badge>
+                          {cancellationInfo && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-xs text-muted-foreground cursor-help">
+                                    {cancellationInfo.label}
+                                  </span>
+                                </TooltipTrigger>
+                                {cancellationInfo.detail && (
+                                  <TooltipContent side="left">
+                                    {cancellationInfo.detail}
+                                  </TooltipContent>
+                                )}
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         {isOrderCancellable(item) && (

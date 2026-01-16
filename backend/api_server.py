@@ -360,6 +360,11 @@ class TradeRequest(BaseModel):
     notional_amount: Optional[float] = Field(None, description="Dollar amount to trade")
     units: Optional[float] = Field(None, description="Number of shares to trade (alternative to notional_amount)")
     side: str = Field(..., description="BUY or SELL")
+    order_type: Optional[str] = Field(None, description="Order type (Market, Limit, Stop, StopLimit)")
+    time_in_force: Optional[str] = Field(None, description="Time in force (Day, GTC, EHP, etc.)")
+    limit_price: Optional[float] = Field(None, description="Limit price for limit/stop-limit orders")
+    after_hours_policy: Optional[str] = Field(None, description="After-hours handling policy")
+    extended_hours: Optional[bool] = Field(False, description="Request extended hours if broker supports it")
     
     @model_validator(mode='after')
     def validate_amount_or_units(self) -> 'TradeRequest':
@@ -369,6 +374,17 @@ class TradeRequest(BaseModel):
         
         if not has_valid_notional and not has_valid_units:
             raise ValueError('Please enter an order amount greater than $0 or at least 1 share.')
+
+        if self.order_type:
+            order_type = self.order_type.strip().upper()
+            if order_type in {"LIMIT", "STOPLIMIT"}:
+                if self.limit_price is None or self.limit_price <= 0:
+                    raise ValueError('Limit price is required for limit orders.')
+
+        if self.after_hours_policy:
+            policy = self.after_hours_policy.strip().lower()
+            if policy not in {"broker_limit_gtc", "queue_for_open"}:
+                raise ValueError('Invalid after-hours policy.')
         return self
 
 class CompanyInfoRequest(BaseModel):
@@ -844,6 +860,11 @@ async def execute_trade(
             # Use explicit `is not None` checks to handle edge case of value=0 correctly
             order_units = request.units if request.units is not None else None
             order_notional = float(request.notional_amount) if request.notional_amount is not None and order_units is None else None
+            order_type = (request.order_type or 'Market').strip()
+            time_in_force = (request.time_in_force or 'Day').strip().upper()
+            limit_price = request.limit_price
+            after_hours_policy = request.after_hours_policy
+            extended_hours = bool(request.extended_hours)
             
             logger.info(f"Order params - units: {order_units}, notional: {order_notional}")
             
@@ -854,10 +875,13 @@ async def execute_trade(
                 account_id=clean_account_id,
                 symbol=request.ticker.upper(),
                 action=action,
-                order_type='Market',  # Market order for notional trades
-                time_in_force='Day',
+                order_type=order_type,
+                time_in_force=time_in_force,
                 notional_value=order_notional,
-                units=order_units
+                units=order_units,
+                price=limit_price,
+                after_hours_policy=after_hours_policy,
+                extended_hours=extended_hours
             )
             
             if not result['success']:
@@ -929,6 +953,12 @@ async def execute_trade(
                 return JSONResponse({
                     "success": False,
                     "error": "Alpaca accounts only support dollar-amount orders. Please use dollar amount instead of shares."
+                }, status_code=400)
+
+            if request.order_type and request.order_type.strip().upper() != 'MARKET':
+                return JSONResponse({
+                    "success": False,
+                    "error": "Clera Brokerage only supports market orders at this time."
                 }, status_code=400)
             
             result = _submit_market_order(

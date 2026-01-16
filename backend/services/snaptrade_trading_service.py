@@ -34,6 +34,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Queue-for-open protective limit buffer (1% default, configurable)
+QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT = float(os.getenv('QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT', '0.01'))
+
 
 def is_market_closed_error(error_str: str) -> bool:
     """Check if an error indicates the market is closed."""
@@ -75,6 +78,35 @@ def is_connection_disabled_error(error_str: str) -> bool:
     ]
     error_lower = error_str.lower()
     return any(indicator.lower() in error_lower for indicator in connection_disabled_indicators)
+
+
+def normalize_order_type(order_type: Optional[str]) -> Optional[str]:
+    if not order_type:
+        return None
+    normalized = order_type.strip().lower().replace('-', '').replace('_', '')
+    mapping = {
+        'market': 'Market',
+        'limit': 'Limit',
+        'stop': 'Stop',
+        'stoplimit': 'StopLimit'
+    }
+    return mapping.get(normalized, order_type)
+
+
+def normalize_time_in_force(time_in_force: Optional[str]) -> Optional[str]:
+    if not time_in_force:
+        return None
+    normalized = time_in_force.strip().lower()
+    mapping = {
+        'day': 'Day',
+        'gtc': 'GTC',
+        'fok': 'FOK',
+        'ioc': 'IOC',
+        'gtd': 'GTD',
+        'moo': 'MOO',
+        'ehp': 'EHP'
+    }
+    return mapping.get(normalized, time_in_force)
 
 
 class SnapTradeConnectionError(Exception):
@@ -215,6 +247,32 @@ class SnapTradeTradingService:
             os.getenv('SUPABASE_URL'),
             os.getenv('SUPABASE_SERVICE_ROLE_KEY')
         )
+
+    def _get_latest_price(self, symbol: str) -> Optional[float]:
+        """Fetch latest market price for a symbol (best-effort)."""
+        try:
+            from utils.market_data import get_stock_quote
+            quote_data = get_stock_quote(symbol)
+            if isinstance(quote_data, list) and quote_data:
+                price = quote_data[0].get('price')
+            elif isinstance(quote_data, dict):
+                price = quote_data.get('price')
+            else:
+                price = None
+            if price is not None and float(price) > 0:
+                return float(price)
+            logger.warning(f"Latest price lookup returned empty price for {symbol}")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to fetch latest price for {symbol}: {e}")
+            return None
+
+    def _calculate_protective_limit(self, last_price: float, action: str) -> float:
+        """Calculate protective limit price for queue_for_open orders."""
+        normalized_action = action.upper()
+        buffer_multiplier = 1 + QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT if normalized_action == 'BUY' else 1 - QUEUE_FOR_OPEN_LIMIT_BUFFER_PCT
+        protective_limit = max(last_price * buffer_multiplier, 0.01)
+        return round(protective_limit, 4)
     
     def queue_order(
         self,
@@ -224,10 +282,13 @@ class SnapTradeTradingService:
         action: str,
         order_type: str = 'Market',
         time_in_force: str = 'Day',
+        after_hours_policy: Optional[str] = None,
+        extended_hours: bool = False,
         notional_value: Optional[float] = None,
         units: Optional[float] = None,
         price: Optional[float] = None,
-        stop_price: Optional[float] = None
+        stop_price: Optional[float] = None,
+        last_price_at_creation: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         Queue an order for execution when market opens.
@@ -247,6 +308,7 @@ class SnapTradeTradingService:
             units: Number of shares
             price: Limit price
             stop_price: Stop price
+            last_price_at_creation: Market price when order was queued
             
         Returns:
             {
@@ -267,10 +329,13 @@ class SnapTradeTradingService:
                 'action': action,
                 'order_type': order_type,
                 'time_in_force': time_in_force,
+                'after_hours_policy': after_hours_policy,
+                'extended_hours': extended_hours,
                 'notional_value': notional_value,
                 'units': units,
                 'price': price,
                 'stop_price': stop_price,
+                'last_price_at_creation': last_price_at_creation,
                 'status': 'pending',
                 'created_at': datetime.now(timezone.utc).isoformat(),
                 'updated_at': datetime.now(timezone.utc).isoformat()
@@ -381,7 +446,11 @@ class SnapTradeTradingService:
             
             # Update status to cancelled
             supabase.table('queued_orders')\
-                .update({'status': 'cancelled', 'updated_at': datetime.now(timezone.utc).isoformat()})\
+                .update({
+                    'status': 'cancelled',
+                    'cancellation_reason': 'user_cancelled',
+                    'updated_at': datetime.now(timezone.utc).isoformat()
+                })\
                 .eq('id', order_id)\
                 .execute()
             
@@ -705,7 +774,9 @@ class SnapTradeTradingService:
         notional_value: Optional[float] = None,
         units: Optional[float] = None,
         price: Optional[float] = None,
-        stop: Optional[float] = None
+        stop: Optional[float] = None,
+        after_hours_policy: Optional[str] = None,
+        extended_hours: bool = False
     ) -> Dict[str, Any]:
         """
         Place a trade order via SnapTrade.
@@ -758,6 +829,64 @@ class SnapTradeTradingService:
                     'success': False,
                     'error': 'SnapTrade credentials not found. Please reconnect your brokerage account.'
                 }
+
+            order_type = normalize_order_type(order_type) or 'Market'
+            time_in_force = normalize_time_in_force(time_in_force) or 'Day'
+            after_hours_policy = after_hours_policy.strip().lower() if after_hours_policy else None
+
+            # After-hours handling
+            market_status = self.get_market_status()
+            if not market_status.get('is_open'):
+                if after_hours_policy == 'queue_for_open':
+                    if not symbol or not action:
+                        return {
+                            'success': False,
+                            'error': 'Order information is incomplete. Please try again.'
+                        }
+                    last_price = self._get_latest_price(symbol)
+                    if last_price is None:
+                        return {
+                            'success': False,
+                            'error': 'Unable to fetch latest price to set a protective limit. Please try again shortly.'
+                        }
+                    protective_limit = self._calculate_protective_limit(last_price, action)
+                    return self.queue_order(
+                        user_id=user_id,
+                        account_id=account_id,
+                        symbol=symbol,
+                        action=action,
+                        order_type='Limit',
+                        time_in_force='Day',
+                        after_hours_policy=after_hours_policy,
+                        extended_hours=extended_hours,
+                        notional_value=notional_value,
+                        units=units,
+                        price=protective_limit,
+                        stop_price=stop,
+                        last_price_at_creation=last_price
+                    )
+                if after_hours_policy == 'broker_limit_gtc':
+                    if not symbol or not action:
+                        return {
+                            'success': False,
+                            'error': 'Order information is incomplete. Please try again.'
+                        }
+                    if price is None or price <= 0:
+                        return {
+                            'success': False,
+                            'error': 'Limit price is required for after-hours limit orders.'
+                        }
+
+                    # Use limit order and extended-hours time in force when after market close
+                    order_type = 'Limit'
+                    if market_status.get('status') == 'after_hours':
+                        time_in_force = 'EHP'
+
+            if order_type == 'Limit' and (price is None or price <= 0):
+                return {
+                    'success': False,
+                    'error': 'Limit price is required for limit orders.'
+                }
             
             # Method 1: Place order using trade_id (from check_order_impact)
             if trade_id:
@@ -805,75 +934,92 @@ class SnapTradeTradingService:
                 # Some brokerages (like Webull) don't support notional orders, only unit-based orders
                 order_units = units
                 if notional_value and not units:
-                    # Get current price to convert notional to units
-                    try:
-                        # Use symbol search to get price info
-                        symbol_response = self.client.reference_data.symbol_search_user_account(
-                            user_id=credentials['snaptrade_user_id'],
-                            user_secret=credentials['snaptrade_user_secret'],
-                            account_id=account_id,
-                            substring=symbol
-                        )
-                        
-                        # Find exact symbol match
-                        symbol_data = None
-                        for s in symbol_response.body:
-                            if s.get('symbol') == symbol:
-                                symbol_data = s
-                                break
-                        
-                        if symbol_data and symbol_data.get('id') == universal_symbol_id:
-                            # Get a quote for the symbol to get current price
-                            # First try with a small test order to get the price from impact
-                            test_impact = self.client.trading.get_order_impact(
+                    if order_type == 'Limit' and price:
+                        # Convert notional to units based on limit price
+                        raw_units = float(notional_value) / float(price)
+                        if action == 'SELL':
+                            import math
+                            whole_units = math.floor(raw_units)
+                            if whole_units == 0:
+                                return {
+                                    'success': False,
+                                    'error': f'Minimum sell amount is 1 share at your limit price. Your ${notional_value:.2f} order equals {raw_units:.3f} shares.'
+                                }
+                            order_units = float(whole_units)
+                        else:
+                            # Round down to avoid exceeding notional cap
+                            import math
+                            order_units = math.floor(raw_units * 10000) / 10000
+                    else:
+                        # Get current price to convert notional to units
+                        try:
+                            # Use symbol search to get price info
+                            symbol_response = self.client.reference_data.symbol_search_user_account(
                                 user_id=credentials['snaptrade_user_id'],
                                 user_secret=credentials['snaptrade_user_secret'],
                                 account_id=account_id,
-                                action=action,
-                                universal_symbol_id=universal_symbol_id,
-                                order_type=order_type,
-                                time_in_force=time_in_force,
-                                units=0.001  # Tiny amount just to get price
+                                substring=symbol
                             )
-                            current_price = test_impact.body.get('trade', {}).get('price')
                             
-                            if current_price and current_price > 0:
-                                # Calculate units from notional value
-                                raw_units = float(notional_value) / float(current_price)
+                            # Find exact symbol match
+                            symbol_data = None
+                            for s in symbol_response.body:
+                                if s.get('symbol') == symbol:
+                                    symbol_data = s
+                                    break
+                            
+                            if symbol_data and symbol_data.get('id') == universal_symbol_id:
+                                # Get a quote for the symbol to get current price
+                                # First try with a small test order to get the price from impact
+                                test_impact = self.client.trading.get_order_impact(
+                                    user_id=credentials['snaptrade_user_id'],
+                                    user_secret=credentials['snaptrade_user_secret'],
+                                    account_id=account_id,
+                                    action=action,
+                                    universal_symbol_id=universal_symbol_id,
+                                    order_type=order_type,
+                                    time_in_force=time_in_force,
+                                    units=0.001  # Tiny amount just to get price
+                                )
+                                current_price = test_impact.body.get('trade', {}).get('price')
                                 
-                                # PRODUCTION-GRADE FIX: Handle fractional share limitations
-                                # Many brokerages don't allow selling fractional shares when you hold whole shares
-                                # For SELL orders, we round DOWN to whole shares to avoid this error
-                                if action == 'SELL':
-                                    import math
-                                    whole_units = math.floor(raw_units)
+                                if current_price and current_price > 0:
+                                    # Calculate units from notional value
+                                    raw_units = float(notional_value) / float(current_price)
                                     
-                                    if whole_units == 0:
-                                        # User is trying to sell less than 1 share
-                                        min_sell_value = float(current_price)
-                                        return {
-                                            'success': False,
-                                            'error': f'Minimum sell amount is 1 share (${min_sell_value:.2f}). Your ${notional_value:.2f} order equals {raw_units:.3f} shares. Please sell at least ${min_sell_value:.2f} worth.'
-                                        }
-                                    
-                                    # CRITICAL: SnapTrade API expects float/Decimal, not int
-                                    order_units = float(whole_units)
-                                    logger.info(f"SELL order: Converted notional ${notional_value} to {order_units} whole shares (raw: {raw_units:.4f}) at ${current_price}/share")
+                                    # PRODUCTION-GRADE FIX: Handle fractional share limitations
+                                    # Many brokerages don't allow selling fractional shares when you hold whole shares
+                                    # For SELL orders, we round DOWN to whole shares to avoid this error
+                                    if action == 'SELL':
+                                        import math
+                                        whole_units = math.floor(raw_units)
+                                        
+                                        if whole_units == 0:
+                                            # User is trying to sell less than 1 share
+                                            min_sell_value = float(current_price)
+                                            return {
+                                                'success': False,
+                                                'error': f'Minimum sell amount is 1 share (${min_sell_value:.2f}). Your ${notional_value:.2f} order equals {raw_units:.3f} shares. Please sell at least ${min_sell_value:.2f} worth.'
+                                            }
+                                        
+                                        # CRITICAL: SnapTrade API expects float/Decimal, not int
+                                        order_units = float(whole_units)
+                                        logger.info(f"SELL order: Converted notional ${notional_value} to {order_units} whole shares (raw: {raw_units:.4f}) at ${current_price}/share")
+                                    else:
+                                        # For BUY orders, fractional shares are usually supported
+                                        # PRODUCTION-GRADE FIX: Round UP to ensure we meet minimum order amounts
+                                        # Some brokerages (like Webull) have a strict $5 minimum and rounding down
+                                        # can cause the final amount to be $4.999 which fails
+                                        import math
+                                        # Round up to 4 decimal places to ensure we meet the minimum
+                                        order_units = math.ceil(raw_units * 10000) / 10000
+                                        logger.info(f"BUY order: Converted notional ${notional_value} to {order_units} units (rounded UP) at ${current_price}/share")
                                 else:
-                                    # For BUY orders, fractional shares are usually supported
-                                    # PRODUCTION-GRADE FIX: Round UP to ensure we meet minimum order amounts
-                                    # Some brokerages (like Webull) have a strict $5 minimum and rounding down
-                                    # can cause the final amount to be $4.999 which fails
-                                    import math
-                                    # Round up to 4 decimal places to ensure we meet the minimum
-                                    order_units = math.ceil(raw_units * 10000) / 10000
-                                    logger.info(f"BUY order: Converted notional ${notional_value} to {order_units} units (rounded UP) at ${current_price}/share")
-                            else:
-                                logger.warning(f"Could not get price for {symbol}, using notional_value directly")
-                    except Exception as price_error:
-                        # If we can't get price, the order will likely fail with a clear error
-                        logger.warning(f"Could not convert notional to units: {price_error}")
-                        # Fall through and try with notional_value anyway
+                                    logger.warning(f"Could not get price for {symbol}, using notional_value directly")
+                        except Exception as price_error:
+                            # If we can't get price, the order will likely fail with a clear error
+                            logger.warning(f"Could not convert notional to units: {price_error}")
+                            # Fall through and try with notional_value anyway
                 
                 # STEP 1: Get order impact (validates market hours, symbol, buying power)
                 try:
@@ -930,7 +1076,9 @@ class SnapTradeTradingService:
                             action=action,
                             # Use defaults if None to prevent overriding queue_order's defaults
                             order_type=order_type or 'Market',
-                            time_in_force=time_in_force or 'Day',
+                            time_in_force='Day',
+                            after_hours_policy=after_hours_policy,
+                            extended_hours=extended_hours,
                             notional_value=notional_value,
                             units=units,
                             price=price,
@@ -1024,7 +1172,9 @@ class SnapTradeTradingService:
                     action=action,
                     # Use defaults if None to prevent overriding queue_order's defaults
                     order_type=order_type or 'Market',
-                    time_in_force=time_in_force or 'Day',
+                    time_in_force='Day',
+                    after_hours_policy=after_hours_policy,
+                    extended_hours=extended_hours,
                     notional_value=notional_value,
                     units=units,
                     price=price,
