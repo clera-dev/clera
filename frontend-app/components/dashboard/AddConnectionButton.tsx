@@ -289,9 +289,9 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
           {/* Connect Investment Account Button */}
           <div className="border-t pt-3">
             <SnapTradeConnectButton 
-              connectionType="trade"
               onSuccess={handleAccountConnected}
               className="w-full shadow-none"
+              returnTo="/dashboard"
             >
               <PlusCircle className="mr-2 h-4 w-4" />
               {connectedAccounts.length > 0 

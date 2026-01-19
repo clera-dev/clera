@@ -2,6 +2,7 @@
 
 import os
 import smtplib
+import re
 import logging
 from typing import Dict, Any, Optional
 from email.mime.text import MIMEText
@@ -175,7 +176,8 @@ class EmailService:
             True if email sent successfully, False otherwise
         """
         try:
-            subject = f"Your {symbol} order was cancelled"
+            safe_symbol = re.sub(r'[\r\n]+', '', symbol or '').strip() or 'your'
+            subject = f"Your {safe_symbol} order was cancelled"
             
             html_content = self._generate_order_cancelled_email_html(
                 symbol=symbol,

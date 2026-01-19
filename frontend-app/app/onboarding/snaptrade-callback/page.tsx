@@ -4,12 +4,17 @@ import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { createClient } from '@/utils/supabase/client';
+import { validateAndSanitizeRedirectUrl } from '@/utils/security';
+import { Button } from '@/components/ui/button';
 
 // Disable static generation for this page (uses search params)
 export const dynamic = 'force-dynamic';
 
+type CallbackStatus = 'loading' | 'success' | 'error' | 'cancelled';
+
 function SnapTradeCallbackContent() {
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [status, setStatus] = useState<CallbackStatus>('loading');
+  const [returnToPath, setReturnToPath] = useState('/protected');
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -17,6 +22,12 @@ function SnapTradeCallbackContent() {
     // SnapTrade redirects back after connection attempt
     // URL parameters may include: error (if connection failed)
     const error = searchParams.get('error');
+    const returnToParam = searchParams.get('return_to');
+    const safeReturnTo = returnToParam
+      ? validateAndSanitizeRedirectUrl(decodeURIComponent(returnToParam))
+      : '/protected';
+    setReturnToPath(safeReturnTo);
+    const shouldReturnToDashboard = safeReturnTo === '/dashboard';
 
     console.log('SnapTrade callback - checking for errors:', { error });
 
@@ -24,9 +35,9 @@ function SnapTradeCallbackContent() {
       setStatus('error');
       toast.error(`Connection Failed: ${decodeURIComponent(error)}`);
       
-      // Redirect back to onboarding after 3 seconds
+      // Redirect back after 3 seconds
       setTimeout(() => {
-        router.push('/protected');
+        router.push(safeReturnTo);
       }, 3000);
       return;
     }
@@ -69,6 +80,25 @@ function SnapTradeCallbackContent() {
           const result = await response.json();
           console.log('✅ All connections synced successfully:', result);
           
+          // If user cancelled the SnapTrade flow, there will be no new connections
+          const connectionsSynced = result.connections_synced ?? 0;
+          const accountsSynced = result.accounts_synced ?? 0;
+          if (connectionsSynced === 0 && accountsSynced === 0) {
+            setStatus('cancelled');
+            toast('Connection not completed. You can try again anytime.');
+            setTimeout(() => {
+              window.location.href = safeReturnTo;
+            }, 1500);
+            return;
+          }
+
+          if (shouldReturnToDashboard) {
+            setTimeout(() => {
+              window.location.href = safeReturnTo;
+            }, 1000);
+            return;
+          }
+
           // Check if user has active payment/subscription
           const paymentCheck = await fetch('/api/stripe/check-payment-status', {
             method: 'GET',
@@ -105,7 +135,7 @@ function SnapTradeCallbackContent() {
                 } else {
                   console.error('❌ No checkout URL received');
                   setTimeout(() => {
-                    window.location.href = '/protected';
+                    window.location.href = safeReturnTo;
                   }, 2000);
                 }
               } else if (checkoutResponse.status === 409) {
@@ -116,7 +146,7 @@ function SnapTradeCallbackContent() {
               } else {
                 console.error('❌ Failed to create checkout session');
                 setTimeout(() => {
-                  window.location.href = '/protected';
+                  window.location.href = safeReturnTo;
                 }, 2000);
               }
             }
@@ -136,9 +166,9 @@ function SnapTradeCallbackContent() {
               if (checkoutData.url) {
                 window.location.href = checkoutData.url;
               } else {
-                setTimeout(() => {
-                  window.location.href = '/protected';
-                }, 2000);
+                  setTimeout(() => {
+                    window.location.href = safeReturnTo;
+                  }, 2000);
               }
             } else if (checkoutResponse.status === 409) {
               // User already has active subscription
@@ -147,7 +177,7 @@ function SnapTradeCallbackContent() {
               window.location.href = errorData.redirectTo || '/portfolio';
             } else {
               setTimeout(() => {
-                window.location.href = '/protected';
+                window.location.href = safeReturnTo;
               }, 2000);
             }
           }
@@ -156,14 +186,14 @@ function SnapTradeCallbackContent() {
           console.error('❌ Failed to sync connections:', error);
           // Redirect back to protected page
           setTimeout(() => {
-            router.push('/protected');
+            router.push(safeReturnTo);
           }, 2000);
         }
       } catch (error) {
         console.error('❌ Error completing onboarding:', error);
         // Redirect back to protected page
         setTimeout(() => {
-          router.push('/protected');
+          router.push(safeReturnTo);
         }, 2000);
       }
     };
@@ -255,6 +285,42 @@ function SnapTradeCallbackContent() {
             <p className="text-sm text-gray-500">
               If the problem persists, please contact support.
             </p>
+            <div className="mt-4">
+              <Button onClick={() => router.push(returnToPath)}>
+                Return to app
+              </Button>
+            </div>
+          </>
+        )}
+
+        {status === 'cancelled' && (
+          <>
+            <div className="mb-6">
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100">
+                <svg 
+                  className="h-10 w-10 text-gray-600" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
+                  />
+                </svg>
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Connection Cancelled</h2>
+            <p className="text-gray-600">
+              No brokerage was connected. You can return and try again anytime.
+            </p>
+            <div className="mt-4">
+              <Button onClick={() => router.push(returnToPath)}>
+                Return to app
+              </Button>
+            </div>
           </>
         )}
       </div>

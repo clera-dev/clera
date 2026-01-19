@@ -14,6 +14,7 @@ import {
 import { InterruptConfirmation } from './InterruptConfirmation';
 import { isValidReconnectUrl } from '@/utils/url-validation';
 import toast from 'react-hot-toast';
+import { NoTradeAccountsNotice } from '@/components/invest/NoTradeAccountsNotice';
 
 // Webull requires a minimum of $5 for fractional share orders
 // Must match OrderModal.tsx to prevent broker-level failures
@@ -445,6 +446,13 @@ export function TradeInterruptConfirmation({
                   <AlertCircle className="w-4 h-4" />
                   {accountError}
                 </div>
+              ) : accounts.length === 0 ? (
+                <NoTradeAccountsNotice
+                  className="py-2"
+                  onConnectClick={() => {
+                    window.location.href = '/dashboard';
+                  }}
+                />
               ) : (
                 <Select 
                   value={selectedAccountId} 

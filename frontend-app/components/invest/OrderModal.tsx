@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { getMarketStatus } from "@/utils/market-hours";
 import { safeOpenUrl } from "@/utils/url-validation";
+import { NoTradeAccountsNotice } from "@/components/invest/NoTradeAccountsNotice";
 
 // Webull requires a minimum of $5 for fractional share orders
 const MINIMUM_ORDER_AMOUNT = 5;
@@ -572,11 +573,12 @@ export default function OrderModal({
               {isLoadingAccounts ? (
                 <div className="h-10 bg-muted animate-pulse rounded-md" />
               ) : tradeAccounts.length === 0 ? (
-                <Alert variant="destructive" className="py-2">
-                  <AlertDescription className="text-sm">
-                    No trade-enabled accounts connected. Please connect a brokerage account first.
-                  </AlertDescription>
-                </Alert>
+                <NoTradeAccountsNotice
+                  className="py-2"
+                  onConnectClick={() => {
+                    window.location.href = '/dashboard';
+                  }}
+                />
               ) : (
                 <>
                   <Select 

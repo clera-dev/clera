@@ -329,6 +329,8 @@ export async function middleware(request: NextRequest) {
         
         // CRITICAL: For portfolio-related routes, also check if user has connected accounts
         // Even if onboarding is "complete", they shouldn't access portfolio without accounts
+        // NOTE: /portfolio intentionally excluded to allow "skip for now" onboarding,
+        // with a portfolio-page prompt to connect accounts.
         const portfolioRoutes = ['/invest', '/dashboard', '/api/portfolio'];
         const isPortfolioRoute = portfolioRoutes.some(route => path.startsWith(route));
         

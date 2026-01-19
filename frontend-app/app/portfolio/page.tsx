@@ -140,6 +140,7 @@ export default function PortfolioPage() {
   // Account filtering for X-ray vision into individual accounts
   const [selectedAccountFilter, setSelectedAccountFilter] = useState<'total' | string>('total');
   const [availableAccounts, setAvailableAccounts] = useState<any[]>([]);
+  const [totalConnectedAccounts, setTotalConnectedAccounts] = useState<number | null>(null);
   
   // Ref to track if this is the initial mount (to prevent duplicate API calls)
   const isInitialFilterMount = useRef(true);
@@ -444,6 +445,9 @@ export default function PortfolioPage() {
         if (portfolioModeResult.status === 'fulfilled') {
           const data = portfolioModeResult.value;
           setPortfolioMode(data.portfolio_mode || 'brokerage');
+          if (typeof data.total_connected_accounts === 'number') {
+            setTotalConnectedAccounts(data.total_connected_accounts);
+          }
           
           // Check historical data status for aggregation mode (non-blocking)
           if (data.portfolio_mode === 'aggregation' && user) {
@@ -1010,10 +1014,10 @@ export default function PortfolioPage() {
 
   // Empty portfolio state - no accounts connected
   // CRITICAL: Don't show "Connect Brokerage" if user has accounts but is filtering to empty account
-  const hasConnectedAccounts = availableAccounts && availableAccounts.length > 0;
+  const hasConnectedAccounts = (totalConnectedAccounts ?? 0) > 0;
   const isFilteringAccount = selectedAccountFilter && selectedAccountFilter !== 'total';
   
-  if (!isLoading && positions.length === 0 && portfolioMode !== 'brokerage' && !error && !hasConnectedAccounts) {
+  if (!isLoading && positions.length === 0 && !error && !hasConnectedAccounts && !isFilteringAccount) {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
@@ -1023,9 +1027,9 @@ export default function PortfolioPage() {
             </div>
             
             <div className="space-y-2">
-              <h2 className="text-2xl font-bold tracking-tight">Connect Your First Brokerage</h2>
+              <h2 className="text-2xl font-bold tracking-tight">Connect Your Account</h2>
               <p className="text-muted-foreground text-lg">
-                Link your external investment accounts to view your complete portfolio and get AI-powered insights.
+                Link your brokerage to unlock portfolio insights and place trades.
               </p>
             </div>
             
@@ -1033,7 +1037,7 @@ export default function PortfolioPage() {
               <Link href="/dashboard">
                 <Button size="lg" className="w-full sm:w-auto">
                   <BarChart2 className="mr-2 h-5 w-5" />
-                  Connect Brokerage Account
+                  Connect Your Account
                 </Button>
               </Link>
             </div>
