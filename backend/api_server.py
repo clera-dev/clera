@@ -871,7 +871,16 @@ async def execute_trade(
             # Use explicit `is not None` checks to handle edge case of value=0 correctly
             order_units = request.units if request.units is not None else None
             order_notional = float(request.notional_amount) if request.notional_amount is not None and order_units is None else None
-            order_type = (request.order_type or 'Market').strip()
+            normalized_order_type = None
+            if request.order_type:
+                normalized_value = re.sub(r'[\s_-]+', '', request.order_type.strip().lower())
+                normalized_order_type = {
+                    'market': 'Market',
+                    'limit': 'Limit',
+                    'stop': 'Stop',
+                    'stoplimit': 'StopLimit'
+                }.get(normalized_value, request.order_type.strip())
+            order_type = (normalized_order_type or 'Market').strip()
             time_in_force = (request.time_in_force or 'Day').strip().upper()
             limit_price = request.limit_price
             stop_price = request.stop_price

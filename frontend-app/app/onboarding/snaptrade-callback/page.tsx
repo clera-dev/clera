@@ -23,8 +23,18 @@ function SnapTradeCallbackContent() {
     // URL parameters may include: error (if connection failed)
     const error = searchParams.get('error');
     const returnToParam = searchParams.get('return_to');
-    const safeReturnTo = returnToParam
-      ? validateAndSanitizeRedirectUrl(decodeURIComponent(returnToParam))
+    const safeDecode = (value: string | null) => {
+      if (!value) return null;
+      try {
+        return decodeURIComponent(value);
+      } catch (decodeError) {
+        console.warn('SnapTrade callback - invalid URL encoding for return_to', decodeError);
+        return null;
+      }
+    };
+    const decodedReturnTo = safeDecode(returnToParam);
+    const safeReturnTo = decodedReturnTo
+      ? validateAndSanitizeRedirectUrl(decodedReturnTo)
       : '/protected';
     setReturnToPath(safeReturnTo);
     const shouldReturnToDashboard = safeReturnTo === '/dashboard';
@@ -33,7 +43,8 @@ function SnapTradeCallbackContent() {
 
     if (error) {
       setStatus('error');
-      toast.error(`Connection Failed: ${decodeURIComponent(error)}`);
+      const decodedError = safeDecode(error);
+      toast.error(`Connection Failed: ${decodedError || error}`);
       
       // Redirect back after 3 seconds
       setTimeout(() => {

@@ -858,6 +858,11 @@ class SnapTradeTradingService:
                             'success': False,
                             'error': 'Order information is incomplete. Please try again.'
                         }
+                    if order_type in {'Stop', 'StopLimit'}:
+                        return {
+                            'success': False,
+                            'error': 'Stop orders are not supported with queue-for-open. Please use broker limit or place during market hours.'
+                        }
                     last_price = self._get_latest_price(symbol)
                     if last_price is None:
                         return {
@@ -877,7 +882,7 @@ class SnapTradeTradingService:
                         notional_value=notional_value,
                         units=units,
                         price=protective_limit,
-                        stop_price=stop,
+                        stop_price=None,
                         last_price_at_creation=last_price
                     )
                 if after_hours_policy == 'broker_limit_gtc':
