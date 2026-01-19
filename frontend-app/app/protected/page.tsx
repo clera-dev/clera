@@ -123,8 +123,8 @@ export default function ProtectedPageClient() {
   // Handle navigation when funding status changes
   useEffect(() => {
     if (!loading && hasFunding && (userStatus === 'submitted' || userStatus === 'approved')) {
-      console.log('User has completed onboarding and funding, redirecting to /invest');
-      router.replace('/invest');
+      console.log('User has completed onboarding and funding, redirecting to /portfolio');
+      router.replace('/portfolio');
     }
   }, [hasFunding, userStatus, loading, router]);
 
@@ -132,8 +132,8 @@ export default function ProtectedPageClient() {
   useEffect(() => {
     const hasCompleted = userStatus === 'submitted' || userStatus === 'approved';
     if (!loading && hasCompleted && fundingStep !== 'welcome' && fundingStep !== 'connect-bank') {
-      console.log('Unexpected state: invalid funding step, redirecting to /invest');
-      router.replace('/invest');
+      console.log('Unexpected state: invalid funding step, redirecting to /portfolio');
+      router.replace('/portfolio');
     }
   }, [loading, userStatus, fundingStep, router]);
 
@@ -226,7 +226,7 @@ export default function ProtectedPageClient() {
       
       // CRITICAL: Redirect immediately - don't wait for fetch
       // Users can connect accounts later from the portfolio page
-      router.replace('/invest');
+      router.replace('/portfolio');
     };
     
     return (
@@ -302,7 +302,7 @@ export default function ProtectedPageClient() {
               onBack={() => setFundingStep('welcome')}
               onTransferComplete={() => {
                 setHasFunding(true);
-                router.replace('/invest');
+                router.replace('/portfolio');
               }}
               showFullForm={true}
             />

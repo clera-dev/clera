@@ -251,19 +251,19 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           next = ONBOARDING_STEPS[ONBOARDING_STEPS.indexOf(next) + 1]; // Skip to loading
         }
       } else if (portfolioMode === 'hybrid') {
-        // In hybrid mode: After plaid_connection, save plaid completion and navigate to /invest
+      // In hybrid mode: After connection, save completion and navigate to /portfolio
         if (currentStep === "plaid_connection" && next === "loading") {
-          console.log('[OnboardingFlow] Hybrid mode - saving Plaid completion and navigating to /invest');
-          // Save Plaid completion timestamp
+          console.log('[OnboardingFlow] Hybrid mode - saving connection completion and navigating to /portfolio');
+          // Save connection completion timestamp (aggregation-style completion)
           await saveOnboardingData(
             userId,
             onboardingData,
             'submitted', // Keep status as submitted (already set from brokerage)
             undefined, // No new Alpaca data
-            'plaid' // Set plaid_connection_completed_at timestamp
+            'aggregation' // Sets connection completion timestamp
           );
-          // Navigate directly to /invest (don't show loading screen again)
-          router.push('/invest');
+          // Navigate directly to /portfolio (don't show loading screen again)
+          router.push('/portfolio');
           return;
         }
       }
@@ -335,17 +335,17 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       
       // Skip Alpaca account creation in aggregation mode (Plaid-only onboarding)
       if (portfolioMode === 'aggregation') {
-        console.log('🎯 [Aggregation Mode] Saving onboarding completion with plaid timestamp');
-        // Save onboarding status as completed with Plaid completion timestamp
+        console.log('🎯 [Aggregation Mode] Saving onboarding completion with connection timestamp');
+        // Save onboarding status as completed with connection completion timestamp
         await saveOnboardingData(
           userId,
           onboardingData,
           'submitted', // Mark as completed for aggregation mode
           undefined, // No Alpaca data
-          'plaid' // Set plaid_connection_completed_at timestamp
+          'aggregation' // Set connection completion timestamp
         );
         
-        console.log('✅ [Aggregation Mode] Onboarding saved, navigating to /invest');
+        console.log('✅ [Aggregation Mode] Onboarding saved, navigating to /portfolio');
         setAccountCreated(true);
         setSubmitting(false);
         handleLoadingComplete();
@@ -429,9 +429,9 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       return;
     }
     
-    // In aggregation or brokerage mode, go straight to /invest
-    console.log('[OnboardingFlow] Navigating to /invest');
-    router.push('/invest');
+    // In aggregation or brokerage mode, go straight to /portfolio
+    console.log('[OnboardingFlow] Navigating to /portfolio');
+    router.push('/portfolio');
   };
 
   const handleLoadingError = (error: string) => {

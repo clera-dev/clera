@@ -3,6 +3,21 @@ import { createClient as createServerSupabase } from '@/utils/supabase/server';
 
 export async function POST(request: Request) {
   try {
+    if (!process.env.BACKEND_API_URL) {
+      console.error('CRITICAL: BACKEND_API_URL environment variable is not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    if (!process.env.BACKEND_API_KEY) {
+      console.error('CRITICAL: BACKEND_API_KEY environment variable is not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+
     const supabase = await createServerSupabase();
     
     // Get authenticated user
@@ -14,6 +29,9 @@ export async function POST(request: Request) {
     
     // Get the session for JWT token
     const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     
     // Get request body
     const body = await request.json();
@@ -29,15 +47,15 @@ export async function POST(request: Request) {
     const finalRedirectUrl = redirectUrl || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/onboarding/snaptrade-callback`;
     
     // Call backend to get SnapTrade connection URL
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
     const response = await fetch(`${backendUrl}/api/snaptrade/connection-url`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         // PRODUCTION-GRADE: Pass JWT token for authentication
-        'Authorization': `Bearer ${session?.access_token || ''}`,
+        'Authorization': `Bearer ${session.access_token}`,
         // Also pass API key as fallback
-        'X-API-Key': process.env.BACKEND_API_KEY || '',
+        'X-API-Key': process.env.BACKEND_API_KEY,
       },
       body: JSON.stringify({
         user_id: user.id,

@@ -25,11 +25,20 @@ export function GoalsSelectorSection({
   error, 
   onClearError 
 }: GoalsSelectorSectionProps) {
+  const maxSelections = 5;
+
   const handleGoalToggle = (goal: InvestmentGoal) => {
     const isSelected = selectedGoals.includes(goal);
-    const newGoals = isSelected
-      ? selectedGoals.filter(g => g !== goal)
-      : [...selectedGoals, goal];
+    let newGoals: InvestmentGoal[];
+
+    if (isSelected) {
+      newGoals = selectedGoals.filter(g => g !== goal);
+    } else {
+      if (selectedGoals.length >= maxSelections) {
+        return;
+      }
+      newGoals = [...selectedGoals, goal];
+    }
     
     // Clear error when user makes a selection
     if (onClearError && newGoals.length > 0) {
@@ -39,6 +48,8 @@ export function GoalsSelectorSection({
     onChange(newGoals);
   };
 
+  const canSelectMore = selectedGoals.length < maxSelections;
+
   return (
     <div className="space-y-6 px-2 sm:px-0">
       <div className="text-center px-4 sm:px-0">
@@ -46,7 +57,7 @@ export function GoalsSelectorSection({
           What investing goals can I help you achieve?
         </h2>
         <p className="text-white text-base">
-          Select all that apply - you can choose multiple goals
+          Select up to {maxSelections} ({selectedGoals.length}/{maxSelections} selected)
         </p>
       </div>
 
@@ -54,16 +65,19 @@ export function GoalsSelectorSection({
         {Object.entries(INVESTMENT_GOAL_DESCRIPTIONS).map(([key, description]) => {
           const goal = key as InvestmentGoal;
           const isSelected = selectedGoals.includes(goal);
+          const canClick = isSelected || canSelectMore;
           
           return (
             <Card
               key={goal}
               className={cn(
-                "cursor-pointer transition-all duration-200 hover:shadow-md bg-black border-gray-600",
+                "transition-all duration-200 bg-black border-gray-600",
+                canClick && "cursor-pointer hover:shadow-md",
+                !canClick && "opacity-50 cursor-not-allowed",
                 isSelected && "ring-2 ring-primary border-primary bg-black",
                 error && !isSelected && "border-red-400"
               )}
-              onClick={() => handleGoalToggle(goal)}
+              onClick={canClick ? () => handleGoalToggle(goal) : undefined}
             >
               <CardContent className="p-4 text-center relative flex items-center justify-center min-h-[88px]">
                 {isSelected && (

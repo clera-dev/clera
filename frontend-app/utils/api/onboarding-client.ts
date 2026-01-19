@@ -13,7 +13,7 @@ export async function saveOnboardingData(
     accountNumber?: string;
     accountStatus?: string;
   },
-  completionType?: 'plaid' | 'brokerage' | null
+  completionType?: 'plaid' | 'aggregation' | 'brokerage' | null
 ) {
   // Log data for debugging
   console.log('Saving onboarding data:', { alpacaData, completionType });

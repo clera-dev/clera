@@ -117,7 +117,8 @@ def normalize_time_in_force(time_in_force: Optional[str]) -> Optional[str]:
         'ioc': 'IOC',
         'gtd': 'GTD',
         'moo': 'MOO',
-        'ehp': 'EHP'
+        # SnapTrade does not support EHP; fall back to Day to avoid invalid TIF
+        'ehp': 'Day'
     }
     return mapping.get(normalized, time_in_force)
 
@@ -846,6 +847,7 @@ class SnapTradeTradingService:
             order_type = normalize_order_type(order_type) or 'Market'
             time_in_force = normalize_time_in_force(time_in_force) or 'Day'
             after_hours_policy = after_hours_policy.strip().lower() if after_hours_policy else None
+            trading_session = None
 
             # After-hours handling
             market_status = self.get_market_status()
@@ -890,12 +892,11 @@ class SnapTradeTradingService:
                             'error': 'Limit price is required for after-hours limit orders.'
                         }
 
-                    # Use limit order and extended-hours time in force when after market close
+                    # Use limit order and extended-hours trading session when after market close
                     order_type = 'Limit'
-                    if market_status.get('status') == 'after_hours':
-                        time_in_force = 'EHP'
-                    else:
-                        time_in_force = 'GTC'
+                    time_in_force = 'GTC'
+                    if market_status.get('status') in {'after_hours', 'pre_market'}:
+                        trading_session = 'EXTENDED'
 
             if order_type == 'Limit' and (price is None or price <= 0):
                 return {
@@ -1062,6 +1063,8 @@ class SnapTradeTradingService:
                         order_params['price'] = f"{float(price):.2f}"
                     if stop is not None:
                         order_params['stop'] = f"{float(stop):.2f}"
+                    if trading_session:
+                        order_params['trading_session'] = trading_session
                     
                     impact_response = self.client.trading.get_order_impact(**order_params)
                     
