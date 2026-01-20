@@ -101,7 +101,8 @@ def test_execute_queued_order_uses_stored_parameters(mock_get_supabase):
 
 
 @patch('services.queued_order_executor.get_supabase_client')
-def test_execute_queued_order_cancels_if_older_than_24_hours(mock_get_supabase):
+def test_execute_queued_order_cancels_if_older_than_5_days(mock_get_supabase):
+    """Orders older than 5 days (120 hours) should be cancelled to handle weekends/holidays."""
     supabase = _build_supabase_mock()
     mock_get_supabase.return_value = supabase
 
@@ -109,7 +110,8 @@ def test_execute_queued_order_cancels_if_older_than_24_hours(mock_get_supabase):
     executor = QueuedOrderExecutor(trading_service=trading_service)
     executor._notify_order_cancellation = Mock()
 
-    old_timestamp = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    # 121 hours = just over 5 days
+    old_timestamp = (datetime.now(timezone.utc) - timedelta(hours=121)).isoformat()
     order = {
         'id': 'order-123',
         'user_id': 'user-456',
@@ -133,10 +135,10 @@ def test_execute_queued_order_cancels_if_older_than_24_hours(mock_get_supabase):
 
     assert result['success'] is False
     assert result['stale'] is True
-    assert result['reason'] == 'expired_24h'
+    assert result['reason'] == 'expired_stale'
     trading_service.place_order.assert_not_called()
     assert any(
-        call.args[0].get('cancellation_reason') == 'expired_24h'
+        call.args[0].get('cancellation_reason') == 'expired_stale'
         for call in supabase.table.return_value.update.call_args_list
     )
 

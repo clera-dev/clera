@@ -589,7 +589,6 @@ def _submit_snaptrade_market_order(
     limit_price: Optional[float] = None
 ) -> str:
     """Submit order via SnapTrade using centralized trading service."""
-    order_units: Optional[float] = None
     try:
         from utils.supabase.db_client import get_supabase_client
         from services.snaptrade_trading_service import get_snaptrade_trading_service
@@ -691,8 +690,7 @@ def _submit_snaptrade_market_order(
                     action=action,
                     order_type='Market',
                     time_in_force='Day',
-                    notional_value=notional_amount if order_units is None else None,
-                    units=order_units
+                    notional_value=notional_amount
                 )
                 if queue_result.get('success'):
                     return f"⏰ Market is currently closed. The user's {action} order for {ticker} has been queued and will automatically execute when the market opens (9:30 AM ET Monday-Friday). They can view or cancel this order on the Portfolio page."

@@ -34,7 +34,9 @@ CHECK_INTERVAL_MINUTES = int(os.getenv('QUEUED_ORDER_CHECK_INTERVAL_MINUTES', '5
 MAX_RETRY_ATTEMPTS = 3
 # Orders stuck in 'executing' for longer than this will be reset to 'pending'
 STUCK_ORDER_TIMEOUT_MINUTES = 5
-STALE_ORDER_MAX_AGE_HOURS = 24
+# 120 hours (5 calendar days) to handle weekends and holidays.
+# Price deviation check still protects against stale prices.
+STALE_ORDER_MAX_AGE_HOURS = 120
 STALE_PRICE_DEVIATION_PCT = 0.05
 
 
@@ -510,8 +512,8 @@ class QueuedOrderExecutor:
         if created_at and now - created_at > timedelta(hours=STALE_ORDER_MAX_AGE_HOURS):
             return self._cancel_stale_order(
                 order=order,
-                reason_code='expired_24h',
-                reason_message='Order expired because it was queued more than 24 hours ago.'
+                reason_code='expired_stale',
+                reason_message='Order expired because it was queued more than 5 days ago.'
             )
 
         last_price_at_creation = order.get('last_price_at_creation')

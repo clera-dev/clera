@@ -251,9 +251,9 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           next = ONBOARDING_STEPS[ONBOARDING_STEPS.indexOf(next) + 1]; // Skip to loading
         }
       } else if (portfolioMode === 'hybrid') {
-      // In hybrid mode: After connection, save completion and navigate to /portfolio
+      // In hybrid mode: After connection, save completion and check payment before /portfolio
         if (currentStep === "plaid_connection" && next === "loading") {
-          console.log('[OnboardingFlow] Hybrid mode - saving connection completion and navigating to /portfolio');
+          console.log('[OnboardingFlow] Hybrid mode - saving connection completion and checking payment');
           // Save connection completion timestamp (aggregation-style completion)
           await saveOnboardingData(
             userId,
@@ -262,8 +262,8 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
             undefined, // No new Alpaca data
             'aggregation' // Sets connection completion timestamp
           );
-          // Navigate directly to /portfolio (don't show loading screen again)
-          router.push('/portfolio');
+          // Check payment before navigating (consistent with other modes)
+          await redirectToCheckoutOrPortfolio('Hybrid mode connection complete');
           return;
         }
       }

@@ -179,7 +179,7 @@ const getCancellationInfo = (item: OrderData): { label: string; detail?: string 
     const normalized = reason.toLowerCase();
     let label = 'Cancelled';
 
-    if (normalized === 'expired_24h') {
+    if (normalized === 'expired_24h' || normalized === 'expired_stale') {
         label = 'Cancelled: order expired';
     } else if (normalized === 'price_deviation_exceeded') {
         label = 'Cancelled: price moved';
