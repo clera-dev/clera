@@ -18,11 +18,11 @@ cd backend && python -m venv venv && source venv/bin/activate && pip install -r 
 
 In T2 run: 
 ```bash
-cd backend && source venv/bin/activate && source activate.sh && python api_server.py
+cd backend && source venv/bin/activate && source activate.sh && uvicorn api_server:app --reload
 ```
 or 
 ```bash
-cd backend && source venv/bin/activate && source activate.sh && uvicorn api_server:app --reload
+cd backend && source venv/bin/activate && source activate.sh && python api_server.py
 ```
 
 In T3 run: 
