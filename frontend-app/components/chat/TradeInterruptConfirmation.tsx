@@ -261,6 +261,7 @@ export function TradeInterruptConfirmation({
   // CRITICAL: Compare account_id directly, not institution_name, to detect
   // switching between accounts at the same institution (e.g., "Webull - Margin" vs "Webull - IRA")
   const isAfterHours = !!marketStatus && !marketStatus.is_open;
+  const isMarketStatusUnknown = !loadingMarketStatus && !marketStatus;
   const isModified = initialDetails && (
     parseFloat(editedAmount) !== initialDetails.amount ||
     editedTicker !== initialDetails.ticker ||
@@ -273,6 +274,10 @@ export function TradeInterruptConfirmation({
     if (isLoading) return;
     if (loadingMarketStatus) {
       toast.error('Market status is still loading. Please try again in a moment.');
+      return;
+    }
+    if (!marketStatus) {
+      toast.error('Unable to verify market status. Please try again in a moment.');
       return;
     }
 
@@ -313,7 +318,7 @@ export function TradeInterruptConfirmation({
       // Simple confirmation
       onConfirm('yes');
     }
-  }, [isLoading, loadingMarketStatus, isAfterHours, afterHoursPolicy, limitPrice, isModified, editedAmount, editedTicker, selectedAccountId, accounts, initialDetails, onConfirm]);
+  }, [isLoading, loadingMarketStatus, marketStatus, isAfterHours, afterHoursPolicy, limitPrice, isModified, editedAmount, editedTicker, selectedAccountId, accounts, initialDetails, onConfirm]);
 
   const handleCancel = useCallback(() => {
     if (isLoading) return;
@@ -346,7 +351,7 @@ export function TradeInterruptConfirmation({
   const parsedLimit = parseFloat(limitPrice);
   const isValidLimit = !isAfterHours || !afterHoursPolicy || (Number.isFinite(parsedLimit) && parsedLimit > 0);
   const isValidPolicy = !isAfterHours || !!afterHoursPolicy;
-  const isSubmitDisabled = isLoading || loadingMarketStatus || !selectedAccountId || !isValidTicker || !isValidAmount || !isValidPolicy || !isValidLimit;
+  const isSubmitDisabled = isLoading || loadingMarketStatus || isMarketStatusUnknown || !selectedAccountId || !isValidTicker || !isValidAmount || !isValidPolicy || !isValidLimit;
 
   return (
     <AnimatePresence>

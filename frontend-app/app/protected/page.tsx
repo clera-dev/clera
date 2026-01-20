@@ -209,16 +209,19 @@ export default function ProtectedPageClient() {
     // CRITICAL: Do NOT redirect to /portfolio directly - user needs to pay first!
     // This mirrors the logic in snaptrade-callback/page.tsx for consistency
     const handleConnectionComplete = async () => {
-      // Fire-and-forget: Check connection status in background for analytics
+      // Fire-and-forget: Log connection status for analytics only
+      // IMPORTANT: Do NOT set hasFunding here - it would trigger the redirect useEffect
+      // before payment verification completes, creating a race condition
       fetch('/api/portfolio/connection-status')
         .then(response => response.ok ? response.json() : null)
         .then(modeData => {
           if (modeData) {
             const snaptradeAccounts = modeData.snaptrade_accounts || [];
             const plaidAccounts = modeData.plaid_accounts || [];
-            if (snaptradeAccounts.length > 0 || plaidAccounts.length > 0) {
-              setHasFunding(true);
-            }
+            console.log('[Skip flow] Connection status:', { 
+              snaptradeAccounts: snaptradeAccounts.length, 
+              plaidAccounts: plaidAccounts.length 
+            });
           }
         })
         .catch(error => console.error('Error checking connection status:', error));
