@@ -556,7 +556,7 @@ export function TradeInterruptConfirmation({
                         {afterHoursPolicy === 'broker_limit_gtc'
                           ? 'Limit order will be submitted to your broker for after-hours execution.'
                           : afterHoursPolicy === 'queue_for_open'
-                            ? `Order will be queued with a protective limit of $${limitPrice || '--'} (${DEFAULT_LIMIT_BUFFER_PCT * 100}% buffer). If the price moves significantly overnight or the order is older than 24 hours, we will cancel and notify you.`
+                            ? `Order will be queued with a protective limit of $${limitPrice || '--'} (${DEFAULT_LIMIT_BUFFER_PCT * 100}% buffer). If the price moves significantly or the order is older than 5 days, we will cancel and notify you.`
                             : 'Select how to handle this after-hours order.'}
                         {marketStatus.next_open && (
                           <span className="ml-1">
