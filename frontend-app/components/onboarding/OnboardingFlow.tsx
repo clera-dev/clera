@@ -418,7 +418,7 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     }
   };
 
-  const handleLoadingComplete = () => {
+  const handleLoadingComplete = async () => {
     // After onboarding completion, determine next step based on mode
     console.log('[OnboardingFlow] handleLoadingComplete called, portfolioMode:', portfolioMode);
     
@@ -429,9 +429,71 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       return;
     }
     
-    // In aggregation or brokerage mode, go straight to /portfolio
-    console.log('[OnboardingFlow] Navigating to /portfolio');
-    router.push('/portfolio');
+    // CRITICAL: Check payment status before navigating to portfolio
+    // This prevents the confusing bounce: onboarding → portfolio → protected → stripe
+    // Instead, users go: onboarding → stripe → portfolio (clean flow)
+    try {
+      const paymentCheck = await fetch('/api/stripe/check-payment-status');
+      if (paymentCheck.ok) {
+        const paymentData = await paymentCheck.json();
+        
+        if (paymentData.hasActivePayment) {
+          // User has already paid - go directly to portfolio
+          console.log('[OnboardingFlow] User has active payment, redirecting to portfolio');
+          router.push('/portfolio');
+        } else {
+          // User needs to pay - redirect to Stripe checkout
+          console.log('[OnboardingFlow] User needs payment, creating checkout session');
+          const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          if (checkoutResponse.ok) {
+            const checkoutData = await checkoutResponse.json();
+            if (checkoutData.url) {
+              window.location.href = checkoutData.url;
+            } else {
+              console.error('[OnboardingFlow] No checkout URL received, falling back to portfolio');
+              router.push('/portfolio');
+            }
+          } else if (checkoutResponse.status === 409) {
+            // User already has active subscription (race condition)
+            const errorData = await checkoutResponse.json();
+            console.log('[OnboardingFlow] User already has subscription, redirecting to portfolio');
+            router.push(errorData.redirectTo || '/portfolio');
+          } else {
+            console.error('[OnboardingFlow] Failed to create checkout session, falling back to portfolio');
+            router.push('/portfolio');
+          }
+        }
+      } else {
+        // Payment check failed - try to create checkout as failsafe
+        console.log('[OnboardingFlow] Payment check failed, creating checkout session');
+        const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (checkoutResponse.ok) {
+          const checkoutData = await checkoutResponse.json();
+          if (checkoutData.url) {
+            window.location.href = checkoutData.url;
+          } else {
+            router.push('/portfolio');
+          }
+        } else if (checkoutResponse.status === 409) {
+          const errorData = await checkoutResponse.json();
+          router.push(errorData.redirectTo || '/portfolio');
+        } else {
+          router.push('/portfolio');
+        }
+      }
+    } catch (error) {
+      console.error('[OnboardingFlow] Error checking payment status:', error);
+      // Fallback to portfolio (it will redirect to protected if needed)
+      router.push('/portfolio');
+    }
   };
 
   const handleLoadingError = (error: string) => {

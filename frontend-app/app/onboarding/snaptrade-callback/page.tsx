@@ -41,6 +41,13 @@ function SnapTradeCallbackContent() {
 
     console.log('SnapTrade callback - checking for errors:', { error });
 
+    // Check for explicit error or cancellation from SnapTrade
+    // SnapTrade may pass status=CANCELLED, status=CLOSED, or error param
+    const statusParam = searchParams.get('status');
+    const isCancelled = statusParam?.toUpperCase() === 'CANCELLED' || 
+                        statusParam?.toUpperCase() === 'CLOSED' ||
+                        statusParam?.toUpperCase() === 'EXIT';
+    
     if (error) {
       setStatus('error');
       const decodedError = safeDecode(error);
@@ -52,12 +59,21 @@ function SnapTradeCallbackContent() {
       }, 3000);
       return;
     }
+    
+    // If user explicitly cancelled, redirect back immediately
+    if (isCancelled) {
+      setStatus('cancelled');
+      toast('Connection cancelled. You can try again anytime.');
+      setTimeout(() => {
+        router.push(safeReturnTo);
+      }, 1500);
+      return;
+    }
 
     // CRITICAL: SnapTrade does NOT return authorizationId in the URL
     // We need to fetch the user's most recent connection from the backend
     // The backend will query SnapTrade API for all user connections
-    setStatus('success');
-    toast.success('Your brokerage account has been connected successfully!');
+    // Keep status as 'loading' until we verify the connection was actually made
     
     const completeOnboarding = async () => {
       try {
@@ -69,6 +85,8 @@ function SnapTradeCallbackContent() {
         
         if (!session) {
           console.error('❌ No active session found');
+          setStatus('error');
+          toast.error('Session expired. Please log in again.');
           setTimeout(() => {
             window.location.href = '/login';
           }, 2000);
@@ -91,7 +109,8 @@ function SnapTradeCallbackContent() {
           const result = await response.json();
           console.log('✅ All connections synced successfully:', result);
           
-          // If user cancelled the SnapTrade flow, there will be no new connections
+          // If user cancelled the SnapTrade flow (closed without connecting), 
+          // there will be no new connections synced
           const connectionsSynced = result.connections_synced ?? 0;
           const accountsSynced = result.accounts_synced ?? 0;
           if (connectionsSynced === 0 && accountsSynced === 0) {
@@ -102,6 +121,10 @@ function SnapTradeCallbackContent() {
             }, 1500);
             return;
           }
+          
+          // NOW we know connections were actually synced - show success
+          setStatus('success');
+          toast.success('Your brokerage account has been connected successfully!');
 
           if (shouldReturnToDashboard) {
             setTimeout(() => {
@@ -193,16 +216,25 @@ function SnapTradeCallbackContent() {
             }
           }
         } else {
-          const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-          console.error('❌ Failed to sync connections:', error);
-          // Redirect back to protected page
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('❌ Failed to sync connections:', errorData);
+          
+          // If the sync failed because there were no connections to sync, treat as cancelled
+          if (response.status === 404 || errorData.no_connections) {
+            setStatus('cancelled');
+            toast('Connection not completed. You can try again anytime.');
+          } else {
+            setStatus('error');
+            toast.error('Failed to sync your brokerage connection. Please try again.');
+          }
           setTimeout(() => {
             router.push(safeReturnTo);
           }, 2000);
         }
       } catch (error) {
         console.error('❌ Error completing onboarding:', error);
-        // Redirect back to protected page
+        setStatus('error');
+        toast.error('Something went wrong. Please try again.');
         setTimeout(() => {
           router.push(safeReturnTo);
         }, 2000);
@@ -213,13 +245,13 @@ function SnapTradeCallbackContent() {
   }, [searchParams, router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
+    <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a]">
       <div className="max-w-md w-full text-center p-8">
         {status === 'loading' && (
           <>
             <div className="mb-6">
               <svg 
-                className="animate-spin h-16 w-16 mx-auto text-blue-600" 
+                className="animate-spin h-16 w-16 mx-auto text-emerald-500" 
                 xmlns="http://www.w3.org/2000/svg" 
                 fill="none" 
                 viewBox="0 0 24 24"
@@ -239,17 +271,17 @@ function SnapTradeCallbackContent() {
                 />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Processing Connection</h2>
-            <p className="text-gray-600">Please wait while we connect your brokerage account...</p>
+            <h2 className="text-2xl font-bold text-white mb-2">Verifying Connection</h2>
+            <p className="text-gray-400">Please wait while we verify your brokerage connection...</p>
           </>
         )}
         
         {status === 'success' && (
           <>
             <div className="mb-6">
-              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100">
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-emerald-500/20">
                 <svg 
-                  className="h-10 w-10 text-green-600" 
+                  className="h-10 w-10 text-emerald-500" 
                   fill="none" 
                   stroke="currentColor" 
                   viewBox="0 0 24 24"
@@ -263,8 +295,8 @@ function SnapTradeCallbackContent() {
                 </svg>
               </div>
             </div>
-            <h2 className="text-2xl font-bold text-green-600 mb-2">Connection Successful!</h2>
-            <p className="text-gray-600">
+            <h2 className="text-2xl font-bold text-emerald-500 mb-2">Connection Successful!</h2>
+            <p className="text-gray-400">
               Your brokerage account has been connected. Setting up your subscription...
             </p>
           </>
@@ -273,9 +305,9 @@ function SnapTradeCallbackContent() {
         {status === 'error' && (
           <>
             <div className="mb-6">
-              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100">
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-500/20">
                 <svg 
-                  className="h-10 w-10 text-red-600" 
+                  className="h-10 w-10 text-red-500" 
                   fill="none" 
                   stroke="currentColor" 
                   viewBox="0 0 24 24"
@@ -289,15 +321,18 @@ function SnapTradeCallbackContent() {
                 </svg>
               </div>
             </div>
-            <h2 className="text-2xl font-bold text-red-600 mb-2">Connection Failed</h2>
-            <p className="text-gray-600 mb-4">
-              We couldn't connect your brokerage account. You'll be redirected back to try again.
+            <h2 className="text-2xl font-bold text-red-500 mb-2">Connection Failed</h2>
+            <p className="text-gray-400 mb-4">
+              We couldn&apos;t connect your brokerage account. You&apos;ll be redirected back to try again.
             </p>
             <p className="text-sm text-gray-500">
               If the problem persists, please contact support.
             </p>
             <div className="mt-4">
-              <Button onClick={() => router.push(returnToPath)}>
+              <Button 
+                onClick={() => router.push(returnToPath)}
+                className="bg-white text-black hover:bg-gray-200"
+              >
                 Return to app
               </Button>
             </div>
@@ -307,9 +342,9 @@ function SnapTradeCallbackContent() {
         {status === 'cancelled' && (
           <>
             <div className="mb-6">
-              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100">
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-700/50">
                 <svg 
-                  className="h-10 w-10 text-gray-600" 
+                  className="h-10 w-10 text-gray-400" 
                   fill="none" 
                   stroke="currentColor" 
                   viewBox="0 0 24 24"
@@ -323,12 +358,15 @@ function SnapTradeCallbackContent() {
                 </svg>
               </div>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Connection Cancelled</h2>
-            <p className="text-gray-600">
+            <h2 className="text-2xl font-bold text-white mb-2">Connection Cancelled</h2>
+            <p className="text-gray-400">
               No brokerage was connected. You can return and try again anytime.
             </p>
             <div className="mt-4">
-              <Button onClick={() => router.push(returnToPath)}>
+              <Button 
+                onClick={() => router.push(returnToPath)}
+                className="bg-white text-black hover:bg-gray-200"
+              >
                 Return to app
               </Button>
             </div>
