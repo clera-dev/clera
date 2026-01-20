@@ -16,19 +16,22 @@ export async function POST(request: NextRequest) {
     const priority = body.priority || 'normal';
 
     // Proxy to backend with authentication
-    const backendUrl = process.env.BACKEND_API_URL || process.env.BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL || process.env.BACKEND_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
+    if (!backendUrl || !backendApiKey) {
+      console.error('Backend API configuration missing for reconstruction request.');
+      return NextResponse.json(
+        { error: 'Backend service is not configured' },
+        { status: 500 }
+      );
+    }
     // CRITICAL FIX: Properly encode URL parameters to prevent injection and handle special characters
     const url = `${backendUrl}/api/portfolio/reconstruction/request?user_id=${encodeURIComponent(user.id)}&priority=${encodeURIComponent(priority)}`;
     
     const headers: HeadersInit = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'X-API-Key': backendApiKey,
     };
-    
-    // Add API key for backend authentication
-    if (backendApiKey) {
-      headers['X-API-Key'] = backendApiKey;
-    }
     
     const response = await fetch(url, {
       method: 'POST',

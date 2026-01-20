@@ -55,13 +55,13 @@ export async function DELETE(
     }
     
     // Call the backend endpoint
-    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
     const apiKey = process.env.BACKEND_API_KEY;
     
-    if (!apiKey) {
-      console.error('[Disconnect Account] ❌ BACKEND_API_KEY not configured!');
+    if (!backendUrl || !apiKey) {
+      console.error('[Disconnect Account] ❌ Backend API configuration missing!');
       return NextResponse.json(
-        { error: 'Server configuration error' },
+        { error: 'Backend service is not configured' },
         { status: 500 }
       );
     }

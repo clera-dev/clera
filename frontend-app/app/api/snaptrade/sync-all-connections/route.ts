@@ -25,7 +25,14 @@ export async function POST(request: NextRequest) {
     }
     
     // Call the BACKEND endpoint to handle the connection sync
-    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
+    if (!backendUrl) {
+      console.error('[Sync All Connections] ❌ BACKEND_API_URL not configured!');
+      return NextResponse.json(
+        { error: 'Backend service is not configured' },
+        { status: 500 }
+      );
+    }
     
     console.log(`[Sync All Connections] 📤 Calling backend: ${backendUrl}/api/snaptrade/sync-all`);
     
