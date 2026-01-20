@@ -914,7 +914,7 @@ class SnapTradeTradingService:
                     # Use limit order and extended-hours trading session when after market close
                     order_type = 'Limit'
                     time_in_force = 'GTC'
-                    if market_status.get('status') in {'after_hours', 'pre_market'}:
+                    if extended_hours and market_status.get('status') in {'after_hours', 'pre_market'}:
                         trading_session = 'EXTENDED'
 
             if order_type == 'Limit' and (price is None or price <= 0):

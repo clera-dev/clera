@@ -30,7 +30,7 @@ export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTrad
       // based on each brokerage's actual capabilities.
       // Include return_to in the redirect URL so callback knows where to send cancelled users
       const callbackUrl = new URL('/onboarding/snaptrade-callback', window.location.origin);
-      callbackUrl.searchParams.set('return_to', encodeURIComponent('/protected'));
+      callbackUrl.searchParams.set('return_to', '/protected');
       
       const response = await fetch('/api/snaptrade/create-connection', {
         method: 'POST',

@@ -418,6 +418,35 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     }
   };
 
+  const redirectToCheckoutOrPortfolio = async (context: string) => {
+    console.log(`[OnboardingFlow] ${context} - creating checkout session`);
+    const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (checkoutResponse.ok) {
+      const checkoutData = await checkoutResponse.json();
+      if (checkoutData.url) {
+        window.location.href = checkoutData.url;
+      } else {
+        console.error('[OnboardingFlow] No checkout URL received, falling back to portfolio');
+        router.push('/portfolio');
+      }
+      return;
+    }
+
+    if (checkoutResponse.status === 409) {
+      const errorData = await checkoutResponse.json();
+      console.log('[OnboardingFlow] User already has subscription, redirecting to portfolio');
+      router.push(errorData.redirectTo || '/portfolio');
+      return;
+    }
+
+    console.error('[OnboardingFlow] Failed to create checkout session, falling back to portfolio');
+    router.push('/portfolio');
+  };
+
   const handleLoadingComplete = async () => {
     // After onboarding completion, determine next step based on mode
     console.log('[OnboardingFlow] handleLoadingComplete called, portfolioMode:', portfolioMode);
@@ -443,51 +472,11 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           router.push('/portfolio');
         } else {
           // User needs to pay - redirect to Stripe checkout
-          console.log('[OnboardingFlow] User needs payment, creating checkout session');
-          const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-          });
-
-          if (checkoutResponse.ok) {
-            const checkoutData = await checkoutResponse.json();
-            if (checkoutData.url) {
-              window.location.href = checkoutData.url;
-            } else {
-              console.error('[OnboardingFlow] No checkout URL received, falling back to portfolio');
-              router.push('/portfolio');
-            }
-          } else if (checkoutResponse.status === 409) {
-            // User already has active subscription (race condition)
-            const errorData = await checkoutResponse.json();
-            console.log('[OnboardingFlow] User already has subscription, redirecting to portfolio');
-            router.push(errorData.redirectTo || '/portfolio');
-          } else {
-            console.error('[OnboardingFlow] Failed to create checkout session, falling back to portfolio');
-            router.push('/portfolio');
-          }
+          await redirectToCheckoutOrPortfolio('User needs payment');
         }
       } else {
         // Payment check failed - try to create checkout as failsafe
-        console.log('[OnboardingFlow] Payment check failed, creating checkout session');
-        const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-
-        if (checkoutResponse.ok) {
-          const checkoutData = await checkoutResponse.json();
-          if (checkoutData.url) {
-            window.location.href = checkoutData.url;
-          } else {
-            router.push('/portfolio');
-          }
-        } else if (checkoutResponse.status === 409) {
-          const errorData = await checkoutResponse.json();
-          router.push(errorData.redirectTo || '/portfolio');
-        } else {
-          router.push('/portfolio');
-        }
+        await redirectToCheckoutOrPortfolio('Payment check failed');
       }
     } catch (error) {
       console.error('[OnboardingFlow] Error checking payment status:', error);
