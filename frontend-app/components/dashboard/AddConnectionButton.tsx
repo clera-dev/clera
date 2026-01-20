@@ -291,6 +291,7 @@ export default function AddConnectionButton({ userName = 'User' }: AddConnection
             <SnapTradeConnectButton 
               onSuccess={handleAccountConnected}
               className="w-full shadow-none"
+              connectionType="trade"
               returnTo="/dashboard"
             >
               <PlusCircle className="mr-2 h-4 w-4" />

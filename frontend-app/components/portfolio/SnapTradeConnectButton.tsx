@@ -40,7 +40,6 @@ export function SnapTradeConnectButton({
         ? `${window.location.origin}/onboarding/snaptrade-callback?return_to=${encodeURIComponent(safeReturnTo)}`
         : `${window.location.origin}/onboarding/snaptrade-callback`;
 
-      const effectiveConnectionType = connectionType || 'trade';
       const requestBody: {
         connectionType?: 'read' | 'trade';
         broker?: string;
@@ -48,7 +47,9 @@ export function SnapTradeConnectButton({
       } = {
         redirectUrl,
       };
-      requestBody.connectionType = effectiveConnectionType;
+      if (connectionType) {
+        requestBody.connectionType = connectionType;
+      }
       if (broker) {
         requestBody.broker = broker;
       }
