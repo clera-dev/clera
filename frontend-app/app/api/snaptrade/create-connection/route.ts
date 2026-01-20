@@ -48,6 +48,9 @@ export async function POST(request: Request) {
     
     // Call backend to get SnapTrade connection URL
     const backendUrl = process.env.BACKEND_API_URL;
+    const backendApiKey = process.env.BACKEND_API_KEY;
+    // Note: Early validation at top of function already ensures these are defined
+    
     const response = await fetch(`${backendUrl}/api/snaptrade/connection-url`, {
       method: 'POST',
       headers: {
@@ -55,7 +58,7 @@ export async function POST(request: Request) {
         // PRODUCTION-GRADE: Pass JWT token for authentication
         'Authorization': `Bearer ${session.access_token}`,
         // Also pass API key as fallback
-        'X-API-Key': process.env.BACKEND_API_KEY,
+        'X-API-Key': backendApiKey,
       },
       body: JSON.stringify({
         user_id: user.id,

@@ -33,7 +33,14 @@ export async function POST(request: NextRequest) {
     // 2. Store in snaptrade_brokerage_connections
     // 3. Sync accounts to user_investment_accounts  
     // 4. Update user_onboarding status to 'submitted'
-    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
+    if (!backendUrl) {
+      console.error('[Complete Onboarding] ❌ BACKEND_API_URL not configured!');
+      return NextResponse.json(
+        { error: 'Backend service is not configured' },
+        { status: 500 }
+      );
+    }
     
     console.log(`[Complete Onboarding] 📤 Calling backend: ${backendUrl}/api/snaptrade/sync-connection`);
     

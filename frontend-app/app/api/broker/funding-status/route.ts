@@ -50,13 +50,13 @@ export async function GET(request: NextRequest) {
     console.log(`Funding Status API: Ownership verified. User ${user.id} owns account ${accountId}`);
 
     // Call the backend funding status endpoint
-    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
     const apiKey = process.env.BACKEND_API_KEY;
     
-    if (!apiKey) {
-      console.error('Funding Status API: BACKEND_API_KEY not found');
+    if (!backendUrl || !apiKey) {
+      console.error('Funding Status API: Backend API configuration missing');
       return NextResponse.json(
-        { error: 'Server configuration error' },
+        { error: 'Backend service is not configured' },
         { status: 500 }
       );
     }

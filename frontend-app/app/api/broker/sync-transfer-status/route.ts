@@ -64,13 +64,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Get real-time status from Alpaca
-    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
     const apiKey = process.env.BACKEND_API_KEY;
 
-    if (!apiKey) {
-      console.error('Sync Transfer Status API: No backend API key');
+    if (!backendUrl || !apiKey) {
+      console.error('Sync Transfer Status API: Backend API configuration missing');
       return NextResponse.json(
-        { error: 'Server configuration error' },
+        { error: 'Backend service is not configured' },
         { status: 500 }
       );
     }

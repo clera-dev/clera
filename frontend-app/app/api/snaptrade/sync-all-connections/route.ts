@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Call the BACKEND endpoint to handle the connection sync
+    // Note: Early validation at top of function already ensures BACKEND_API_URL is defined
     const backendUrl = process.env.BACKEND_API_URL;
     
     console.log(`[Sync All Connections] 📤 Calling backend: ${backendUrl}/api/snaptrade/sync-all`);

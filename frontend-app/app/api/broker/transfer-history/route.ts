@@ -52,10 +52,10 @@ export async function GET(request: NextRequest) {
     let usingBackendData = false;
 
     try {
-      const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+      const backendUrl = process.env.BACKEND_API_URL;
       const apiKey = process.env.BACKEND_API_KEY;
 
-      if (apiKey) {
+      if (backendUrl && apiKey) {
         console.log('Transfer History API: Fetching from backend for user account');
         
         // Use the dedicated transfers endpoint for comprehensive history
