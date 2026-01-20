@@ -12,25 +12,28 @@ export async function GET(request: NextRequest) {
     }
 
     // PRODUCTION-GRADE: Proxy to backend with full authentication
-    const backendUrl = process.env.BACKEND_API_URL || process.env.BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL || process.env.BACKEND_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
+    if (!backendUrl || !backendApiKey) {
+      console.error('Backend API configuration missing for reconstruction status.');
+      return NextResponse.json(
+        { error: 'Backend service is not configured' },
+        { status: 500 }
+      );
+    }
     const url = `${backendUrl}/api/portfolio/reconstruction/status?user_id=${user.id}`;
     
     // Get session for JWT token
     const session = await supabase.auth.getSession();
     
     const headers: HeadersInit = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'X-API-Key': backendApiKey,
     };
     
     // CRITICAL: Add JWT token for user authentication
     if (session.data.session?.access_token) {
       headers['Authorization'] = `Bearer ${session.data.session.access_token}`;
-    }
-    
-    // Add API key for service authentication
-    if (backendApiKey) {
-      headers['X-API-Key'] = backendApiKey;
     }
     
     const response = await fetch(url, {

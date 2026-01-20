@@ -29,7 +29,15 @@ export async function POST(request: Request) {
     const finalRedirectUrl = redirectUrl || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/onboarding/snaptrade-callback`;
     
     // Call backend to get SnapTrade connection URL
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
+    const backendApiKey = process.env.BACKEND_API_KEY;
+    if (!backendUrl || !backendApiKey) {
+      console.error('Backend API configuration missing for SnapTrade connection.');
+      return NextResponse.json(
+        { error: 'Backend service is not configured.' },
+        { status: 500 }
+      );
+    }
     const response = await fetch(`${backendUrl}/api/snaptrade/connection-url`, {
       method: 'POST',
       headers: {
@@ -37,7 +45,7 @@ export async function POST(request: Request) {
         // PRODUCTION-GRADE: Pass JWT token for authentication
         'Authorization': `Bearer ${session?.access_token || ''}`,
         // Also pass API key as fallback
-        'X-API-Key': process.env.BACKEND_API_KEY || '',
+        'X-API-Key': backendApiKey,
       },
       body: JSON.stringify({
         user_id: user.id,

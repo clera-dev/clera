@@ -36,8 +36,15 @@ export async function GET(request: NextRequest) {
     }
 
     // PRODUCTION-GRADE: Proxy to backend which respects user preferences
-    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
-    const apiKey = process.env.BACKEND_API_KEY || 'clera-is-the-goat-tok8s825nvjdk0482mc6';
+    const backendUrl = process.env.BACKEND_API_URL;
+    const apiKey = process.env.BACKEND_API_KEY;
+    if (!backendUrl || !apiKey) {
+      console.error('Backend API configuration missing for trade-enabled-accounts.');
+      return NextResponse.json(
+        { error: 'Backend service is not configured' },
+        { status: 500 }
+      );
+    }
     
     const backendResponse = await fetch(`${backendUrl}/api/snaptrade/trade-enabled-accounts`, {
       headers: {

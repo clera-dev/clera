@@ -50,6 +50,7 @@ interface UseStockSearchReturn {
 const searchCache = new Map<string, StockSearchResult[]>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const cacheTimestamps = new Map<string, number>();
+const FETCH_TIMEOUT_MS = 10000; // 10 second timeout for search requests
 
 function getCachedResults(key: string): StockSearchResult[] | null {
   const timestamp = cacheTimestamps.get(key);
@@ -89,6 +90,9 @@ export function useStockSearch(options: UseStockSearchOptions = {}): UseStockSea
   useEffect(() => {
     if (!fetchPopularOnMount) return;
 
+    // Use AbortController for proper cleanup on unmount (React Strict Mode compatibility)
+    const abortController = new AbortController();
+
     const fetchPopular = async () => {
       // Check cache first
       const cached = getCachedResults('__popular__');
@@ -98,24 +102,54 @@ export function useStockSearch(options: UseStockSearchOptions = {}): UseStockSea
       }
 
       setIsLoadingPopular(true);
+      setError(null);
       try {
-        const response = await fetch('/api/market/popular?limit=50');
+        const response = await fetch('/api/market/popular?limit=50', {
+          signal: abortController.signal,
+        });
+        
+        // Don't proceed if aborted during fetch
+        if (abortController.signal.aborted) return;
+        
         if (!response.ok) {
-          throw new Error('Failed to fetch popular stocks');
+          const errorData = await response.json().catch(() => ({}));
+          const errorMsg = errorData.error || `Server error (${response.status})`;
+          throw new Error(errorMsg);
         }
         const data = await response.json();
         const stocks = data.assets || [];
+        
+        // Don't update state if aborted
+        if (abortController.signal.aborted) return;
+        
+        // Detect when backend returns empty data (usually means tradable_assets.json wasn't loaded)
+        if (stocks.length === 0) {
+          console.warn('Popular stocks returned empty - backend may have asset loading issues');
+          setError('Unable to load stocks. Please try again later.');
+        }
+        
         setPopularStocks(stocks);
         setCachedResults('__popular__', stocks);
-      } catch (err) {
+      } catch (err: any) {
+        // Ignore abort errors from cleanup - these are expected in React Strict Mode
+        if (err?.name === 'AbortError') return;
+        
         console.error('Error fetching popular stocks:', err);
-        // Don't set error for popular stocks - it's not critical
+        setError(err?.message || 'Failed to load popular stocks');
       } finally {
-        setIsLoadingPopular(false);
+        // Only update loading state if not aborted
+        if (!abortController.signal.aborted) {
+          setIsLoadingPopular(false);
+        }
       }
     };
 
     fetchPopular();
+    
+    // Cleanup: abort fetch if component unmounts
+    return () => {
+      abortController.abort();
+    };
   }, [fetchPopularOnMount]);
 
   // Perform server-side search
@@ -142,10 +176,16 @@ export function useStockSearch(options: UseStockSearchOptions = {}): UseStockSea
     setIsSearching(true);
     setError(null);
 
+    // Create timeout for search request
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
     try {
       const response = await fetch(
-        `/api/market/search?q=${encodeURIComponent(trimmedTerm)}&limit=${limit}`
+        `/api/market/search?q=${encodeURIComponent(trimmedTerm)}&limit=${limit}`,
+        { signal: controller.signal }
       );
+      clearTimeout(timeoutId);
 
       // Check if this is still the current request
       if (requestId !== searchRequestRef.current) {
@@ -153,7 +193,8 @@ export function useStockSearch(options: UseStockSearchOptions = {}): UseStockSea
       }
 
       if (!response.ok) {
-        throw new Error('Search failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Search failed');
       }
 
       const data = await response.json();
@@ -161,11 +202,16 @@ export function useStockSearch(options: UseStockSearchOptions = {}): UseStockSea
       
       setResults(searchResults);
       setCachedResults(cacheKey, searchResults);
-    } catch (err) {
+    } catch (err: any) {
+      clearTimeout(timeoutId);
       // Only set error if this is still the current request
       if (requestId === searchRequestRef.current) {
+        // Provide specific error message for timeout
+        const message = err?.name === 'AbortError'
+          ? 'Search timed out. Please try again.'
+          : err?.message || 'Failed to search stocks';
         console.error('Stock search error:', err);
-        setError('Failed to search stocks');
+        setError(message);
         setResults([]);
       }
     } finally {

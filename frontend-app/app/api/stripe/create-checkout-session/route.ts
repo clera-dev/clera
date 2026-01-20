@@ -131,6 +131,10 @@ export async function POST(request: NextRequest) {
       automatic_tax: {
         enabled: true,
       },
+      // Allow users to enter promotion codes at checkout
+      // Create promo codes in Stripe Dashboard: Products > Coupons > Create > then "Add promotion code"
+      // Example: Create a coupon for "100% off for 1 month" then create promo code "LAUNCH" or "FREEMONTH"
+      allow_promotion_codes: true,
     });
 
     return NextResponse.json({ sessionId: session.id, url: session.url });

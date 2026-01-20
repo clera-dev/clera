@@ -29,11 +29,11 @@ export async function GET(request: NextRequest) {
     }
     
     // Trigger reconstruction for all aggregation users
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_API_URL;
     const apiKey = process.env.BACKEND_API_KEY;
     
-    if (!apiKey) {
-      throw new Error('Backend API key not configured');
+    if (!backendUrl || !apiKey) {
+      throw new Error('Backend API configuration missing');
     }
     
     const reconstructionUrl = `${backendUrl}/api/portfolio/reconstruction/trigger-daily`;
