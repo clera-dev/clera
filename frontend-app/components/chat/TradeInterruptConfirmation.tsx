@@ -271,7 +271,7 @@ export function TradeInterruptConfirmation({
 
   const handleConfirm = useCallback(() => {
     if (isLoading) return;
-    if (loadingMarketStatus || !marketStatus) {
+    if (loadingMarketStatus) {
       toast.error('Market status is still loading. Please try again in a moment.');
       return;
     }
@@ -313,7 +313,7 @@ export function TradeInterruptConfirmation({
       // Simple confirmation
       onConfirm('yes');
     }
-  }, [isLoading, loadingMarketStatus, marketStatus, isAfterHours, afterHoursPolicy, limitPrice, isModified, editedAmount, editedTicker, selectedAccountId, accounts, initialDetails, onConfirm]);
+  }, [isLoading, loadingMarketStatus, isAfterHours, afterHoursPolicy, limitPrice, isModified, editedAmount, editedTicker, selectedAccountId, accounts, initialDetails, onConfirm]);
 
   const handleCancel = useCallback(() => {
     if (isLoading) return;
@@ -346,7 +346,7 @@ export function TradeInterruptConfirmation({
   const parsedLimit = parseFloat(limitPrice);
   const isValidLimit = !isAfterHours || !afterHoursPolicy || (Number.isFinite(parsedLimit) && parsedLimit > 0);
   const isValidPolicy = !isAfterHours || !!afterHoursPolicy;
-  const isSubmitDisabled = isLoading || loadingMarketStatus || !marketStatus || !selectedAccountId || !isValidTicker || !isValidAmount || !isValidPolicy || !isValidLimit;
+  const isSubmitDisabled = isLoading || loadingMarketStatus || !selectedAccountId || !isValidTicker || !isValidAmount || !isValidPolicy || !isValidLimit;
 
   return (
     <AnimatePresence>

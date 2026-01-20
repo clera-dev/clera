@@ -863,6 +863,20 @@ class SnapTradeTradingService:
                             'success': False,
                             'error': 'Stop orders are not supported with queue-for-open. Please use broker limit or place during market hours.'
                         }
+                    try:
+                        universal_symbol_id = self.get_universal_symbol_id_for_account(symbol, user_id, account_id)
+                    except SnapTradeConnectionError as conn_error:
+                        logger.error(f"Connection disabled for account {account_id}: {conn_error.message}")
+                        return {
+                            'success': False,
+                            'error': conn_error.message,
+                            'error_code': 'CONNECTION_DISABLED'
+                        }
+                    if not universal_symbol_id:
+                        return {
+                            'success': False,
+                            'error': f"Symbol '{symbol}' is not available for trading on your brokerage. Please verify the ticker symbol is correct."
+                        }
                     last_price = self._get_latest_price(symbol)
                     if last_price is None:
                         return {
