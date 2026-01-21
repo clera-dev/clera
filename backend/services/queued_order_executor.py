@@ -561,7 +561,7 @@ class QueuedOrderExecutor:
                 'updated_at': datetime.now(timezone.utc).isoformat()
             })\
             .eq('id', order_id)\
-            .eq('status', 'pending')\
+            .in_('status', ['pending', 'executing'])\
             .execute()
 
         if update_result.data:

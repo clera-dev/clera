@@ -905,6 +905,11 @@ class SnapTradeTradingService:
                             'success': False,
                             'error': 'Order information is incomplete. Please try again.'
                         }
+                    if order_type in {'Stop', 'StopLimit'} or stop:
+                        return {
+                            'success': False,
+                            'error': 'Stop orders are not supported with broker limit after-hours. Please place during market hours.'
+                        }
                     if price is None or price <= 0:
                         return {
                             'success': False,

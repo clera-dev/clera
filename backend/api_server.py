@@ -391,6 +391,8 @@ class TradeRequest(BaseModel):
             if order_type in {"STOP", "STOPLIMIT"}:
                 if self.stop_price is None or self.stop_price <= 0:
                     raise ValueError('Stop price is required for stop orders.')
+            if order_type in {"LIMIT", "STOP", "STOPLIMIT"} and not has_valid_units:
+                raise ValueError('Limit and stop orders require a share quantity.')
 
         if self.after_hours_policy:
             policy = self.after_hours_policy.strip().lower()
