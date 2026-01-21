@@ -123,8 +123,8 @@ export default function ProtectedPageClient() {
   // Handle navigation when funding status changes
   useEffect(() => {
     if (!loading && hasFunding && (userStatus === 'submitted' || userStatus === 'approved')) {
-      console.log('User has completed onboarding and funding, redirecting to /invest');
-      router.replace('/invest');
+      console.log('User has completed onboarding and funding, redirecting to /portfolio');
+      router.replace('/portfolio');
     }
   }, [hasFunding, userStatus, loading, router]);
 
@@ -132,8 +132,8 @@ export default function ProtectedPageClient() {
   useEffect(() => {
     const hasCompleted = userStatus === 'submitted' || userStatus === 'approved';
     if (!loading && hasCompleted && fundingStep !== 'welcome' && fundingStep !== 'connect-bank') {
-      console.log('Unexpected state: invalid funding step, redirecting to /invest');
-      router.replace('/invest');
+      console.log('Unexpected state: invalid funding step, redirecting to /portfolio');
+      router.replace('/portfolio');
     }
   }, [loading, userStatus, fundingStep, router]);
 
@@ -205,28 +205,86 @@ export default function ProtectedPageClient() {
   // If user has completed onboarding but hasn't connected any accounts yet (aggregation mode)
   // Show them the SnapTrade connection step, NOT the Alpaca funding flow
   if (isAggregationMode && !hasFunding) {
-    // Callback that handles both "Skip for now" AND successful connection
-    // CRITICAL FIX: Must allow users to skip WITHOUT waiting
-    // NOTE: Do NOT use setLoading() here - it would unmount SnapTradeConnectionStep mid-execution
-    const handleConnectionComplete = () => {
-      // Fire-and-forget: Check connection status in background for analytics
-      // This does NOT block the redirect - users skip immediately
+    // Callback that handles "Skip for now" - must go through payment flow
+    // CRITICAL: Do NOT redirect to /portfolio directly - user needs to pay first!
+    // This mirrors the logic in snaptrade-callback/page.tsx for consistency
+    const handleConnectionComplete = async () => {
+      // Fire-and-forget: Log connection status for analytics only
+      // IMPORTANT: Do NOT set hasFunding here - it would trigger the redirect useEffect
+      // before payment verification completes, creating a race condition
       fetch('/api/portfolio/connection-status')
         .then(response => response.ok ? response.json() : null)
         .then(modeData => {
           if (modeData) {
             const snaptradeAccounts = modeData.snaptrade_accounts || [];
             const plaidAccounts = modeData.plaid_accounts || [];
-            if (snaptradeAccounts.length > 0 || plaidAccounts.length > 0) {
-              setHasFunding(true);
-            }
+            console.log('[Skip flow] Connection status:', { 
+              snaptradeAccounts: snaptradeAccounts.length, 
+              plaidAccounts: plaidAccounts.length 
+            });
           }
         })
         .catch(error => console.error('Error checking connection status:', error));
       
-      // CRITICAL: Redirect immediately - don't wait for fetch
-      // Users can connect accounts later from the portfolio page
-      router.replace('/invest');
+      // CRITICAL: Check payment status before redirecting
+      // If user hasn't paid, send them to Stripe checkout
+      try {
+        const paymentCheck = await fetch('/api/stripe/check-payment-status');
+        if (paymentCheck.ok) {
+          const paymentData = await paymentCheck.json();
+          
+          if (paymentData.hasActivePayment) {
+            // User has already paid - they can skip connecting and go to portfolio
+            console.log('✅ User has active payment, redirecting to portfolio');
+            router.replace('/portfolio');
+          } else {
+            // User needs to complete payment - redirect to Stripe checkout
+            console.log('📝 User needs to complete payment, redirecting to Stripe checkout');
+            const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (checkoutResponse.ok) {
+              const checkoutData = await checkoutResponse.json();
+              if (checkoutData.url) {
+                window.location.href = checkoutData.url;
+              } else {
+                console.error('❌ No checkout URL received');
+                // Fallback: stay on protected page
+              }
+            } else if (checkoutResponse.status === 409) {
+              // User already has active subscription (race condition protection)
+              const errorData = await checkoutResponse.json();
+              console.log('✅ User already has active subscription, redirecting to portfolio');
+              router.replace(errorData.redirectTo || '/portfolio');
+            } else {
+              console.error('❌ Failed to create checkout session');
+              // Fallback: stay on protected page
+            }
+          }
+        } else {
+          // Payment check failed - redirect to checkout to be safe
+          console.log('⚠️ Payment check failed, redirecting to checkout');
+          const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          if (checkoutResponse.ok) {
+            const checkoutData = await checkoutResponse.json();
+            if (checkoutData.url) {
+              window.location.href = checkoutData.url;
+            }
+          } else if (checkoutResponse.status === 409) {
+            const errorData = await checkoutResponse.json();
+            router.replace(errorData.redirectTo || '/portfolio');
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error in skip flow:', error);
+        // On error, stay on protected page rather than getting stuck in a loop
+      }
     };
     
     return (
@@ -302,7 +360,7 @@ export default function ProtectedPageClient() {
               onBack={() => setFundingStep('welcome')}
               onTransferComplete={() => {
                 setHasFunding(true);
-                router.replace('/invest');
+                router.replace('/portfolio');
               }}
               showFullForm={true}
             />

@@ -3,6 +3,21 @@ import { createClient as createServerSupabase } from '@/utils/supabase/server';
 
 export async function POST(request: Request) {
   try {
+    if (!process.env.BACKEND_API_URL) {
+      console.error('CRITICAL: BACKEND_API_URL environment variable is not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    if (!process.env.BACKEND_API_KEY) {
+      console.error('CRITICAL: BACKEND_API_KEY environment variable is not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+
     const supabase = await createServerSupabase();
     
     // Get authenticated user
@@ -14,6 +29,9 @@ export async function POST(request: Request) {
     
     // Get the session for JWT token
     const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     
     // Get request body
     const body = await request.json();
@@ -31,19 +49,14 @@ export async function POST(request: Request) {
     // Call backend to get SnapTrade connection URL
     const backendUrl = process.env.BACKEND_API_URL;
     const backendApiKey = process.env.BACKEND_API_KEY;
-    if (!backendUrl || !backendApiKey) {
-      console.error('Backend API configuration missing for SnapTrade connection.');
-      return NextResponse.json(
-        { error: 'Backend service is not configured.' },
-        { status: 500 }
-      );
-    }
+    // Note: Early validation at top of function already ensures these are defined
+    
     const response = await fetch(`${backendUrl}/api/snaptrade/connection-url`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         // PRODUCTION-GRADE: Pass JWT token for authentication
-        'Authorization': `Bearer ${session?.access_token || ''}`,
+        'Authorization': `Bearer ${session.access_token}`,
         // Also pass API key as fallback
         'X-API-Key': backendApiKey,
       },

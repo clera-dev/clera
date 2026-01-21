@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Order Cancelled</title>
+  </head>
+  <body style="font-family: Arial, sans-serif; color: #111827; background-color: #ffffff;">
+    <h2 style="margin-bottom: 8px;">Your queued order was cancelled</h2>
+    <p style="margin-top: 0;">
+      Your {{ action }} order for <strong>{{ symbol }}</strong> was cancelled.
+    </p>
+    <p>
+      Reason: {{ cancellation_reason }}
+    </p>
+
+    {% if queued_at %}
+    <p>Queued at: {{ queued_at }}</p>
+    {% endif %}
+
+    {% if price_at_creation %}
+    <p>Price when queued: ${{ '%.2f'|format(price_at_creation) }}</p>
+    {% endif %}
+
+    {% if current_price %}
+    <p>Current price: ${{ '%.2f'|format(current_price) }}</p>
+    {% endif %}
+
+    {% if limit_price %}
+    <p>Protective limit: ${{ '%.2f'|format(limit_price) }}</p>
+    {% endif %}
+
+    <p style="margin-top: 16px;">
+      If you still want to place this trade, please submit a new order.
+      For help, contact <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
+    </p>
+    <p style="color: #6b7280; font-size: 12px;">&copy; {{ current_year }} Clera</p>
+  </body>
+</html>

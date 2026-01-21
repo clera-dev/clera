@@ -34,6 +34,10 @@ CHECK_INTERVAL_MINUTES = int(os.getenv('QUEUED_ORDER_CHECK_INTERVAL_MINUTES', '5
 MAX_RETRY_ATTEMPTS = 3
 # Orders stuck in 'executing' for longer than this will be reset to 'pending'
 STUCK_ORDER_TIMEOUT_MINUTES = 5
+# 120 hours (5 calendar days) to handle weekends and holidays.
+# Price deviation check still protects against stale prices.
+STALE_ORDER_MAX_AGE_HOURS = 120
+STALE_PRICE_DEVIATION_PCT = 0.05
 
 
 class QueuedOrderExecutor:
@@ -257,10 +261,16 @@ class QueuedOrderExecutor:
         action = order['action']
         notional_value = order.get('notional_value')
         units = order.get('units')
+        order_type = order.get('order_type') or 'Market'
+        time_in_force = order.get('time_in_force') or 'Day'
+        price = order.get('price')
+        stop_price = order.get('stop_price')
+        after_hours_policy = order.get('after_hours_policy')
+        extended_hours = bool(order.get('extended_hours') or False)
         retry_count = order.get('retry_count', 0)
         
         logger.info(f"🔄 Attempting to execute queued order {order_id}: {action} {symbol}")
-        
+
         # CRITICAL: Atomic lock acquisition to prevent race conditions
         # Only update to 'executing' if status is still 'pending'
         # This prevents duplicate order execution across multiple server instances
@@ -278,6 +288,12 @@ class QueuedOrderExecutor:
         if not lock_result.data or len(lock_result.data) == 0:
             logger.info(f"⏭️ Order {order_id} already being processed by another instance, skipping")
             return {'success': False, 'reason': 'already_processing'}
+
+        # Staleness checks for queue_for_open orders (safety guardrails)
+        # Run after lock acquisition to prevent concurrent execution of stale orders.
+        staleness_result = self._check_and_handle_staleness(order)
+        if staleness_result:
+            return staleness_result
         
         # Track whether order was placed (to prevent duplicate execution on DB errors)
         order_placed = False
@@ -292,10 +308,14 @@ class QueuedOrderExecutor:
                 account_id=account_id,
                 symbol=symbol,
                 action=action,
-                order_type='Market',
-                time_in_force='Day',  # Day order now that market is open
+                order_type=order_type,
+                time_in_force=time_in_force,
                 notional_value=notional_value,
-                units=units
+                units=units,
+                price=price,
+                stop=stop_price,
+                after_hours_policy=after_hours_policy,
+                extended_hours=extended_hours
             )
             
             if result.get('success'):
@@ -480,6 +500,142 @@ class QueuedOrderExecutor:
         ]
         error_lower = error_msg.lower()
         return any(indicator in error_lower for indicator in retriable_indicators)
+
+    def _check_and_handle_staleness(self, order: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Cancel stale queue_for_open orders before execution."""
+        if order.get('after_hours_policy') != 'queue_for_open':
+            return None
+
+        order_id = order.get('id')
+        created_at = self._parse_timestamp(order.get('created_at'))
+        now = datetime.now(timezone.utc)
+
+        if created_at and now - created_at > timedelta(hours=STALE_ORDER_MAX_AGE_HOURS):
+            return self._cancel_stale_order(
+                order=order,
+                reason_code='expired_stale',
+                reason_message='Order expired because it was queued more than 5 days ago.'
+            )
+
+        last_price_at_creation = order.get('last_price_at_creation')
+        if last_price_at_creation is not None:
+            try:
+                last_price_value = float(last_price_at_creation)
+            except (TypeError, ValueError):
+                last_price_value = 0.0
+
+            if last_price_value > 0:
+                current_price = self._get_current_price(order.get('symbol'))
+                if current_price:
+                    deviation = abs(current_price - last_price_value) / last_price_value
+                    if deviation > STALE_PRICE_DEVIATION_PCT:
+                        return self._cancel_stale_order(
+                            order=order,
+                            reason_code='price_deviation_exceeded',
+                            reason_message='Order cancelled because the price moved significantly since it was queued.',
+                            current_price=current_price
+                        )
+                else:
+                    logger.warning(f"Unable to fetch current price for staleness check: {order.get('symbol')}")
+            else:
+                logger.warning(f"Invalid last_price_at_creation for staleness check: {last_price_at_creation}")
+
+        return None
+
+    def _cancel_stale_order(
+        self,
+        order: Dict[str, Any],
+        reason_code: str,
+        reason_message: str,
+        current_price: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Cancel a stale order and notify the user."""
+        order_id = order.get('id')
+        logger.warning(f"⚠️ Cancelling stale queued order {order_id}: {reason_code}")
+
+        update_result = self.supabase.table('queued_orders')\
+            .update({
+                'status': 'cancelled',
+                'cancellation_reason': reason_code,
+                'last_error': reason_message,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            })\
+            .eq('id', order_id)\
+            .in_('status', ['pending', 'executing'])\
+            .execute()
+
+        if update_result.data:
+            self._notify_order_cancellation(order, reason_message, current_price=current_price)
+            logger.info(f"✅ Stale order {order_id} cancelled: {reason_code}")
+            return {'success': False, 'order_id': order_id, 'stale': True, 'reason': reason_code}
+
+        logger.warning(f"Stale order {order_id} was not updated (status changed).")
+        return {'success': False, 'order_id': order_id, 'stale': True, 'reason': reason_code, 'update_failed': True}
+
+    def _notify_order_cancellation(
+        self,
+        order: Dict[str, Any],
+        reason_message: str,
+        current_price: Optional[float] = None
+    ):
+        """Best-effort email notification for cancelled queued orders."""
+        try:
+            from utils.supabase.db_client import get_user_email
+            from utils.email.email_service import EmailService
+
+            user_id = order.get('user_id')
+            user_email = get_user_email(user_id) if user_id else None
+            if not user_email:
+                logger.warning("Skipping cancellation email: user email not found")
+                return
+
+            email_service = EmailService()
+            email_service.send_order_cancellation_notification(
+                user_email=user_email,
+                symbol=order.get('symbol', ''),
+                action=order.get('action', ''),
+                cancellation_reason=reason_message,
+                queued_at=order.get('created_at'),
+                current_price=current_price,
+                price_at_creation=order.get('last_price_at_creation'),
+                limit_price=order.get('price')
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send cancellation email: {e}")
+
+    def _get_current_price(self, symbol: Optional[str]) -> Optional[float]:
+        """Fetch current market price for staleness checks."""
+        if not symbol:
+            return None
+        try:
+            from utils.market_data import get_stock_quote
+            quote_data = get_stock_quote(symbol)
+            if isinstance(quote_data, list) and quote_data:
+                price = quote_data[0].get('price')
+            elif isinstance(quote_data, dict):
+                price = quote_data.get('price')
+            else:
+                price = None
+            if price is not None and float(price) > 0:
+                return float(price)
+        except Exception as e:
+            logger.warning(f"Error fetching current price for {symbol}: {e}")
+        return None
+
+    def _parse_timestamp(self, value: Optional[Any]) -> Optional[datetime]:
+        """Parse ISO timestamps from Supabase rows."""
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if isinstance(value, str):
+            try:
+                normalized = value.replace('Z', '+00:00')
+                parsed = datetime.fromisoformat(normalized)
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except Exception:
+                return None
+        return None
     
     def get_status(self, user_id: str) -> Dict:
         """

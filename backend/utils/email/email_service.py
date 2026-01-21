@@ -2,6 +2,7 @@
 
 import os
 import smtplib
+import re
 import logging
 from typing import Dict, Any, Optional
 from email.mime.text import MIMEText
@@ -146,6 +147,67 @@ class EmailService:
         except Exception as e:
             logger.error(f"Error sending account closure completion notification to {user_email}: {e}")
             return False
+
+    def send_order_cancellation_notification(
+        self,
+        user_email: str,
+        symbol: str,
+        action: str,
+        cancellation_reason: str,
+        queued_at: Optional[str] = None,
+        current_price: Optional[float] = None,
+        price_at_creation: Optional[float] = None,
+        limit_price: Optional[float] = None
+    ) -> bool:
+        """
+        Send a queued order cancellation email.
+        
+        Args:
+            user_email: User's email address
+            symbol: Ticker symbol
+            action: BUY or SELL
+            cancellation_reason: Reason code for cancellation
+            queued_at: ISO timestamp when order was queued
+            current_price: Current market price at cancellation
+            price_at_creation: Last price when order was queued
+            limit_price: Protective limit price used for queueing
+            
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        try:
+            safe_symbol = re.sub(r'[\r\n]+', '', symbol or '').strip() or 'your'
+            subject = f"Your {safe_symbol} order was cancelled"
+            
+            html_content = self._generate_order_cancelled_email_html(
+                symbol=symbol,
+                action=action,
+                cancellation_reason=cancellation_reason,
+                queued_at=queued_at,
+                current_price=current_price,
+                price_at_creation=price_at_creation,
+                limit_price=limit_price
+            )
+            
+            text_content = self._generate_order_cancelled_email_text(
+                symbol=symbol,
+                action=action,
+                cancellation_reason=cancellation_reason,
+                queued_at=queued_at,
+                current_price=current_price,
+                price_at_creation=price_at_creation,
+                limit_price=limit_price
+            )
+            
+            return self._send_email(
+                to_email=user_email,
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content
+            )
+        except Exception as e:
+            logger.error(f"Error sending order cancellation notification to {user_email}: {e}")
+            return False
     
     def _send_email(self, to_email: str, subject: str, html_content: str, text_content: str) -> bool:
         """
@@ -281,6 +343,56 @@ class EmailService:
             confirmation_number=confirmation_number_escaped,
             final_transfer_amount=final_transfer_amount,
             completion_date=datetime.now().strftime("%B %d, %Y at %I:%M %p"),
+            support_email=self.support_email,
+            current_year=datetime.now().year
+        )
+
+    def _generate_order_cancelled_email_html(
+        self,
+        symbol: str,
+        action: str,
+        cancellation_reason: str,
+        queued_at: Optional[str],
+        current_price: Optional[float],
+        price_at_creation: Optional[float],
+        limit_price: Optional[float]
+    ) -> str:
+        """Generate HTML email content for queued order cancellation."""
+        template = self.env.get_template("order_cancelled_notification.html")
+        
+        return template.render(
+            symbol=escape(symbol),
+            action=escape(action),
+            cancellation_reason=escape(cancellation_reason),
+            queued_at=escape(queued_at) if queued_at else None,
+            current_price=current_price,
+            price_at_creation=price_at_creation,
+            limit_price=limit_price,
+            support_email=self.support_email,
+            current_year=datetime.now().year
+        )
+    
+    def _generate_order_cancelled_email_text(
+        self,
+        symbol: str,
+        action: str,
+        cancellation_reason: str,
+        queued_at: Optional[str],
+        current_price: Optional[float],
+        price_at_creation: Optional[float],
+        limit_price: Optional[float]
+    ) -> str:
+        """Generate plain text email content for queued order cancellation."""
+        template = self.env.get_template("order_cancelled_notification.txt")
+        
+        return template.render(
+            symbol=escape(symbol),
+            action=escape(action),
+            cancellation_reason=escape(cancellation_reason),
+            queued_at=escape(queued_at) if queued_at else None,
+            current_price=current_price,
+            price_at_creation=price_at_creation,
+            limit_price=limit_price,
             support_email=self.support_email,
             current_year=datetime.now().year
         )

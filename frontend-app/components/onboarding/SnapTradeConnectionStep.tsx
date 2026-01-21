@@ -14,6 +14,7 @@ interface SnapTradeConnectionStepProps {
 export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTradeConnectionStepProps) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connectionCount, setConnectionCount] = useState(0);
 
@@ -27,6 +28,10 @@ export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTrad
       // This gives users a holistic view of their investments by including both read-only 
       // and trading-enabled brokerages. Trading capability is handled at the platform level
       // based on each brokerage's actual capabilities.
+      // Include return_to in the redirect URL so callback knows where to send cancelled users
+      const callbackUrl = new URL('/onboarding/snaptrade-callback', window.location.origin);
+      callbackUrl.searchParams.set('return_to', '/protected');
+      
       const response = await fetch('/api/snaptrade/create-connection', {
         method: 'POST',
         headers: {
@@ -34,7 +39,7 @@ export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTrad
         },
         body: JSON.stringify({
           // No connectionType filter = show all available brokerages
-          redirectUrl: `${window.location.origin}/onboarding/snaptrade-callback`,
+          redirectUrl: callbackUrl.toString(),
         }),
       });
 
@@ -210,10 +215,21 @@ export default function SnapTradeConnectionStep({ onComplete, onBack }: SnapTrad
         <div className="text-center">
           <Button 
             variant="ghost" 
-            onClick={onComplete}
+            onClick={() => {
+              setSkipping(true);
+              onComplete();
+            }}
+            disabled={connecting || connected || skipping}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
-            Skip for now →
+            {skipping ? (
+              <span className="flex items-center gap-2">
+                <div className="h-4 w-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
+                Processing...
+              </span>
+            ) : (
+              'Skip for now →'
+            )}
           </Button>
         </div>
       </div>

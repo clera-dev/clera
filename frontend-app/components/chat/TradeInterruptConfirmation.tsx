@@ -14,10 +14,12 @@ import {
 import { InterruptConfirmation } from './InterruptConfirmation';
 import { isValidReconnectUrl } from '@/utils/url-validation';
 import toast from 'react-hot-toast';
+import { NoTradeAccountsNotice } from '@/components/invest/NoTradeAccountsNotice';
 
 // Webull requires a minimum of $5 for fractional share orders
 // Must match OrderModal.tsx to prevent broker-level failures
 const MINIMUM_ORDER_AMOUNT = 5;
+const DEFAULT_LIMIT_BUFFER_PCT = 0.01;
 
 interface TradeAccount {
   account_id: string;
@@ -128,6 +130,8 @@ export function TradeInterruptConfirmation({
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   // Track the original account ID to detect modifications (comparing IDs, not names)
   const [originalAccountId, setOriginalAccountId] = useState<string>('');
+  const [afterHoursPolicy, setAfterHoursPolicy] = useState<'broker_limit_gtc' | 'queue_for_open' | ''>('');
+  const [limitPrice, setLimitPrice] = useState('');
   
   // Accounts state
   const [accounts, setAccounts] = useState<TradeAccount[]>([]);
@@ -236,21 +240,65 @@ export function TradeInterruptConfirmation({
     ? parseFloat(editedAmount) / initialDetails.currentPrice
     : 0;
 
+  useEffect(() => {
+    if (marketStatus && !marketStatus.is_open && initialDetails?.currentPrice && limitPrice === '') {
+      const bufferMultiplier = initialDetails.action === 'BUY' ? (1 + DEFAULT_LIMIT_BUFFER_PCT) : (1 - DEFAULT_LIMIT_BUFFER_PCT);
+      const suggestedLimit = Math.max(initialDetails.currentPrice * bufferMultiplier, 0.01);
+      setLimitPrice(suggestedLimit.toFixed(2));
+    }
+  }, [marketStatus, initialDetails, limitPrice]);
+
+  useEffect(() => {
+    if (!marketStatus || marketStatus.is_open || !initialDetails?.currentPrice) return;
+    if (afterHoursPolicy === 'queue_for_open') {
+      const bufferMultiplier = initialDetails.action === 'BUY' ? (1 + DEFAULT_LIMIT_BUFFER_PCT) : (1 - DEFAULT_LIMIT_BUFFER_PCT);
+      const suggestedLimit = Math.max(initialDetails.currentPrice * bufferMultiplier, 0.01);
+      setLimitPrice(suggestedLimit.toFixed(2));
+    }
+  }, [afterHoursPolicy, marketStatus, initialDetails]);
+
   // Check if values have been modified
   // CRITICAL: Compare account_id directly, not institution_name, to detect
   // switching between accounts at the same institution (e.g., "Webull - Margin" vs "Webull - IRA")
+  const isAfterHours = !!marketStatus && !marketStatus.is_open;
+  const isMarketStatusUnknown = !loadingMarketStatus && !marketStatus;
   const isModified = initialDetails && (
     parseFloat(editedAmount) !== initialDetails.amount ||
     editedTicker !== initialDetails.ticker ||
-    (selectedAccountId && originalAccountId && selectedAccountId !== originalAccountId)
+    (selectedAccountId && originalAccountId && selectedAccountId !== originalAccountId) ||
+    (isAfterHours && !!afterHoursPolicy) ||
+    (isAfterHours && !!afterHoursPolicy && limitPrice !== '')
   );
 
   const handleConfirm = useCallback(() => {
     if (isLoading) return;
+    if (loadingMarketStatus) {
+      toast.error('Market status is still loading. Please try again in a moment.');
+      return;
+    }
+    if (!marketStatus) {
+      toast.error('Unable to verify market status. Please try again in a moment.');
+      return;
+    }
+
+    if (isAfterHours) {
+      if (!afterHoursPolicy) {
+        toast.error('Please select how to handle this after-hours order.');
+        return;
+      }
+      if (afterHoursPolicy === 'broker_limit_gtc' || afterHoursPolicy === 'queue_for_open') {
+        const parsedLimit = parseFloat(limitPrice);
+        if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+          toast.error('Please enter a valid limit price.');
+          return;
+        }
+      }
+    }
+
     setSelectedResponse('confirm');
     
     // Build response - if modified, include the changes
-    if (isModified && selectedAccountId) {
+    if ((isModified || isAfterHours) && selectedAccountId) {
       const selectedAccount = accounts.find(a => a.account_id === selectedAccountId);
       const response = JSON.stringify({
         action: 'execute',
@@ -261,14 +309,16 @@ export function TradeInterruptConfirmation({
         account_id: selectedAccountId,
         account_display: selectedAccount 
           ? `${selectedAccount.institution_name} - ${selectedAccount.account_name}`
-          : initialDetails?.accountDisplay
+          : initialDetails?.accountDisplay,
+        after_hours_policy: isAfterHours ? afterHoursPolicy : undefined,
+        limit_price: isAfterHours && afterHoursPolicy ? parseFloat(limitPrice) : undefined
       });
       onConfirm(response);
     } else {
       // Simple confirmation
       onConfirm('yes');
     }
-  }, [isLoading, isModified, editedAmount, editedTicker, selectedAccountId, accounts, initialDetails, onConfirm]);
+  }, [isLoading, loadingMarketStatus, marketStatus, isAfterHours, afterHoursPolicy, limitPrice, isModified, editedAmount, editedTicker, selectedAccountId, accounts, initialDetails, onConfirm]);
 
   const handleCancel = useCallback(() => {
     if (isLoading) return;
@@ -298,7 +348,10 @@ export function TradeInterruptConfirmation({
   const isValidTicker = editedTicker.trim() && /^[A-Za-z0-9]+$/.test(editedTicker.trim());
   // Use same minimum as OrderModal ($5 for Webull fractional shares)
   const isValidAmount = Number.isFinite(parsedAmount) && parsedAmount >= MINIMUM_ORDER_AMOUNT;
-  const isSubmitDisabled = isLoading || !selectedAccountId || !isValidTicker || !isValidAmount;
+  const parsedLimit = parseFloat(limitPrice);
+  const isValidLimit = !isAfterHours || !afterHoursPolicy || (Number.isFinite(parsedLimit) && parsedLimit > 0);
+  const isValidPolicy = !isAfterHours || !!afterHoursPolicy;
+  const isSubmitDisabled = isLoading || loadingMarketStatus || isMarketStatusUnknown || !selectedAccountId || !isValidTicker || !isValidAmount || !isValidPolicy || !isValidLimit;
 
   return (
     <AnimatePresence>
@@ -398,6 +451,13 @@ export function TradeInterruptConfirmation({
                   <AlertCircle className="w-4 h-4" />
                   {accountError}
                 </div>
+              ) : accounts.length === 0 ? (
+                <NoTradeAccountsNotice
+                  className="py-2"
+                  onConnectClick={() => {
+                    window.location.href = '/dashboard';
+                  }}
+                />
               ) : (
                 <Select 
                   value={selectedAccountId} 
@@ -493,7 +553,11 @@ export function TradeInterruptConfirmation({
                          marketStatus.status === 'after_hours' ? 'After-Hours' : 'Market Closed'}
                       </span>
                       <span className="block text-gray-500 dark:text-gray-400 mt-0.5">
-                        Your order will be queued and execute at next market open
+                        {afterHoursPolicy === 'broker_limit_gtc'
+                          ? 'Limit order will be submitted to your broker for after-hours execution.'
+                          : afterHoursPolicy === 'queue_for_open'
+                            ? `Order will be queued with a protective limit of $${limitPrice || '--'} (${DEFAULT_LIMIT_BUFFER_PCT * 100}% buffer). If the price moves significantly or the order is older than 5 days, we will cancel and notify you.`
+                            : 'Select how to handle this after-hours order.'}
                         {marketStatus.next_open && (
                           <span className="ml-1">
                             ({new Date(marketStatus.next_open).toLocaleString('en-US', { 
@@ -511,9 +575,53 @@ export function TradeInterruptConfirmation({
               </div>
             )}
 
+            {marketStatus && !marketStatus.is_open && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  After-hours handling
+                </label>
+                <Select value={afterHoursPolicy} onValueChange={(value) => setAfterHoursPolicy(value as 'broker_limit_gtc' | 'queue_for_open')}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select how to handle after-hours" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="broker_limit_gtc">Limit order (broker queues)</SelectItem>
+                    <SelectItem value="queue_for_open">Queue for market open (Clera)</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {(afterHoursPolicy === 'broker_limit_gtc' || afterHoursPolicy === 'queue_for_open') && (
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-500 dark:text-gray-400">
+                      {afterHoursPolicy === 'queue_for_open' ? 'Protective limit price' : 'Limit price'}
+                    </label>
+                    <Input
+                      value={limitPrice}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (/^\d*\.?\d*$/.test(value)) {
+                          setLimitPrice(value);
+                        }
+                      }}
+                      placeholder="Enter limit price"
+                      inputMode="decimal"
+                      readOnly={afterHoursPolicy === 'queue_for_open'}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {afterHoursPolicy === 'queue_for_open'
+                        ? `Automatically set using a ${DEFAULT_LIMIT_BUFFER_PCT * 100}% buffer from last price.`
+                        : `Suggested using a ${DEFAULT_LIMIT_BUFFER_PCT * 100}% buffer from last price.`}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Order Type Info */}
             <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
-              <p className="font-medium mb-1">Order Type: Market Order</p>
+              <p className="font-medium mb-1">
+                Order Type: {isAfterHours && afterHoursPolicy ? 'Limit Order' : 'Market Order'}
+              </p>
               <p>⚠️ Final price and shares may vary due to market movements.</p>
             </div>
           </div>

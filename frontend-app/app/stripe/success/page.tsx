@@ -89,11 +89,11 @@ function SuccessContent() {
 
   if (status === 'loading') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a]">
         <div className="max-w-md w-full text-center p-8">
-          <Loader2 className="h-16 w-16 mx-auto mb-6 text-blue-600 animate-spin" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Verifying Payment</h2>
-          <p className="text-gray-600">Please wait while we confirm your subscription...</p>
+          <Loader2 className="h-16 w-16 mx-auto mb-6 text-emerald-500 animate-spin" />
+          <h2 className="text-2xl font-bold text-white mb-2">Verifying Payment</h2>
+          <p className="text-gray-400">Please wait while we confirm your subscription...</p>
         </div>
       </div>
     );
@@ -101,11 +101,11 @@ function SuccessContent() {
 
   if (status === 'error') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a]">
         <div className="max-w-md w-full text-center p-8">
-          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-6">
+          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-500/20 mb-6">
             <svg
-              className="h-10 w-10 text-red-600"
+              className="h-10 w-10 text-red-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -118,11 +118,11 @@ function SuccessContent() {
               />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-red-600 mb-2">Payment Verification Failed</h2>
-          <p className="text-gray-600 mb-4">{error || 'There was an issue verifying your payment.'}</p>
+          <h2 className="text-2xl font-bold text-red-500 mb-2">Payment Verification Failed</h2>
+          <p className="text-gray-400 mb-4">{error || 'There was an issue verifying your payment.'}</p>
           <button
             onClick={() => router.push('/protected')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-200 transition-colors"
           >
             Go Back
           </button>
@@ -132,14 +132,14 @@ function SuccessContent() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
+    <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a]">
       <div className="max-w-md w-full text-center p-8">
-        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-6">
-          <CheckCircle2 className="h-10 w-10 text-green-600" />
+        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-emerald-500/20 mb-6">
+          <CheckCircle2 className="h-10 w-10 text-emerald-500" />
         </div>
-        <h2 className="text-2xl font-bold text-green-600 mb-2">Payment Successful!</h2>
-        <p className="text-gray-600 mb-4">
-          Your subscription to Clera Plus has been activated. Redirecting to your portfolio...
+        <h2 className="text-2xl font-bold text-emerald-500 mb-2">Payment Successful!</h2>
+        <p className="text-gray-400 mb-4">
+          Your subscription to Clera has been activated. Redirecting to your portfolio...
         </p>
       </div>
     </div>
@@ -150,10 +150,10 @@ export default function SuccessPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center">
+        <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a]">
           <div className="text-center">
-            <Loader2 className="h-16 w-16 mx-auto mb-6 text-blue-600 animate-spin" />
-            <p>Loading...</p>
+            <Loader2 className="h-16 w-16 mx-auto mb-6 text-emerald-500 animate-spin" />
+            <p className="text-gray-400">Loading...</p>
           </div>
         </div>
       }

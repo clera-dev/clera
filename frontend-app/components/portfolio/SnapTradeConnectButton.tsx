@@ -3,29 +3,31 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
+import { validateAndSanitizeRedirectUrl } from '@/utils/security';
 
 interface SnapTradeConnectButtonProps {
   /**
    * Filter for brokerage capabilities:
    * - undefined: Shows ALL brokerages (recommended for onboarding)
    * - 'read': Shows only read-capable brokerages
-   * - 'trade': Shows only trading-capable brokerages (default for dashboard "Add Account")
+   * - 'trade': Shows only trading-capable brokerages
    */
   connectionType?: 'read' | 'trade';
   broker?: string;
   onSuccess?: () => void;
   className?: string;
   children?: React.ReactNode;
+  returnTo?: string;
 }
 
 export function SnapTradeConnectButton({
-  // Default to 'trade' for dashboard context where users want to add trading-capable accounts
-  // For onboarding, use undefined/omit to show all brokerages
-  connectionType = 'trade',
+  // Use undefined/omit to show ALL brokerages (recommended)
+  connectionType,
   broker,
   onSuccess,
   className,
   children,
+  returnTo,
 }: SnapTradeConnectButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -33,17 +35,32 @@ export function SnapTradeConnectButton({
     try {
       setIsLoading(true);
 
+      const safeReturnTo = returnTo ? validateAndSanitizeRedirectUrl(returnTo) : null;
+      const redirectUrl = safeReturnTo
+        ? `${window.location.origin}/onboarding/snaptrade-callback?return_to=${encodeURIComponent(safeReturnTo)}`
+        : `${window.location.origin}/onboarding/snaptrade-callback`;
+
+      const requestBody: {
+        connectionType?: 'read' | 'trade';
+        broker?: string;
+        redirectUrl: string;
+      } = {
+        redirectUrl,
+      };
+      if (connectionType) {
+        requestBody.connectionType = connectionType;
+      }
+      if (broker) {
+        requestBody.broker = broker;
+      }
+
       // Get connection URL from backend
       const response = await fetch('/api/snaptrade/create-connection', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          connectionType,
-          broker,
-          redirectUrl: `${window.location.origin}/onboarding/snaptrade-callback`,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {

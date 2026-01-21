@@ -265,7 +265,7 @@ export async function saveOnboardingDataAction(
     accountNumber?: string;
     accountStatus?: string;
   },
-  completionType?: 'plaid' | 'brokerage' | null
+  completionType?: 'plaid' | 'aggregation' | 'brokerage' | null
 ) {
   try {
     const supabase = await createClient();
@@ -274,9 +274,9 @@ export async function saveOnboardingDataAction(
     const now = new Date().toISOString();
     const completionFields: any = {};
     
-    if (completionType === 'plaid' && status === 'submitted') {
+    if ((completionType === 'plaid' || completionType === 'aggregation') && status === 'submitted') {
       completionFields.plaid_connection_completed_at = now;
-      console.log('Setting plaid_connection_completed_at:', now);
+      console.log('Setting connection_completed_at:', now);
     } else if (completionType === 'brokerage' && status === 'submitted') {
       completionFields.brokerage_account_completed_at = now;
       console.log('Setting brokerage_account_completed_at:', now);

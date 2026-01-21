@@ -251,19 +251,24 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           next = ONBOARDING_STEPS[ONBOARDING_STEPS.indexOf(next) + 1]; // Skip to loading
         }
       } else if (portfolioMode === 'hybrid') {
-        // In hybrid mode: After plaid_connection, save plaid completion and navigate to /invest
+      // In hybrid mode: After connection, save completion and check payment before /portfolio
         if (currentStep === "plaid_connection" && next === "loading") {
-          console.log('[OnboardingFlow] Hybrid mode - saving Plaid completion and navigating to /invest');
-          // Save Plaid completion timestamp
-          await saveOnboardingData(
-            userId,
-            onboardingData,
-            'submitted', // Keep status as submitted (already set from brokerage)
-            undefined, // No new Alpaca data
-            'plaid' // Set plaid_connection_completed_at timestamp
-          );
-          // Navigate directly to /invest (don't show loading screen again)
-          router.push('/invest');
+          console.log('[OnboardingFlow] Hybrid mode - saving connection completion and checking payment');
+          try {
+            // Save connection completion timestamp (aggregation-style completion)
+            await saveOnboardingData(
+              userId,
+              onboardingData,
+              'submitted', // Keep status as submitted (already set from brokerage)
+              undefined, // No new Alpaca data
+              'aggregation' // Sets connection completion timestamp
+            );
+            // Check payment before navigating (consistent with other modes)
+            await redirectToCheckoutOrPortfolio('Hybrid mode connection complete');
+          } catch (error) {
+            console.error('[OnboardingFlow] Hybrid mode payment redirect failed:', error);
+            router.push('/portfolio');
+          }
           return;
         }
       }
@@ -335,17 +340,17 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       
       // Skip Alpaca account creation in aggregation mode (Plaid-only onboarding)
       if (portfolioMode === 'aggregation') {
-        console.log('🎯 [Aggregation Mode] Saving onboarding completion with plaid timestamp');
-        // Save onboarding status as completed with Plaid completion timestamp
+        console.log('🎯 [Aggregation Mode] Saving onboarding completion with connection timestamp');
+        // Save onboarding status as completed with connection completion timestamp
         await saveOnboardingData(
           userId,
           onboardingData,
           'submitted', // Mark as completed for aggregation mode
           undefined, // No Alpaca data
-          'plaid' // Set plaid_connection_completed_at timestamp
+          'aggregation' // Set connection completion timestamp
         );
         
-        console.log('✅ [Aggregation Mode] Onboarding saved, navigating to /invest');
+        console.log('✅ [Aggregation Mode] Onboarding saved, navigating to /portfolio');
         setAccountCreated(true);
         setSubmitting(false);
         handleLoadingComplete();
@@ -418,7 +423,36 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
     }
   };
 
-  const handleLoadingComplete = () => {
+  const redirectToCheckoutOrPortfolio = async (context: string) => {
+    console.log(`[OnboardingFlow] ${context} - creating checkout session`);
+    const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (checkoutResponse.ok) {
+      const checkoutData = await checkoutResponse.json();
+      if (checkoutData.url) {
+        window.location.href = checkoutData.url;
+      } else {
+        console.error('[OnboardingFlow] No checkout URL received, falling back to portfolio');
+        router.push('/portfolio');
+      }
+      return;
+    }
+
+    if (checkoutResponse.status === 409) {
+      const errorData = await checkoutResponse.json();
+      console.log('[OnboardingFlow] User already has subscription, redirecting to portfolio');
+      router.push(errorData.redirectTo || '/portfolio');
+      return;
+    }
+
+    console.error('[OnboardingFlow] Failed to create checkout session, falling back to portfolio');
+    router.push('/portfolio');
+  };
+
+  const handleLoadingComplete = async () => {
     // After onboarding completion, determine next step based on mode
     console.log('[OnboardingFlow] handleLoadingComplete called, portfolioMode:', portfolioMode);
     
@@ -429,9 +463,31 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       return;
     }
     
-    // In aggregation or brokerage mode, go straight to /invest
-    console.log('[OnboardingFlow] Navigating to /invest');
-    router.push('/invest');
+    // CRITICAL: Check payment status before navigating to portfolio
+    // This prevents the confusing bounce: onboarding → portfolio → protected → stripe
+    // Instead, users go: onboarding → stripe → portfolio (clean flow)
+    try {
+      const paymentCheck = await fetch('/api/stripe/check-payment-status');
+      if (paymentCheck.ok) {
+        const paymentData = await paymentCheck.json();
+        
+        if (paymentData.hasActivePayment) {
+          // User has already paid - go directly to portfolio
+          console.log('[OnboardingFlow] User has active payment, redirecting to portfolio');
+          router.push('/portfolio');
+        } else {
+          // User needs to pay - redirect to Stripe checkout
+          await redirectToCheckoutOrPortfolio('User needs payment');
+        }
+      } else {
+        // Payment check failed - try to create checkout as failsafe
+        await redirectToCheckoutOrPortfolio('Payment check failed');
+      }
+    } catch (error) {
+      console.error('[OnboardingFlow] Error checking payment status:', error);
+      // Fallback to portfolio (it will redirect to protected if needed)
+      router.push('/portfolio');
+    }
   };
 
   const handleLoadingError = (error: string) => {

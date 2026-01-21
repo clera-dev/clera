@@ -12,6 +12,14 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 export async function POST(request: NextRequest) {
   try {
+    if (!process.env.BACKEND_API_URL) {
+      console.error('[Sync All Connections] ❌ BACKEND_API_URL not configured!');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+
     const authHeader = request.headers.get('authorization');
     console.log(`[Sync All Connections] Starting sync for user`);
     console.log(`[Sync All Connections] Authorization header present: ${!!authHeader}`);
@@ -25,14 +33,8 @@ export async function POST(request: NextRequest) {
     }
     
     // Call the BACKEND endpoint to handle the connection sync
+    // Note: Early validation at top of function already ensures BACKEND_API_URL is defined
     const backendUrl = process.env.BACKEND_API_URL;
-    if (!backendUrl) {
-      console.error('[Sync All Connections] ❌ BACKEND_API_URL not configured!');
-      return NextResponse.json(
-        { error: 'Backend service is not configured' },
-        { status: 500 }
-      );
-    }
     
     console.log(`[Sync All Connections] 📤 Calling backend: ${backendUrl}/api/snaptrade/sync-all`);
     

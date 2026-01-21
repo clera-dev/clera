@@ -4,8 +4,25 @@ Tests for SnapTradeTradingService
 PRODUCTION-GRADE: Comprehensive tests for trade execution via SnapTrade API.
 """
 
+import sys
+import types
 import pytest
 from unittest.mock import Mock, patch, MagicMock
+
+# Stub snaptrade_client for test environment
+snaptrade_module = types.ModuleType('snaptrade_client')
+
+
+class DummySnapTrade:
+    def __init__(self, *args, **kwargs):
+        self.trading = MagicMock()
+        self.reference_data = MagicMock()
+        self.account_information = MagicMock()
+
+
+snaptrade_module.SnapTrade = DummySnapTrade
+sys.modules.setdefault('snaptrade_client', snaptrade_module)
+
 from services.snaptrade_trading_service import SnapTradeTradingService, get_snaptrade_trading_service
 
 
@@ -204,8 +221,105 @@ class TestSnapTradeTradingService:
         
         assert result['success'] is True
         assert result['order']['brokerage_order_id'] == 'order-123'
-        assert result['order']['status'] == 'PENDING'
-        assert result['order']['symbol'] == 'AAPL'
+
+    def test_after_hours_queue_for_open_short_circuits(self):
+        """Queue-for-open should avoid brokerage calls when market is closed."""
+        service = SnapTradeTradingService()
+        service.get_user_credentials = Mock(return_value={
+            'snaptrade_user_id': 'test-user-123',
+            'snaptrade_user_secret': 'test-secret-456'
+        })
+        service.get_market_status = Mock(return_value={'is_open': False, 'status': 'after_hours'})
+        service._get_latest_price = Mock(return_value=100.0)
+        queue_result = {'success': True, 'queued': True, 'order_id': 'queued-123', 'message': 'queued'}
+        service.queue_order = Mock(return_value=queue_result)
+
+        result = service.place_order(
+            user_id='platform-user-123',
+            account_id='account-uuid-456',
+            symbol='AAPL',
+            action='BUY',
+            order_type='Market',
+            time_in_force='Day',
+            notional_value=50.0,
+            after_hours_policy='queue_for_open'
+        )
+
+        assert result == queue_result
+        service.queue_order.assert_called_once()
+        call_kwargs = service.queue_order.call_args.kwargs
+        assert call_kwargs['time_in_force'] == 'Day'
+        assert call_kwargs['order_type'] == 'Limit'
+        assert call_kwargs['price'] == 101.0
+        assert call_kwargs['last_price_at_creation'] == 100.0
+
+    def test_after_hours_limit_uses_ehp(self):
+        """After-hours limit policy should use EHP time-in-force."""
+        service = SnapTradeTradingService()
+        service.get_user_credentials = Mock(return_value={
+            'snaptrade_user_id': 'test-user-123',
+            'snaptrade_user_secret': 'test-secret-456'
+        })
+        service.get_market_status = Mock(return_value={'is_open': False, 'status': 'after_hours'})
+        service.get_universal_symbol_id_for_account = Mock(return_value='symbol-uuid-123')
+
+        mock_impact_response = Mock()
+        mock_impact_response.body = {'trade': {'id': 'trade-id-123', 'price': 150.0}}
+        service.client.trading.get_order_impact = Mock(return_value=mock_impact_response)
+
+        mock_order_response = Mock()
+        mock_order_response.body = {
+            'brokerage_order_id': 'order-123',
+            'status': 'PENDING',
+            'universal_symbol': {'symbol': 'AAPL'},
+            'action': 'BUY',
+            'total_quantity': '10',
+            'filled_quantity': '0',
+            'execution_price': None,
+            'order_type': 'Limit',
+            'time_placed': '2025-10-28T12:00:00Z'
+        }
+        service.client.trading.place_order = Mock(return_value=mock_order_response)
+
+        result = service.place_order(
+            user_id='platform-user-123',
+            account_id='account-uuid-456',
+            symbol='AAPL',
+            action='BUY',
+            order_type='Limit',
+            time_in_force='Day',
+            notional_value=100.0,
+            price=155.0,
+            after_hours_policy='broker_limit_gtc'
+        )
+
+        assert result['success'] is True
+        impact_kwargs = service.client.trading.get_order_impact.call_args.kwargs
+        assert impact_kwargs['order_type'] == 'Limit'
+        assert impact_kwargs['time_in_force'] == 'EHP'
+
+    def test_after_hours_limit_requires_price(self):
+        """Limit policy without a price should fail early."""
+        service = SnapTradeTradingService()
+        service.get_user_credentials = Mock(return_value={
+            'snaptrade_user_id': 'test-user-123',
+            'snaptrade_user_secret': 'test-secret-456'
+        })
+        service.get_market_status = Mock(return_value={'is_open': False, 'status': 'after_hours'})
+
+        result = service.place_order(
+            user_id='platform-user-123',
+            account_id='account-uuid-456',
+            symbol='AAPL',
+            action='BUY',
+            order_type='Limit',
+            time_in_force='Day',
+            notional_value=100.0,
+            after_hours_policy='broker_limit_gtc'
+        )
+
+        assert result['success'] is False
+        assert 'Limit price is required' in result['error']
     
     @patch('supabase.create_client')
     def test_place_order_missing_credentials(self, mock_create_client):

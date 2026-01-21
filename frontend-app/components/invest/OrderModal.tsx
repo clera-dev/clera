@@ -27,9 +27,11 @@ import {
 } from "@/components/ui/select";
 import { getMarketStatus } from "@/utils/market-hours";
 import { safeOpenUrl } from "@/utils/url-validation";
+import { NoTradeAccountsNotice } from "@/components/invest/NoTradeAccountsNotice";
 
 // Webull requires a minimum of $5 for fractional share orders
 const MINIMUM_ORDER_AMOUNT = 5;
+const DEFAULT_LIMIT_BUFFER_PCT = 0.01;
 
 interface OrderModalProps {
   isOpen: boolean;
@@ -80,6 +82,8 @@ export default function OrderModal({
   const [tradeAccounts, setTradeAccounts] = useState<TradeAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
+  const [afterHoursPolicy, setAfterHoursPolicy] = useState<'broker_limit_gtc' | 'queue_for_open' | ''>('');
+  const [limitPrice, setLimitPrice] = useState('');
 
   const isBuyOrder = orderType === 'BUY';
   const isSellOrder = orderType === 'SELL';
@@ -161,14 +165,33 @@ export default function OrderModal({
   // Fetch price and accounts when modal opens
   useEffect(() => {
     if (isOpen) {
+      setMarketPrice(null);
       fetchMarketPrice();
       fetchTradeAccounts();
       setAmount(''); // Reset amount on open
       setSubmitError(null);
+      setAfterHoursPolicy('');
+      setLimitPrice('');
       // Default to shares mode for sell orders (whole shares required by brokerages)
       setInputMode(isSellOrder ? 'shares' : 'dollars');
     }
   }, [isOpen, fetchMarketPrice, fetchTradeAccounts, isSellOrder]);
+
+  useEffect(() => {
+    if (!marketStatus.isOpen && marketPrice && limitPrice === '') {
+      const bufferMultiplier = isBuyOrder ? (1 + DEFAULT_LIMIT_BUFFER_PCT) : (1 - DEFAULT_LIMIT_BUFFER_PCT);
+      const suggestedLimit = Math.max(marketPrice * bufferMultiplier, 0.01);
+      setLimitPrice(suggestedLimit.toFixed(2));
+    }
+  }, [marketStatus.isOpen, marketPrice, limitPrice, isBuyOrder]);
+
+  useEffect(() => {
+    if (!marketStatus.isOpen && marketPrice && afterHoursPolicy === 'queue_for_open') {
+      const bufferMultiplier = isBuyOrder ? (1 + DEFAULT_LIMIT_BUFFER_PCT) : (1 - DEFAULT_LIMIT_BUFFER_PCT);
+      const suggestedLimit = Math.max(marketPrice * bufferMultiplier, 0.01);
+      setLimitPrice(suggestedLimit.toFixed(2));
+    }
+  }, [afterHoursPolicy, marketStatus.isOpen, marketPrice, isBuyOrder]);
 
   const handleNumberPadInput = (value: string) => {
     if (value === '⌫') {
@@ -238,6 +261,24 @@ export default function OrderModal({
         : "Please enter a valid amount greater than $0.");
       return;
     }
+
+    if (!marketStatus.isOpen) {
+      if (!afterHoursPolicy) {
+        setSubmitError("Please select how you want this after-hours order handled.");
+        return;
+      }
+      if (afterHoursPolicy === 'broker_limit_gtc' || afterHoursPolicy === 'queue_for_open') {
+        const parsedLimit = parseFloat(limitPrice);
+        if (isNaN(parsedLimit) || parsedLimit <= 0) {
+          setSubmitError("Please enter a valid limit price.");
+          return;
+        }
+        if (afterHoursPolicy === 'queue_for_open' && !marketPrice) {
+          setSubmitError("Unable to load market price to calculate a protective limit. Please try again.");
+          return;
+        }
+      }
+    }
     
     // For shares mode, ensure whole number
     if (inputMode === 'shares' && !Number.isInteger(parsedValue)) {
@@ -276,22 +317,40 @@ export default function OrderModal({
 
     try {
         // Build request body - use units for shares mode, notional_amount for dollars mode
+        const isAfterHours = !marketStatus.isOpen;
+        const orderType = isAfterHours && afterHoursPolicy ? 'Limit' : 'Market';
+        const timeInForce = isAfterHours
+          ? (afterHoursPolicy === 'broker_limit_gtc' && marketStatus.status === 'after_hours' ? 'EHP' : 'Day')
+          : 'Day';
+        const limitPriceValue = orderType === 'Limit' ? parseFloat(limitPrice) : undefined;
+
         const requestBody: {
           account_id: string;
           ticker: string;
           side: string;
           notional_amount?: number;
           units?: number;
+          order_type?: string;
+          time_in_force?: string;
+          limit_price?: number;
+          after_hours_policy?: string;
         } = {
           account_id: selectedAccount,
           ticker: symbol,
           side: orderAction,
+          order_type: orderType,
+          time_in_force: timeInForce,
+          after_hours_policy: isAfterHours ? afterHoursPolicy : undefined,
         };
         
         if (inputMode === 'shares') {
           requestBody.units = parsedValue;
         } else {
           requestBody.notional_amount = parsedValue;
+        }
+
+        if (limitPriceValue) {
+          requestBody.limit_price = limitPriceValue;
         }
         
         const response = await fetch('/api/trade', {
@@ -392,6 +451,7 @@ export default function OrderModal({
 
   // Dynamic styling based on order type
   const orderTypeColor = isBuyOrder ? 'text-green-600' : 'text-red-600';
+  const displayOrderType = !marketStatus.isOpen && afterHoursPolicy ? 'Limit' : 'Market';
   const buttonColorClasses = isBuyOrder 
     ? 'bg-gradient-to-r from-teal-500 to-green-500 hover:from-teal-600 hover:to-green-600'
     : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700';
@@ -435,9 +495,59 @@ export default function OrderModal({
                     {marketStatus.status === 'pre_market' ? 'Pre-Market' : 
                      marketStatus.status === 'after_hours' ? 'After-Hours' : 'Market Closed'}
                   </span>
-                  {' — '}Your order will be queued and execute {marketStatus.nextOpenTime ? `at ${marketStatus.nextOpenTime}` : 'at next market open'}
+                  {' — '}
+                  {afterHoursPolicy === 'broker_limit_gtc'
+                    ? 'Limit order will be submitted to your broker for after-hours execution.'
+                    : afterHoursPolicy === 'queue_for_open'
+                      ? `Order will be queued with a protective limit of $${limitPrice || '--'} (${DEFAULT_LIMIT_BUFFER_PCT * 100}% buffer). If the price moves significantly or the order is older than 5 days, we will cancel and notify you.`
+                      : 'Select how you want this after-hours order handled.'}
                 </AlertDescription>
               </Alert>
+            )}
+
+            {!marketStatus.isOpen && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">
+                  After-hours handling
+                </label>
+                <Select
+                  value={afterHoursPolicy}
+                  onValueChange={(value) => setAfterHoursPolicy(value as 'broker_limit_gtc' | 'queue_for_open')}
+                >
+                  <SelectTrigger className="w-full bg-background">
+                    <SelectValue placeholder="Select how to handle after-hours" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[200]">
+                    <SelectItem value="broker_limit_gtc">Limit order (broker queues)</SelectItem>
+                    <SelectItem value="queue_for_open">Queue for market open (Clera)</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {(afterHoursPolicy === 'broker_limit_gtc' || afterHoursPolicy === 'queue_for_open') && (
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">
+                      {afterHoursPolicy === 'queue_for_open' ? 'Protective limit price' : 'Limit price'}
+                    </label>
+                    <Input
+                      value={limitPrice}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (/^\d*\.?\d*$/.test(value)) {
+                          setLimitPrice(value);
+                        }
+                      }}
+                      placeholder="Enter limit price"
+                      inputMode="decimal"
+                      readOnly={afterHoursPolicy === 'queue_for_open'}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {afterHoursPolicy === 'queue_for_open'
+                        ? `Automatically set using a ${DEFAULT_LIMIT_BUFFER_PCT * 100}% buffer from last price.`
+                        : `Suggested using a ${DEFAULT_LIMIT_BUFFER_PCT * 100}% buffer from last price.`}
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* SPACE OPTIMIZATION: Order Type and Market Price side-by-side */}
@@ -445,7 +555,7 @@ export default function OrderModal({
               <div className="bg-muted p-3 rounded-md">
                 <div className="text-xs font-medium text-muted-foreground mb-1">Order Type</div>
                 <Badge variant="outline" className={`${orderTypeColor} text-xs`}>
-                  {isBuyOrder ? 'BUY (Market)' : 'SELL (Market)'}
+                  {isBuyOrder ? `BUY (${displayOrderType})` : `SELL (${displayOrderType})`}
                 </Badge>
               </div>
               
@@ -463,11 +573,12 @@ export default function OrderModal({
               {isLoadingAccounts ? (
                 <div className="h-10 bg-muted animate-pulse rounded-md" />
               ) : tradeAccounts.length === 0 ? (
-                <Alert variant="destructive" className="py-2">
-                  <AlertDescription className="text-sm">
-                    No trade-enabled accounts connected. Please connect a brokerage account first.
-                  </AlertDescription>
-                </Alert>
+                <NoTradeAccountsNotice
+                  className="py-2"
+                  onConnectClick={() => {
+                    window.location.href = '/dashboard';
+                  }}
+                />
               ) : (
                 <>
                   <Select 
@@ -743,13 +854,15 @@ export default function OrderModal({
             disabled={isSubmitting || isLoadingPrice || !meetsMinimum || (inputMode === 'shares' && !Number.isInteger(parsedAmount))}
           >
             {isSubmitting ? (
-              <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> {marketStatus.isOpen ? 'Placing Order...' : 'Queueing Order...'}</>
+              <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> {marketStatus.isOpen ? 'Placing Order...' : (afterHoursPolicy === 'broker_limit_gtc' ? 'Placing Limit Order...' : 'Queueing Order...')}</>
             ) : isBelowMinimum ? (
               inputMode === 'shares' ? 'Minimum 1 share required' : `Minimum $${MINIMUM_ORDER_AMOUNT} required`
             ) : inputMode === 'shares' && !Number.isInteger(parsedAmount) ? (
               'Whole shares only'
             ) : marketStatus.isOpen ? (
               `Place ${isBuyOrder ? 'Buy' : 'Sell'} Order`
+            ) : afterHoursPolicy === 'broker_limit_gtc' ? (
+              <><Clock className="mr-2 h-4 w-4" /> Place {isBuyOrder ? 'Buy' : 'Sell'} Limit Order</>
             ) : (
               <><Clock className="mr-2 h-4 w-4" /> Queue {isBuyOrder ? 'Buy' : 'Sell'} Order</>
             )}
