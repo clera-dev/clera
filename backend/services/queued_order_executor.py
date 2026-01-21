@@ -271,11 +271,6 @@ class QueuedOrderExecutor:
         
         logger.info(f"🔄 Attempting to execute queued order {order_id}: {action} {symbol}")
 
-        # Staleness checks for queue_for_open orders (safety guardrails)
-        staleness_result = self._check_and_handle_staleness(order)
-        if staleness_result:
-            return staleness_result
-        
         # CRITICAL: Atomic lock acquisition to prevent race conditions
         # Only update to 'executing' if status is still 'pending'
         # This prevents duplicate order execution across multiple server instances
@@ -293,6 +288,12 @@ class QueuedOrderExecutor:
         if not lock_result.data or len(lock_result.data) == 0:
             logger.info(f"⏭️ Order {order_id} already being processed by another instance, skipping")
             return {'success': False, 'reason': 'already_processing'}
+
+        # Staleness checks for queue_for_open orders (safety guardrails)
+        # Run after lock acquisition to prevent concurrent execution of stale orders.
+        staleness_result = self._check_and_handle_staleness(order)
+        if staleness_result:
+            return staleness_result
         
         # Track whether order was placed (to prevent duplicate execution on DB errors)
         order_placed = False

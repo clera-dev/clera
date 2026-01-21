@@ -254,16 +254,21 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       // In hybrid mode: After connection, save completion and check payment before /portfolio
         if (currentStep === "plaid_connection" && next === "loading") {
           console.log('[OnboardingFlow] Hybrid mode - saving connection completion and checking payment');
-          // Save connection completion timestamp (aggregation-style completion)
-          await saveOnboardingData(
-            userId,
-            onboardingData,
-            'submitted', // Keep status as submitted (already set from brokerage)
-            undefined, // No new Alpaca data
-            'aggregation' // Sets connection completion timestamp
-          );
-          // Check payment before navigating (consistent with other modes)
-          await redirectToCheckoutOrPortfolio('Hybrid mode connection complete');
+          try {
+            // Save connection completion timestamp (aggregation-style completion)
+            await saveOnboardingData(
+              userId,
+              onboardingData,
+              'submitted', // Keep status as submitted (already set from brokerage)
+              undefined, // No new Alpaca data
+              'aggregation' // Sets connection completion timestamp
+            );
+            // Check payment before navigating (consistent with other modes)
+            await redirectToCheckoutOrPortfolio('Hybrid mode connection complete');
+          } catch (error) {
+            console.error('[OnboardingFlow] Hybrid mode payment redirect failed:', error);
+            router.push('/portfolio');
+          }
           return;
         }
       }
