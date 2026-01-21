@@ -1014,7 +1014,8 @@ export default function PortfolioPage() {
 
   // Empty portfolio state - no accounts connected
   // CRITICAL: Don't show "Connect Brokerage" if user has accounts but is filtering to empty account
-  const hasConnectedAccounts = (totalConnectedAccounts ?? 0) > 0;
+  // Fallback: treat as connected if we have loaded accounts or positions (API count may fail)
+  const hasConnectedAccounts = (totalConnectedAccounts ?? 0) > 0 || availableAccounts.length > 0 || positions.length > 0;
   const isFilteringAccount = selectedAccountFilter && selectedAccountFilter !== 'total';
   
   if (!isLoading && positions.length === 0 && !error && !hasConnectedAccounts && !isFilteringAccount) {
