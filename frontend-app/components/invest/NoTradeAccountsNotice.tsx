@@ -1,3 +1,5 @@
+'use client';
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Building2, ExternalLink } from "lucide-react";

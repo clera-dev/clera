@@ -858,6 +858,11 @@ class SnapTradeTradingService:
                             'success': False,
                             'error': 'Order information is incomplete. Please try again.'
                         }
+                    if not notional_value and not units:
+                        return {
+                            'success': False,
+                            'error': 'Order amount is required to queue for market open.'
+                        }
                     if order_type in {'Stop', 'StopLimit'}:
                         return {
                             'success': False,

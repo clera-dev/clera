@@ -109,11 +109,11 @@ function SnapTradeCallbackContent() {
           const result = await response.json();
           console.log('✅ All connections synced successfully:', result);
           
-          // If user cancelled the SnapTrade flow (closed without connecting), 
-          // there will be no new connections synced
-          const connectionsSynced = result.connections_synced ?? 0;
-          const accountsSynced = result.accounts_synced ?? 0;
-          if (connectionsSynced === 0 && accountsSynced === 0) {
+          // Treat as cancelled only when the API explicitly reports no connections
+          const hasSyncCounts = typeof result.connections_synced === 'number' && typeof result.accounts_synced === 'number';
+          const connectionsSynced = hasSyncCounts ? result.connections_synced : null;
+          const accountsSynced = hasSyncCounts ? result.accounts_synced : null;
+          if (result.no_connections === true || (hasSyncCounts && connectionsSynced === 0 && accountsSynced === 0)) {
             setStatus('cancelled');
             toast('Connection not completed. You can try again anytime.');
             setTimeout(() => {
