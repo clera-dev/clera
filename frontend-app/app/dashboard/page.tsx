@@ -18,6 +18,7 @@ import { getAlpacaAccountId } from "@/lib/utils"; // Import reliable account ID 
 import TransferHistory from "@/components/funding/TransferHistory";
 import GoalsSection from "@/components/dashboard/GoalsSection";
 import AddConnectionButton from "@/components/dashboard/AddConnectionButton";
+import SubscriptionManagement from "@/components/dashboard/SubscriptionManagement";
 
 // Define a more accurate type for account details based on Supabase fetch
 interface FetchedAccountDetails {
@@ -380,12 +381,13 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Row 3: Goals Section */}
-          <div className="grid grid-cols-1 gap-6">
+          {/* Row 3: Goals and Subscription */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <GoalsSection 
               userId={userId || ''} 
               firstName={userData?.firstName}
             />
+            <SubscriptionManagement />
           </div>
 
           {/* Row 4: Documents and Disclosures (only for brokerage mode) */}
