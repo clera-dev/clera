@@ -401,7 +401,7 @@ The frontend is configured in Vercel with the following settings:
    - Node.js Version: 18.x
 
 2. **Domain Configuration**:
-   - Production Domain: `app.clera.ai`
+   - Production Domain: `app.askclera.com`
    - Automatic SSL/TLS certificates
    - Custom DNS records for domain verification
 
@@ -412,18 +412,18 @@ The frontend is configured in Vercel with the following settings:
    ```
    NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-   BACKEND_API_URL=https://api.clera.ai
+   BACKEND_API_URL=https://api.askclera.com
    PLAID_ENV=production
-   NEXT_PUBLIC_BASE_URL=https://app.clera.ai
+   NEXT_PUBLIC_BASE_URL=https://app.askclera.com
    ```
 
    **Preview Environments**:
    ```
    NEXT_PUBLIC_SUPABASE_URL=https://your-staging-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-staging-anon-key
-   BACKEND_API_URL=https://api-staging.clera.ai
+   BACKEND_API_URL=https://api-staging.askclera.com
    PLAID_ENV=sandbox
-   NEXT_PUBLIC_BASE_URL=https://staging.clera.ai
+   NEXT_PUBLIC_BASE_URL=https://staging.askclera.com
    ```
 
 4. **Git Integration**:

@@ -183,12 +183,15 @@ async def get_trade_enabled_accounts(
         user_secret = snap_user_result.data[0]['snaptrade_user_secret']
         
         # Fetch SnapTrade accounts with trade capabilities (including authorization_id for reconnect)
+        # PRODUCTION FIX: Include accounts where connection_type is NULL (unknown due to API failure during sync)
+        # These accounts likely support trading but we couldn't confirm it at sync time
+        # Filter: connection_type = 'trade' OR connection_type IS NULL
         accounts_result = supabase.table('user_investment_accounts')\
             .select('id, provider_account_id, institution_name, account_name, cash_balance, buying_power, connection_type, connection_status, snaptrade_authorization_id')\
             .eq('user_id', user_id)\
             .eq('provider', 'snaptrade')\
             .eq('is_active', True)\
-            .eq('connection_type', 'trade')\
+            .or_('connection_type.eq.trade,connection_type.is.null')\
             .execute()
         
         # Initialize SnapTrade provider for balance fetching and health checks

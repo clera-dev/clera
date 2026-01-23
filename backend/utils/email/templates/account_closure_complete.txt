@@ -1,43 +1,24 @@
-Account Closure Complete
+Account Closed ✓
 
-Dear {{ user_name }},
+Hi {{ user_name }},
 
-We're pleased to inform you that your account closure process has been completed successfully. Your account has been permanently closed and all remaining funds have been transferred to your connected bank account.
+Your account closure is complete and funds have been transferred.
 
-✅ CLOSURE SUMMARY
-==================
-Confirmation Number: {{ confirmation_number }}
+CLOSURE SUMMARY
+---------------
+Confirmation #: {{ confirmation_number }}
 Account ID: {{ account_id }}
-Completion Date: {{ completion_date }}
-Final Transfer Amount: ${{ "%.2f"|format((final_transfer_amount|float) if final_transfer_amount is not none and final_transfer_amount != "" else 0.0) }}
+Completed: {{ completion_date }}
+Amount Transferred: ${{ "%.2f"|format((final_transfer_amount|float) if final_transfer_amount is not none and final_transfer_amount != "" else 0.0) }}
 
-📋 WHAT WAS COMPLETED
-====================
-• Holdings Liquidation: All investments were sold at market prices
-• Fund Transfer: Proceeds were transferred to your bank account
-• Account Closure: Your account has been permanently closed
-• Documentation: Final statements and tax documents are available
+WHAT'S NEXT
+-----------
+• Funds should arrive in your bank within 1-2 business days
+• You'll receive tax documents (Form 1099-B) for this year
+• Keep this email for your records
 
-📄 NEXT STEPS
-=============
-• Bank Transfer: The final transfer should appear in your bank account within 1-2 business days
-• Tax Documents: You'll receive Form 1099-B for tax reporting purposes
-• Final Statements: Download your final account statements from your dashboard
-• Records: Keep this confirmation email for your records
+Thank you for being a Clera investor.
 
-QUESTIONS OR NEED ASSISTANCE?
-=============================
-Our support team is here to help with any questions about your account closure:
+Questions? {{ support_email }}
 
-Email: {{ support_email }}
-
-Please reference your confirmation number {{ confirmation_number }} when contacting support.
-
-Thank you for choosing Clera. We appreciate the opportunity to have served you as an investor.
-
-Best regards,
-The Clera Team
-
----
-This is an automated message. Please do not reply to this email.
-© {{ current_year }} Clera. All rights reserved. 
+© {{ current_year }} Clera

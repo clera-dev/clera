@@ -88,7 +88,7 @@ export default function TestPortfolioAggregationPage() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          email: 'test@clera.ai'
+          email: 'test@askclera.com'
         })
       });
 

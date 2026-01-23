@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
 from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime
@@ -23,8 +24,8 @@ class EmailService:
     """
     
     def __init__(self):
-        # AWS SES SMTP Configuration
-        self.smtp_server = "email-smtp.us-west-2.amazonaws.com"
+        # AWS SES SMTP Configuration (us-west-1 region)
+        self.smtp_server = "email-smtp.us-west-1.amazonaws.com"
         self.smtp_port = 587
         self.smtp_username = os.getenv("AWS_SES_SMTP_USERNAME")
         self.smtp_password = os.getenv("AWS_SES_SMTP_PASSWORD")
@@ -90,11 +91,15 @@ class EmailService:
                 estimated_completion=estimated_completion
             )
             
+            # Path to the transparent logo
+            logo_path = os.path.join(self.template_dir, "clera-logo-transparent-200.png")
+            
             return self._send_email(
                 to_email=user_email,
                 subject=subject,
                 html_content=html_content,
-                text_content=text_content
+                text_content=text_content,
+                inline_images={'clera_logo': logo_path}
             )
             
         except Exception as e:
@@ -137,15 +142,54 @@ class EmailService:
                 final_transfer_amount=final_transfer_amount
             )
             
+            # Path to the transparent logo
+            logo_path = os.path.join(self.template_dir, "clera-logo-transparent-200.png")
+            
             return self._send_email(
                 to_email=user_email,
                 subject=subject,
                 html_content=html_content,
-                text_content=text_content
+                text_content=text_content,
+                inline_images={'clera_logo': logo_path}
             )
             
         except Exception as e:
             logger.error(f"Error sending account closure completion notification to {user_email}: {e}")
+            return False
+
+    def send_welcome_email(
+        self,
+        user_email: str,
+        user_name: Optional[str] = None
+    ) -> bool:
+        """
+        Send welcome email to new users upon signup.
+        
+        Args:
+            user_email: User's email address
+            user_name: User's name (optional)
+            
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        try:
+            subject = "Welcome to Clera - Your AI Investment Companion"
+            
+            html_content = self._generate_welcome_email_html(user_name=user_name)
+            text_content = self._generate_welcome_email_text(user_name=user_name)
+            
+            # Path to the transparent logo
+            logo_path = os.path.join(self.template_dir, "clera-logo-transparent-200.png")
+            
+            return self._send_email(
+                to_email=user_email,
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+                inline_images={'clera_logo': logo_path}
+            )
+        except Exception as e:
+            logger.error(f"Error sending welcome email to {user_email}: {e}")
             return False
 
     def send_order_cancellation_notification(
@@ -199,17 +243,21 @@ class EmailService:
                 limit_price=limit_price
             )
             
+            # Path to the transparent logo
+            logo_path = os.path.join(self.template_dir, "clera-logo-transparent-200.png")
+            
             return self._send_email(
                 to_email=user_email,
                 subject=subject,
                 html_content=html_content,
-                text_content=text_content
+                text_content=text_content,
+                inline_images={'clera_logo': logo_path}
             )
         except Exception as e:
             logger.error(f"Error sending order cancellation notification to {user_email}: {e}")
             return False
     
-    def _send_email(self, to_email: str, subject: str, html_content: str, text_content: str) -> bool:
+    def _send_email(self, to_email: str, subject: str, html_content: str, text_content: str, inline_images: Optional[Dict[str, str]] = None) -> bool:
         """
         Send email using AWS SES SMTP.
         
@@ -218,6 +266,7 @@ class EmailService:
             subject: Email subject
             html_content: HTML email content
             text_content: Plain text email content
+            inline_images: Optional dictionary mapping Content-ID to file path for inline images
             
         Returns:
             True if email sent successfully, False otherwise
@@ -228,18 +277,45 @@ class EmailService:
             return False
             
         try:
-            # Create message
-            msg = MIMEMultipart('alternative')
+            # Create message container
+            # Use 'related' if we have inline images, otherwise 'alternative' is fine but 'related' handles both
+            if inline_images:
+                msg = MIMEMultipart('related')
+            else:
+                msg = MIMEMultipart('alternative')
+                
             msg['From'] = f"{self.from_name} <{self.from_email}>"
             msg['To'] = to_email
             msg['Subject'] = subject
+            
+            # If we have images, we need to encapsulate the text/html part in an 'alternative' container
+            if inline_images:
+                msg_alternative = MIMEMultipart('alternative')
+                msg.attach(msg_alternative)
+            else:
+                msg_alternative = msg
             
             # Add both plain text and HTML versions
             part1 = MIMEText(text_content, 'plain')
             part2 = MIMEText(html_content, 'html')
             
-            msg.attach(part1)
-            msg.attach(part2)
+            msg_alternative.attach(part1)
+            msg_alternative.attach(part2)
+            
+            # Attach inline images
+            if inline_images:
+                for cid, path in inline_images.items():
+                    if os.path.exists(path):
+                        with open(path, 'rb') as f:
+                            img_data = f.read()
+                            img = MIMEImage(img_data)
+                            # Define the image ID
+                            img.add_header('Content-ID', f'<{cid}>')
+                            # Default disposition is inline
+                            img.add_header('Content-Disposition', 'inline', filename=os.path.basename(path))
+                            msg.attach(img)
+                    else:
+                        logger.warning(f"Inline image not found at path: {path}")
             
             # Connect to AWS SES SMTP server
             server = smtplib.SMTP(self.smtp_server, self.smtp_port)
@@ -251,7 +327,7 @@ class EmailService:
             server.sendmail(self.from_email, to_email, text)
             server.quit()
             
-            logger.info(f"Account closure email sent successfully to (redacted email)")
+            logger.info(f"Email sent successfully to (redacted email)")
             return True
             
         except smtplib.SMTPException as e:
@@ -397,6 +473,28 @@ class EmailService:
             current_year=datetime.now().year
         )
 
+    def _generate_welcome_email_html(self, user_name: Optional[str] = None) -> str:
+        """Generate HTML email content for welcome email."""
+        template = self.env.get_template("welcome.html")
+        
+        return template.render(
+            user_name=escape(user_name) if user_name else None,
+            app_url="https://app.askclera.com",
+            support_email=self.support_email,
+            current_year=datetime.now().year
+        )
+    
+    def _generate_welcome_email_text(self, user_name: Optional[str] = None) -> str:
+        """Generate plain text email content for welcome email."""
+        template = self.env.get_template("welcome.txt")
+        
+        return template.render(
+            user_name=escape(user_name) if user_name else None,
+            app_url="https://app.askclera.com",
+            support_email=self.support_email,
+            current_year=datetime.now().year
+        )
+
 # Convenience function for easy import
 def send_account_closure_email(user_email: str, user_name: str, account_id: str, 
                              confirmation_number: str, estimated_completion: str = "3-5 business days") -> bool:
@@ -444,4 +542,22 @@ def send_account_closure_complete_email(user_email: str, user_name: str, account
         account_id=account_id,
         confirmation_number=confirmation_number,
         final_transfer_amount=final_transfer_amount
-    ) 
+    )
+
+
+def send_welcome_email(user_email: str, user_name: Optional[str] = None) -> bool:
+    """
+    Send welcome email to new users.
+    
+    Args:
+        user_email: User's email address
+        user_name: User's name (optional)
+        
+    Returns:
+        True if email sent successfully, False otherwise
+    """
+    email_service = EmailService()
+    return email_service.send_welcome_email(
+        user_email=user_email,
+        user_name=user_name
+    )

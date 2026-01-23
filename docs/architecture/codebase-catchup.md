@@ -49,7 +49,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                              FRONTEND                                   │
-│  Next.js 15 (Vercel)  │  app.clera.ai                                  │
+│  Next.js 15 (Vercel)  │  app.askclera.com                               │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  /chat        │  /portfolio    │  /invest      │  /settings            │
 │  Chat.tsx     │  HoldingsTable │  OrderModal   │  PIISection           │
@@ -678,7 +678,7 @@ curl -X POST http://localhost:8000/api/snaptrade/sync \
 ### Production URLs
 | Service | URL |
 |---------|-----|
-| Frontend | https://app.clera.ai |
+| Frontend | https://app.askclera.com |
 | Backend API | https://api.askclera.com |
 | WebSocket | wss://ws.askclera.com |
 | LangGraph | https://clera.langchain.dev |

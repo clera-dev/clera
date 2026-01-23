@@ -1,0 +1,41 @@
+Hey there{{ ', ' + user_name + '!' if user_name else '!' }} I'm Clera.
+
+I'm your personal AI investment advisor, and I'm excited to meet you. 
+Whether you're just getting started or looking to level up your portfolio, 
+I'm here to help with anything investment related.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HERE'S WHAT I CAN DO FOR YOU:
+
+🔗 Link Your Accounts
+   Connect Robinhood, Fidelity, Schwab, and 20+ other brokerages 
+   so I can see your full picture.
+
+💬 Just Ask Me Anything
+   Have a question about a stock? Want to rebalance? 
+   Just tell me what you need in plain English.
+
+📈 I'll Keep You Updated
+   Real-time tracking, insights, and alerts so you're 
+   always in the know.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Ready to get started? Let's set up your account.
+
+→ {{ app_url }}
+
+🔒 Bank-level 256-bit encryption
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Looking forward to working with you,
+Clera
+Your AI Investment Advisor
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Questions? Reach out anytime at {{ support_email }}
+
+© {{ current_year }} Clera · app.askclera.com

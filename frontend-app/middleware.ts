@@ -328,29 +328,23 @@ export async function middleware(request: NextRequest) {
         }
         
         // CRITICAL: For portfolio-related routes, also check if user has connected accounts
-        // Even if onboarding is "complete", they shouldn't access portfolio without accounts
+        // Even if onboarding is "complete", they shouldn't access certain pages without accounts
         // NOTE: /portfolio intentionally excluded to allow "skip for now" onboarding,
         // with a portfolio-page prompt to connect accounts.
-        const portfolioRoutes = ['/invest', '/dashboard', '/api/portfolio'];
-        const isPortfolioRoute = portfolioRoutes.some(route => path.startsWith(route));
+        // PRODUCTION FIX: Allow /api/portfolio/* to pass through - they'll return empty data
+        // This prevents 403 errors when the portfolio page loads without accounts
+        const portfolioPageRoutes = ['/invest', '/dashboard'];
+        const isPortfolioPageRoute = portfolioPageRoutes.some(route => path.startsWith(route));
         
-        const isConnectionStatus = path.startsWith('/api/portfolio/connection-status');
-        if (isPortfolioRoute && !isConnectionStatus) {
+        // Only block PAGE access, not API access - let APIs return empty data gracefully
+        if (isPortfolioPageRoute) {
           const hasAccounts = await hasConnectedAccounts(supabase, user.id);
           
           if (!hasAccounts) {
-            console.log(`[Middleware] User ${user.id} has completed onboarding but no connected accounts`);
-            
-            if (path.startsWith('/api/')) {
-              return new NextResponse(
-                JSON.stringify({ error: 'No portfolio accounts connected' }),
-                { status: 403, headers: { 'Content-Type': 'application/json' } }
-              );
-            } else {
-              // Redirect to /protected where they can connect accounts
-              const redirectUrl = new URL('/protected', request.url);
-              return NextResponse.redirect(redirectUrl);
-            }
+            console.log(`[Middleware] User ${user.id} has completed onboarding but no connected accounts - redirecting to /protected`);
+            // Redirect to /protected where they can connect accounts
+            const redirectUrl = new URL('/protected', request.url);
+            return NextResponse.redirect(redirectUrl);
           }
         }
         

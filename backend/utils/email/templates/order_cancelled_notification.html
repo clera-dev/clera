@@ -1,38 +1,244 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
     <title>Order Cancelled</title>
-  </head>
-  <body style="font-family: Arial, sans-serif; color: #111827; background-color: #ffffff;">
-    <h2 style="margin-bottom: 8px;">Your queued order was cancelled</h2>
-    <p style="margin-top: 0;">
-      Your {{ action }} order for <strong>{{ symbol }}</strong> was cancelled.
-    </p>
-    <p>
-      Reason: {{ cancellation_reason }}
-    </p>
-
-    {% if queued_at %}
-    <p>Queued at: {{ queued_at }}</p>
-    {% endif %}
-
-    {% if price_at_creation %}
-    <p>Price when queued: ${{ '%.2f'|format(price_at_creation) }}</p>
-    {% endif %}
-
-    {% if current_price %}
-    <p>Current price: ${{ '%.2f'|format(current_price) }}</p>
-    {% endif %}
-
-    {% if limit_price %}
-    <p>Protective limit: ${{ '%.2f'|format(limit_price) }}</p>
-    {% endif %}
-
-    <p style="margin-top: 16px;">
-      If you still want to place this trade, please submit a new order.
-      For help, contact <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
-    </p>
-    <p style="color: #6b7280; font-size: 12px;">&copy; {{ current_year }} Clera</p>
-  </body>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            background-color: #000000;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6; 
+            color: #ffffff;
+            background-color: #000000;
+            padding: 20px;
+        }
+        
+        .email-wrapper {
+            max-width: 520px;
+            margin: 0 auto;
+        }
+        
+        .email-container { 
+            background-color: #0a0a0a;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        .header { 
+            background: #000000;
+            padding: 32px 32px 20px 32px;
+            text-align: center;
+        }
+        
+        .logo {
+            width: 140px;
+            height: auto;
+            margin: 0 auto;
+            display: block;
+        }
+        
+        .content { 
+            background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
+            padding: 24px 32px 32px 32px;
+        }
+        
+        .title {
+            font-size: 22px;
+            font-weight: 600;
+            color: #ffffff;
+            margin: 0 0 8px 0;
+            text-align: center;
+        }
+        
+        .subtitle {
+            color: #8b949e;
+            font-size: 14px;
+            margin: 0 0 24px 0;
+            text-align: center;
+        }
+        
+        .order-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        
+        .symbol {
+            font-size: 20px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        
+        .action-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .action-buy {
+            background: rgba(52, 211, 153, 0.15);
+            color: #34d399;
+        }
+        
+        .action-sell {
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 14px;
+        }
+        
+        .detail-label {
+            color: #8b949e;
+        }
+        
+        .detail-value {
+            color: #ffffff;
+            font-weight: 500;
+        }
+        
+        .reason-box {
+            background: rgba(251, 191, 36, 0.08);
+            border: 1px solid rgba(251, 191, 36, 0.2);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .reason-label {
+            color: #fbbf24;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin: 0 0 6px 0;
+        }
+        
+        .reason-text {
+            color: #e2e8f0;
+            font-size: 14px;
+            margin: 0;
+        }
+        
+        .help-text {
+            color: #8b949e;
+            font-size: 13px;
+            text-align: center;
+            margin: 0;
+        }
+        
+        .help-text a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        
+        .footer { 
+            background: #0a0a0a;
+            padding: 20px 32px;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        
+        .footer p {
+            color: #6e7681;
+            font-size: 12px;
+            margin: 4px 0;
+        }
+        
+        .footer a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        
+        @media only screen and (max-width: 600px) {
+            body { padding: 12px; }
+            .header { padding: 24px 20px 16px 20px; }
+            .logo { width: 120px; }
+            .content { padding: 20px; }
+            .order-card { padding: 16px; }
+            .footer { padding: 16px 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="email-container">
+            <div class="header">
+                <img src="cid:clera_logo" alt="Clera" class="logo" />
+            </div>
+            
+            <div class="content">
+                <h1 class="title">Order Cancelled</h1>
+                <p class="subtitle">Your queued order could not be executed</p>
+                
+                <div class="order-card">
+                    <div class="order-header">
+                        <span class="symbol">{{ symbol }}</span>
+                        <span class="action-badge {% if action|upper == 'BUY' %}action-buy{% else %}action-sell{% endif %}">{{ action }}</span>
+                    </div>
+                    
+                    {% if queued_at %}
+                    <div class="detail-row">
+                        <span class="detail-label">Queued</span>
+                        <span class="detail-value">{{ queued_at }}</span>
+                    </div>
+                    {% endif %}
+                    
+                    {% if price_at_creation %}
+                    <div class="detail-row">
+                        <span class="detail-label">Price when queued</span>
+                        <span class="detail-value">${{ '%.2f'|format(price_at_creation) }}</span>
+                    </div>
+                    {% endif %}
+                    
+                    {% if current_price %}
+                    <div class="detail-row">
+                        <span class="detail-label">Current price</span>
+                        <span class="detail-value">${{ '%.2f'|format(current_price) }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <div class="reason-box">
+                    <p class="reason-label">Cancellation Reason</p>
+                    <p class="reason-text">{{ cancellation_reason }}</p>
+                </div>
+                
+                <p class="help-text">
+                    Want to try again? Open the app to place a new order.<br/>
+                    Questions? <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+                </p>
+            </div>
+            
+            <div class="footer">
+                <p>© {{ current_year }} Clera</p>
+            </div>
+        </div>
+    </div>
+</body>
 </html>
