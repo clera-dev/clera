@@ -45,6 +45,7 @@ export default function DashboardPage() {
   // Portfolio mode detection for conditional component rendering
   const [portfolioMode, setPortfolioMode] = useState<string>('loading');
   const [showBrokerageComponents, setShowBrokerageComponents] = useState<boolean>(true);
+  const [hasConnectedAccounts, setHasConnectedAccounts] = useState<boolean>(true); // Assume true initially
 
   // Fetch portfolio mode to determine component visibility
   const fetchPortfolioMode = async () => {
@@ -55,12 +56,22 @@ export default function DashboardPage() {
         const mode = data.portfolio_mode || 'brokerage';
         setPortfolioMode(mode);
         setShowBrokerageComponents(mode === 'brokerage' || mode === 'hybrid');
+        
+        // Check if user has any connected accounts
+        const snaptradeAccounts = data.snaptrade_accounts || [];
+        const plaidAccounts = data.plaid_accounts || [];
+        const hasSnapTrade = snaptradeAccounts.length > 0;
+        const hasPlaid = plaidAccounts.length > 0;
+        const hasAlpaca = !!data.alpaca_account;
+        
+        setHasConnectedAccounts(hasSnapTrade || hasPlaid || hasAlpaca);
       }
     } catch (error) {
       console.error('Error fetching portfolio mode:', error);
       // Default to showing brokerage components on error
       setPortfolioMode('brokerage');
       setShowBrokerageComponents(true);
+      setHasConnectedAccounts(false);
     }
   };
 
@@ -318,6 +329,42 @@ export default function DashboardPage() {
              <p className="text-muted-foreground">Could not load user information. Please try refreshing.</p>
          </div>
      );
+  }
+
+  // Show "Connect Account" UI for users who completed onboarding but haven't connected accounts
+  // This allows users who clicked "Skip for now" to access the dashboard with a prompt to connect
+  // CRITICAL: Still show SubscriptionManagement so paying users can manage their subscription!
+  if (!hasConnectedAccounts && portfolioMode !== 'loading') {
+    return (
+      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="space-y-8">
+          {/* Connect Account Section */}
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="text-center space-y-6 max-w-2xl">
+              <div className="space-y-2">
+                <h2 className="text-2xl font-bold tracking-tight">Welcome to Your Dashboard</h2>
+                <p className="text-muted-foreground text-lg">
+                  Connect a brokerage account to unlock all dashboard features including portfolio tracking, statements, and more.
+                </p>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+                <AddConnectionButton userName={userData?.firstName} />
+              </div>
+              
+              <p className="text-sm text-muted-foreground">
+                Supported brokerages include: Robinhood, Fidelity, Charles Schwab, TD Ameritrade, E*TRADE, and 20+ more
+              </p>
+            </div>
+          </div>
+
+          {/* Subscription Management - Always visible so users can manage billing */}
+          <div className="max-w-md mx-auto">
+            <SubscriptionManagement />
+          </div>
+        </div>
+      </div>
+    );
   }
   
   return (
