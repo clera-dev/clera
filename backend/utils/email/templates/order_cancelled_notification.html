@@ -198,14 +198,14 @@
                 
                 <div class="order-card">
                     <div class="order-header">
-                        <span class="symbol">{{ symbol }}</span>
-                        <span class="action-badge {% if action|upper == 'BUY' %}action-buy{% else %}action-sell{% endif %}">{{ action }}</span>
+                        <span class="symbol">{{ symbol|e }}</span>
+                        <span class="action-badge {% if action|upper == 'BUY' %}action-buy{% else %}action-sell{% endif %}">{{ action|e }}</span>
                     </div>
                     
                     {% if queued_at %}
                     <div class="detail-row">
                         <span class="detail-label">Queued</span>
-                        <span class="detail-value">{{ queued_at }}</span>
+                        <span class="detail-value">{{ queued_at|e }}</span>
                     </div>
                     {% endif %}
                     
@@ -226,12 +226,12 @@
                 
                 <div class="reason-box">
                     <p class="reason-label">Cancellation Reason</p>
-                    <p class="reason-text">{{ cancellation_reason }}</p>
+                    <p class="reason-text">{{ cancellation_reason|e }}</p>
                 </div>
                 
                 <p class="help-text">
                     Want to try again? Open the app to place a new order.<br/>
-                    Questions? <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+                    Questions? <a href="mailto:{{ support_email|e }}">{{ support_email|e }}</a>
                 </p>
             </div>
             
