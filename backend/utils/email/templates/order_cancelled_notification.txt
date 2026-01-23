@@ -1,22 +1,18 @@
-Your queued order was cancelled
+Order Cancelled
 
 Your {{ action }} order for {{ symbol }} was cancelled.
-Reason: {{ cancellation_reason }}
 
-{% if queued_at %}
-Queued at: {{ queued_at }}
+DETAILS
+-------
+{% if queued_at %}Queued: {{ queued_at }}
+{% endif %}{% if price_at_creation %}Price when queued: ${{ '%.2f'|format(price_at_creation) }}
+{% endif %}{% if current_price %}Current price: ${{ '%.2f'|format(current_price) }}
 {% endif %}
-{% if price_at_creation %}
-Price when queued: ${{ '%.2f'|format(price_at_creation) }}
-{% endif %}
-{% if current_price %}
-Current price: ${{ '%.2f'|format(current_price) }}
-{% endif %}
-{% if limit_price %}
-Protective limit: ${{ '%.2f'|format(limit_price) }}
-{% endif %}
+REASON
+------
+{{ cancellation_reason }}
 
-If you still want to place this trade, please submit a new order.
-For help, contact {{ support_email }}.
+Want to try again? Open the app to place a new order.
+Questions? {{ support_email }}
 
 © {{ current_year }} Clera

@@ -3,239 +3,263 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
     <title>Account Closure Confirmation</title>
     <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            background-color: #000000;
+        }
+        
         body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             line-height: 1.6; 
-            color: #ffffff; 
-            background-color: #000000; 
-            max-width: 600px; 
-            margin: 0 auto; 
-            padding: 20px; 
+            color: #ffffff;
+            background-color: #000000;
+            padding: 20px;
         }
+        
+        .email-wrapper {
+            max-width: 520px;
+            margin: 0 auto;
+        }
+        
         .email-container { 
-            background-color: #000000; 
-            border-radius: 12px; 
+            background-color: #0a0a0a;
+            border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 0 30px rgba(6, 182, 212, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
+        
         .header { 
-            background: linear-gradient(135deg, #000000 0%, #0f172a 100%); 
-            color: #ffffff; 
-            padding: 40px 20px; 
-            text-align: center; 
-            position: relative;
+            background: #000000;
+            padding: 32px 32px 20px 32px;
+            text-align: center;
         }
-        .header::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(45deg, transparent 30%, rgba(6, 182, 212, 0.1) 50%, transparent 70%);
-            pointer-events: none;
+        
+        .logo {
+            width: 140px;
+            height: auto;
+            margin: 0 auto;
+            display: block;
         }
-        .header h1 { 
-            margin: 0; 
-            font-size: 32px; 
-            font-weight: 600;
-            background: linear-gradient(135deg, #06b6d4, #0ea5e9, #3b82f6);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            text-shadow: 0 0 20px rgba(6, 182, 212, 0.5);
-        }
-        .logo { 
-            width: 48px; 
-            height: 48px; 
-            background: linear-gradient(135deg, #06b6d4, #3b82f6); 
-            border-radius: 12px; 
-            margin: 0 auto 20px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center;
-            box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
-        }
-        .logo::after {
-            content: 'C';
-            color: #000000;
-            font-weight: bold;
-            font-size: 24px;
-        }
+        
         .content { 
-            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%); 
-            padding: 40px 30px; 
-            border-left: 2px solid #06b6d4;
+            background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
+            padding: 24px 32px 32px 32px;
         }
-        .confirmation-box { 
-            background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(59, 130, 246, 0.1)); 
-            padding: 25px; 
-            border-radius: 12px; 
-            margin: 25px 0; 
-            border: 1px solid rgba(6, 182, 212, 0.3);
-            box-shadow: 0 0 15px rgba(6, 182, 212, 0.1);
+        
+        .title {
+            font-size: 22px;
+            font-weight: 600;
+            color: #ffffff;
+            margin: 0 0 8px 0;
+            text-align: center;
         }
-        .details-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin: 20px 0; 
+        
+        .subtitle {
+            color: #8b949e;
+            font-size: 14px;
+            margin: 0 0 24px 0;
+            text-align: center;
         }
-        .details-table td { 
-            padding: 15px 12px; 
-            border-bottom: 1px solid rgba(6, 182, 212, 0.2); 
-        }
-        .details-table td:first-child { 
-            font-weight: 600; 
-            color: #06b6d4; 
-            width: 40%; 
-        }
-        .timeline { 
-            background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(59, 130, 246, 0.05)); 
-            padding: 25px; 
-            border-radius: 12px; 
-            margin: 25px 0; 
-            border: 1px solid rgba(6, 182, 212, 0.2);
-        }
-        .timeline h3 { 
-            margin-top: 0; 
-            color: #06b6d4; 
-            font-size: 20px;
-            text-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
-        }
-        .timeline ul { 
-            margin: 15px 0; 
-            padding-left: 20px; 
-        }
-        .timeline li { 
-            margin: 12px 0; 
+        
+        .greeting {
             color: #e2e8f0;
+            font-size: 15px;
+            margin: 0 0 20px 0;
         }
-        .warning { 
-            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 146, 60, 0.1)); 
-            padding: 20px; 
-            border-radius: 12px; 
-            border: 1px solid rgba(245, 158, 11, 0.3); 
-            margin: 25px 0; 
+        
+        .info-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
         }
-        .warning h4 {
-            color: #f59e0b;
-            margin-top: 0;
+        
+        .info-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #8b949e;
+            text-transform: uppercase;
+            margin: 0 0 16px 0;
+            letter-spacing: 0.5px;
         }
-        .contact-info { 
-            background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(30, 41, 59, 0.8)); 
-            padding: 25px; 
-            border-radius: 12px; 
-            margin: 25px 0; 
-            border: 1px solid rgba(6, 182, 212, 0.2);
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            font-size: 14px;
         }
-        .contact-info h3 {
-            color: #06b6d4;
-            margin-top: 0;
+        
+        .detail-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
         }
-        .footer { 
-            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%); 
-            padding: 30px 20px; 
-            text-align: center; 
-            color: #64748b; 
-            font-size: 14px; 
-            border-top: 1px solid rgba(6, 182, 212, 0.2);
+        
+        .detail-label {
+            color: #8b949e;
         }
-        .confirmation-number { 
-            font-family: 'Courier New', monospace; 
-            background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.2)); 
-            padding: 12px 16px; 
-            border-radius: 8px; 
-            font-size: 18px; 
-            font-weight: bold; 
-            color: #06b6d4;
-            text-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
-            border: 1px solid rgba(6, 182, 212, 0.3);
+        
+        .detail-value {
+            color: #ffffff;
+            font-weight: 500;
         }
-        .glow-text {
-            color: #06b6d4;
-            text-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+        
+        .confirmation-number {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            background: rgba(88, 166, 255, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #58a6ff;
         }
-        a {
-            color: #06b6d4;
+        
+        .timeline-card {
+            background: rgba(88, 166, 255, 0.05);
+            border: 1px solid rgba(88, 166, 255, 0.15);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .timeline-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #58a6ff;
+            margin: 0 0 12px 0;
+        }
+        
+        .timeline-list {
+            margin: 0;
+            padding: 0 0 0 20px;
+        }
+        
+        .timeline-list li {
+            color: #b0b8c1;
+            font-size: 13px;
+            margin: 8px 0;
+        }
+        
+        .warning-box {
+            background: rgba(251, 191, 36, 0.08);
+            border: 1px solid rgba(251, 191, 36, 0.2);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .warning-text {
+            color: #fbbf24;
+            font-size: 13px;
+            margin: 0;
+            text-align: center;
+        }
+        
+        .help-text {
+            color: #8b949e;
+            font-size: 13px;
+            text-align: center;
+            margin: 0;
+        }
+        
+        .help-text a {
+            color: #58a6ff;
             text-decoration: none;
         }
-        a:hover {
-            text-shadow: 0 0 8px rgba(6, 182, 212, 0.8);
+        
+        .footer { 
+            background: #0a0a0a;
+            padding: 20px 32px;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        
+        .footer p {
+            color: #6e7681;
+            font-size: 12px;
+            margin: 4px 0;
+        }
+        
+        .footer a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        
+        @media only screen and (max-width: 600px) {
+            body { padding: 12px; }
+            .header { padding: 24px 20px 16px 20px; }
+            .logo { width: 120px; }
+            .content { padding: 20px; }
+            .info-card { padding: 16px; }
+            .footer { padding: 16px 20px; }
         }
     </style>
 </head>
 <body>
-    <div class="email-container">
-        <div class="header">
-            <div class="logo"></div>
-            <h1>Account Closure Confirmation</h1>
-            <p style="color: #64748b; font-size: 16px; margin: 10px 0 0 0;">Your request has been successfully submitted</p>
-        </div>
-        
-        <div class="content">
-        <h2>Dear {{ user_name|e }},</h2>
-        
-        <p>We have received and processed your account closure request. Your account closure process has been initiated and is now in progress.</p>
-        
-        <div class="confirmation-box">
-            <h3>Confirmation Details</h3>
-            <table class="details-table">
-                <tr>
-                    <td>Confirmation Number:</td>
-                    <td><span class="confirmation-number">{{ confirmation_number|e }}</span></td>
-                </tr>
-                <tr>
-                    <td>Account ID:</td>
-                    <td>{{ account_id|e }}</td>
-                </tr>
-                <tr>
-                    <td>Request Date:</td>
-                    <td>{{ request_date|e }}</td>
-                </tr>
-                <tr>
-                    <td>Estimated Completion:</td>
-                    <td>{{ estimated_completion|e }}</td>
-                </tr>
-            </table>
-        </div>
-        
-        <div class="timeline">
-            <h3>What Happens Next</h3>
-            <ul>
-                <li><strong>Holdings Liquidation:</strong> All your investments will be sold at current market prices</li>
-                <li><strong>Fund Transfer:</strong> Resulting cash will be transferred to your connected bank account</li>
-                <li><strong>Account Closure:</strong> Your account will be permanently closed once all transfers complete</li>
-                <li><strong>Final Documentation:</strong> You will receive final account statements and tax documents</li>
-            </ul>
-            <p><strong>Timeline:</strong> Please allow {{ estimated_completion|e }} for this process to complete.</p>
-        </div>
-        
-        <div class="warning">
-            <h4>⚠️ Important Notice</h4>
-            <p><strong>This process cannot be reversed once liquidation begins.</strong> Your account closure is now in progress and cannot be canceled.</p>
-        </div>
-        
-        <div class="contact-info">
-            <h3>Questions or Concerns?</h3>
-            <p>Our support team is available to help you during this process:</p>
-            <p>
-                <strong>Email:</strong> <a href="mailto:{{ support_email|e }}">{{ support_email|e }}</a>
-            </p>
-            <p>Please reference your confirmation number <strong>{{ confirmation_number|e }}</strong> when contacting support.</p>
-        </div>
-        
-        <p>Thank you for choosing Clera. We're here to help if you need anything during this transition.</p>
-        
-        <p>Best regards,<br>
-        <strong>The Clera Team</strong></p>
-        </div>
-        
-        <div class="footer">
-            <p>This is an automated message. Please do not reply to this email.</p>
-            <p>© {{ current_year }} Clera. All rights reserved.</p>
+    <div class="email-wrapper">
+        <div class="email-container">
+            <div class="header">
+                <img src="cid:clera_logo" alt="Clera" class="logo" />
+            </div>
+            
+            <div class="content">
+                <h1 class="title">Account Closure Initiated</h1>
+                <p class="subtitle">Your request has been received</p>
+                
+                <p class="greeting">Hi {{ user_name|e }},</p>
+                
+                <div class="info-card">
+                    <p class="info-card-title">Confirmation Details</p>
+                    
+                    <div class="detail-row">
+                        <span class="detail-label">Confirmation #</span>
+                        <span class="detail-value"><span class="confirmation-number">{{ confirmation_number|e }}</span></span>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <span class="detail-label">Account ID</span>
+                        <span class="detail-value">{{ account_id|e }}</span>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <span class="detail-label">Request Date</span>
+                        <span class="detail-value">{{ request_date|e }}</span>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <span class="detail-label">Est. Completion</span>
+                        <span class="detail-value">{{ estimated_completion|e }}</span>
+                    </div>
+                </div>
+                
+                <div class="timeline-card">
+                    <p class="timeline-title">What happens next</p>
+                    <ul class="timeline-list">
+                        <li>Your holdings will be liquidated at market prices</li>
+                        <li>Funds will transfer to your linked bank account</li>
+                        <li>You'll receive a confirmation when complete</li>
+                    </ul>
+                </div>
+                
+                <div class="warning-box">
+                    <p class="warning-text">⚠️ This process cannot be reversed once liquidation begins.</p>
+                </div>
+                
+                <p class="help-text">
+                    Questions? Contact us at <a href="mailto:{{ support_email|e }}">{{ support_email|e }}</a><br/>
+                    Reference: {{ confirmation_number|e }}
+                </p>
+            </div>
+            
+            <div class="footer">
+                <p>© {{ current_year }} Clera</p>
+            </div>
         </div>
     </div>
 </body>
-</html> 
+</html>

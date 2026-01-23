@@ -34,8 +34,15 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/broker/transfer": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/broker/funding-status": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
   "/api/broker/delete-ach-relationship": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
+  // Portfolio API routes - require auth and onboarding, but NOT connected accounts
+  // The API handlers return empty data gracefully when user has no accounts
+  // This prevents 403 errors on the /portfolio page for users who skipped brokerage connection
   "/api/portfolio/history": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   "/api/portfolio/positions": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
+  "/api/portfolio/connection-status": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/portfolio/value": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
+  "/api/portfolio/aggregated": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
+  "/api/portfolio/analytics": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
   
   // Conversation API routes - require auth but not onboarding for basic chat functionality
   "/api/conversations/create-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },

@@ -127,14 +127,13 @@ export class ConversationAuthService {
         }
       } else {
         // No accountId provided - this is OK for aggregation-only users (SnapTrade/Plaid)
+        // PRODUCTION FIX: Also allow users who completed onboarding but skipped brokerage connection
+        // These users should be able to use chat for exploring/asking questions
+        // The chat will simply have limited functionality (no trading, no portfolio data)
         if (!hasSnaptrade && !hasPlaid && !hasAlpaca) {
-          return {
-            success: false,
-            error: NextResponse.json(
-              { error: 'User has no connected accounts' },
-              { status: 404 }
-            )
-          };
+          // Instead of returning 404, allow the user to proceed with null accountId
+          // The conversation will work but won't have access to portfolio-specific features
+          console.log('[ConversationAuth] User has no connected accounts - allowing limited chat access');
         }
       }
 
