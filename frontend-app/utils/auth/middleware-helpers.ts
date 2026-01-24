@@ -353,7 +353,17 @@ export async function hasConnectedAccounts(supabase: any, userId: string): Promi
 
 // Check if user has active payment (Stripe subscription)
 // This is used by middleware to enforce payment requirements
-export async function hasActivePayment(supabase: any, userId: string): Promise<boolean> {
+/**
+ * Check if user has active payment/subscription.
+ * 
+ * Returns:
+ * - true: User has active payment
+ * - false: User does NOT have active payment (definitively)
+ * - null: Unable to determine (DB error, transient failure)
+ * 
+ * Callers MUST handle null to decide fail-open vs fail-closed behavior.
+ */
+export async function hasActivePayment(supabase: any, userId: string): Promise<boolean | null> {
   try {
     noStore();
     
@@ -364,15 +374,17 @@ export async function hasActivePayment(supabase: any, userId: string): Promise<b
       .maybeSingle();
     
     if (error) {
-      // No payment record found - user hasn't paid
+      // PGRST116 = no rows found - this is a definitive "no payment record"
       if (error.code === 'PGRST116') {
         return false;
       }
+      // Other errors are transient - return null so caller can decide behavior
       console.error('Payment status check error:', error);
-      return false;
+      return null;
     }
     
     if (!paymentRecord) {
+      // No record = user hasn't paid (definitive)
       return false;
     }
     
@@ -384,8 +396,9 @@ export async function hasActivePayment(supabase: any, userId: string): Promise<b
     
     return isActive;
   } catch (error) {
+    // Network/DB errors - return null so caller can decide behavior
     console.error('Database error checking payment status:', error);
-    return false;
+    return null;
   }
 }
 

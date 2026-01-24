@@ -4,12 +4,14 @@ import { createClient } from '@/utils/supabase/server';
 // Safe default response when backend is unavailable at RUNTIME
 // ARCHITECTURE: Default to aggregation mode to allow users to proceed without KYC
 // This enables a graceful degradation when backend is down
+// IMPORTANT: is_fallback=true tells frontend this is NOT authoritative data
 const DEFAULT_CONNECTION_STATUS = {
   portfolio_mode: 'aggregation',
   plaid_accounts: [],
   snaptrade_accounts: [],  // CRITICAL: Include snaptrade_accounts for frontend compatibility
   alpaca_account: null,
-  total_connected_accounts: 0
+  total_connected_accounts: 0,
+  is_fallback: true  // Indicates this is fallback data, not authoritative
 };
 
 export async function GET(request: Request) {
@@ -81,12 +83,14 @@ export async function GET(request: Request) {
       const data = await backendResponse.json();
       
       // Ensure all expected fields are present in response
+      // is_fallback: false indicates this is authoritative data from the backend
       return NextResponse.json({
         portfolio_mode: data.portfolio_mode || DEFAULT_CONNECTION_STATUS.portfolio_mode,
         plaid_accounts: data.plaid_accounts || [],
         snaptrade_accounts: data.snaptrade_accounts || [],
         alpaca_account: data.alpaca_account || null,
         total_connected_accounts: data.total_connected_accounts || 0,
+        is_fallback: false,  // This is authoritative data
       });
       
     } catch (fetchError) {

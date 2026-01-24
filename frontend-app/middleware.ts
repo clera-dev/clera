@@ -415,39 +415,40 @@ export async function middleware(request: NextRequest) {
     // This ensures users with canceled/expired subscriptions are redirected to /protected
     // where they'll be prompted to resubscribe via Stripe checkout
     if (config.requiresPayment && user) {
-      try {
-        const hasPaid = await hasActivePayment(supabase, user.id);
+      // hasActivePayment returns: true (paid), false (not paid), null (DB error)
+      const paymentStatus = await hasActivePayment(supabase, user.id);
+      
+      if (paymentStatus === false) {
+        // DEFINITIVE: User does not have active payment - redirect to fix it
+        console.log(`[Middleware] User ${user.id} does not have active payment - redirecting to /protected`);
         
-        if (!hasPaid) {
-          console.log(`[Middleware] User ${user.id} does not have active payment - redirecting to /protected`);
+        if (path.startsWith('/api/')) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Active subscription required', code: 'SUBSCRIPTION_REQUIRED' }),
+            { status: 402, headers: { 'Content-Type': 'application/json' } }
+          );
+        } else {
+          // Redirect to /protected where they'll be prompted to pay
+          const redirectUrl = new URL('/protected', request.url);
+          const redirectResponse = NextResponse.redirect(redirectUrl);
           
-          if (path.startsWith('/api/')) {
-            return new NextResponse(
-              JSON.stringify({ error: 'Active subscription required', code: 'SUBSCRIPTION_REQUIRED' }),
-              { status: 402, headers: { 'Content-Type': 'application/json' } }
-            );
-          } else {
-            // Redirect to /protected where they'll be prompted to pay
-            const redirectUrl = new URL('/protected', request.url);
-            const redirectResponse = NextResponse.redirect(redirectUrl);
-            
-            // Save intended destination so they return after payment
-            const safeRedirectPath = validateAndSanitizeRedirectUrl(path);
-            redirectResponse.cookies.set('intended_redirect', safeRedirectPath, {
-              maxAge: 3600,
-              path: '/',
-              sameSite: 'strict'
-            });
-            return redirectResponse;
-          }
+          // Save intended destination so they return after payment
+          const safeRedirectPath = validateAndSanitizeRedirectUrl(path);
+          redirectResponse.cookies.set('intended_redirect', safeRedirectPath, {
+            maxAge: 3600,
+            path: '/',
+            sameSite: 'strict'
+          });
+          return redirectResponse;
         }
-      } catch (dbError) {
-        console.error('Database connection error checking payment in middleware:', dbError);
+      } else if (paymentStatus === null) {
+        // TRANSIENT ERROR: Could not determine payment status
         // DESIGN DECISION: Different fail behavior for API vs page routes
         // - API routes: Fail-CLOSED (return 503) - client can retry, data shouldn't leak
         // - Page routes: Fail-OPEN - page-level code shows error UI, don't lock out users
         // This prevents transient DB issues from permanently blocking legitimate paying users
-        // while still protecting API endpoints from unauthorized access
+        console.warn(`[Middleware] Could not verify payment for user ${user.id} - transient error`);
+        
         if (path.startsWith('/api/')) {
           return new NextResponse(
             JSON.stringify({ error: 'Service temporarily unavailable', code: 'PAYMENT_CHECK_FAILED' }),
@@ -456,6 +457,7 @@ export async function middleware(request: NextRequest) {
         }
         // For page routes: allow through, page-level checks will handle errors gracefully
       }
+      // paymentStatus === true: User has active payment, continue normally
     }
 
     return response;

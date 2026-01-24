@@ -57,7 +57,15 @@ export default function DashboardPage() {
         setPortfolioMode(mode);
         setShowBrokerageComponents(mode === 'brokerage' || mode === 'hybrid');
         
-        // Check if user has any connected accounts
+        // CRITICAL: Check if this is fallback data (backend was unavailable)
+        // If is_fallback=true, we cannot trust the account data - fail open
+        if (data.is_fallback === true) {
+          console.warn('Connection status returned fallback data - assuming user has accounts');
+          setHasConnectedAccounts(true); // Fail-open: don't block dashboard on backend outage
+          return;
+        }
+        
+        // Authoritative data from backend - trust the account status
         const snaptradeAccounts = data.snaptrade_accounts || [];
         const plaidAccounts = data.plaid_accounts || [];
         const hasSnapTrade = snaptradeAccounts.length > 0;
