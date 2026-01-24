@@ -2,6 +2,7 @@
 
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { Info } from "lucide-react";
 
 interface MonthlyGoalSliderSectionProps {
   selectedGoal: number;
@@ -68,10 +69,20 @@ export function MonthlyGoalSliderSection({
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-semibold text-white mb-2">
-          Do you have a goal for how much you want to invest on a monthly basis?
+          How much do you plan to invest each month?
         </h2>
-        <p className="text-white">
-          This is for information purposes only. Clera will never withdraw money from your account without your prior direction.
+        <p className="text-gray-300 mb-4">
+          Just a rough estimate — you can always change this later
+        </p>
+        
+        {/* Why we ask context box */}
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-sm text-gray-300 mb-2">
+          <Info className="h-4 w-4 text-primary" />
+          <span>This helps me suggest realistic portfolio-building strategies</span>
+        </div>
+        
+        <p className="text-xs text-gray-500">
+          Don't worry — Clera will never move money without your approval
         </p>
       </div>
 

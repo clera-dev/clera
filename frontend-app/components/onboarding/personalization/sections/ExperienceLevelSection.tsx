@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Check, Info } from "lucide-react";
 import { 
   ExperienceLevel, 
   EXPERIENCE_LEVEL_DESCRIPTIONS 
@@ -38,11 +38,17 @@ export function ExperienceLevelSection({
     <div className="space-y-4">
       <div className="text-center">
         <h2 className="text-2xl font-semibold text-white mb-2">
-          How familiar are you with investing and financial markets?
+          What's your investing experience?
         </h2>
-        <p className="text-white">
-          This helps me tailor my advice to your knowledge level
+        <p className="text-gray-300 mb-4">
+          No wrong answers here — this just helps me explain things at the right level
         </p>
+        
+        {/* Why we ask context box */}
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-sm text-gray-300">
+          <Info className="h-4 w-4 text-primary" />
+          <span>I'll adjust how I explain concepts and recommendations based on your background</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
