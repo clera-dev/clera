@@ -92,6 +92,10 @@ secrets:                      # Pass secrets AND dynamic config from AWS SSM Par
   BACKEND_API_KEY: /clera-api/production/backend_api_key # Used for API key auth
   PLAID_CLIENT_ID: /clera-api/production/plaid_client_id
   PLAID_SECRET: /clera-api/production/plaid_secret
+  # SnapTrade credentials for brokerage connections
+  SNAPTRADE_CONSUMER_KEY: /clera-api/production/snaptrade_consumer_key
+  SNAPTRADE_CLIENT_ID: /clera-api/production/snaptrade_client_id
+  SNAPTRADE_WEBHOOK_SECRET: /clera-api/production/snaptrade_webhook_secret
   # Dynamic Config fetched from SSM
   NEXT_PUBLIC_SUPABASE_URL: /clera-api/production/next_public_supabase_url
   SUPABASE_URL: /clera-api/production/supabase_url
