@@ -230,9 +230,9 @@ export default function ProtectedPageClient() {
   // If user has completed onboarding but hasn't connected any accounts yet (aggregation mode)
   // Show them the SnapTrade connection step, NOT the Alpaca funding flow
   if (isAggregationMode && !hasFunding) {
-    // Callback that handles "Skip for now" - must go through payment flow
-    // CRITICAL: Do NOT redirect to /portfolio directly - user needs to pay first!
-    // This mirrors the logic in snaptrade-callback/page.tsx for consistency
+    // Callback that handles "Skip for now" - allows users to browse the platform
+    // Users can browse /portfolio without payment to explore the UI
+    // The portfolio page will prompt them to connect accounts or subscribe
     const handleConnectionComplete = async () => {
       // Fire-and-forget: Log connection status for analytics only
       // IMPORTANT: Do NOT set hasFunding here - it would trigger the redirect useEffect
@@ -251,8 +251,8 @@ export default function ProtectedPageClient() {
         })
         .catch(error => console.error('Error checking connection status:', error));
       
-      // CRITICAL: Check payment status before redirecting
-      // If user hasn't paid, send them to Stripe checkout
+      // Check payment status and attempt checkout if needed
+      // If checkout fails, still allow user to browse /portfolio
       try {
         const paymentCheck = await fetch('/api/stripe/check-payment-status');
         if (paymentCheck.ok) {
@@ -263,8 +263,8 @@ export default function ProtectedPageClient() {
             console.log('✅ User has active payment, redirecting to portfolio');
             router.replace('/portfolio');
           } else {
-            // User needs to complete payment - redirect to Stripe checkout
-            console.log('📝 User needs to complete payment, redirecting to Stripe checkout');
+            // User needs to complete payment - try to redirect to Stripe checkout
+            console.log('📝 User needs to complete payment, attempting Stripe checkout');
             const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' }
@@ -275,8 +275,9 @@ export default function ProtectedPageClient() {
               if (checkoutData.url) {
                 window.location.href = checkoutData.url;
               } else {
-                console.error('❌ No checkout URL received');
-                // Fallback: stay on protected page
+                console.error('❌ No checkout URL received, allowing portfolio browsing');
+                // Fallback: let user browse portfolio (page-level prompts will guide them)
+                router.replace('/portfolio');
               }
             } else if (checkoutResponse.status === 409) {
               // User already has active subscription (race condition protection)
@@ -284,31 +285,20 @@ export default function ProtectedPageClient() {
               console.log('✅ User already has active subscription, redirecting to portfolio');
               router.replace(errorData.redirectTo || '/portfolio');
             } else {
-              console.error('❌ Failed to create checkout session');
-              // Fallback: stay on protected page
+              console.error('❌ Failed to create checkout session, allowing portfolio browsing');
+              // Fallback: let user browse portfolio (page-level prompts will guide them)
+              router.replace('/portfolio');
             }
           }
         } else {
-          // Payment check failed - redirect to checkout to be safe
-          console.log('⚠️ Payment check failed, redirecting to checkout');
-          const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-          });
-
-          if (checkoutResponse.ok) {
-            const checkoutData = await checkoutResponse.json();
-            if (checkoutData.url) {
-              window.location.href = checkoutData.url;
-            }
-          } else if (checkoutResponse.status === 409) {
-            const errorData = await checkoutResponse.json();
-            router.replace(errorData.redirectTo || '/portfolio');
-          }
+          // Payment check failed - still allow user to browse portfolio
+          console.log('⚠️ Payment check failed, allowing portfolio browsing');
+          router.replace('/portfolio');
         }
       } catch (error) {
         console.error('❌ Error in skip flow:', error);
-        // On error, stay on protected page rather than getting stuck in a loop
+        // On error, let user browse portfolio rather than getting stuck
+        router.replace('/portfolio');
       }
     };
     
