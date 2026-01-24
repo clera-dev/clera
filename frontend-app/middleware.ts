@@ -12,7 +12,8 @@ import {
   hasConnectedAccounts,
   isPendingClosure,
   isAccountClosed,
-  shouldRestartOnboarding
+  shouldRestartOnboarding,
+  hasActivePayment
 } from './utils/auth/middleware-helpers';
 import { AUTH_ROUTES } from './lib/constants';
 import { isValidRedirectUrl, validateAndSanitizeRedirectUrl } from './utils/security';
@@ -278,11 +279,12 @@ export async function middleware(request: NextRequest) {
     // Get route configuration
     const routeConfig = getRouteConfig(path);
     
-    // If no specific route config, use default: require auth but not onboarding
+    // If no specific route config, use default: require auth but not onboarding/payment
     const config = routeConfig || { 
       requiresAuth: true, 
       requiresOnboarding: false, 
       requiresFunding: false,
+      requiresPayment: false,
       requiredRole: "user"
     };
     
@@ -327,23 +329,24 @@ export async function middleware(request: NextRequest) {
           }
         }
         
-        // CRITICAL: For portfolio-related routes, also check if user has connected accounts
-        // Even if onboarding is "complete", they shouldn't access certain pages without accounts
-        // NOTE: /portfolio intentionally excluded to allow "skip for now" onboarding,
-        // with a portfolio-page prompt to connect accounts.
+        // CRITICAL: For trading-related routes, check if user has connected accounts
+        // Even if onboarding is "complete", they shouldn't access trading pages without accounts
+        // NOTE: /portfolio and /dashboard intentionally excluded to allow "skip for now" onboarding,
+        // with page-level prompts to connect accounts.
         // PRODUCTION FIX: Allow /api/portfolio/* to pass through - they'll return empty data
         // This prevents 403 errors when the portfolio page loads without accounts
-        const portfolioPageRoutes = ['/invest', '/dashboard'];
-        const isPortfolioPageRoute = portfolioPageRoutes.some(route => path.startsWith(route));
+        const tradingOnlyRoutes = ['/invest'];
+        const isTradingOnlyRoute = tradingOnlyRoutes.some(route => path.startsWith(route));
         
-        // Only block PAGE access, not API access - let APIs return empty data gracefully
-        if (isPortfolioPageRoute) {
+        // Only block trading PAGE access, not API access - let APIs return empty data gracefully
+        // /portfolio and /dashboard handle no-accounts gracefully with "Connect Account" UI
+        if (isTradingOnlyRoute) {
           const hasAccounts = await hasConnectedAccounts(supabase, user.id);
           
           if (!hasAccounts) {
-            console.log(`[Middleware] User ${user.id} has completed onboarding but no connected accounts - redirecting to /protected`);
-            // Redirect to /protected where they can connect accounts
-            const redirectUrl = new URL('/protected', request.url);
+            console.log(`[Middleware] User ${user.id} has completed onboarding but no connected accounts - redirecting to /portfolio`);
+            // Redirect to /portfolio where they can see the "Connect Account" prompt
+            const redirectUrl = new URL('/portfolio', request.url);
             return NextResponse.redirect(redirectUrl);
           }
         }
@@ -405,6 +408,43 @@ export async function middleware(request: NextRequest) {
           const redirectUrl = new URL('/protected', request.url);
           return NextResponse.redirect(redirectUrl);
         }
+      }
+    }
+
+    // CRITICAL: Check payment requirement (Stripe subscription)
+    // This ensures users with canceled/expired subscriptions are redirected to /protected
+    // where they'll be prompted to resubscribe via Stripe checkout
+    if (config.requiresPayment && user) {
+      try {
+        const hasPaid = await hasActivePayment(supabase, user.id);
+        
+        if (!hasPaid) {
+          console.log(`[Middleware] User ${user.id} does not have active payment - redirecting to /protected`);
+          
+          if (path.startsWith('/api/')) {
+            return new NextResponse(
+              JSON.stringify({ error: 'Active subscription required', code: 'SUBSCRIPTION_REQUIRED' }),
+              { status: 402, headers: { 'Content-Type': 'application/json' } }
+            );
+          } else {
+            // Redirect to /protected where they'll be prompted to pay
+            const redirectUrl = new URL('/protected', request.url);
+            const redirectResponse = NextResponse.redirect(redirectUrl);
+            
+            // Save intended destination so they return after payment
+            const safeRedirectPath = validateAndSanitizeRedirectUrl(path);
+            redirectResponse.cookies.set('intended_redirect', safeRedirectPath, {
+              maxAge: 3600,
+              path: '/',
+              sameSite: 'strict'
+            });
+            return redirectResponse;
+          }
+        }
+      } catch (dbError) {
+        console.error('Database connection error checking payment in middleware:', dbError);
+        // On error, allow through to prevent blocking legitimate users
+        // The page-level checks will catch any issues
       }
     }
 

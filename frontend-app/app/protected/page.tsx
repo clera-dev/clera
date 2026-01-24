@@ -22,6 +22,7 @@ export default function ProtectedPageClient() {
   const [user, setUser] = useState<any>(null);
   const [fundingStep, setFundingStep] = useState<FundingStep>('welcome');
   const [hasFunding, setHasFunding] = useState<boolean>(false);
+  const [hasActivePayment, setHasActivePayment] = useState<boolean>(false);
   const [portfolioMode, setPortfolioMode] = useState<string | null>(null);
   const router = useRouter();
 
@@ -47,6 +48,23 @@ export default function ProtectedPageClient() {
           .eq('id', user.id)
           .maybeSingle();
         setProfile(profileData);
+
+        // CRITICAL: Check if user has an active payment FIRST
+        // Users who have paid but haven't connected accounts should go to /portfolio
+        // where they'll see the "Connect Account" UI, not be stuck on /protected
+        try {
+          const paymentCheck = await fetch('/api/stripe/check-payment-status');
+          if (paymentCheck.ok) {
+            const paymentData = await paymentCheck.json();
+            if (paymentData.hasActivePayment) {
+              console.log('[Protected] User has active payment - allowing access to main app');
+              setHasActivePayment(true);
+              // Don't redirect here - let the useEffect handle it after loading is complete
+            }
+          }
+        } catch (paymentError) {
+          console.error('Error checking payment status:', paymentError);
+        }
 
         // Check if user has ANY connected accounts (SnapTrade, Plaid, or funded Alpaca)
         // This determines if they should be redirected to /portfolio or stay on /protected
@@ -120,13 +138,20 @@ export default function ProtectedPageClient() {
     fetchData();
   }, [router]);
 
-  // Handle navigation when funding status changes
+  // Handle navigation when funding status or payment status changes
+  // CRITICAL: Users who have PAID should be redirected to /portfolio, even without connected accounts
+  // The /portfolio page will show the "Connect Account" UI for users without accounts
   useEffect(() => {
-    if (!loading && hasFunding && (userStatus === 'submitted' || userStatus === 'approved')) {
-      console.log('User has completed onboarding and funding, redirecting to /portfolio');
-      router.replace('/portfolio');
+    const hasCompletedOnboarding = userStatus === 'submitted' || userStatus === 'approved';
+    
+    if (!loading && hasCompletedOnboarding) {
+      // Redirect if user has connected accounts OR has an active payment
+      if (hasFunding || hasActivePayment) {
+        console.log('[Protected] User has completed onboarding and (has funding OR active payment), redirecting to /portfolio');
+        router.replace('/portfolio');
+      }
     }
-  }, [hasFunding, userStatus, loading, router]);
+  }, [hasFunding, hasActivePayment, userStatus, loading, router]);
 
   // Fallback redirect for unexpected states - should rarely be needed
   useEffect(() => {

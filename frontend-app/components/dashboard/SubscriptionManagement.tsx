@@ -93,9 +93,10 @@ export default function SubscriptionManagement() {
         return;
       }
       
-      // Redirect to Stripe Customer Portal
+      // Open Stripe Customer Portal in new tab (industry standard - user keeps dashboard context)
       if (data.url) {
-        window.location.href = data.url;
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+        setIsRedirecting(false);
       } else {
         toast.error('Failed to get portal URL');
         setIsRedirecting(false);
@@ -283,12 +284,12 @@ export default function SubscriptionManagement() {
             {isRedirecting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Opening Billing Portal...
+                Opening...
               </>
             ) : (
               <>
-                <ExternalLink className="mr-2 h-4 w-4" />
                 Manage Subscription
+                <ExternalLink className="ml-2 h-4 w-4" />
               </>
             )}
           </Button>
