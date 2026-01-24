@@ -71,6 +71,7 @@ secrets:                      # Pass secrets AND dynamic config from AWS SSM Par
   # Secrets
   NEXT_PUBLIC_SUPABASE_ANON_KEY: /clera-api/production/next_public_supabase_anon_key
   SUPABASE_SERVICE_ROLE_KEY: /clera-api/production/supabase_service_role_key
+  SUPABASE_JWT_SECRET: /clera-api/production/supabase_jwt_secret
   GROQ_API_KEY: /clera-api/production/groq_api_key
   OPENAI_API_KEY: /clera-api/production/openai_api_key
   PINECONE_API_KEY: /clera-api/production/pinecone_api_key
@@ -92,13 +93,20 @@ secrets:                      # Pass secrets AND dynamic config from AWS SSM Par
   BACKEND_API_KEY: /clera-api/production/backend_api_key # Used for API key auth
   PLAID_CLIENT_ID: /clera-api/production/plaid_client_id
   PLAID_SECRET: /clera-api/production/plaid_secret
+  # SnapTrade credentials for brokerage connections
+  SNAPTRADE_CONSUMER_KEY: /clera-api/production/snaptrade_consumer_key
+  SNAPTRADE_CLIENT_ID: /clera-api/production/snaptrade_client_id
+  SNAPTRADE_WEBHOOK_SECRET: /clera-api/production/snaptrade_webhook_secret
+  # AWS SES for email sending
+  AWS_SES_SMTP_USERNAME: /clera-api/production/aws_ses_smtp_username
+  AWS_SES_SMTP_PASSWORD: /clera-api/production/aws_ses_smtp_password
   # Dynamic Config fetched from SSM
   NEXT_PUBLIC_SUPABASE_URL: /clera-api/production/next_public_supabase_url
   SUPABASE_URL: /clera-api/production/supabase_url
   LANGGRAPH_API_URL: /clera-api/production/langgraph_api_url
   LIVEKIT_URL: /clera-api/production/livekit_url
-  # Add BACKEND_PUBLIC_URL here if it needs to be fetched dynamically, e.g.:
-  # BACKEND_PUBLIC_URL: /clera-api/production/backend_public_url 
+  # Frontend URL for redirect validation in SnapTrade flow
+  FRONTEND_URL: /clera-api/production/frontend_url 
 
 # You can override any of the values defined above by environment.
 environments:
