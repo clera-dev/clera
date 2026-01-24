@@ -1,6 +1,6 @@
 # --- Builder Stage ---
-# Use an official Python runtime as a parent image
-FROM python:3.12-slim AS builder
+# Use Amazon ECR Public mirror (avoids Docker Hub rate limits in AWS CodeBuild)
+FROM public.ecr.aws/docker/library/python:3.12-slim AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -19,8 +19,8 @@ RUN pip install --upgrade pip
 RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 # --- Runtime Stage ---
-# Use a slim Python image for the final stage
-FROM python:3.12-slim
+# Use Amazon ECR Public mirror (avoids Docker Hub rate limits in AWS CodeBuild)
+FROM public.ecr.aws/docker/library/python:3.12-slim
 
 # Set environment variables with defaults to prevent startup failures
 ENV PYTHONDONTWRITEBYTECODE=1
