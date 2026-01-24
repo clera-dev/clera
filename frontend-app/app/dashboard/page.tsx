@@ -360,24 +360,6 @@ export default function DashboardPage() {
           {/* Left: Connect Brokerage Card - Primary CTA */}
           <div>
             <AddConnectionButton userName={userData?.firstName} />
-            
-            {/* Supported brokerages info */}
-            <div className="mt-4 p-4 bg-muted/50 rounded-lg">
-              <p className="text-sm font-medium mb-2">Supported Brokerages</p>
-              <div className="flex flex-wrap gap-2">
-                {['Robinhood', 'Fidelity', 'Charles Schwab', 'TD Ameritrade', 'E*TRADE', 'Vanguard', 'Interactive Brokers'].map((broker) => (
-                  <span 
-                    key={broker}
-                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-background border"
-                  >
-                    {broker}
-                  </span>
-                ))}
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                  +20 more
-                </span>
-              </div>
-            </div>
           </div>
 
           {/* Right: Subscription Management */}
