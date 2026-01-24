@@ -168,8 +168,104 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      // ============================================
+      // CHARGE EVENTS - Monitoring & Fraud Detection
+      // ============================================
+      
+      case 'charge.dispute.created': {
+        // 🚨 CRITICAL: Chargeback/dispute initiated - requires immediate attention
+        const dispute = event.data.object as any;
+        const chargeId = dispute.charge;
+        const amount = dispute.amount;
+        const reason = dispute.reason;
+        const status = dispute.status;
+        
+        // Log at ERROR level so this appears prominently in monitoring
+        console.error('🚨 [STRIPE DISPUTE] Chargeback initiated!', {
+          disputeId: dispute.id,
+          chargeId,
+          amount: amount / 100, // Convert from cents
+          currency: dispute.currency,
+          reason,
+          status,
+          created: new Date(dispute.created * 1000).toISOString(),
+        });
+        
+        // In production, you'd want to:
+        // 1. Send Slack/PagerDuty alert
+        // 2. Send email to admin
+        // 3. Potentially suspend user account pending investigation
+        // 4. Log to a disputes table for tracking
+        
+        break;
+      }
+
+      case 'charge.dispute.closed': {
+        const dispute = event.data.object as any;
+        const status = dispute.status; // 'won', 'lost', 'warning_closed'
+        
+        console.log(`[Stripe] Dispute closed: ${dispute.id}, status: ${status}`, {
+          disputeId: dispute.id,
+          chargeId: dispute.charge,
+          status,
+          amount: dispute.amount / 100,
+        });
+        break;
+      }
+
+      case 'charge.refunded': {
+        const charge = event.data.object as any;
+        const refundedAmount = charge.amount_refunded;
+        const customerId = charge.customer;
+        
+        console.log('[Stripe] Charge refunded', {
+          chargeId: charge.id,
+          customerId,
+          refundedAmount: refundedAmount / 100,
+          currency: charge.currency,
+          fullyRefunded: charge.refunded, // true if fully refunded
+        });
+        
+        // If fully refunded, you might want to update user status
+        // For partial refunds, typically no action needed
+        break;
+      }
+
+      case 'charge.failed': {
+        const charge = event.data.object as any;
+        const failureCode = charge.failure_code;
+        const failureMessage = charge.failure_message;
+        
+        console.warn('[Stripe] Charge failed', {
+          chargeId: charge.id,
+          customerId: charge.customer,
+          amount: charge.amount / 100,
+          failureCode,
+          failureMessage,
+        });
+        break;
+      }
+
+      case 'charge.succeeded': {
+        const charge = event.data.object as any;
+        console.log('[Stripe] Charge succeeded', {
+          chargeId: charge.id,
+          customerId: charge.customer,
+          amount: charge.amount / 100,
+          currency: charge.currency,
+        });
+        break;
+      }
+
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        // Only log truly unexpected events, not common ones we intentionally don't handle
+        if (!event.type.startsWith('charge.') && 
+            !event.type.startsWith('customer.') && 
+            !event.type.startsWith('invoice.') &&
+            !event.type.startsWith('payment_intent.') &&
+            !event.type.startsWith('setup_intent.')) {
+          console.log(`[Stripe] Unhandled event type: ${event.type}`);
+        }
     }
 
     return NextResponse.json({ received: true });
