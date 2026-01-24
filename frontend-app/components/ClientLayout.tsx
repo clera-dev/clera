@@ -48,7 +48,6 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
-  const [hasCompletedFunding, setHasCompletedFunding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Responsive breakpoint detection
@@ -166,7 +165,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         setIsAuthenticated(isLoggedIn);
         
         if (isLoggedIn) {
-          // If authenticated, check onboarding status from DB first
+          // If authenticated, check onboarding status from DB
           const { data: onboardingData } = await supabase
             .from('user_onboarding')
             .select('status')
@@ -180,42 +179,20 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           const isPendingClosure = status === 'pending_closure';
           const isClosed = status === 'closed';
           
-          // Check funding status (but not for closure accounts)
-          let funded = false;
-          if (completed && !isPendingClosure && !isClosed) {
-            const { data: transfers } = await supabase
-              .from('user_transfers')
-              .select('amount, status')
-              .eq('user_id', user.id)
-              .gte('amount', 1);
-            
-            funded = !!(transfers && transfers.length > 0 && 
-              transfers.some((transfer: any) => 
-                transfer.status === 'QUEUED' ||
-                transfer.status === 'SUBMITTED' ||
-                transfer.status === 'COMPLETED' || 
-                transfer.status === 'SETTLED'
-              ));
-          }
-          
           // Store in localStorage for quicker access in future
           localStorage.setItem("userId", user.id);
           localStorage.setItem("onboardingStatus", status || 'not_started');
-          localStorage.setItem("fundingStatus", funded ? 'funded' : 'not_funded');
           localStorage.setItem("isPendingClosure", isPendingClosure.toString());
           localStorage.setItem("isClosed", isClosed.toString());
           
           setHasCompletedOnboarding(completed);
-          setHasCompletedFunding(funded);
         } else {
           // Clear localStorage if not logged in - CRITICAL for multi-user devices
           localStorage.removeItem("userId");
           localStorage.removeItem("onboardingStatus");
-          localStorage.removeItem("fundingStatus");
           localStorage.removeItem("isPendingClosure");
           localStorage.removeItem("isClosed");
           setHasCompletedOnboarding(false);
-          setHasCompletedFunding(false);
           // Also clear closure status state
           setUserClosureStatus(null);
         }
@@ -231,9 +208,6 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           setHasCompletedOnboarding(
             onboardingStatus === 'submitted' || onboardingStatus === 'approved'
           );
-          
-          const fundingStatus = localStorage.getItem("fundingStatus");
-          setHasCompletedFunding(fundingStatus === 'funded');
         } catch (storageError) {
           console.error("Error accessing localStorage:", storageError);
         }
@@ -253,9 +227,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
 
 
-  // Don't show sidebar during onboarding, if not funded, or if account is closing/closed
+  // Don't show sidebar during onboarding or if account is closing/closed
   const isOnboardingPage = pathname === '/protected' && !hasCompletedOnboarding;
-  const isFundingPage = pathname === '/protected' && hasCompletedOnboarding && !hasCompletedFunding;
   
   // PRODUCTION UX FIX: Check for account closure status from database
   // Navigation shows immediately, then hides ONLY if confirmed account closure
@@ -304,27 +277,23 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     userClosureStatus === 'pending_closure' || userClosureStatus === 'closed'
   );
   
-  // CRITICAL UX IMPROVEMENT: Show sidebar immediately, don't wait for loading
-  // Only hide after confirming specific exclusion conditions
+  // Show sidebar for authenticated users who completed onboarding
+  // Don't wait for loading - show immediately once we know user is authenticated
   const shouldShowSidebar = 
     isClient && 
     isAuthenticated && 
     pathname !== null && 
     !nonSidebarPaths.includes(pathname) && 
     !isOnboardingPage &&
-    !isFundingPage &&
-    !hasConfirmedAccountClosure && // Only hide AFTER confirming closure
-    (!isLoading || hasCompletedFunding); // Show during loading if previously funded
+    !hasConfirmedAccountClosure; // Only hide AFTER confirming closure
 
-  // CRITICAL UX IMPROVEMENT: Show mobile nav immediately, don't wait for loading  
-  // Mobile users need consistent navigation even more than desktop
+  // Show mobile nav with same conditions as sidebar
   const shouldShowMobileNav = 
     isClient && 
     isAuthenticated && 
     pathname !== null && 
     !nonSidebarPaths.includes(pathname) && 
     !isOnboardingPage &&
-    !isFundingPage &&
     !hasConfirmedAccountClosure; // Only hide AFTER confirming closure
 
 

@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Check, Info } from "lucide-react";
 import { 
   MarketInterest, 
   MARKET_INTEREST_DESCRIPTIONS 
@@ -58,14 +58,17 @@ export function MarketInterestsSection({
     <div className="space-y-4">
       <div className="text-center">
         <h2 className="text-2xl font-semibold text-white mb-2">
-          What kind of market news interests you?
+          What topics interest you most?
         </h2>
-        <p className="text-white mb-1">
-          What kind of investments or industries are you interested in?
-        </p>
-        <p className="text-sm text-gray-400">
+        <p className="text-gray-300 mb-4">
           Select up to {maxSelections} ({selectedInterests.length}/{maxSelections} selected)
         </p>
+        
+        {/* Why we ask context box */}
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-sm text-gray-300">
+          <Info className="h-4 w-4 text-primary" />
+          <span>I'll personalize your daily news digest and stock recommendations to these areas</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">

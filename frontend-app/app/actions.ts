@@ -59,6 +59,24 @@ async function waitForAuthStateConsistency(
 
 
 
+// Password validation requirements (must match client-side)
+const PASSWORD_REQUIREMENTS = [
+  { label: "At least 8 characters", test: (password: string) => password.length >= 8 },
+  { label: "Contains a number", test: (password: string) => /\d/.test(password) },
+  { label: "Contains a lowercase letter", test: (password: string) => /[a-z]/.test(password) },
+  { label: "Contains an uppercase letter", test: (password: string) => /[A-Z]/.test(password) },
+];
+
+function validatePassword(password: string): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  for (const requirement of PASSWORD_REQUIREMENTS) {
+    if (!requirement.test(password)) {
+      errors.push(requirement.label);
+    }
+  }
+  return { isValid: errors.length === 0, errors };
+}
+
 export const signUpAction = async (formData: FormData) => {
   const email = formData.get("email")?.toString();
   const password = formData.get("password")?.toString();
@@ -71,6 +89,13 @@ export const signUpAction = async (formData: FormData) => {
       "/sign-up",
       "Email and password are required",
     );
+  }
+
+  // Server-side password validation (fallback if client validation is bypassed)
+  const { isValid, errors } = validatePassword(password);
+  if (!isValid) {
+    const friendlyMessage = `Password must have: ${errors.join(", ").toLowerCase()}`;
+    return encodedRedirect("error", "/sign-up", friendlyMessage);
   }
 
   console.log("Attempting to sign up user with email:", email);
@@ -87,7 +112,16 @@ export const signUpAction = async (formData: FormData) => {
 
   if (error) {
     console.error("Sign-up error details:", error.code, error.message, error);
-    return encodedRedirect("error", "/sign-up", error.message);
+    // Provide user-friendly error messages instead of raw Supabase errors
+    let friendlyMessage = error.message;
+    if (error.message.toLowerCase().includes("password")) {
+      friendlyMessage = "Password doesn't meet security requirements. Please ensure it has at least 8 characters, includes uppercase and lowercase letters, and contains a number.";
+    } else if (error.message.toLowerCase().includes("email")) {
+      friendlyMessage = "Please enter a valid email address.";
+    } else if (error.message.toLowerCase().includes("already registered") || error.message.toLowerCase().includes("already exists")) {
+      friendlyMessage = "An account with this email already exists. Please sign in instead.";
+    }
+    return encodedRedirect("error", "/sign-up", friendlyMessage);
   } else {
     console.log("Sign-up successful");
     

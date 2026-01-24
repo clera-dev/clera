@@ -22,40 +22,57 @@ export default async function Login(props: { searchParams: Promise<Message> }) {
 
   const searchParams = await props.searchParams;
   return (
-    <form action={signInAction} className="flex flex-col min-w-[380px] max-w-[380px] mx-auto bg-black/30 p-10 rounded-xl shadow-lg border border-gray-800">
-      <h1 className="text-3xl font-medium mb-3">Sign in</h1>
-      <p className="text-base text-foreground mb-8">
+    <form 
+      action={signInAction} 
+      className="flex flex-col w-full min-w-[340px] max-w-[400px] mx-auto bg-card/50 backdrop-blur-sm p-8 sm:p-10 rounded-2xl shadow-xl border border-border/50"
+    >
+      <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-2">
+        Welcome back
+      </h1>
+      <p className="text-sm sm:text-base text-muted-foreground mb-8">
         Don't have an account?{" "}
-        <Link className="text-foreground font-medium underline" href="/sign-up">
+        <Link className="text-primary font-medium hover:underline" href="/sign-up">
           Sign up
         </Link>
       </p>
-      <div className="flex flex-col gap-6 [&>input]:mb-5">
+      <div className="flex flex-col gap-5">
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-base">Email</Label>
-          <Input name="email" placeholder="you@example.com" required className="h-12 text-base px-4" />
+          <Label htmlFor="email" className="text-sm font-medium">
+            Email address
+          </Label>
+          <Input 
+            name="email" 
+            type="email"
+            placeholder="name@example.com" 
+            required 
+            autoComplete="email"
+            className="h-11 text-sm px-4 bg-background/50 border-border/50 focus:border-primary/50" 
+          />
         </div>
         <div className="space-y-2">
           <div className="flex justify-between items-center">
-            <Label htmlFor="password" className="text-base">Password</Label>
+            <Label htmlFor="password" className="text-sm font-medium">
+              Password
+            </Label>
             <Link
-              className="text-sm text-foreground underline"
+              className="text-xs text-muted-foreground hover:text-primary transition-colors"
               href="/forgot-password"
             >
-              Forgot Password?
+              Forgot password?
             </Link>
           </div>
           <PasswordInput
             name="password"
-            placeholder="Your password"
+            placeholder="Enter your password"
             required
-            className="h-12 text-base px-4"
+            autoComplete="current-password"
+            className="h-11 text-sm px-4 bg-background/50 border-border/50 focus:border-primary/50"
           />
         </div>
-        <div className="mt-4">
+        <div className="mt-2">
           <SubmitButton 
-            pendingText="Signing In..." 
-            className="w-full h-12 text-base mt-2"
+            pendingText="Signing in..." 
+            className="w-full h-11 text-sm font-medium"
           >
             Sign in
           </SubmitButton>

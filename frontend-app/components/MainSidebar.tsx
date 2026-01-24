@@ -177,150 +177,146 @@ export default function MainSidebar({
     }
   };
 
+  // Use a safe collapsed state that defaults to false during SSR
+  // This prevents hydration mismatch while ensuring content is always visible
+  const safeIsCollapsed = isMounted ? isCollapsed : false;
+
   return (
     <>
-      {/* Sidebar content - layout positioning handled by ClientLayout */}
-      {isMounted && (
-        <>
-          <aside className="h-full flex flex-col bg-background border-r shadow-lg">
-            {/* Logo / Brand - Fixed at top, same height as the header */}
-            <div className="flex items-center h-16 px-4 border-b justify-between flex-shrink-0">
-              {isCollapsed ? (
-                <div className="w-full flex justify-center items-center">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div 
-                          role="button"
-                          tabIndex={0}
-                          className="relative flex items-center justify-center cursor-pointer"
-                          onMouseEnter={() => setIsLogoHovered(true)}
-                          onMouseLeave={() => setIsLogoHovered(false)}
-                          onClick={toggleCollapse}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              toggleCollapse();
-                            }
-                          }}
-                          aria-label="Open sidebar"
-                        >
-                          {/* Logo - hidden when hovering */}
-                          <img 
-                            src="/clera-favicon copy.png" 
-                            alt="Clera" 
-                            className={cn(
-                              "h-8 w-auto transition-opacity duration-200",
-                              isLogoHovered ? "opacity-0" : "opacity-100"
-                            )}
-                          />
-                          {/* Chevron button - shown when hovering */}
-                          <div className={cn(
-                            "absolute inset-0 flex items-center justify-center transition-opacity duration-200",
-                            isLogoHovered ? "opacity-100" : "opacity-0"
-                          )}>
-                            <ChevronRight size={20} className="text-foreground" />
-                          </div>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={8}>
-                        <p>Open sidebar</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              ) : (
-                <div className="w-full flex justify-between items-center">
-                  <div className="flex items-center space-x-2">
-                    <img 
-                      src="/clera-logo.png" 
-                      alt="Clera" 
-                      className="h-8 w-auto"
-                    />
-                  </div>
-                  
-                  {/* Desktop collapse button */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="hidden lg:flex"
-                    onClick={toggleCollapse}
-                    aria-label="Collapse sidebar"
-                  >
-                    <ChevronLeft size={16} />
-                  </Button>
-                  
-
-                </div>
+      {/* Sidebar content - always render structure, only collapse behavior waits for mount */}
+      <aside className="h-full flex flex-col bg-background border-r shadow-lg">
+        {/* Logo / Brand - Fixed at top, same height as the header */}
+        <div className="flex items-center h-16 px-4 border-b justify-between flex-shrink-0">
+          {isMounted && safeIsCollapsed ? (
+            <div className="w-full flex justify-center items-center">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div 
+                      role="button"
+                      tabIndex={0}
+                      className="relative flex items-center justify-center cursor-pointer"
+                      onMouseEnter={() => setIsLogoHovered(true)}
+                      onMouseLeave={() => setIsLogoHovered(false)}
+                      onClick={toggleCollapse}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggleCollapse();
+                        }
+                      }}
+                      aria-label="Open sidebar"
+                    >
+                      {/* Logo - hidden when hovering */}
+                      <img 
+                        src="/clera-favicon copy.png" 
+                        alt="Clera" 
+                        className={cn(
+                          "h-8 w-auto transition-opacity duration-200",
+                          isLogoHovered ? "opacity-0" : "opacity-100"
+                        )}
+                      />
+                      {/* Chevron button - shown when hovering */}
+                      <div className={cn(
+                        "absolute inset-0 flex items-center justify-center transition-opacity duration-200",
+                        isLogoHovered ? "opacity-100" : "opacity-0"
+                      )}>
+                        <ChevronRight size={20} className="text-foreground" />
+                      </div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    <p>Open sidebar</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          ) : (
+            <div className="w-full flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <img 
+                  src="/clera-logo.png" 
+                  alt="Clera" 
+                  className="h-8 w-auto"
+                />
+              </div>
+              
+              {/* Desktop collapse button - only show after mount to avoid hydration issues */}
+              {isMounted && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="hidden lg:flex"
+                  onClick={toggleCollapse}
+                  aria-label="Collapse sidebar"
+                >
+                  <ChevronLeft size={16} />
+                </Button>
               )}
             </div>
+          )}
+        </div>
 
-            {/* Navigation - Scrollable middle section */}
-            <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-              <nav className="flex-1 overflow-y-auto p-2">
-                <ul className="space-y-1">
-                  {navItems.map((item) => {
-                    const isActive = pathname === item.href;
-                    const isChatItem = item.name === 'Ask Clera';
-                    const highlightChat = isChatItem && sideChatVisible;
-                    
-                    return (
-                      <li key={item.href}>
-                        <a 
-                          href={item.href}
-                          onClick={item.onClick || ((e) => {
-                            if (item.href) {
-                              handleNavigation(item.href, e);
-                            }
-                          })}
-                          className={cn(
-                            "flex items-center gap-3 rounded-md px-3 py-2 hover:bg-accent hover:text-accent-foreground",
-                            isActive ? "bg-accent text-accent-foreground" : 
-                              highlightChat ? "bg-primary/20 text-primary" : "text-muted-foreground",
-                            isCollapsed ? "justify-center" : ""
-                          )}
-                          title={isCollapsed ? `${item.name}${isChatItem ? ' (Double-click for full page)' : ''}` : undefined}
-                        >
-                          <item.icon size={20} />
-                          {!isCollapsed && <span>{item.name}</span>}
-                        </a>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </nav>
+        {/* Navigation - Scrollable middle section */}
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+          <nav className="flex-1 overflow-y-auto p-2">
+            <ul className="space-y-1">
+              {navItems.map((item) => {
+                const isActive = pathname === item.href;
+                const isChatItem = item.name === 'Ask Clera';
+                const highlightChat = isChatItem && sideChatVisible;
+                
+                return (
+                  <li key={item.href}>
+                    <a 
+                      href={item.href}
+                      onClick={item.onClick || ((e) => {
+                        if (item.href) {
+                          handleNavigation(item.href, e);
+                        }
+                      })}
+                      className={cn(
+                        "flex items-center gap-3 rounded-md px-3 py-2 hover:bg-accent hover:text-accent-foreground",
+                        isActive ? "bg-accent text-accent-foreground" : 
+                          highlightChat ? "bg-primary/20 text-primary" : "text-muted-foreground",
+                        safeIsCollapsed ? "justify-center" : ""
+                      )}
+                      title={safeIsCollapsed ? `${item.name}${isChatItem ? ' (Double-click for full page)' : ''}` : undefined}
+                    >
+                      <item.icon size={20} />
+                      {!safeIsCollapsed && <span>{item.name}</span>}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        </div>
+
+        {/* User section - Fixed at bottom, now navigates to dashboard */}
+        <div className="border-t p-4 flex-shrink-0 mt-auto">
+          <Link 
+            href="/dashboard"
+            className={cn(
+              "flex items-center gap-3 hover:bg-accent hover:text-accent-foreground rounded-md p-2 transition-colors",
+              pathname === '/dashboard' ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+              safeIsCollapsed ? "justify-center" : ""
+            )}
+            onClick={(e) => handleNavigation('/dashboard', e)}
+            title={safeIsCollapsed ? "Dashboard" : undefined}
+          >
+            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+              <User size={16} className="text-muted-foreground" />
             </div>
-
-
-
-            {/* User section - Fixed at bottom, now navigates to dashboard */}
-            <div className="border-t p-4 flex-shrink-0 mt-auto">
-              <Link 
-                href="/dashboard"
-                className={cn(
-                  "flex items-center gap-3 hover:bg-accent hover:text-accent-foreground rounded-md p-2 transition-colors",
-                  pathname === '/dashboard' ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                  isCollapsed ? "justify-center" : ""
-                )}
-                onClick={(e) => handleNavigation('/dashboard', e)}
-                title={isCollapsed ? "Dashboard" : undefined}
-              >
-                <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                  <User size={16} className="text-muted-foreground" />
-                </div>
-                {!isCollapsed && (
-                  <div className="flex-1 overflow-hidden">
-                    <p className="text-sm font-medium truncate">Dashboard</p>
-                    <p className="text-xs text-muted-foreground truncate">Account & Settings</p>
-                  </div>
-                )}
-              </Link>
-            </div>
-          </aside>
-          
-          {/* Remove the fixed expand button - functionality moved to logo hover */}
-        </>
-      )}
+            {!safeIsCollapsed && (
+              <div className="flex-1 overflow-hidden">
+                <p className="text-sm font-medium truncate">Dashboard</p>
+                <p className="text-xs text-muted-foreground truncate">Account & Settings</p>
+              </div>
+            )}
+          </Link>
+        </div>
+      </aside>
     </>
   );
 } 

@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Check, Info } from "lucide-react";
 import { 
   InvestmentGoal, 
   INVESTMENT_GOAL_DESCRIPTIONS 
@@ -54,11 +54,17 @@ export function GoalsSelectorSection({
     <div className="space-y-6 px-2 sm:px-0">
       <div className="text-center px-4 sm:px-0">
         <h2 className="text-2xl font-semibold text-white mb-3">
-          What investing goals can I help you achieve?
+          What are you investing for?
         </h2>
-        <p className="text-white text-base">
-          Select up to {maxSelections} ({selectedGoals.length}/{maxSelections} selected)
+        <p className="text-gray-300 text-base mb-4">
+          Select up to {maxSelections} goals ({selectedGoals.length}/{maxSelections} selected)
         </p>
+        
+        {/* Why we ask context box */}
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-sm text-gray-300">
+          <Info className="h-4 w-4 text-primary" />
+          <span>This will help me recommend the right investment strategies for you</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-4 sm:px-0">

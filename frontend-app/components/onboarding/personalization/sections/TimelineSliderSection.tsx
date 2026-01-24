@@ -2,6 +2,7 @@
 
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { Info } from "lucide-react";
 import { 
   InvestmentTimeline, 
   INVESTMENT_TIMELINE_DESCRIPTIONS 
@@ -73,11 +74,17 @@ export function TimelineSliderSection({
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-semibold text-white mb-2">
-          How long do you plan to be investing for?
+          What's your investment timeline?
         </h2>
-        <p className="text-white">
-          Your investment timeline helps determine the right strategy
+        <p className="text-gray-300 mb-4">
+          When do you expect to need this money?
         </p>
+        
+        {/* Why we ask context box */}
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-sm text-gray-300">
+          <Info className="h-4 w-4 text-primary" />
+          <span>Longer timelines allow for more growth-focused strategies</span>
+        </div>
       </div>
 
       <div className="max-w-md mx-auto space-y-6">
