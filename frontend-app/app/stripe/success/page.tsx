@@ -139,7 +139,7 @@ function SuccessContent() {
         </div>
         <h2 className="text-2xl font-bold text-emerald-500 mb-2">Payment Successful!</h2>
         <p className="text-gray-400 mb-4">
-          Your subscription to Clera has been activated. Redirecting to your portfolio...
+          Your subscription to Clera has been activated. Redirecting to your account...
         </p>
       </div>
     </div>

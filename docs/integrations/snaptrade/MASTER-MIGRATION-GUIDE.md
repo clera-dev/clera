@@ -265,7 +265,7 @@ export default function SnapTradeCallback() {
               </svg>
             </div>
             <h2 className="text-xl font-semibold text-green-600">Connection Successful!</h2>
-            <p className="mt-2 text-gray-600">Redirecting to your portfolio...</p>
+            <p className="mt-2 text-gray-600">Redirecting to your account...</p>
           </>
         )}
         
