@@ -346,31 +346,74 @@ export default function DashboardPage() {
   // CRITICAL: Still show SubscriptionManagement so paying users can manage their subscription!
   if (!hasConnectedAccounts && portfolioMode !== 'loading') {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
-          {/* Connect Account Section */}
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="text-center space-y-6 max-w-2xl">
-              <div className="space-y-2">
-                <h2 className="text-2xl font-bold tracking-tight">Welcome to Your Dashboard</h2>
-                <p className="text-muted-foreground text-lg">
-                  Connect a brokerage account to unlock all dashboard features including portfolio tracking, statements, and more.
-                </p>
+      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight">Welcome, {userData?.firstName || 'User'}</h1>
+          <p className="text-muted-foreground mt-1">
+            Get started by connecting your brokerage account
+          </p>
+        </div>
+
+        {/* Main content - side by side on desktop, stacked on mobile */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left: Connect Brokerage Card - Primary CTA */}
+          <div className="lg:row-span-2">
+            <AddConnectionButton userName={userData?.firstName} />
+            
+            {/* Supported brokerages info */}
+            <div className="mt-4 p-4 bg-muted/50 rounded-lg">
+              <p className="text-sm font-medium mb-2">Supported Brokerages</p>
+              <div className="flex flex-wrap gap-2">
+                {['Robinhood', 'Fidelity', 'Charles Schwab', 'TD Ameritrade', 'E*TRADE', 'Vanguard', 'Interactive Brokers'].map((broker) => (
+                  <span 
+                    key={broker}
+                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-background border"
+                  >
+                    {broker}
+                  </span>
+                ))}
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                  +20 more
+                </span>
               </div>
-              
-              <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-                <AddConnectionButton userName={userData?.firstName} />
-              </div>
-              
-              <p className="text-sm text-muted-foreground">
-                Supported brokerages include: Robinhood, Fidelity, Charles Schwab, TD Ameritrade, E*TRADE, and 20+ more
-              </p>
             </div>
           </div>
 
-          {/* Subscription Management - Always visible so users can manage billing */}
-          <div className="max-w-md mx-auto">
+          {/* Right: Subscription Management */}
+          <div>
             <SubscriptionManagement />
+          </div>
+
+          {/* Right: Quick Start Guide */}
+          <div className="bg-card border rounded-lg p-5">
+            <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+              <Terminal className="h-4 w-4" />
+              How it works
+            </h3>
+            <ol className="space-y-3 text-sm">
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">1</span>
+                <div>
+                  <p className="font-medium">Connect your brokerage</p>
+                  <p className="text-muted-foreground text-xs">Securely link via SnapTrade - we never store credentials</p>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">2</span>
+                <div>
+                  <p className="font-medium">View your portfolio</p>
+                  <p className="text-muted-foreground text-xs">See all your holdings in one unified dashboard</p>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">3</span>
+                <div>
+                  <p className="font-medium">Get AI-powered insights</p>
+                  <p className="text-muted-foreground text-xs">Chat with Clera for personalized investment advice</p>
+                </div>
+              </li>
+            </ol>
           </div>
         </div>
       </div>
@@ -379,11 +422,13 @@ export default function DashboardPage() {
   
   return (
     <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="py-4 space-y-6 flex-1 w-full flex flex-col">
+      <div className="py-4 space-y-5 flex-1 w-full flex flex-col">
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl lg:text-3xl font-bold">Account Dashboard</h1>
+            <h1 className="text-2xl lg:text-3xl font-bold">
+              {userData?.firstName ? `${userData.firstName}'s Dashboard` : 'Account Dashboard'}
+            </h1>
             <p className="text-muted-foreground mt-1">Manage your account settings and view statements</p>
           </div>
         </div>
