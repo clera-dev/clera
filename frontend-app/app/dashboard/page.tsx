@@ -346,30 +346,24 @@ export default function DashboardPage() {
   // CRITICAL: Still show SubscriptionManagement so paying users can manage their subscription!
   if (!hasConnectedAccounts && portfolioMode !== 'loading') {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
-          {/* Connect Account Section */}
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="text-center space-y-6 max-w-2xl">
-              <div className="space-y-2">
-                <h2 className="text-2xl font-bold tracking-tight">Welcome to Your Dashboard</h2>
-                <p className="text-muted-foreground text-lg">
-                  Connect a brokerage account to unlock all dashboard features including portfolio tracking, statements, and more.
-                </p>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-                <AddConnectionButton userName={userData?.firstName} />
-              </div>
-              
-              <p className="text-sm text-muted-foreground">
-                Supported brokerages include: Robinhood, Fidelity, Charles Schwab, TD Ameritrade, E*TRADE, and 20+ more
-              </p>
-            </div>
+      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight">Welcome, {userData?.firstName || 'User'}</h1>
+          <p className="text-muted-foreground mt-1">
+            Get started by connecting your brokerage account
+          </p>
+        </div>
+
+        {/* Main content - side by side on desktop, stacked on mobile */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left: Connect Brokerage Card - Primary CTA */}
+          <div>
+            <AddConnectionButton userName={userData?.firstName} />
           </div>
 
-          {/* Subscription Management - Always visible so users can manage billing */}
-          <div className="max-w-md mx-auto">
+          {/* Right: Subscription Management */}
+          <div>
             <SubscriptionManagement />
           </div>
         </div>
@@ -379,11 +373,13 @@ export default function DashboardPage() {
   
   return (
     <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="py-4 space-y-6 flex-1 w-full flex flex-col">
+      <div className="py-4 space-y-5 flex-1 w-full flex flex-col">
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl lg:text-3xl font-bold">Account Dashboard</h1>
+            <h1 className="text-2xl lg:text-3xl font-bold">
+              {userData?.firstName ? `${userData.firstName}'s Dashboard` : 'Account Dashboard'}
+            </h1>
             <p className="text-muted-foreground mt-1">Manage your account settings and view statements</p>
           </div>
         </div>
