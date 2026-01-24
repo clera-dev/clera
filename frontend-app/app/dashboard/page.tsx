@@ -358,7 +358,7 @@ export default function DashboardPage() {
         {/* Main content - side by side on desktop, stacked on mobile */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left: Connect Brokerage Card - Primary CTA */}
-          <div className="lg:row-span-2">
+          <div>
             <AddConnectionButton userName={userData?.firstName} />
             
             {/* Supported brokerages info */}
@@ -383,37 +383,6 @@ export default function DashboardPage() {
           {/* Right: Subscription Management */}
           <div>
             <SubscriptionManagement />
-          </div>
-
-          {/* Right: Quick Start Guide */}
-          <div className="bg-card border rounded-lg p-5">
-            <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-              <Terminal className="h-4 w-4" />
-              How it works
-            </h3>
-            <ol className="space-y-3 text-sm">
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">1</span>
-                <div>
-                  <p className="font-medium">Connect your brokerage</p>
-                  <p className="text-muted-foreground text-xs">Securely link via SnapTrade - we never store credentials</p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">2</span>
-                <div>
-                  <p className="font-medium">View your portfolio</p>
-                  <p className="text-muted-foreground text-xs">See all your holdings in one unified dashboard</p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">3</span>
-                <div>
-                  <p className="font-medium">Get AI-powered insights</p>
-                  <p className="text-muted-foreground text-xs">Chat with Clera for personalized investment advice</p>
-                </div>
-              </li>
-            </ol>
           </div>
         </div>
       </div>
