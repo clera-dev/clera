@@ -15,11 +15,11 @@ http:
   # You can specify a custom health check path. The default is "/".
   healthcheck:
     path: '/api/health'
-    healthy_threshold: 3
+    healthy_threshold: 2    # Reduced - pass faster once healthy
     unhealthy_threshold: 10 # Increased to allow more retries before failing
-    interval: 60s          # Increased interval for better stability
-    timeout: 30s           # Increased timeout for health check
-    grace_period: 30s
+    interval: 30s           # Check more frequently
+    timeout: 10s            # Shorter timeout per check
+    grace_period: 180s      # INCREASED: Give app 3 minutes to start before health checks count
   # Add WebSocket support
   deregistration_delay: 60s # Lower deregistration delay (default is 300s)
   stickiness: true # Enable session stickiness for WebSocket connections

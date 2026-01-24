@@ -12,9 +12,10 @@ http:
   healthcheck:
     path: '/health'
     healthy_threshold: 2
-    unhealthy_threshold: 5
+    unhealthy_threshold: 10  # Increased to allow more retries
     interval: 15s
     timeout: 10s
+    grace_period: 120s       # Give app 2 minutes to start before health checks count
   # WebSocket-specific settings
   deregistration_delay: 60s # Lower deregistration delay from default 300s
   stickiness: true # Enable session stickiness for WebSocket connections
