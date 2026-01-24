@@ -443,8 +443,18 @@ export async function middleware(request: NextRequest) {
         }
       } catch (dbError) {
         console.error('Database connection error checking payment in middleware:', dbError);
-        // On error, allow through to prevent blocking legitimate users
-        // The page-level checks will catch any issues
+        // DESIGN DECISION: Different fail behavior for API vs page routes
+        // - API routes: Fail-CLOSED (return 503) - client can retry, data shouldn't leak
+        // - Page routes: Fail-OPEN - page-level code shows error UI, don't lock out users
+        // This prevents transient DB issues from permanently blocking legitimate paying users
+        // while still protecting API endpoints from unauthorized access
+        if (path.startsWith('/api/')) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Service temporarily unavailable', code: 'PAYMENT_CHECK_FAILED' }),
+            { status: 503, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        // For page routes: allow through, page-level checks will handle errors gracefully
       }
     }
 

@@ -68,10 +68,12 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error('Error fetching portfolio mode:', error);
-      // Default to showing brokerage components on error
+      // FAIL-OPEN: On error, assume user has accounts to avoid blocking dashboard access
+      // Security is enforced by middleware, not UI state. Transient backend errors
+      // should not lock paying users out of their dashboard.
       setPortfolioMode('brokerage');
       setShowBrokerageComponents(true);
-      setHasConnectedAccounts(false);
+      setHasConnectedAccounts(true); // Fail-open to prevent lockout
     }
   };
 

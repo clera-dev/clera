@@ -13,9 +13,11 @@ export interface RouteConfig {
 
 // Configuration for protected routes
 // NOTE: requiresPayment = true means user must have active Stripe subscription
+// IMPORTANT: /dashboard has requiresPayment: false so users can ALWAYS access subscription management
+// even when their subscription has lapsed. This prevents lockout scenarios.
 export const routeConfigs: Record<string, RouteConfig> = {
   "/protected": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
-  "/dashboard": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/dashboard": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
   "/invest": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
   "/portfolio": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
   "/news": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
