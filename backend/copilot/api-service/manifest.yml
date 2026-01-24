@@ -105,8 +105,8 @@ secrets:                      # Pass secrets AND dynamic config from AWS SSM Par
   SUPABASE_URL: /clera-api/production/supabase_url
   LANGGRAPH_API_URL: /clera-api/production/langgraph_api_url
   LIVEKIT_URL: /clera-api/production/livekit_url
-  # Add BACKEND_PUBLIC_URL here if it needs to be fetched dynamically, e.g.:
-  # BACKEND_PUBLIC_URL: /clera-api/production/backend_public_url 
+  # Frontend URL for redirect validation in SnapTrade flow
+  FRONTEND_URL: /clera-api/production/frontend_url 
 
 # You can override any of the values defined above by environment.
 environments:
