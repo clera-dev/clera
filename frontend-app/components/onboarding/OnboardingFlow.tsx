@@ -424,32 +424,41 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   };
 
   const redirectToCheckoutOrPortfolio = async (context: string) => {
-    console.log(`[OnboardingFlow] ${context} - creating checkout session`);
-    const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
+    console.log(`[OnboardingFlow] ${context} - attempting to create checkout session`);
+    
+    try {
+      const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
 
-    if (checkoutResponse.ok) {
-      const checkoutData = await checkoutResponse.json();
-      if (checkoutData.url) {
-        window.location.href = checkoutData.url;
-      } else {
-        console.error('[OnboardingFlow] No checkout URL received, falling back to portfolio');
+      if (checkoutResponse.ok) {
+        const checkoutData = await checkoutResponse.json();
+        if (checkoutData.url) {
+          window.location.href = checkoutData.url;
+          return;
+        }
+        console.log('[OnboardingFlow] No checkout URL received, allowing portfolio browsing');
         router.push('/portfolio');
+        return;
       }
-      return;
-    }
 
-    if (checkoutResponse.status === 409) {
-      const errorData = await checkoutResponse.json();
-      console.log('[OnboardingFlow] User already has subscription, redirecting to portfolio');
-      router.push(errorData.redirectTo || '/portfolio');
-      return;
-    }
+      if (checkoutResponse.status === 409) {
+        const errorData = await checkoutResponse.json();
+        console.log('[OnboardingFlow] User already has subscription, redirecting to portfolio');
+        router.push(errorData.redirectTo || '/portfolio');
+        return;
+      }
 
-    console.error('[OnboardingFlow] Failed to create checkout session, falling back to portfolio');
-    router.push('/portfolio');
+      // Checkout failed - allow user to browse portfolio anyway
+      // The portfolio page will show prompts to connect accounts or subscribe
+      console.log('[OnboardingFlow] Checkout unavailable, allowing portfolio browsing');
+      router.push('/portfolio');
+    } catch (error) {
+      console.error('[OnboardingFlow] Error creating checkout session:', error);
+      // On error, let user browse portfolio
+      router.push('/portfolio');
+    }
   };
 
   const handleLoadingComplete = async () => {
@@ -463,9 +472,9 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       return;
     }
     
-    // CRITICAL: Check payment status before navigating to portfolio
-    // This prevents the confusing bounce: onboarding → portfolio → protected → stripe
-    // Instead, users go: onboarding → stripe → portfolio (clean flow)
+    // Check payment status and attempt checkout if needed
+    // If checkout fails, still allow user to browse /portfolio
+    // The portfolio page will show prompts to connect accounts or subscribe
     try {
       const paymentCheck = await fetch('/api/stripe/check-payment-status');
       if (paymentCheck.ok) {
@@ -476,16 +485,17 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           console.log('[OnboardingFlow] User has active payment, redirecting to portfolio');
           router.push('/portfolio');
         } else {
-          // User needs to pay - redirect to Stripe checkout
+          // User needs to pay - attempt Stripe checkout, fallback to portfolio browsing
           await redirectToCheckoutOrPortfolio('User needs payment');
         }
       } else {
-        // Payment check failed - try to create checkout as failsafe
-        await redirectToCheckoutOrPortfolio('Payment check failed');
+        // Payment check failed - allow user to browse portfolio
+        console.log('[OnboardingFlow] Payment check failed, allowing portfolio browsing');
+        router.push('/portfolio');
       }
     } catch (error) {
       console.error('[OnboardingFlow] Error checking payment status:', error);
-      // Fallback to portfolio (it will redirect to protected if needed)
+      // Fallback to portfolio - page-level prompts will guide user
       router.push('/portfolio');
     }
   };

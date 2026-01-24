@@ -13,13 +13,18 @@ export interface RouteConfig {
 
 // Configuration for protected routes
 // NOTE: requiresPayment = true means user must have active Stripe subscription
-// IMPORTANT: /dashboard has requiresPayment: false so users can ALWAYS access subscription management
-// even when their subscription has lapsed. This prevents lockout scenarios.
+// IMPORTANT: /dashboard and /portfolio have requiresPayment: false so users can ALWAYS access 
+// subscription management and browse the platform, even when their subscription has lapsed 
+// or they clicked "Skip for now" during onboarding. This prevents lockout scenarios and allows
+// page-level prompts to guide users to subscribe or connect accounts.
 export const routeConfigs: Record<string, RouteConfig> = {
   "/protected": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
   "/dashboard": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
   "/invest": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
-  "/portfolio": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  // CRITICAL: /portfolio must have requiresPayment: false to support "Skip for now" onboarding flow
+  // Users who skip connecting accounts should still be able to browse the portfolio page
+  // The page itself handles showing "Connect Account" prompts for users without accounts
+  "/portfolio": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
   "/news": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
   "/settings": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
   "/info": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
