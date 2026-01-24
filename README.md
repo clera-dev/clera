@@ -44,7 +44,7 @@ If you want to locally run the langgraph instance to test changes before deployi
 langgraph up --recreate # `---recreate` will ensure everything is rebuilt from scratch (no old code is used)
 ```
 
-And to redeploy AWS servers (anytime you change backend):
+And to manually redeploy AWS servers (though AWS codepipeline should handle this automatically):
 ``` bash
    copilot svc deploy --name api-service --env production
    copilot svc deploy --name websocket-lb-service --env production

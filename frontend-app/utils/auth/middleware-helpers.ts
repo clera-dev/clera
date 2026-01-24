@@ -6,71 +6,78 @@ export interface RouteConfig {
   requiresAuth: boolean;
   requiresOnboarding: boolean;
   requiresFunding: boolean;
+  requiresPayment: boolean;  // NEW: Requires active Stripe subscription
   allowedDuringOnboarding?: boolean;
   requiredRole: string;
 }
 
 // Configuration for protected routes
+// NOTE: requiresPayment = true means user must have active Stripe subscription
+// IMPORTANT: /dashboard has requiresPayment: false so users can ALWAYS access subscription management
+// even when their subscription has lapsed. This prevents lockout scenarios.
 export const routeConfigs: Record<string, RouteConfig> = {
-  "/protected": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/dashboard": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/invest": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/portfolio": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/news": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/settings": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/info": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/account-closure": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/protected": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/dashboard": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/invest": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/portfolio": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/news": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/settings": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/info": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/account-closure": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
   
   // Funding page (replaces modal flow)
-  "/account/add-funds": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
+  "/account/add-funds": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
 
-  // API routes
-  "/api/broker/account-summary": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/api/broker/bank-status": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/api/broker/connect-bank": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/api/broker/connect-bank-manual": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/broker/create-account": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/broker/transfer": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/api/broker/funding-status": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/broker/delete-ach-relationship": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  // Portfolio API routes - require auth and onboarding, but NOT connected accounts
-  // The API handlers return empty data gracefully when user has no accounts
-  // This prevents 403 errors on the /portfolio page for users who skipped brokerage connection
-  "/api/portfolio/history": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/api/portfolio/positions": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/api/portfolio/connection-status": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/portfolio/value": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/api/portfolio/aggregated": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
-  "/api/portfolio/analytics": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiredRole: "user" },
+  // API routes - Payment required for core app functionality
+  "/api/broker/account-summary": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/broker/bank-status": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/broker/connect-bank": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/broker/connect-bank-manual": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/broker/create-account": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/broker/transfer": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/broker/funding-status": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/broker/delete-ach-relationship": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
   
-  // Conversation API routes - require auth but not onboarding for basic chat functionality
-  "/api/conversations/create-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/conversations/get-sessions": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/conversations/get-thread-messages": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/conversations/update-thread-title": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/conversations/delete-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/conversations/stream-chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/conversations/submit-message": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/conversations/handle-interrupt": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  // Portfolio API routes - require payment for core functionality
+  "/api/portfolio/history": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/portfolio/positions": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/portfolio/connection-status": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/portfolio/value": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/portfolio/aggregated": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/portfolio/analytics": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  
+  // Conversation API routes - require payment for AI chat
+  "/api/conversations/create-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/conversations/get-sessions": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/conversations/get-thread-messages": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/conversations/update-thread-title": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/conversations/delete-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/conversations/stream-chat": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/conversations/submit-message": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/conversations/handle-interrupt": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
   
   // FMP API routes - require authentication to prevent abuse (authenticated users have natural rate limiting)
-  "/api/fmp/chart": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/fmp/profile": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/fmp/price-target": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
-  "/api/fmp/chart/health": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/fmp/chart": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/fmp/profile": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/fmp/price-target": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/fmp/chart/health": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
   
   // Image proxy route - require authentication to prevent bandwidth abuse
-  "/api/image-proxy": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/image-proxy": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
 
   // Cron routes - secured via CRON_SECRET header, should not require user auth
-  "/api/cron": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "system" },
+  "/api/cron": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "system" },
   
   // News API routes - public cached data, no auth required
-  // The data is pre-cached from external APIs and doesn't contain user-specific information
-  "/api/news/watchlist": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "public" },
-  "/api/news/trending": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiredRole: "public" },
-  "/api/news/portfolio-summary": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiredRole: "user" },
+  "/api/news/watchlist": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "public" },
+  "/api/news/trending": { requiresAuth: false, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "public" },
+  "/api/news/portfolio-summary": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  
+  // Stripe routes - allow access for subscription management even without active payment
+  "/api/stripe/check-payment-status": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/stripe/create-portal-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
+  "/api/stripe/create-checkout-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: false, requiredRole: "user" },
 };
 
 export const getRouteConfig = (path: string): RouteConfig | null => {
@@ -344,6 +351,57 @@ export async function hasConnectedAccounts(supabase: any, userId: string): Promi
   }
 }
 
+// Check if user has active payment (Stripe subscription)
+// This is used by middleware to enforce payment requirements
+/**
+ * Check if user has active payment/subscription.
+ * 
+ * Returns:
+ * - true: User has active payment
+ * - false: User does NOT have active payment (definitively)
+ * - null: Unable to determine (DB error, transient failure)
+ * 
+ * Callers MUST handle null to decide fail-open vs fail-closed behavior.
+ */
+export async function hasActivePayment(supabase: any, userId: string): Promise<boolean | null> {
+  try {
+    noStore();
+    
+    const { data: paymentRecord, error } = await supabase
+      .from('user_payments')
+      .select('payment_status, subscription_status')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    if (error) {
+      // PGRST116 = no rows found - this is a definitive "no payment record"
+      if (error.code === 'PGRST116') {
+        return false;
+      }
+      // Other errors are transient - return null so caller can decide behavior
+      console.error('Payment status check error:', error);
+      return null;
+    }
+    
+    if (!paymentRecord) {
+      // No record = user hasn't paid (definitive)
+      return false;
+    }
+    
+    // Check if subscription is active or trialing
+    const isActive = 
+      paymentRecord.payment_status === 'active' ||
+      paymentRecord.subscription_status === 'active' ||
+      paymentRecord.subscription_status === 'trialing';
+    
+    return isActive;
+  } catch (error) {
+    // Network/DB errors - return null so caller can decide behavior
+    console.error('Database error checking payment status:', error);
+    return null;
+  }
+}
+
 // CommonJS exports for testing
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -354,6 +412,7 @@ if (typeof module !== 'undefined' && module.exports) {
     hasCompletedOnboarding,
     getFundingStatus,
     hasCompletedFunding,
+    hasActivePayment,
     routeConfigs
   };
 } 
