@@ -71,6 +71,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     "/sign-up",
     "/auth/callback",
     "/auth/confirm",
+    "/protected",                      // HOTFIX: Hide sidebar during brokerage connection step
     "/protected/reset-password",
     "/onboarding/snaptrade-callback", // SnapTrade connection callback during onboarding
     "/stripe/success",                 // Stripe payment success page
