@@ -28,6 +28,9 @@ export default function ProtectedPageClient() {
   const [hasActivePayment, setHasActivePayment] = useState<boolean>(false);
   // isRedirectingToCheckout: Prevents double-redirect during Stripe checkout flow
   const [isRedirectingToCheckout, setIsRedirectingToCheckout] = useState<boolean>(false);
+  // checkoutFailed: Prevents infinite retry loop - requires manual user action to retry
+  const [checkoutFailed, setCheckoutFailed] = useState<boolean>(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [portfolioMode, setPortfolioMode] = useState<string | null>(null);
   const router = useRouter();
 
@@ -150,9 +153,12 @@ export default function ProtectedPageClient() {
   }, [router]);
 
   // Trigger Stripe checkout for users with connected accounts but no payment
+  // CRITICAL: On failure, sets checkoutFailed to prevent infinite retry loop
+  // User must manually click retry button to attempt again
   const triggerStripeCheckout = useCallback(async () => {
     if (isRedirectingToCheckout) return;
     setIsRedirectingToCheckout(true);
+    setCheckoutError(null);
     
     console.log('[Protected] User has connected accounts but NO payment - triggering Stripe checkout');
     
@@ -170,6 +176,7 @@ export default function ProtectedPageClient() {
           return;
         } else {
           console.error('[Protected] No checkout URL received from Stripe');
+          setCheckoutError('Unable to create checkout session. Please try again.');
         }
       } else if (checkoutResponse.status === 409) {
         // User already has active subscription (race condition protection)
@@ -180,12 +187,16 @@ export default function ProtectedPageClient() {
       } else {
         const errorData = await checkoutResponse.json().catch(() => ({}));
         console.error('[Protected] Failed to create checkout session:', checkoutResponse.status, errorData);
+        setCheckoutError(errorData.error || 'Failed to create checkout session. Please try again.');
       }
     } catch (error) {
       console.error('[Protected] Error creating Stripe checkout:', error);
+      setCheckoutError('Network error. Please check your connection and try again.');
     }
     
-    // If checkout fails, allow user to stay on page and try again
+    // CRITICAL: Mark checkout as failed to prevent infinite retry loop
+    // User must manually click retry to attempt again
+    setCheckoutFailed(true);
     setIsRedirectingToCheckout(false);
   }, [isRedirectingToCheckout, router]);
 
@@ -200,15 +211,17 @@ export default function ProtectedPageClient() {
         // User has paid - they can access /portfolio
         console.log('[Protected] User has active payment, redirecting to /portfolio');
         router.replace('/portfolio');
-      } else if (hasConnectedAccounts && !isRedirectingToCheckout) {
+      } else if (hasConnectedAccounts && !isRedirectingToCheckout && !checkoutFailed) {
         // User has accounts but NO payment - trigger Stripe checkout
         // This handles the case where user returns to /protected after connecting brokerage
         // but the callback failed to redirect to Stripe
+        // CRITICAL: Only auto-trigger if checkout hasn't already failed (prevents infinite loop)
         triggerStripeCheckout();
       }
       // If hasFunding (Alpaca) but no payment, the Alpaca funding flow handles it
+      // If checkoutFailed, user sees error UI with manual retry button
     }
-  }, [hasConnectedAccounts, hasFunding, hasActivePayment, userStatus, loading, router, isRedirectingToCheckout, triggerStripeCheckout]);
+  }, [hasConnectedAccounts, hasFunding, hasActivePayment, userStatus, loading, router, isRedirectingToCheckout, checkoutFailed, triggerStripeCheckout]);
 
   // Fallback redirect for unexpected states - should rarely be needed
   useEffect(() => {
@@ -286,6 +299,61 @@ export default function ProtectedPageClient() {
   // - Brokerage mode (has Alpaca account): Show Alpaca funding flow
   const hasAlpacaAccount = !!onboardingData?.alpaca_account_id;
   const isAggregationMode = portfolioMode === 'aggregation' || !hasAlpacaAccount;
+
+  // Manual retry handler for checkout - resets failed state and tries again
+  const handleRetryCheckout = () => {
+    setCheckoutFailed(false);
+    setCheckoutError(null);
+    // triggerStripeCheckout will be called by the useEffect when checkoutFailed becomes false
+  };
+
+  // Show payment required UI when checkout has failed
+  // This prevents infinite retry loop - user must manually click to retry
+  if (hasConnectedAccounts && !hasActivePayment && checkoutFailed) {
+    return (
+      <div className="flex-1 w-full flex flex-col">
+        <div className="flex-grow pb-16">
+          <div className="w-full max-w-md mx-auto pt-8 sm:pt-16 px-4">
+            <div className="bg-card border border-border/40 rounded-xl shadow-lg overflow-hidden p-8 text-center">
+              <div className="flex items-center justify-center w-16 h-16 mx-auto mb-6 bg-emerald-100 rounded-full">
+                <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              
+              <h2 className="text-2xl font-bold text-emerald-500 mb-2">
+                Brokerage Connected!
+              </h2>
+              
+              <p className="text-gray-400 mb-6">
+                Your brokerage account has been connected successfully. Complete your subscription to access your portfolio.
+              </p>
+              
+              {checkoutError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6">
+                  <p className="text-red-400 text-sm">{checkoutError}</p>
+                </div>
+              )}
+              
+              <div className="space-y-3">
+                <button
+                  onClick={handleRetryCheckout}
+                  disabled={isRedirectingToCheckout}
+                  className="w-full bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium py-3 px-4 rounded-lg transition-colors"
+                >
+                  {isRedirectingToCheckout ? 'Redirecting...' : 'Complete Subscription'}
+                </button>
+                
+                <p className="text-xs text-gray-500">
+                  You&apos;ll be redirected to our secure payment page
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // If user has completed onboarding but hasn't connected any accounts yet (aggregation mode)
   // Show them the SnapTrade connection step, NOT the Alpaca funding flow

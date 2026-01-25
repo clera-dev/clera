@@ -292,16 +292,20 @@ describe('Protected Page Payment Flow', () => {
     });
 
     test('should trigger Stripe checkout when accounts connected but not paid', () => {
+      // When user has connected accounts but no payment, trigger Stripe checkout
+      // Only auto-trigger if checkout hasn't already failed (prevents infinite loop)
       const state = {
         hasConnectedAccounts: true,
         hasActivePayment: false,
         isRedirectingToCheckout: false,
+        checkoutFailed: false, // No previous failure
       };
       
       const shouldTriggerCheckout = 
         state.hasConnectedAccounts && 
         !state.hasActivePayment && 
-        !state.isRedirectingToCheckout;
+        !state.isRedirectingToCheckout &&
+        !state.checkoutFailed;
       
       expect(shouldTriggerCheckout).toBe(true);
       console.log('✅ Protected page triggers Stripe checkout when needed');
@@ -324,12 +328,19 @@ describe('Protected Page Payment Flow', () => {
     });
 
     test('should stay on page if Stripe checkout fails', () => {
-      // If checkout creation fails, refresh page for retry (not redirect to /portfolio)
-      const checkoutFailed = true;
-      const shouldStayOnPage = checkoutFailed;
+      // If checkout creation fails, show error UI with retry button (not redirect to /portfolio)
+      // checkoutFailed state prevents infinite retry loop - user must manually click retry
+      const state = {
+        checkoutFailed: true,
+        checkoutError: 'Failed to create checkout session',
+      };
       
-      expect(shouldStayOnPage).toBe(true);
-      console.log('✅ Protected page stays for retry if checkout fails');
+      const shouldShowErrorUI = state.checkoutFailed;
+      const hasErrorMessage = state.checkoutError !== null;
+      
+      expect(shouldShowErrorUI).toBe(true);
+      expect(hasErrorMessage).toBe(true);
+      console.log('✅ Protected page shows error UI with retry button if checkout fails');
     });
   });
 });
@@ -435,15 +446,54 @@ describe('Edge Cases', () => {
         hasConnectedAccounts: true,
         hasActivePayment: false,
         isRedirectingToCheckout: true, // Already redirecting
+        checkoutFailed: false,
       };
       
       const shouldTriggerCheckout = 
         state.hasConnectedAccounts && 
         !state.hasActivePayment && 
-        !state.isRedirectingToCheckout;
+        !state.isRedirectingToCheckout &&
+        !state.checkoutFailed;
       
       expect(shouldTriggerCheckout).toBe(false);
       console.log('✅ Protected page prevents double checkout redirect');
+    });
+
+    test('protected page should NOT auto-retry after checkout failure (P1 bug fix)', () => {
+      /**
+       * P1 Bug: Automatic checkout retry looped indefinitely after failure
+       * because the useEffect re-triggered when isRedirectingToCheckout reset to false.
+       * 
+       * Fix: Added checkoutFailed state that prevents auto-retry.
+       * User must manually click retry button to attempt again.
+       */
+      const state = {
+        hasConnectedAccounts: true,
+        hasActivePayment: false,
+        isRedirectingToCheckout: false, // Reset after failure
+        checkoutFailed: true, // Checkout has already failed
+      };
+      
+      // With checkoutFailed=true, auto-trigger should be prevented
+      const shouldAutoTriggerCheckout = 
+        state.hasConnectedAccounts && 
+        !state.hasActivePayment && 
+        !state.isRedirectingToCheckout &&
+        !state.checkoutFailed; // This prevents the infinite loop
+      
+      expect(shouldAutoTriggerCheckout).toBe(false);
+      
+      // User can still manually retry by resetting checkoutFailed
+      const afterManualRetry = { ...state, checkoutFailed: false };
+      const canRetryManually = 
+        afterManualRetry.hasConnectedAccounts && 
+        !afterManualRetry.hasActivePayment && 
+        !afterManualRetry.isRedirectingToCheckout &&
+        !afterManualRetry.checkoutFailed;
+      
+      expect(canRetryManually).toBe(true);
+      
+      console.log('✅ Protected page prevents infinite checkout retry loop (P1 fix)');
     });
   });
 
