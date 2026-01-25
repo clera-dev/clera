@@ -48,5 +48,15 @@ export const initialOnboardingData: OnboardingData = {
     margin: false,
     customer: false,
     account: false
+  },
+  
+  // Clera Terms & Conditions (SEC RIA requirements)
+  cleraAgreementsAccepted: {
+    formCRS: false,
+    formADVPart2A: false,
+    advisoryAgreement: false,
+    privacyPolicy: false,
+    eSignConsent: false,
+    aiDisclosure: false
   }
 }; 

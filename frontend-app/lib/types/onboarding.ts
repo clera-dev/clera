@@ -97,6 +97,17 @@ export interface OnboardingData {
     account: boolean;
   };
   account_approval_letter?: string | null;
+  
+  // Clera Terms & Conditions (SEC RIA requirements)
+  cleraAgreementsAccepted: {
+    formCRS: boolean;           // Form CRS (Client Relationship Summary)
+    formADVPart2A: boolean;     // Form ADV Part 2A (Firm Brochure)
+    advisoryAgreement: boolean; // Investment Advisory Agreement
+    privacyPolicy: boolean;     // Privacy Policy (Regulation S-P)
+    eSignConsent: boolean;      // E-SIGN Act consent
+    aiDisclosure: boolean;      // AI/Algorithmic advisory disclosure
+  };
+  cleraAgreementsTimestamp?: string; // When user accepted Clera agreements
 }
 
 // Helper type for net worth range descriptions

@@ -9,13 +9,11 @@ interface PersonalizationSuccessProps {
 export default function PersonalizationSuccess({ onComplete }: PersonalizationSuccessProps) {
   return (
     <LoadingCard
-      title="Personalization saved!"
-      message="Let’s move on to verifying your account details"
+      title="Information saved!"
+      message="Next, let's connect your brokerage account"
       onComplete={onComplete}
       completeDelayMs={1600}
       showDots
     />
   );
 }
-
-

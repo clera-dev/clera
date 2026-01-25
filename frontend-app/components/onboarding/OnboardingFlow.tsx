@@ -11,6 +11,7 @@ import ContactInfoStep from "./ContactInfoStep";
 import PersonalInfoStep from "./PersonalInfoStep";
 import FinancialProfileStep from "./FinancialProfileStep";
 import DisclosuresStep from "./DisclosuresStep";
+import TermsConditionsStep from "./TermsConditionsStep";
 import AgreementsStep from "./AgreementsStep";
 import OnboardingSuccessLoading from "./OnboardingSuccessLoading";
 import PersonalizationSuccess from "./PersonalizationSuccess";
@@ -27,20 +28,31 @@ import {
 import { initialPersonalizationData } from "@/utils/services/personalization-data";
 
 // Define the Step type
-type Step = "welcome" | "personalization" | "personalization_success" | "plaid_connection" | "contact" | "personal" | "financial" | "disclosures" | "agreements" | "loading" | "success";
+type Step = "welcome" | "personalization" | "personalization_success" | "plaid_connection" | "contact" | "personal" | "financial" | "disclosures" | "terms_conditions" | "agreements" | "loading" | "success";
 
 // Single source of truth for step sequence
-// NOTE: In hybrid mode, brokerage (KYC) comes FIRST, then Plaid connection
+// 
+// CURRENT STATE (Jan 2025): Only AGGREGATION mode is actively used.
+// Brokerage/hybrid modes are deprecated and may be re-enabled in 6-12+ months.
+// The aggregation flow is: welcome → personalization (7 steps) → terms_conditions → 
+// personalization_success → plaid_connection (SnapTrade) → portfolio
+//
+// LEGACY NOTES (for future reference if brokerage/hybrid are re-enabled):
+// - In hybrid mode, brokerage (KYC) comes FIRST, then connection
+// - terms_conditions = Clera SEC-required disclosures (Form CRS, ADV, etc.)
+// - agreements = Alpaca brokerage agreement (only for brokerage/hybrid mode)
+// - plaid_connection is legacy naming, now uses SnapTrade for brokerage connections
 const ONBOARDING_STEPS: Step[] = [
   "welcome",
   "personalization",
   "personalization_success",
-  "contact",        // KYC steps come first in hybrid mode
-  "personal",
-  "financial",
-  "disclosures",
-  "agreements",
-  "plaid_connection",  // Plaid comes AFTER brokerage setup in hybrid mode
+  "contact",            // KYC - skipped in aggregation mode
+  "personal",           // KYC - skipped in aggregation mode
+  "financial",          // KYC - skipped in aggregation mode
+  "disclosures",        // KYC - skipped in aggregation mode
+  "terms_conditions",   // Clera SEC disclosures - ALWAYS shown
+  "agreements",         // Alpaca brokerage agreement - skipped in aggregation mode
+  "plaid_connection",   // SnapTrade brokerage connection (legacy naming)
   "loading",
   "success"
 ];
@@ -55,7 +67,8 @@ const STEP_DISPLAY_NAMES: Record<Step, string> = {
   "personal": "Personal Info", 
   "financial": "Financial Profile",
   "disclosures": "Disclosures",
-  "agreements": "Agreements",
+  "terms_conditions": "Terms & Conditions",
+  "agreements": "Brokerage Agreement",
   "loading": "Loading",
   "success": "Success"
 };
@@ -69,10 +82,11 @@ enum StepIndex {
   Personal = 4,
   Financial = 5,
   Disclosures = 6,
-  Agreements = 7,
-  PlaidConnection = 8,  // Plaid comes AFTER KYC in the sequence
-  Loading = 9,
-  Success = 10
+  TermsConditions = 7,
+  Agreements = 8,
+  PlaidConnection = 9,  // Plaid comes AFTER KYC in the sequence
+  Loading = 10,
+  Success = 11
 }
 
 interface OnboardingFlowProps {
@@ -229,13 +243,18 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
       }
       
       // FEATURE FLAG ROUTING:
-      // - Aggregation mode: Skip KYC, jump to plaid_connection
+      // - Aggregation mode: Skip KYC (contact/personal/financial/disclosures), but KEEP terms_conditions, skip agreements, jump to plaid_connection
       // - Brokerage mode: Do KYC, skip plaid_connection
       // - Hybrid mode: Do KYC first, then plaid_connection
       
       if (portfolioMode === 'aggregation') {
-        // In aggregation mode: skip ALL KYC steps, jump directly to plaid_connection
-        if (next === "contact" || next === "personal" || next === "financial" || next === "disclosures" || next === "agreements") {
+        // In aggregation mode: skip KYC steps but KEEP terms_conditions (SEC requirement)
+        if (next === "contact" || next === "personal" || next === "financial" || next === "disclosures") {
+          setCurrentStep("terms_conditions"); // Jump to Clera terms & conditions
+          return;
+        }
+        // Skip Alpaca agreements in aggregation mode (no brokerage account)
+        if (next === "agreements") {
           setCurrentStep("plaid_connection");
           return;
         }
@@ -290,16 +309,27 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           prev = ONBOARDING_STEPS[Math.max(idx - 1, 0)];
         }
       }
-      // In aggregation mode, skip back over KYC steps if going back from plaid_connection
-      if (portfolioMode === 'aggregation' && currentStep === 'plaid_connection') {
-        // Jump back to personalization_success
-        setCurrentStep('personalization_success');
-        return;
+      // In aggregation mode, skip back over KYC steps and agreements
+      if (portfolioMode === 'aggregation') {
+        // From plaid_connection, go back to terms_conditions (skip agreements)
+        if (currentStep === 'plaid_connection') {
+          setCurrentStep('terms_conditions');
+          return;
+        }
+        // From terms_conditions, go back to personalization (step 7)
+        if (currentStep === 'terms_conditions') {
+          setCurrentStep('personalization');
+          return;
+        }
       }
       // In brokerage mode, skip plaid_connection when going back
       if (prev === "plaid_connection" && portfolioMode === 'brokerage') {
         const idx = ONBOARDING_STEPS.indexOf(prev);
         prev = ONBOARDING_STEPS[Math.max(idx - 1, 0)];
+      }
+      // Skip agreements step when going back in aggregation mode
+      if (prev === "agreements" && portfolioMode === 'aggregation') {
+        prev = "terms_conditions";
       }
       setCurrentStep(prev);
     }
@@ -520,15 +550,24 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
           <PersonalizationStep 
             data={personalizationData} 
             onUpdate={updatePersonalizationData} 
-            onContinue={() => setCurrentStep("personalization_success")}
+            // In aggregation mode, go directly to terms_conditions (skip success screen)
+            // Success screen will show AFTER terms are accepted and data is saved
+            onContinue={() => setCurrentStep(portfolioMode === 'aggregation' ? "terms_conditions" : "personalization_success")}
             onProgressUpdate={(step, total) => {
               setPersonalizationStep(step);
               setPersonalizationTotalSteps(total);
             }}
+            // In aggregation mode, show 8 total steps (7 personalization + 1 terms)
+            displayTotalSteps={portfolioMode === 'aggregation' ? 8 : undefined}
           />
         );
       case "personalization_success":
-        return <PersonalizationSuccess onComplete={nextStep} />;
+        // NOTE: Currently only aggregation mode is actively used (brokerage/hybrid are deprecated)
+        // In aggregation mode, this shows AFTER terms & conditions (data saved)
+        // Then continues to SnapTrade connection (plaid_connection is legacy naming)
+        // TODO: If brokerage/hybrid modes are re-enabled, this routing needs to be updated
+        // to call nextStep() for those modes to continue through KYC/agreements flow
+        return <PersonalizationSuccess onComplete={() => setCurrentStep("plaid_connection")} />;
       case "plaid_connection":
         return (
           <SnapTradeConnectionStep 
@@ -572,7 +611,22 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
             onBack={prevStep}
           />
         );
+      case "terms_conditions":
+        // NOTE: Currently only aggregation mode is actively used (brokerage/hybrid are deprecated)
+        // After saving data, show success screen then go to SnapTrade connection
+        // TODO: If brokerage/hybrid modes are re-enabled, this routing needs to be updated
+        // to continue through agreements/KYC flow for those modes
+        return (
+          <TermsConditionsStep 
+            data={onboardingData}
+            personalizationData={personalizationData}
+            onUpdate={updateData} 
+            onContinue={() => setCurrentStep("personalization_success")} 
+            onBack={prevStep}
+          />
+        );
       case "agreements":
+        // Alpaca brokerage agreement - only shown in brokerage/hybrid mode
         return (
           <AgreementsStep 
             data={onboardingData} 
@@ -621,23 +675,46 @@ export default function OnboardingFlow({ userId, userEmail, initialData }: Onboa
   return (
     <div className="flex flex-col w-full">
       <div className="w-full max-w-2xl mx-auto pt-2 sm:pt-5">
-        {/* Progress bar - ONLY show for personalization and KYC steps (not plaid_connection) */}
-        {(currentStep === "personalization" || 
-          (currentStep === "contact" || currentStep === "personal" || currentStep === "financial" || currentStep === "disclosures" || currentStep === "agreements")) && (
+        {/* Progress bar - Unified 8-step flow for aggregation mode (7 personalization + 1 terms) */}
+        {/* In aggregation mode: show continuous progress bar for personalization AND terms_conditions */}
+        {portfolioMode === 'aggregation' && (currentStep === "personalization" || currentStep === "terms_conditions") && (
           <div className="mb-3 sm:mb-6">
             <ProgressBar 
-              currentStep={currentStep === "personalization" ? (personalizationStep + 1) : (stepToIndex[currentStep] - 2)} // 1-based for display
-              totalSteps={currentStep === "personalization" ? personalizationTotalSteps : totalSteps} // Use personalization total or KYC total
-              stepNames={currentStep === "personalization" 
-                ? ["Name", "Goals", "Risk", "Timeline", "Experience", "Monthly Goal", "Interests"] // Personalization step names
-                : ONBOARDING_STEPS
-                    .filter(step => step !== "personalization" && step !== "personalization_success" && step !== "welcome" && step !== "loading" && step !== "success" && step !== "plaid_connection")
-                    .map(step => STEP_DISPLAY_NAMES[step])
-              }
+              currentStep={currentStep === "personalization" ? (personalizationStep + 1) : 8}
+              totalSteps={8}
+              stepNames={["Name", "Goals", "Risk", "Timeline", "Experience", "Monthly Goal", "Interests", "Terms"]}
               percentComplete={currentStep === "personalization" 
-                ? Math.round(((personalizationStep + 1) / personalizationTotalSteps) * 100)
-                : calculateProgress()
+                ? Math.round(((personalizationStep + 1) / 8) * 100)
+                : 100
               }
+            />
+          </div>
+        )}
+        
+        {/* Progress bar for brokerage/hybrid mode - separate personalization and KYC flows */}
+        {portfolioMode !== 'aggregation' && currentStep === "personalization" && (
+          <div className="mb-3 sm:mb-6">
+            <ProgressBar 
+              currentStep={personalizationStep + 1}
+              totalSteps={personalizationTotalSteps}
+              stepNames={["Name", "Goals", "Risk", "Timeline", "Experience", "Monthly Goal", "Interests"]}
+              percentComplete={Math.round(((personalizationStep + 1) / personalizationTotalSteps) * 100)}
+            />
+          </div>
+        )}
+        
+        {/* Progress bar for KYC steps (only in brokerage/hybrid mode) */}
+        {portfolioMode !== 'aggregation' && 
+          (currentStep === "contact" || currentStep === "personal" || currentStep === "financial" || currentStep === "disclosures" || currentStep === "terms_conditions" || currentStep === "agreements") && (
+          <div className="mb-3 sm:mb-6">
+            <ProgressBar 
+              currentStep={stepToIndex[currentStep] - 2}
+              totalSteps={totalSteps}
+              stepNames={ONBOARDING_STEPS
+                .filter(step => step !== "personalization" && step !== "personalization_success" && step !== "welcome" && step !== "loading" && step !== "success" && step !== "plaid_connection" && step !== "agreements")
+                .map(step => STEP_DISPLAY_NAMES[step])
+              }
+              percentComplete={calculateProgress()}
             />
           </div>
         )}

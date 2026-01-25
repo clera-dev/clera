@@ -104,15 +104,13 @@ export function MarketInterestsSection({
         })}
       </div>
 
-      {error && (
-        <div className="text-center px-4 sm:px-0">
-          <p className="text-sm text-red-600">{error}</p>
-        </div>
-      )}
-
+      {/* Helper text - shows in red when error, gray otherwise */}
       {selectedInterests.length === 0 && (
         <div className="text-center">
-          <p className="text-sm text-gray-500">
+          <p className={cn(
+            "text-sm",
+            error ? "text-red-400" : "text-gray-500"
+          )}>
             Please select at least one area of interest
           </p>
         </div>
