@@ -695,11 +695,10 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
             user_id: User ID
             broker: Optional broker slug (e.g., 'ALPACA', 'SCHWAB')
             connection_type: Filter for brokerage capabilities:
-                - None: Uses 'trade-if-available' to show ALL brokerages with trading where supported
-                  (SnapTrade API default is 'read' which only shows read-only brokerages)
+                - None: Uses SnapTrade's default (shows all available brokerages)
                 - 'read': Shows only read-capable brokerages
                 - 'trade': Shows only trading-capable brokerages
-                - 'trade-if-available': Shows ALL brokerages, gets trading where supported (RECOMMENDED)
+                NOTE: The SnapTrade SDK only accepts 'read' or 'trade'. Other values are ignored.
             redirect_url: Optional redirect URL after connection
             reconnect: Optional authorization ID to reconnect an existing disabled connection.
                        When provided, sends user directly to the reconnection flow for that
@@ -719,22 +718,31 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
             else:
                 user_secret = user_credentials['user_secret']
             
-            # CRITICAL: SnapTrade API default is 'read' (read-only brokerages only)
-            # We use 'trade-if-available' to show ALL brokerages and get trading where supported
-            # This gives users a holistic view during onboarding
-            effective_connection_type = connection_type if connection_type else 'trade-if-available'
+            # HOTFIX: SnapTrade SDK only accepts 'read' or 'trade' for connection_type
+            # When connection_type is None, don't pass the parameter at all to let SnapTrade
+            # use its default behavior which shows all available brokerages
+            # NOTE: 'trade-if-available' was a deprecated/invalid value that caused 500 errors
+            
+            # Build kwargs dynamically - only include connection_type if explicitly set
+            login_kwargs = {
+                'user_id': user_id,
+                'user_secret': user_secret,
+            }
+            
+            # Only add optional parameters if they have values
+            if broker:
+                login_kwargs['broker'] = broker
+            if connection_type and connection_type in ('read', 'trade'):
+                login_kwargs['connection_type'] = connection_type
+            if redirect_url:
+                login_kwargs['custom_redirect'] = redirect_url
+            if reconnect:
+                login_kwargs['reconnect'] = reconnect
             
             # Get connection portal URL using SnapTrade SDK
             # PRODUCTION-GRADE: Pass reconnect parameter when fixing a broken connection
             # This directs user to re-auth flow for existing connection instead of new one
-            login_response = self.client.authentication.login_snap_trade_user(
-                user_id=user_id,
-                user_secret=user_secret,
-                broker=broker if broker else None,
-                connection_type=effective_connection_type,
-                custom_redirect=redirect_url if redirect_url else None,
-                reconnect=reconnect if reconnect else None
-            )
+            login_response = self.client.authentication.login_snap_trade_user(**login_kwargs)
             
             # The response body contains redirectURI
             connection_url = login_response.body.get('redirectURI', '')

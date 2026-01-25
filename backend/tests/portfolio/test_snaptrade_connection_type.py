@@ -2,16 +2,15 @@
 Tests for SnapTrade connection type filtering.
 
 These tests verify that:
-1. connection_type=None defaults to 'trade-if-available' (shows ALL brokerages)
+1. connection_type=None does NOT pass connection_type to SDK (uses SnapTrade's default)
 2. connection_type='read' filters to read-only brokerages
 3. connection_type='trade' filters to trading-enabled brokerages
-4. connection_type='trade-if-available' shows ALL brokerages with trading where supported
+4. Invalid connection_type values are ignored (not passed to SDK)
 
-Critical for Issue #1: Users should see all brokerages during onboarding,
-including read-only ones, for a holistic view of their investments.
+Critical for Issue #1: Users should see all brokerages during onboarding.
 
-IMPORTANT: SnapTrade API defaults to 'read' if connectionType is omitted,
-which only shows read-only brokerages. We use 'trade-if-available' to show ALL.
+IMPORTANT: SnapTrade SDK only accepts 'read' or 'trade' for connectionType.
+When omitted, SnapTrade uses its default which shows all available brokerages.
 """
 
 import pytest
@@ -24,12 +23,12 @@ class TestConnectionTypeFiltering:
     """Test suite for connection type filtering behavior."""
     
     @pytest.mark.asyncio
-    async def test_connection_type_none_defaults_to_trade_if_available(self):
+    async def test_connection_type_none_does_not_pass_connection_type(self):
         """
-        Test that passing connection_type=None uses 'trade-if-available'.
+        Test that passing connection_type=None does NOT include connection_type in SDK call.
         
-        CRITICAL: SnapTrade API defaults to 'read' which only shows read-only brokerages.
-        We override this to 'trade-if-available' to show ALL brokerages during onboarding.
+        When connection_type is None, we omit the parameter entirely to let SnapTrade
+        use its default behavior which shows all available brokerages.
         """
         provider = SnapTradePortfolioProvider()
         
@@ -45,18 +44,18 @@ class TestConnectionTypeFiltering:
             }
             mock_login.return_value = mock_login_response
             
-            # Call with connection_type=None (should use 'trade-if-available')
+            # Call with connection_type=None
             url = await provider.get_connection_portal_url(
                 user_id='test_user_id',
-                connection_type=None  # Should become 'trade-if-available'
+                connection_type=None
             )
             
             assert url == 'https://connect.snaptrade.com/test'
             
-            # Verify that 'trade-if-available' was passed to the SDK
+            # Verify that connection_type was NOT passed to the SDK
             mock_login.assert_called_once()
             call_kwargs = mock_login.call_args.kwargs
-            assert call_kwargs.get('connection_type') == 'trade-if-available'
+            assert 'connection_type' not in call_kwargs
     
     @pytest.mark.asyncio
     async def test_connection_type_read_filters_correctly(self):
@@ -115,14 +114,12 @@ class TestConnectionTypeFiltering:
             assert call_kwargs.get('connection_type') == 'trade'
     
     @pytest.mark.asyncio
-    async def test_connection_type_trade_if_available_shows_all(self):
+    async def test_invalid_connection_type_is_ignored(self):
         """
-        Test that 'trade-if-available' shows ALL brokerages with trading where supported.
+        Test that invalid connection_type values (like 'trade-if-available') are ignored.
         
-        This is the recommended mode for onboarding as it:
-        - Shows both read-only AND trading-enabled brokerages
-        - Automatically gets trading capabilities where the brokerage supports it
-        - Falls back to read-only for brokerages that don't support trading
+        HOTFIX: The SnapTrade SDK only accepts 'read' or 'trade'. Any other value
+        should be ignored (not passed to SDK) to prevent 500 errors.
         """
         provider = SnapTradePortfolioProvider()
         
@@ -138,25 +135,24 @@ class TestConnectionTypeFiltering:
             }
             mock_login.return_value = mock_login_response
             
+            # Pass an invalid connection_type - should be ignored
             url = await provider.get_connection_portal_url(
                 user_id='test_user_id',
-                connection_type='trade-if-available'
+                connection_type='trade-if-available'  # Invalid - should be ignored
             )
             
             assert url == 'https://connect.snaptrade.com/all'
             
-            # Verify connection_type='trade-if-available' was passed
+            # Verify connection_type was NOT passed (invalid value ignored)
             call_kwargs = mock_login.call_args.kwargs
-            assert call_kwargs.get('connection_type') == 'trade-if-available'
+            assert 'connection_type' not in call_kwargs
     
     @pytest.mark.asyncio
-    async def test_default_connection_type_is_trade_if_available(self):
+    async def test_default_behavior_omits_connection_type(self):
         """
-        Test that the default connection_type is 'trade-if-available'.
+        Test that calling without connection_type omits the parameter from SDK call.
         
-        CRITICAL: SnapTrade API defaults to 'read' (read-only brokerages only).
-        Our provider overrides this to 'trade-if-available' to show ALL brokerages
-        during onboarding for a holistic view of user investments.
+        This lets SnapTrade use its default behavior which shows all available brokerages.
         """
         provider = SnapTradePortfolioProvider()
         
@@ -179,9 +175,9 @@ class TestConnectionTypeFiltering:
             
             assert url == 'https://connect.snaptrade.com/default'
             
-            # Verify default behavior: should use 'trade-if-available'
+            # Verify connection_type was NOT passed
             call_kwargs = mock_login.call_args.kwargs
-            assert call_kwargs.get('connection_type') == 'trade-if-available'
+            assert 'connection_type' not in call_kwargs
 
 
 class TestConnectionTypeSyncBehavior:

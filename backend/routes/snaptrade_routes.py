@@ -656,9 +656,10 @@ async def create_connection_url(
         }
     
     ARCHITECTURE NOTE:
-    - When connection_type is None/omitted: Shows ALL available brokerages (recommended for onboarding)
-    - When connection_type is 'read': Shows only brokerages that support read access
-    - When connection_type is 'trade': Shows only brokerages that support trading
+    - When connection_type is None/omitted: Uses SnapTrade's default (read permissions)
+    - When connection_type is 'read': Request read-only data access
+    - When connection_type is 'trade': Request trading + data access
+    NOTE: The SnapTrade SDK only accepts 'read' or 'trade'. Invalid values are ignored.
     """
     try:
         body = await request.json()
