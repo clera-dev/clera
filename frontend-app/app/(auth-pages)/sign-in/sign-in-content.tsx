@@ -1,58 +1,39 @@
 "use client";
 
-import { signUpAction } from "@/app/actions";
+import { signInAction } from "@/app/actions";
 import { FormMessage, Message } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
-import {
-  PasswordInputWithRequirements,
-  PASSWORD_REQUIREMENTS,
-} from "@/components/ui/password-input-with-requirements";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
-import { useState } from "react";
 import { GoogleSignInButton, AuthDivider } from "@/components/auth/GoogleSignInButton";
 
-interface SignUpFormProps {
+interface SignInContentProps {
   searchParams: Message;
 }
 
-export function SignUpForm({ searchParams }: SignUpFormProps) {
-  const [password, setPassword] = useState("");
-
-  // Check if all password requirements are met
-  const allRequirementsMet = PASSWORD_REQUIREMENTS.every((req) =>
-    req.test(password)
-  );
-
-  if ("message" in searchParams) {
-    return (
-      <div className="w-full flex-1 flex items-center h-screen sm:max-w-md justify-center gap-2 p-4">
-        <FormMessage message={searchParams} />
-      </div>
-    );
-  }
-
+export function SignInContent({ searchParams }: SignInContentProps) {
   return (
     <div className="flex flex-col w-full min-w-[340px] max-w-[400px] mx-auto bg-card/50 backdrop-blur-sm p-8 sm:p-10 rounded-2xl shadow-xl border border-border/50">
       <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-2">
-        Create your account
+        Welcome back
       </h1>
       <p className="text-sm sm:text-base text-muted-foreground mb-6">
-        Already have an account?{" "}
-        <Link className="text-primary font-medium hover:underline" href="/sign-in">
-          Sign in
+        Don't have an account?{" "}
+        <Link className="text-primary font-medium hover:underline" href="/sign-up">
+          Sign up
         </Link>
       </p>
 
       {/* Google Sign In Button */}
-      <GoogleSignInButton mode="sign-up" />
+      <GoogleSignInButton mode="sign-in" />
 
       {/* Divider */}
       <AuthDivider />
 
       {/* Email/Password Form */}
-      <form action={signUpAction} className="flex flex-col gap-5">
+      <form action={signInAction} className="flex flex-col gap-5">
         <div className="space-y-2">
           <Label htmlFor="email" className="text-sm font-medium">
             Email address
@@ -67,31 +48,32 @@ export function SignUpForm({ searchParams }: SignUpFormProps) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password" className="text-sm font-medium">
-            Password
-          </Label>
-          <PasswordInputWithRequirements
+          <div className="flex justify-between items-center">
+            <Label htmlFor="password" className="text-sm font-medium">
+              Password
+            </Label>
+            <Link
+              className="text-xs text-muted-foreground hover:text-primary transition-colors"
+              href="/forgot-password"
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <PasswordInput
             name="password"
-            placeholder="Create a secure password"
+            placeholder="Enter your password"
             required
-            autoComplete="new-password"
+            autoComplete="current-password"
             className="h-11 text-sm px-4 bg-background/50 border-border/50 focus:border-primary/50"
-            onChange={(e) => setPassword(e.target.value)}
           />
         </div>
         <div className="mt-2">
           <SubmitButton
-            pendingText="Creating account..."
+            pendingText="Signing in..."
             className="w-full h-11 text-sm font-medium"
-            disabled={!allRequirementsMet}
           >
-            Create account
+            Sign in
           </SubmitButton>
-          {password.length > 0 && !allRequirementsMet && (
-            <p className="text-xs text-muted-foreground mt-3 text-center">
-              Complete all password requirements to continue
-            </p>
-          )}
         </div>
         <FormMessage message={searchParams} />
       </form>
