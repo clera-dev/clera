@@ -10,14 +10,33 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const redirectTo = requestUrl.searchParams.get("redirect_to")?.toString();
+  const error = requestUrl.searchParams.get("error");
+  const errorDescription = requestUrl.searchParams.get("error_description");
 
   console.log("Auth callback received - URL:", request.url);
   console.log("Auth code present:", !!code);
   console.log("Redirect to:", redirectTo);
 
+  // Handle OAuth errors (e.g., user cancelled, access denied)
+  if (error) {
+    console.error("OAuth error:", error, errorDescription);
+    // Redirect to sign-in page with error message
+    const errorMessage = errorDescription || error || "Authentication failed";
+    return NextResponse.redirect(
+      new URL(`/sign-in?error=${encodeURIComponent(errorMessage)}`, requestUrl.origin)
+    );
+  }
+
   if (code) {
     const supabase = await createClient();
-    await supabase.auth.exchangeCodeForSession(code);
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    
+    if (exchangeError) {
+      console.error("Code exchange error:", exchangeError);
+      return NextResponse.redirect(
+        new URL(`/sign-in?error=${encodeURIComponent("Failed to complete authentication. Please try again.")}`, requestUrl.origin)
+      );
+    }
   }
 
   if (redirectTo) {
