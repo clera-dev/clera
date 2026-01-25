@@ -55,10 +55,19 @@ variables:
   REDIS_PORT: "6379"
   REDIS_DB: 0
 
-# You can also inject secrets from AWS Secrets Manager or Systems Manager Parameter Store.
-# These secrets will be accessible as environment variables in your containers.
+# Secrets from AWS Systems Manager Parameter Store
 secrets:
-  SUPABASE_JWT_SECRET: /clera/websocket-jwt-secret
+  # Supabase connection (required for portfolio data)
+  NEXT_PUBLIC_SUPABASE_URL: /clera-api/production/next_public_supabase_url
+  SUPABASE_URL: /clera-api/production/supabase_url
+  SUPABASE_SERVICE_ROLE_KEY: /clera-api/production/supabase_service_role_key
+  SUPABASE_JWT_SECRET: /clera-api/production/supabase_jwt_secret
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: /clera-api/production/next_public_supabase_anon_key
+  # Alpaca for market data
+  APCA_API_KEY_ID: /clera-api/production/apca_api_key_id
+  APCA_API_SECRET_KEY: /clera-api/production/apca_api_secret_key
+  BROKER_API_KEY: /clera-api/production/broker_api_key
+  BROKER_SECRET_KEY: /clera-api/production/broker_secret_key
 
 # Specify network configuration
 network:
