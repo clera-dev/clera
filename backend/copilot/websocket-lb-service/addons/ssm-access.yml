@@ -1,0 +1,34 @@
+Parameters:
+  App:
+    Type: String
+    Description: Your application's name.
+  Env:
+    Type: String
+    Description: The environment name your service is being deployed to.
+  Name:
+    Type: String
+    Description: The name of the service.
+
+Resources:
+  # Policy to grant access to SSM parameters for secrets
+  SSMParameterAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Policy to allow websocket service to access SSM parameters
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SSMGetParameters
+            Effect: Allow
+            Action:
+              - ssm:GetParameters
+              - ssm:GetParameter
+            Resource:
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/clera-api/production/*'
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/clera/*'
+
+Outputs:
+  # Copilot automatically attaches policies with this output name to the task execution role
+  ExecutionRolePolicyArn:
+    Description: ARN of the SSM parameter access policy to attach to execution role
+    Value: !Ref SSMParameterAccessPolicy
