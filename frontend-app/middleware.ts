@@ -187,7 +187,10 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    // Handle /protected page specifically - redirect users with connected accounts to portfolio
+    // Handle /protected page specifically - redirect users with connected accounts AND payment to portfolio
+    // CRITICAL: Only redirect if user has BOTH connected accounts AND active payment.
+    // Users who have connected accounts but haven't paid should stay on /protected
+    // so the payment flow in the React component can execute.
     if (path === '/protected' && user) {
       console.log(`[Middleware] Processing /protected page for user ${user.id}`);
       try {
@@ -195,15 +198,31 @@ export async function middleware(request: NextRequest) {
         console.log(`[Middleware] Onboarding status for user ${user.id}: ${onboardingStatus}`);
         
         if (hasCompletedOnboarding(onboardingStatus)) {
-          console.log(`[Middleware] User ${user.id} has completed onboarding, checking connected accounts`);
+          console.log(`[Middleware] User ${user.id} has completed onboarding, checking connected accounts and payment`);
           // Check if user has ANY connected accounts (SnapTrade, Plaid, or funded Alpaca)
           const hasAccounts = await hasConnectedAccounts(supabase, user.id);
           console.log(`[Middleware] Connected accounts status for user ${user.id}: ${hasAccounts}`);
           
           if (hasAccounts) {
-            console.log(`[Middleware] User ${user.id} has connected accounts, redirecting to portfolio`);
-            const redirectUrl = new URL('/portfolio', request.url);
-            return NextResponse.redirect(redirectUrl);
+            // CRITICAL: Also check payment status before redirecting to /portfolio
+            // This prevents users who have connected accounts but haven't paid from
+            // being redirected to /portfolio where all API calls will fail with 402
+            const paymentStatus = await hasActivePayment(supabase, user.id);
+            console.log(`[Middleware] Payment status for user ${user.id}: ${paymentStatus}`);
+            
+            if (paymentStatus === true) {
+              // User has BOTH accounts AND payment - safe to redirect to portfolio
+              console.log(`[Middleware] User ${user.id} has connected accounts AND active payment, redirecting to portfolio`);
+              const redirectUrl = new URL('/portfolio', request.url);
+              return NextResponse.redirect(redirectUrl);
+            } else if (paymentStatus === false) {
+              // User has accounts but NO payment - stay on /protected for payment flow
+              console.log(`[Middleware] User ${user.id} has connected accounts but NO payment, staying on /protected for payment flow`);
+            } else {
+              // paymentStatus === null (transient error) - fail-open to /protected
+              // User can complete payment flow there, or page will show appropriate error
+              console.log(`[Middleware] Could not verify payment for user ${user.id}, staying on /protected`);
+            }
           } else {
             console.log(`[Middleware] User ${user.id} has no connected accounts, staying on /protected`);
           }

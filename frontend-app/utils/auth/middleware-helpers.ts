@@ -51,6 +51,9 @@ export const routeConfigs: Record<string, RouteConfig> = {
   "/api/portfolio/value": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
   "/api/portfolio/aggregated": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
   "/api/portfolio/analytics": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/portfolio/account-breakdown": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/portfolio/sync-if-stale": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
+  "/api/portfolio/reconstruction": { requiresAuth: true, requiresOnboarding: true, requiresFunding: false, requiresPayment: true, requiredRole: "user" },
   
   // Conversation API routes - require payment for AI chat
   "/api/conversations/create-session": { requiresAuth: true, requiresOnboarding: false, requiresFunding: false, requiresPayment: true, requiredRole: "user" },

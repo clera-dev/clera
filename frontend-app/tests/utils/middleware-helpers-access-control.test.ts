@@ -56,25 +56,33 @@ describe('Middleware Helpers - Access Control for Users Without Accounts', () =>
   });
   
   describe('Middleware Fix - No 403 for Portfolio APIs (source inspection)', () => {
-    it('should NOT block /api/portfolio/* at middleware level', () => {
-      // PRODUCTION FIX: The middleware should only block PAGE routes (/invest, /dashboard)
+    it('should NOT block /api/portfolio/* at middleware level for onboarding', () => {
+      // PRODUCTION FIX: The middleware should only block trading PAGE routes (/invest)
       // for users without accounts, NOT API routes
-      // The fix changed portfolioRoutes to portfolioPageRoutes
-      expect(middlewareSource).toContain('portfolioPageRoutes');
-      expect(middlewareSource).toContain("const portfolioPageRoutes = ['/invest', '/dashboard']");
+      expect(middlewareSource).toContain('tradingOnlyRoutes');
+      expect(middlewareSource).toContain("const tradingOnlyRoutes = ['/invest']");
       
-      // Should NOT have /api/portfolio in the blocked routes anymore
-      const portfolioPageRoutesMatch = middlewareSource.match(/portfolioPageRoutes = \[([^\]]+)\]/);
-      if (portfolioPageRoutesMatch) {
-        expect(portfolioPageRoutesMatch[1]).not.toContain('/api/portfolio');
+      // Should NOT have /api/portfolio in the trading-only routes
+      const tradingOnlyRoutesMatch = middlewareSource.match(/tradingOnlyRoutes = \[([^\]]+)\]/);
+      if (tradingOnlyRoutesMatch) {
+        expect(tradingOnlyRoutesMatch[1]).not.toContain('/api/portfolio');
       }
     });
     
-    it('should still redirect /invest and /dashboard for users without accounts', () => {
-      // The middleware should check hasConnectedAccounts for page routes
-      expect(middlewareSource).toContain('isPortfolioPageRoute');
+    it('should redirect /invest for users without accounts', () => {
+      // The middleware should check hasConnectedAccounts for trading page routes
+      expect(middlewareSource).toContain('isTradingOnlyRoute');
       expect(middlewareSource).toContain('hasConnectedAccounts');
-      expect(middlewareSource).toContain("redirecting to /protected");
+      expect(middlewareSource).toContain("redirecting to /portfolio");
+    });
+    
+    it('should check both accounts AND payment for /protected redirect', () => {
+      // CRITICAL: The middleware should check BOTH hasAccounts AND paymentStatus
+      // before redirecting from /protected to /portfolio
+      // Check for the payment status check after accounts check
+      expect(middlewareSource).toContain('if (hasAccounts)');
+      expect(middlewareSource).toContain('paymentStatus === true');
+      expect(middlewareSource).toContain('has connected accounts AND active payment, redirecting to portfolio');
     });
   });
   

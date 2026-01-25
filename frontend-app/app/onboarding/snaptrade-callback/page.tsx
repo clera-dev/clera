@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 // Disable static generation for this page (uses search params)
 export const dynamic = 'force-dynamic';
 
-type CallbackStatus = 'loading' | 'success' | 'error' | 'cancelled';
+type CallbackStatus = 'loading' | 'success' | 'error' | 'cancelled' | 'payment_required';
 
 function SnapTradeCallbackContent() {
   const [status, setStatus] = useState<CallbackStatus>('loading');
@@ -134,6 +134,7 @@ function SnapTradeCallbackContent() {
           }
 
           // Check if user has active payment/subscription
+          console.log('📋 Checking payment status...');
           const paymentCheck = await fetch('/api/stripe/check-payment-status', {
             method: 'GET',
             headers: { 
@@ -144,6 +145,7 @@ function SnapTradeCallbackContent() {
 
           if (paymentCheck.ok) {
             const paymentData = await paymentCheck.json();
+            console.log('📋 Payment status:', paymentData);
             
             if (paymentData.hasActivePayment) {
               // User has active payment, redirect to portfolio
@@ -151,69 +153,47 @@ function SnapTradeCallbackContent() {
               setTimeout(() => {
                 window.location.href = '/portfolio';
               }, 1000);
-            } else {
-              // User needs to complete payment, redirect to Stripe checkout
-              console.log('📝 User needs to complete payment, redirecting to Stripe checkout');
-              const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-                method: 'POST',
-                headers: { 
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session.access_token}`
-                }
-              });
-
-              if (checkoutResponse.ok) {
-                const checkoutData = await checkoutResponse.json();
-                if (checkoutData.url) {
-                  window.location.href = checkoutData.url;
-                } else {
-                  console.error('❌ No checkout URL received');
-                  setTimeout(() => {
-                    window.location.href = safeReturnTo;
-                  }, 2000);
-                }
-              } else if (checkoutResponse.status === 409) {
-                // User already has active subscription (race condition protection)
-                const errorData = await checkoutResponse.json();
-                console.log('✅ User already has active subscription, redirecting to portfolio');
-                window.location.href = errorData.redirectTo || '/portfolio';
-              } else {
-                console.error('❌ Failed to create checkout session');
-                setTimeout(() => {
-                  window.location.href = safeReturnTo;
-                }, 2000);
-              }
+              return;
             }
+          }
+          
+          // User needs to complete payment - redirect to Stripe checkout
+          console.log('📝 User needs to complete payment, creating Stripe checkout session...');
+          const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+
+          console.log('📝 Checkout response status:', checkoutResponse.status);
+
+          if (checkoutResponse.ok) {
+            const checkoutData = await checkoutResponse.json();
+            console.log('📝 Checkout data:', { hasUrl: !!checkoutData.url, sessionId: checkoutData.sessionId });
+            
+            if (checkoutData.url) {
+              console.log('✅ Redirecting to Stripe checkout');
+              window.location.href = checkoutData.url;
+              return;
+            } else {
+              console.error('❌ No checkout URL in response');
+              setStatus('payment_required');
+              toast.error('Unable to start checkout. Please try again.');
+            }
+          } else if (checkoutResponse.status === 409) {
+            // User already has active subscription (race condition protection)
+            const errorData = await checkoutResponse.json();
+            console.log('✅ User already has active subscription, redirecting to portfolio');
+            window.location.href = errorData.redirectTo || '/portfolio';
+            return;
           } else {
-            // If payment check fails, redirect to checkout to be safe
-            console.log('⚠️ Payment check failed, redirecting to checkout');
-            const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`
-              }
-            });
-
-            if (checkoutResponse.ok) {
-              const checkoutData = await checkoutResponse.json();
-              if (checkoutData.url) {
-                window.location.href = checkoutData.url;
-              } else {
-                  setTimeout(() => {
-                    window.location.href = safeReturnTo;
-                  }, 2000);
-              }
-            } else if (checkoutResponse.status === 409) {
-              // User already has active subscription
-              const errorData = await checkoutResponse.json();
-              console.log('✅ User already has active subscription, redirecting to portfolio');
-              window.location.href = errorData.redirectTo || '/portfolio';
-            } else {
-              setTimeout(() => {
-                window.location.href = safeReturnTo;
-              }, 2000);
-            }
+            // Checkout creation failed - show error and allow retry
+            const errorData = await checkoutResponse.json().catch(() => ({}));
+            console.error('❌ Failed to create checkout session:', checkoutResponse.status, errorData);
+            setStatus('payment_required');
+            toast.error(errorData.error || 'Unable to start checkout. Please try again.');
           }
         } else {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -368,6 +348,70 @@ function SnapTradeCallbackContent() {
                 className="bg-white text-black hover:bg-gray-200"
               >
                 Return to app
+              </Button>
+            </div>
+          </>
+        )}
+
+        {status === 'payment_required' && (
+          <>
+            <div className="mb-6">
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-emerald-500/20">
+                <svg 
+                  className="h-10 w-10 text-emerald-500" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={3} 
+                    d="M5 13l4 4L19 7" 
+                  />
+                </svg>
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-emerald-500 mb-2">Brokerage Connected!</h2>
+            <p className="text-gray-400 mb-4">
+              Your brokerage account has been connected. Complete your subscription to access your portfolio.
+            </p>
+            <div className="space-y-3">
+              <Button 
+                onClick={async () => {
+                  setStatus('loading');
+                  try {
+                    const response = await fetch('/api/stripe/create-checkout-session', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' }
+                    });
+                    if (response.ok) {
+                      const data = await response.json();
+                      if (data.url) {
+                        window.location.href = data.url;
+                        return;
+                      }
+                    } else if (response.status === 409) {
+                      window.location.href = '/portfolio';
+                      return;
+                    }
+                    setStatus('payment_required');
+                    toast.error('Unable to start checkout. Please try again.');
+                  } catch (err) {
+                    setStatus('payment_required');
+                    toast.error('Something went wrong. Please try again.');
+                  }
+                }}
+                className="w-full bg-emerald-500 text-white hover:bg-emerald-600"
+              >
+                Complete Subscription
+              </Button>
+              <Button 
+                onClick={() => router.push(returnToPath)}
+                variant="ghost"
+                className="w-full text-gray-400 hover:text-white"
+              >
+                Go back
               </Button>
             </div>
           </>

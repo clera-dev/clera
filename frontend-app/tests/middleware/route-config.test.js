@@ -22,13 +22,17 @@ describe('Route Configuration Security Tests', () => {
     test('should return exact match for /api/fmp/chart', () => {
       const config = getRouteConfig('/api/fmp/chart');
       expect(config).toBeTruthy();
-      expect(config.requiresAuth).toBe(false);
+      // FMP routes require auth to prevent abuse (authenticated users have natural rate limiting)
+      expect(config.requiresAuth).toBe(true);
+      expect(config.requiresOnboarding).toBe(false);
+      expect(config.requiresPayment).toBe(false);
     });
 
     test('should return exact match for /api/fmp/chart/health', () => {
       const config = getRouteConfig('/api/fmp/chart/health');
       expect(config).toBeTruthy();
-      expect(config.requiresAuth).toBe(false);
+      expect(config.requiresAuth).toBe(true);
+      expect(config.requiresOnboarding).toBe(false);
     });
 
     test('should return exact match for /dashboard', () => {
@@ -43,13 +47,16 @@ describe('Route Configuration Security Tests', () => {
     test('should match /api/fmp/chart/AAPL as sub-path of /api/fmp/chart', () => {
       const config = getRouteConfig('/api/fmp/chart/AAPL');
       expect(config).toBeTruthy();
-      expect(config.requiresAuth).toBe(false);
+      // FMP routes require auth to prevent abuse
+      expect(config.requiresAuth).toBe(true);
+      expect(config.requiresOnboarding).toBe(false);
     });
 
     test('should match /api/fmp/chart/AAPL/ with trailing slash', () => {
       const config = getRouteConfig('/api/fmp/chart/AAPL/');
       expect(config).toBeTruthy();
-      expect(config.requiresAuth).toBe(false);
+      expect(config.requiresAuth).toBe(true);
+      expect(config.requiresOnboarding).toBe(false);
     });
 
     test('should match /api/portfolio/positions as sub-path of /api/portfolio', () => {

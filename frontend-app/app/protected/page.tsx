@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import OnboardingFlow from '@/components/onboarding/OnboardingFlow';
@@ -21,8 +21,16 @@ export default function ProtectedPageClient() {
   const [profile, setProfile] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
   const [fundingStep, setFundingStep] = useState<FundingStep>('welcome');
+  // hasFunding: ONLY for Alpaca users who have funded their account
   const [hasFunding, setHasFunding] = useState<boolean>(false);
+  // hasConnectedAccounts: For SnapTrade/Plaid users who have connected external brokerages
+  const [hasConnectedAccounts, setHasConnectedAccounts] = useState<boolean>(false);
   const [hasActivePayment, setHasActivePayment] = useState<boolean>(false);
+  // isRedirectingToCheckout: Prevents double-redirect during Stripe checkout flow
+  const [isRedirectingToCheckout, setIsRedirectingToCheckout] = useState<boolean>(false);
+  // checkoutFailed: Prevents infinite retry loop - requires manual user action to retry
+  const [checkoutFailed, setCheckoutFailed] = useState<boolean>(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [portfolioMode, setPortfolioMode] = useState<string | null>(null);
   const router = useRouter();
 
@@ -67,7 +75,8 @@ export default function ProtectedPageClient() {
         }
 
         // Check if user has ANY connected accounts (SnapTrade, Plaid, or funded Alpaca)
-        // This determines if they should be redirected to /portfolio or stay on /protected
+        // CRITICAL: This determines if they have accounts, but NOT if they can access /portfolio
+        // Access to /portfolio requires BOTH connected accounts AND active payment
         try {
           const modeResponse = await fetch('/api/portfolio/connection-status');
           if (modeResponse.ok) {
@@ -84,12 +93,14 @@ export default function ProtectedPageClient() {
             const hasAlpaca = !!alpacaAccount;
             
             if (hasSnapTrade || hasPlaid) {
-              // SnapTrade or Plaid users have external accounts - they're "ready"
-              console.log('User has connected accounts (SnapTrade or Plaid) - redirecting to portfolio');
-              setHasFunding(true);
+              // SnapTrade or Plaid users have external accounts
+              // NOTE: This does NOT mean they can access /portfolio - they still need payment
+              console.log('[Protected] User has connected accounts (SnapTrade or Plaid)');
+              setHasConnectedAccounts(true);
+              // Do NOT set hasFunding - that's only for Alpaca funding flow
             } else if (hasAlpaca) {
               // Alpaca users need to check actual funding status
-              console.log('User has Alpaca account - checking funding status');
+              console.log('[Protected] User has Alpaca account - checking funding status');
               const { data: transfers } = await supabase
                 .from('user_transfers')
                 .select('amount, status')
@@ -105,14 +116,16 @@ export default function ProtectedPageClient() {
                 ));
               
               setHasFunding(funded);
+              setHasConnectedAccounts(funded); // Alpaca counts as connected only if funded
             } else {
               // No connected accounts - user needs to connect something
-              console.log('User has no connected accounts - staying on /protected');
+              console.log('[Protected] User has no connected accounts - staying on /protected');
+              setHasConnectedAccounts(false);
               setHasFunding(false);
             }
           }
         } catch (error) {
-          console.error('Error fetching connection status:', error);
+          console.error('[Protected] Error fetching connection status:', error);
           // Fallback: Check for Alpaca funding only
           const { data: transfers } = await supabase
             .from('user_transfers')
@@ -129,6 +142,7 @@ export default function ProtectedPageClient() {
             ));
           
           setHasFunding(funded);
+          setHasConnectedAccounts(funded);
         }
       }
       
@@ -138,29 +152,88 @@ export default function ProtectedPageClient() {
     fetchData();
   }, [router]);
 
+  // Trigger Stripe checkout for users with connected accounts but no payment
+  // CRITICAL: On failure, sets checkoutFailed to prevent infinite retry loop
+  // User must manually click retry button to attempt again
+  const triggerStripeCheckout = useCallback(async () => {
+    if (isRedirectingToCheckout) return;
+    setIsRedirectingToCheckout(true);
+    setCheckoutError(null);
+    
+    console.log('[Protected] User has connected accounts but NO payment - triggering Stripe checkout');
+    
+    try {
+      const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (checkoutResponse.ok) {
+        const checkoutData = await checkoutResponse.json();
+        if (checkoutData.url) {
+          console.log('[Protected] Redirecting to Stripe checkout');
+          window.location.href = checkoutData.url;
+          return;
+        } else {
+          console.error('[Protected] No checkout URL received from Stripe');
+          setCheckoutError('Unable to create checkout session. Please try again.');
+        }
+      } else if (checkoutResponse.status === 409) {
+        // User already has active subscription (race condition protection)
+        const errorData = await checkoutResponse.json();
+        console.log('[Protected] User already has active subscription, redirecting to portfolio');
+        router.replace(errorData.redirectTo || '/portfolio');
+        return;
+      } else {
+        const errorData = await checkoutResponse.json().catch(() => ({}));
+        console.error('[Protected] Failed to create checkout session:', checkoutResponse.status, errorData);
+        setCheckoutError(errorData.error || 'Failed to create checkout session. Please try again.');
+      }
+    } catch (error) {
+      console.error('[Protected] Error creating Stripe checkout:', error);
+      setCheckoutError('Network error. Please check your connection and try again.');
+    }
+    
+    // CRITICAL: Mark checkout as failed to prevent infinite retry loop
+    // User must manually click retry to attempt again
+    setCheckoutFailed(true);
+    setIsRedirectingToCheckout(false);
+  }, [isRedirectingToCheckout, router]);
+
   // Handle navigation when funding status or payment status changes
-  // CRITICAL: Users who have PAID should be redirected to /portfolio, even without connected accounts
-  // The /portfolio page will show the "Connect Account" UI for users without accounts
+  // CRITICAL: Users need BOTH connected accounts AND active payment to access /portfolio
+  // Users with accounts but no payment should be redirected to Stripe checkout
   useEffect(() => {
     const hasCompletedOnboarding = userStatus === 'submitted' || userStatus === 'approved';
     
     if (!loading && hasCompletedOnboarding) {
-      // Redirect if user has connected accounts OR has an active payment
-      if (hasFunding || hasActivePayment) {
-        console.log('[Protected] User has completed onboarding and (has funding OR active payment), redirecting to /portfolio');
+      if (hasActivePayment) {
+        // User has paid - they can access /portfolio
+        console.log('[Protected] User has active payment, redirecting to /portfolio');
         router.replace('/portfolio');
+      } else if (hasConnectedAccounts && !isRedirectingToCheckout && !checkoutFailed) {
+        // User has accounts but NO payment - trigger Stripe checkout
+        // This handles the case where user returns to /protected after connecting brokerage
+        // but the callback failed to redirect to Stripe
+        // CRITICAL: Only auto-trigger if checkout hasn't already failed (prevents infinite loop)
+        triggerStripeCheckout();
       }
+      // If hasFunding (Alpaca) but no payment, the Alpaca funding flow handles it
+      // If checkoutFailed, user sees error UI with manual retry button
     }
-  }, [hasFunding, hasActivePayment, userStatus, loading, router]);
+  }, [hasConnectedAccounts, hasFunding, hasActivePayment, userStatus, loading, router, isRedirectingToCheckout, checkoutFailed, triggerStripeCheckout]);
 
   // Fallback redirect for unexpected states - should rarely be needed
   useEffect(() => {
     const hasCompleted = userStatus === 'submitted' || userStatus === 'approved';
     if (!loading && hasCompleted && fundingStep !== 'welcome' && fundingStep !== 'connect-bank') {
-      console.log('Unexpected state: invalid funding step, redirecting to /portfolio');
-      router.replace('/portfolio');
+      // Only redirect if user has payment, otherwise they should stay to complete payment
+      if (hasActivePayment) {
+        console.log('[Protected] Unexpected state: invalid funding step with active payment, redirecting to /portfolio');
+        router.replace('/portfolio');
+      }
     }
-  }, [loading, userStatus, fundingStep, router]);
+  }, [loading, userStatus, fundingStep, hasActivePayment, router]);
 
   if (loading) {
     return (
@@ -218,8 +291,8 @@ export default function ProtectedPageClient() {
     );
   }
 
-  // If onboarding is complete but funding is not, show appropriate next step
-  // If both are complete, user was already redirected to /invest above via useEffect
+  // If onboarding is complete but funding/connection is not, show appropriate next step
+  // If user has payment, they were already redirected to /portfolio via useEffect
 
   // ARCHITECTURE: Determine which flow to show based on portfolio mode
   // - Aggregation mode (no Alpaca account): Show SnapTrade connection step
@@ -227,79 +300,120 @@ export default function ProtectedPageClient() {
   const hasAlpacaAccount = !!onboardingData?.alpaca_account_id;
   const isAggregationMode = portfolioMode === 'aggregation' || !hasAlpacaAccount;
 
+  // Manual retry handler for checkout - resets failed state and tries again
+  const handleRetryCheckout = () => {
+    setCheckoutFailed(false);
+    setCheckoutError(null);
+    // triggerStripeCheckout will be called by the useEffect when checkoutFailed becomes false
+  };
+
+  // Show payment required UI when checkout has failed
+  // This prevents infinite retry loop - user must manually click to retry
+  if (hasConnectedAccounts && !hasActivePayment && checkoutFailed) {
+    return (
+      <div className="flex-1 w-full flex flex-col">
+        <div className="flex-grow pb-16">
+          <div className="w-full max-w-md mx-auto pt-8 sm:pt-16 px-4">
+            <div className="bg-card border border-border/40 rounded-xl shadow-lg overflow-hidden p-8 text-center">
+              <div className="flex items-center justify-center w-16 h-16 mx-auto mb-6 bg-emerald-100 rounded-full">
+                <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              
+              <h2 className="text-2xl font-bold text-emerald-500 mb-2">
+                Brokerage Connected!
+              </h2>
+              
+              <p className="text-gray-400 mb-6">
+                Your brokerage account has been connected successfully. Complete your subscription to access your portfolio.
+              </p>
+              
+              {checkoutError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6">
+                  <p className="text-red-400 text-sm">{checkoutError}</p>
+                </div>
+              )}
+              
+              <div className="space-y-3">
+                <button
+                  onClick={handleRetryCheckout}
+                  disabled={isRedirectingToCheckout}
+                  className="w-full bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium py-3 px-4 rounded-lg transition-colors"
+                >
+                  {isRedirectingToCheckout ? 'Redirecting...' : 'Complete Subscription'}
+                </button>
+                
+                <p className="text-xs text-gray-500">
+                  You&apos;ll be redirected to our secure payment page
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // If user has completed onboarding but hasn't connected any accounts yet (aggregation mode)
   // Show them the SnapTrade connection step, NOT the Alpaca funding flow
-  if (isAggregationMode && !hasFunding) {
-    // Callback that handles "Skip for now" - allows users to browse the platform
-    // Users can browse /portfolio without payment to explore the UI
-    // The portfolio page will prompt them to connect accounts or subscribe
+  // Note: If user HAS connected accounts but NO payment, the useEffect above triggers Stripe checkout
+  if (isAggregationMode && !hasConnectedAccounts) {
+    // Callback that handles "Skip for now" or connection completion
+    // CRITICAL: This triggers Stripe checkout for users who haven't paid yet
     const handleConnectionComplete = async () => {
-      // Fire-and-forget: Log connection status for analytics only
-      // IMPORTANT: Do NOT set hasFunding here - it would trigger the redirect useEffect
-      // before payment verification completes, creating a race condition
-      fetch('/api/portfolio/connection-status')
-        .then(response => response.ok ? response.json() : null)
-        .then(modeData => {
-          if (modeData) {
-            const snaptradeAccounts = modeData.snaptrade_accounts || [];
-            const plaidAccounts = modeData.plaid_accounts || [];
-            console.log('[Skip flow] Connection status:', { 
-              snaptradeAccounts: snaptradeAccounts.length, 
-              plaidAccounts: plaidAccounts.length 
-            });
-          }
-        })
-        .catch(error => console.error('Error checking connection status:', error));
+      console.log('[Protected] handleConnectionComplete called');
       
       // Check payment status and attempt checkout if needed
-      // If checkout fails, still allow user to browse /portfolio
       try {
         const paymentCheck = await fetch('/api/stripe/check-payment-status');
         if (paymentCheck.ok) {
           const paymentData = await paymentCheck.json();
           
           if (paymentData.hasActivePayment) {
-            // User has already paid - they can skip connecting and go to portfolio
-            console.log('✅ User has active payment, redirecting to portfolio');
+            // User has already paid - they can go to portfolio
+            console.log('[Protected] User has active payment, redirecting to portfolio');
             router.replace('/portfolio');
-          } else {
-            // User needs to complete payment - try to redirect to Stripe checkout
-            console.log('📝 User needs to complete payment, attempting Stripe checkout');
-            const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' }
-            });
-
-            if (checkoutResponse.ok) {
-              const checkoutData = await checkoutResponse.json();
-              if (checkoutData.url) {
-                window.location.href = checkoutData.url;
-              } else {
-                console.error('❌ No checkout URL received, allowing portfolio browsing');
-                // Fallback: let user browse portfolio (page-level prompts will guide them)
-                router.replace('/portfolio');
-              }
-            } else if (checkoutResponse.status === 409) {
-              // User already has active subscription (race condition protection)
-              const errorData = await checkoutResponse.json();
-              console.log('✅ User already has active subscription, redirecting to portfolio');
-              router.replace(errorData.redirectTo || '/portfolio');
-            } else {
-              console.error('❌ Failed to create checkout session, allowing portfolio browsing');
-              // Fallback: let user browse portfolio (page-level prompts will guide them)
-              router.replace('/portfolio');
-            }
+            return;
           }
+        }
+        
+        // User needs to complete payment - redirect to Stripe checkout
+        console.log('[Protected] User needs to complete payment, creating Stripe checkout session');
+        const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (checkoutResponse.ok) {
+          const checkoutData = await checkoutResponse.json();
+          if (checkoutData.url) {
+            console.log('[Protected] Redirecting to Stripe checkout');
+            window.location.href = checkoutData.url;
+            return;
+          } else {
+            console.error('[Protected] No checkout URL received from Stripe API');
+          }
+        } else if (checkoutResponse.status === 409) {
+          // User already has active subscription (race condition protection)
+          const errorData = await checkoutResponse.json();
+          console.log('[Protected] User already has active subscription, redirecting to portfolio');
+          router.replace(errorData.redirectTo || '/portfolio');
+          return;
         } else {
-          // Payment check failed - still allow user to browse portfolio
-          console.log('⚠️ Payment check failed, allowing portfolio browsing');
-          router.replace('/portfolio');
+          const errorData = await checkoutResponse.json().catch(() => ({}));
+          console.error('[Protected] Failed to create checkout session:', checkoutResponse.status, errorData);
         }
       } catch (error) {
-        console.error('❌ Error in skip flow:', error);
-        // On error, let user browse portfolio rather than getting stuck
-        router.replace('/portfolio');
+        console.error('[Protected] Error in handleConnectionComplete:', error);
       }
+      
+      // CRITICAL: If we reach here, Stripe checkout creation FAILED
+      // Stay on /protected page so user can try again, rather than sending them
+      // to /portfolio where all API calls will fail with 402
+      console.log('[Protected] Stripe checkout failed - staying on page for retry');
+      // Refresh the page state to allow retry
+      window.location.reload();
     };
     
     return (
