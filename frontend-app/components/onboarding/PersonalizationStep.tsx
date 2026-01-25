@@ -1,10 +1,8 @@
 "use client";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
 import { PersonalizationFormData, InvestmentTimeline } from "@/lib/types/personalization";
 import { initialPersonalizationData } from "@/utils/services/personalization-data";
-import { cn } from "@/lib/utils";
 
 // Import hooks
 import { 
@@ -34,6 +32,8 @@ interface PersonalizationStepProps {
   onContinue: () => void;
   onBack?: () => void;
   onProgressUpdate?: (currentStep: number, totalSteps: number) => void;
+  /** Override the display total steps (e.g., 8 when Terms step follows personalization) */
+  displayTotalSteps?: number;
 }
 
 /**
@@ -54,17 +54,14 @@ export default function PersonalizationStep({
   onUpdate, 
   onContinue, 
   onBack,
-  onProgressUpdate
+  onProgressUpdate,
+  displayTotalSteps
 }: PersonalizationStepProps) {
   const formRef = React.useRef<HTMLFormElement>(null);
-  // Custom hooks for state management
+  // Custom hooks for state management - used for validation only (data saves in Terms step)
   const {
     errors,
-    isSubmitting,
-    submitError,
-    handleSubmit,
     clearError,
-    clearSubmitError,
   } = usePersonalizationForm();
 
   const {
@@ -79,7 +76,6 @@ export default function PersonalizationStep({
   // Update handlers with error clearing
   const handleUpdate = (updates: Partial<PersonalizationFormData>) => {
     onUpdate(updates);
-    clearSubmitError();
   };
 
   const handleFirstNameChange = (firstName: string) => {
@@ -123,28 +119,55 @@ export default function PersonalizationStep({
     }
   };
 
+  // Total steps for navigation - must be defined before useStepNavigation
+  const TOTAL_STEPS = 7; // 7 personalization steps
+  const DISPLAY_TOTAL = displayTotalSteps || TOTAL_STEPS;
+
+  // Step navigation hook - must be called before sections array that uses currentStep/currentStepError
+  const {
+    isMobile,
+    currentStep,
+    currentStepError,
+    validationBanner,
+    goToStep,
+    goToNextStep,
+    goToPreviousStep,
+    tryGoToNextStep,
+    showValidationBanner,
+    clearValidationBanner,
+    clearCurrentStepError,
+  } = useStepNavigation(TOTAL_STEPS);
+
+  // Helper to get error for current step - uses step validation error if present, otherwise form error
+  const getStepError = (stepIndex: number, formError?: string) => {
+    if (currentStep === stepIndex && currentStepError) {
+      return currentStepError;
+    }
+    return formError;
+  };
+
   // Section components array for mobile navigation
   const sections = [
     <NameInputSection
       key="name"
       value={data.firstName || ''}
       onChange={handleFirstNameChange}
-      error={errors.firstName}
-      onClearError={() => clearError('firstName')}
+      error={getStepError(0, errors.firstName)}
+      onClearError={() => { clearError('firstName'); clearCurrentStepError(); }}
     />,
     <GoalsSelectorSection
       key="goals"
       selectedGoals={data.investmentGoals || []}
       onChange={handleGoalsChange}
-      error={errors.investmentGoals}
-      onClearError={() => clearError('investmentGoals')}
+      error={getStepError(1, errors.investmentGoals)}
+      onClearError={() => { clearError('investmentGoals'); clearCurrentStepError(); }}
     />,
     <RiskToleranceSection
       key="risk"
       selectedRisk={data.riskTolerance || ''}
       onChange={handleRiskChange}
-      error={errors.riskTolerance}
-      onClearError={() => clearError('riskTolerance')}
+      error={getStepError(2, errors.riskTolerance)}
+      onClearError={() => { clearError('riskTolerance'); clearCurrentStepError(); }}
     />,
     <TimelineSliderSection
       key="timeline"
@@ -162,15 +185,15 @@ export default function PersonalizationStep({
         ][index];
         handleTimelineUpdate(timeline);
       })}
-      error={errors.investmentTimeline}
-      onClearError={() => clearError('investmentTimeline')}
+      error={getStepError(3, errors.investmentTimeline)}
+      onClearError={() => { clearError('investmentTimeline'); clearCurrentStepError(); }}
     />,
     <ExperienceLevelSection
       key="experience"
       selectedLevel={data.experienceLevel || ''}
       onChange={handleExperienceChange}
-      error={errors.experienceLevel}
-      onClearError={() => clearError('experienceLevel')}
+      error={getStepError(4, errors.experienceLevel)}
+      onClearError={() => { clearError('experienceLevel'); clearCurrentStepError(); }}
     />,
     <MonthlyGoalSliderSection
       key="monthly"
@@ -181,48 +204,55 @@ export default function PersonalizationStep({
       onSliderCommit={(values) => handleMonthlyGoalCommit(values, (value) => {
         handleMonthlyGoalUpdate(value);
       })}
-      error={errors.monthlyInvestmentGoal}
-      onClearError={() => clearError('monthlyInvestmentGoal')}
+      error={getStepError(5, errors.monthlyInvestmentGoal)}
+      onClearError={() => { clearError('monthlyInvestmentGoal'); clearCurrentStepError(); }}
     />,
     <MarketInterestsSection
       key="interests"
       selectedInterests={data.marketInterests || []}
       onChange={handleInterestsChange}
-      error={errors.marketInterests}
-      onClearError={() => clearError('marketInterests')}
+      error={getStepError(6, errors.marketInterests)}
+      onClearError={() => { clearError('marketInterests'); clearCurrentStepError(); }}
     />,
   ];
 
-  const TOTAL_STEPS = sections.length;
-
-  const {
-    isMobile,
-    currentStep,
-    validationBanner,
-    goToStep,
-    goToNextStep,
-    goToPreviousStep,
-    showValidationBanner,
-    clearValidationBanner,
-  } = useStepNavigation(TOTAL_STEPS);
-
   // Notify parent about progress updates
   React.useEffect(() => {
-    onProgressUpdate?.(currentStep, TOTAL_STEPS);
-  }, [currentStep, onProgressUpdate, TOTAL_STEPS]);
+    onProgressUpdate?.(currentStep, DISPLAY_TOTAL);
+  }, [currentStep, onProgressUpdate, DISPLAY_TOTAL]);
 
-  // Form submission handler
-  const handleFormSubmit = async (e: React.FormEvent) => {
+  // Handle next step with validation
+  const handleNextStep = () => {
+    tryGoToNextStep(data);
+  };
+
+  // Form submission handler (for final personalization step)
+  // Note: Data is NOT saved here - it will be saved after Terms & Conditions (step 8)
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    await handleSubmit(data, () => {
-      onContinue();
-    });
-
-    // Show validation banner if there are errors
-    if (Object.keys(errors).length > 0) {
-      showValidationBanner(errors, TOTAL_STEPS);
+    // IMPORTANT: Only call onContinue() if we're on the LAST personalization step
+    // This prevents early form submission (e.g., pressing Enter on step 1) from
+    // skipping remaining personalization steps
+    const isLastStep = currentStep === TOTAL_STEPS - 1;
+    
+    // Validate current step
+    const isCurrentStepValid = tryGoToNextStep(data);
+    if (!isCurrentStepValid) {
+      // Show validation error for current step
+      if (Object.keys(errors).length > 0) {
+        showValidationBanner(errors, TOTAL_STEPS);
+      }
+      return;
     }
+    
+    // Only proceed to next onboarding phase if on the last personalization step
+    if (isLastStep) {
+      // All personalization steps valid - move to Terms & Conditions
+      // Data will be saved there after user accepts all agreements
+      onContinue();
+    }
+    // If not on last step, tryGoToNextStep already advanced to next step
   };
 
   return (
@@ -247,20 +277,13 @@ export default function PersonalizationStep({
         <div className="mt-auto pt-4 sm:pt-6">
           <NavigationController
             currentStep={currentStep}
-            totalSteps={TOTAL_STEPS}
-            onNext={goToNextStep}
+            totalSteps={TOTAL_STEPS}           // Actual personalization steps (7) for navigation logic
+            displayTotalSteps={DISPLAY_TOTAL}  // Display total (8 in aggregation mode) for "X of Y"
+            onNext={handleNextStep}
             onPrevious={goToPreviousStep}
             onComplete={() => formRef.current?.requestSubmit()}
-            isSubmitting={isSubmitting}
           />
         </div>
-
-        {/* Error display */}
-        {submitError && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md mx-4 sm:mx-0">
-            <p className="text-red-600 text-sm font-medium">Error: {submitError}</p>
-          </div>
-        )}
       </form>
     </div>
   );

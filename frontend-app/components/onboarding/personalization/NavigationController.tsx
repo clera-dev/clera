@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 
 interface NavigationControllerProps {
   currentStep: number;
-  totalSteps: number;
+  totalSteps: number;           // Actual steps in this component (for navigation logic)
+  displayTotalSteps?: number;   // Total steps to display (for "X of Y" text)
   onNext: () => void;
   onPrevious: () => void;
   onComplete: () => void;
@@ -22,6 +23,7 @@ interface NavigationControllerProps {
 export function NavigationController({
   currentStep,
   totalSteps,
+  displayTotalSteps,
   onNext,
   onPrevious,
   onComplete,
@@ -30,7 +32,8 @@ export function NavigationController({
   className
 }: NavigationControllerProps) {
   const isFirstStep = currentStep === 0;
-  const isLastStep = currentStep === totalSteps - 1;
+  const isLastStep = currentStep === totalSteps - 1;  // Use actual steps for navigation
+  const displayTotal = displayTotalSteps || totalSteps; // Use display total for "X of Y"
 
   const handleNext = () => {
     if (isLastStep) {
@@ -57,24 +60,19 @@ export function NavigationController({
       {/* Step indicator */}
       <div className="flex-1 text-center">
         <span className="text-sm text-gray-400">
-          {currentStep + 1} of {totalSteps}
+          {currentStep + 1} of {displayTotal}
         </span>
       </div>
 
-      {/* Next/Complete button */}
+      {/* Next/Continue button */}
       <Button
         type="button"
         onClick={handleNext}
         disabled={isSubmitting || !canProceed}
-        className={cn(
-          "flex items-center gap-2 min-w-[100px]",
-          isLastStep && "bg-gradient-to-r from-primary to-blue-600 hover:shadow-lg"
-        )}
+        className="flex items-center gap-2 min-w-[100px]"
       >
         {isSubmitting ? (
           'Saving...'
-        ) : isLastStep ? (
-          'Complete'
         ) : (
           <>
             Continue
