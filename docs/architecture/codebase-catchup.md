@@ -711,12 +711,110 @@ cd frontend-app && npm run dev
 cd backend && pytest
 cd frontend-app && npm test
 
-# Deployment
-cd backend && copilot svc deploy --name api-service --env production
+# Deployment (see AWS Operations below for full details)
 # Frontend: Auto-deploys via Vercel on push to main
+# Backend: Auto-deploys via AWS CodePipeline on push to main
 
 # Logs
 copilot svc logs --name api-service --follow
+copilot svc logs --name websocket-lb-service --follow
+```
+
+---
+
+## AWS Backend Operations
+
+### Deployment Pipeline
+Backend services (`api-service` and `websocket-lb-service`) are deployed via **AWS CodePipeline**. The pipeline automatically triggers on every push to `main`.
+
+**Pipeline stages:**
+1. **Source**: Pulls code from GitHub (main branch)
+2. **Build**: Builds Docker images in AWS CodeBuild (~25 min)
+3. **Deploy**: Deploys to ECS via CloudFormation (~10-15 min)
+
+### Manually Triggering a Deployment
+If you need to redeploy without code changes (e.g., after updating SSM secrets):
+
+```bash
+# Trigger the pipeline manually
+aws codepipeline start-pipeline-execution \
+  --name "pipeline-clera-api-clera-main-Pipeline-Os1cdOuh00sm"
+
+# Check pipeline status
+aws codepipeline get-pipeline-state \
+  --name "pipeline-clera-api-clera-main-Pipeline-Os1cdOuh00sm" \
+  --query "stageStates[*].{Stage:stageName,Status:latestExecution.status}"
+```
+
+### Managing SSM Parameters (Environment Secrets)
+Backend services pull secrets from AWS SSM Parameter Store. Parameters are under `/clera-api/production/`.
+
+**Update a parameter:**
+```bash
+aws ssm put-parameter \
+  --name "/clera-api/production/YOUR_PARAMETER_NAME" \
+  --value "new-value" \
+  --type "String" \
+  --overwrite
+
+# Then trigger a redeployment to pick up the change
+aws codepipeline start-pipeline-execution \
+  --name "pipeline-clera-api-clera-main-Pipeline-Os1cdOuh00sm"
+```
+
+**List all parameters:**
+```bash
+aws ssm get-parameters-by-path \
+  --path "/clera-api/production" \
+  --recursive \
+  --query "Parameters[*].Name" \
+  --output text
+```
+
+**Get a parameter value:**
+```bash
+aws ssm get-parameter \
+  --name "/clera-api/production/YOUR_PARAMETER_NAME" \
+  --query "Parameter.Value" \
+  --output text
+```
+
+### Important: SSM vs .env
+| Environment | Config Source | When to Use |
+|-------------|---------------|-------------|
+| **Local Dev** | `backend/.env` | Running locally |
+| **Production (AWS)** | SSM Parameter Store | Deployed ECS services |
+
+**Key SSM parameters:**
+- `/clera-api/production/supabase_url` - Supabase connection
+- `/clera-api/production/supabase_service_role_key` - Supabase admin key
+- `/clera-api/production/snaptrade_consumer_key` - SnapTrade API
+- `/clera-api/production/anthropic_api_key` - Claude AI
+- (see full list in `backend/copilot/api-service/manifest.yml` under `secrets:`)
+
+### Checking Service Health
+```bash
+# Service status
+copilot svc status --name api-service
+copilot svc status --name websocket-lb-service
+
+# View recent logs
+copilot svc logs --name api-service --follow --since 1h
+copilot svc logs --name websocket-lb-service --follow --since 1h
+
+# ECS service events (for debugging deployment issues)
+aws ecs describe-services \
+  --cluster clera-api-production-Cluster-ZJpIE3hSHApG \
+  --services clera-api-production-api-service-Service-1rCRBITxTkrG \
+  --query "services[0].events[:5]"
+```
+
+### Manual Service Deployment (Bypass Pipeline)
+Only use this for emergency hotfixes - bypasses CI/CD:
+```bash
+cd backend
+copilot svc deploy --name api-service --env production
+copilot svc deploy --name websocket-lb-service --env production
 ```
 
 ### Key Files to Know
