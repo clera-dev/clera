@@ -10,6 +10,7 @@ This directory contains documentation for the Stripe payment integration, includ
 - **[03-PRODUCTION-CHECKLIST.md](./03-PRODUCTION-CHECKLIST.md)** - Production readiness checklist and implementation verification
 - **[04-LOCAL-TESTING-CLI.md](./04-LOCAL-TESTING-CLI.md)** - Using Stripe CLI to test webhooks on localhost
 - **[05-TROUBLESHOOTING.md](./05-TROUBLESHOOTING.md)** - Troubleshooting common issues
+- **[06-MCP-INTEGRATION.md](./06-MCP-INTEGRATION.md)** - Using Stripe MCP for AI agent integration with Cursor
 
 ## Quick Start
 
@@ -19,6 +20,25 @@ This directory contains documentation for the Stripe payment integration, includ
 4. **Set up Customer Portal**: See [Customer Portal Setup](#customer-portal-setup) below
 5. **Test webhook**: Follow [02-WEBHOOK-TESTING.md](./02-WEBHOOK-TESTING.md)
 6. **Verify production readiness**: Check [03-PRODUCTION-CHECKLIST.md](./03-PRODUCTION-CHECKLIST.md)
+7. **Enable AI agent access**: Set up Stripe MCP - Follow [06-MCP-INTEGRATION.md](./06-MCP-INTEGRATION.md)
+
+## AI Agent Integration (MCP)
+
+The Stripe MCP (Model Context Protocol) allows AI tools like Cursor to interact directly with your Stripe account. This enables natural language commands for subscription management, customer operations, and more.
+
+**Quick setup** - Add to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "stripe": {
+      "url": "https://mcp.stripe.com"
+    }
+  }
+}
+```
+
+For full documentation, see [06-MCP-INTEGRATION.md](./06-MCP-INTEGRATION.md).
 
 ## Integration Overview
 

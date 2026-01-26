@@ -673,6 +673,24 @@ curl -X POST http://localhost:8000/api/snaptrade/sync \
 
 ---
 
+## Documentation Index
+
+For deeper dives on specific topics, see the `docs/` directory:
+
+| Topic | Location | What You'll Find |
+|-------|----------|------------------|
+| **SnapTrade Integration** | `docs/integrations/snaptrade/` | Authentication flow, trading implementation, webhooks, migration guides |
+| **Stripe Payments** | `docs/integrations/stripe/` | Webhook setup, testing, production checklist, **MCP integration for AI agents** |
+| **Plaid (Read-only)** | `docs/integrations/plaid/` | Investment data aggregation, full API docs |
+| **LangGraph** | `docs/integrations/langgraph/` | Agent SDK documentation |
+| **Architecture Decisions** | `docs/architecture/` | Security middleware, account filtering, portfolio history |
+| **Operations** | `docs/operations/` | LangSmith setup, email config, real-time portfolio setup |
+| **Investment Flows** | `docs/investment/` | Account onboarding, trade execution, portfolio management |
+
+> **AI Agents**: Stripe MCP is configured in `~/.cursor/mcp.json` - see `docs/integrations/stripe/06-MCP-INTEGRATION.md` for setup and available tools.
+
+---
+
 ## Quick Reference
 
 ### Production URLs
@@ -715,4 +733,4 @@ copilot svc logs --name api-service --follow
 ---
 
 *Last Updated: January 2026*
-*For detailed SnapTrade implementation, see `docs/integrations/snaptrade/`*
+*For detailed integration docs, see `docs/integrations/` (SnapTrade, Stripe, Plaid, LangGraph)*
