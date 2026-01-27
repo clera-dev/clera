@@ -207,7 +207,7 @@ export class SecureChatClientImpl implements SecureChatClient {
     // Add both user message and status message atomically to prevent timing issues
     const statusMessage: Message = {
       role: 'assistant',
-      content: 'Analyzing your request...',
+      content: 'Thinking...',
       isStatus: true,
       runId: runIdForMsg,
     };
@@ -871,7 +871,7 @@ export class SecureChatClientImpl implements SecureChatClient {
             //console.log('[SecureChatClient] Detected empty Clera response - setting graceful model provider error');
             
             // CRITICAL FIX: Remove status messages when setting model provider error
-            // This ensures the "Analyzing your request..." message disappears
+            // This ensures the "Thinking..." message disappears
             const cleanMessages = this._state.messages.filter(msg => !msg.isStatus);
             
             // Set graceful error state and mark as handled to prevent harsh error message
@@ -1256,7 +1256,7 @@ export class SecureChatClientImpl implements SecureChatClient {
 
   private getNodeStatusMessage(nodeName: string): string {
     const nodeMessages: { [key: string]: string } = {
-      'Clera': 'Analyzing your request...',
+      'Clera': 'Thinking...',
       'financial_analyst_agent': 'Researching financial data...',
       'portfolio_management_agent': 'Reviewing your portfolio...',
       'trade_execution_agent': 'Preparing trade information...',

@@ -16,7 +16,7 @@ describe('WeeklyStockPicksPersonalizationService', () => {
     investmentTimeline: InvestmentTimeline.FIVE_TO_TEN_YEARS,
     experienceLevel: ExperienceLevel.COMFORTABLE,
     monthlyInvestmentGoal: 1000,
-    marketInterests: [MarketInterest.TECHNOLOGY, MarketInterest.HEALTHCARE]
+    marketInterests: [MarketInterest.AI_TECH, MarketInterest.HEALTHCARE]
   };
 
   describe('Type Safety and Domain Contracts', () => {
@@ -49,7 +49,7 @@ describe('WeeklyStockPicksPersonalizationService', () => {
       
       // Type assertion to verify return type
       const typedResult: MarketInterest[] = result;
-      expect(typedResult).toEqual([MarketInterest.TECHNOLOGY, MarketInterest.HEALTHCARE]);
+      expect(typedResult).toEqual([MarketInterest.AI_TECH, MarketInterest.HEALTHCARE]);
       
       // Verify it's an array of enum values, not primitive strings
       expect(Array.isArray(result)).toBe(true);
@@ -108,7 +108,7 @@ describe('WeeklyStockPicksPersonalizationService', () => {
       expect(resultText).toContain('retirement');
       expect(resultText).toContain('house');
       expect(resultText).toContain('$1000');
-      expect(resultText).toContain('technology');
+      expect(resultText).toContain('ai_tech');
       expect(resultText).toContain('healthcare');
     });
   });

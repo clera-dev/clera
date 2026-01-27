@@ -40,24 +40,20 @@ export enum ExperienceLevel {
   PROFESSIONAL = "professional"
 }
 
-// Market Interests Enum
+// Market Interests Enum - Beginner-friendly categories for new investors
 export enum MarketInterest {
-  GLOBAL_POLITICS = "global_politics",
-  TRADE = "trade",
-  STOCKS = "stocks",
-  BONDS = "bonds", 
-  ECONOMY = "economy",
-  TECHNOLOGY = "technology",
+  AI_TECH = "ai_tech",
+  CRYPTO = "crypto",
+  GLOBAL_MARKETS = "global_markets",
+  CLEAN_ENERGY = "clean_energy",
   HEALTHCARE = "healthcare",
-  UTILITY = "utility",
-  MATERIALS = "materials",
-  CONSUMER_STAPLES = "consumer_staples",
-  CONSUMER_DISCRETIONARY = "consumer_discretionary",
-  INDUSTRIALS = "industrials",
-  COMMUNICATION_SERVICES = "communication_services",
-  ENERGY = "energy",
-  FINANCIALS = "financials",
-  REAL_ESTATE = "real_estate"
+  GAMING_ENTERTAINMENT = "gaming_entertainment",
+  ECOMMERCE = "ecommerce",
+  SOCIAL_MEDIA = "social_media",
+  REAL_ESTATE = "real_estate",
+  BANKING_FINANCE = "banking_finance",
+  TRAVEL_LEISURE = "travel_leisure",
+  FOOD_DINING = "food_dining"
 }
 
 // Main personalization data interface - matches database schema
@@ -127,22 +123,18 @@ export const EXPERIENCE_LEVEL_DESCRIPTIONS: Record<ExperienceLevel, string> = {
 };
 
 export const MARKET_INTEREST_DESCRIPTIONS: Record<MarketInterest, string> = {
-  [MarketInterest.GLOBAL_POLITICS]: "Global politics",
-  [MarketInterest.TRADE]: "Trade", 
-  [MarketInterest.STOCKS]: "Stocks",
-  [MarketInterest.BONDS]: "Bonds",
-  [MarketInterest.ECONOMY]: "Economy",
-  [MarketInterest.TECHNOLOGY]: "Technology",
-  [MarketInterest.HEALTHCARE]: "Healthcare", 
-  [MarketInterest.UTILITY]: "Utility",
-  [MarketInterest.MATERIALS]: "Materials",
-  [MarketInterest.CONSUMER_STAPLES]: "Consumer staples",
-  [MarketInterest.CONSUMER_DISCRETIONARY]: "Consumer discretionary",
-  [MarketInterest.INDUSTRIALS]: "Industrials",
-  [MarketInterest.COMMUNICATION_SERVICES]: "Communication services",
-  [MarketInterest.ENERGY]: "Energy",
-  [MarketInterest.FINANCIALS]: "Financials",
-  [MarketInterest.REAL_ESTATE]: "Real estate"
+  [MarketInterest.AI_TECH]: "AI & Tech",
+  [MarketInterest.CRYPTO]: "Crypto",
+  [MarketInterest.GLOBAL_MARKETS]: "Global & Emerging Markets",
+  [MarketInterest.CLEAN_ENERGY]: "Clean Energy",
+  [MarketInterest.HEALTHCARE]: "Healthcare & Biotech",
+  [MarketInterest.GAMING_ENTERTAINMENT]: "Gaming & Entertainment",
+  [MarketInterest.ECOMMERCE]: "E-commerce & Retail",
+  [MarketInterest.SOCIAL_MEDIA]: "Social Media",
+  [MarketInterest.REAL_ESTATE]: "Real Estate",
+  [MarketInterest.BANKING_FINANCE]: "Banking & Finance",
+  [MarketInterest.TRAVEL_LEISURE]: "Travel & Leisure",
+  [MarketInterest.FOOD_DINING]: "Food & Restaurants"
 };
 
 // Helper function to validate personalization data

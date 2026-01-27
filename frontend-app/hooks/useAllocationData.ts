@@ -37,7 +37,7 @@ export interface CashStockBondAllocationItem {
   name: string;
   value: number;
   rawValue: number;
-  category: 'cash' | 'stock' | 'bond';
+  category: 'cash' | 'stock' | 'bond' | 'crypto';
 }
 
 export interface AssetClassAllocationData {
@@ -208,11 +208,12 @@ export function useAllocationData({
       
       const data = await response.json();
       
-      // Handle both API formats
+      // Handle both API formats - include crypto as a category
       const pieData = data.pie_data || [
         { name: 'Cash', value: data.cash?.value || 0, percentage: data.cash?.percentage || 0, category: 'cash' as const, rawValue: data.cash?.value || 0 },
         { name: 'Stock', value: data.stock?.value || 0, percentage: data.stock?.percentage || 0, category: 'stock' as const, rawValue: data.stock?.value || 0 },
-        { name: 'Bond', value: data.bond?.value || 0, percentage: data.bond?.percentage || 0, category: 'bond' as const, rawValue: data.bond?.value || 0 }
+        { name: 'Bond', value: data.bond?.value || 0, percentage: data.bond?.percentage || 0, category: 'bond' as const, rawValue: data.bond?.value || 0 },
+        { name: 'Crypto', value: data.crypto?.value || 0, percentage: data.crypto?.percentage || 0, category: 'crypto' as const, rawValue: data.crypto?.value || 0 }
       ].filter(item => item.value > 0);
       
       return pieData;

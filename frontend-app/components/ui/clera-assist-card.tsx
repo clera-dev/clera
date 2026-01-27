@@ -75,9 +75,9 @@ const CleraAssistCard: React.FC<CleraAssistCardProps> = ({
     >
       <CardHeader className="py-3 relative">
         <div className="clera-assist-card-header">
-          <CardTitle className="text-base md:text-lg card-title">{title}</CardTitle>
+          <CardTitle className="text-base md:text-lg card-title truncate">{title}</CardTitle>
           
-          {/* Assist Button - positioned in header */}
+          {/* Assist Button - right-aligned, grows leftward, never clips the button itself */}
           <div className={cn(
             "clera-assist-button-container",
             showButton && "visible"
@@ -96,14 +96,14 @@ const CleraAssistCard: React.FC<CleraAssistCardProps> = ({
                         "text-white border-0",
                         "transition-all duration-200 ease-out",
                         "shadow-blue-500/30 shadow-md",
-                        "text-xs px-3 py-1.5",
                         "flex items-center gap-1.5",
+                        "text-xs px-3 py-1.5",
                         // Mobile-specific styles
                         isMobile && "touch-manipulation"
                       )}
                     >
-                      <Sparkles className="w-3 h-3" />
-                      {triggerText}
+                      <Sparkles className="w-3 h-3 flex-shrink-0" />
+                      <span>{triggerText}</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
@@ -115,7 +115,7 @@ const CleraAssistCard: React.FC<CleraAssistCardProps> = ({
 
             {/* Mobile indicator when button is not visible */}
             {isMobile && !isHovered && (
-              <div className="w-2 h-2 bg-blue-500 rounded-full clera-pulse" />
+              <div className="w-2 h-2 bg-blue-500 rounded-full clera-pulse flex-shrink-0" />
             )}
           </div>
         </div>

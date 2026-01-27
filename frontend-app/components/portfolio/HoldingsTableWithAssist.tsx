@@ -1,10 +1,12 @@
 "use client";
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
-import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
+import { useCleraAssist } from '@/components/ui/clera-assist-provider';
 import HoldingsTable from './HoldingsTable';
 
 interface PositionData {
@@ -40,6 +42,23 @@ interface HoldingsTableWithAssistProps {
   accountId?: string | null;
 }
 
+// Pure utility functions defined outside component
+const formatCurrencyWithSign = (value: number): string => {
+  const absValue = Math.abs(value);
+  const sign = value >= 0 ? '+' : '-';
+  return `${sign}$${absValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const formatPercentWithSign = (value: number): string => {
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${(value * 100).toFixed(2)}%`;
+};
+
+const COMMON_ETFS = new Set(['SPY', 'VOO', 'VTI', 'QQQ', 'IWM', 'VEA', 'VWO', 'BND', 'AGG', 'GLD', 'SLV']);
+
+// Number of positions to show before collapsing
+const COLLAPSE_THRESHOLD = 5;
+
 const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
   positions,
   isLoading,
@@ -50,63 +69,103 @@ const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
 }) => {
   const { openChatWithPrompt, isEnabled } = useCleraAssist();
   
-  // Extract holdings context for dynamic prompts
-  const numHoldings = positions.length;
-  const hasETFs = positions.some(pos => pos.symbol.includes('ETF') || ['SPY', 'VOO', 'VTI', 'QQQ', 'IWM'].includes(pos.symbol));
-  const hasIndividualStocks = positions.some(pos => !pos.symbol.includes('ETF') && !['SPY', 'VOO', 'VTI', 'QQQ', 'IWM'].includes(pos.symbol));
+  // Collapsible state - auto-expand if few positions, collapse if many
+  const [isExpanded, setIsExpanded] = useState(false);
+  const shouldShowCollapseButton = positions.length > COLLAPSE_THRESHOLD;
   
-  const totalValue = positions.reduce((sum, pos) => sum + parseFloat(pos.market_value || '0'), 0);
-  const hasWinners = positions.some(pos => parseFloat(pos.unrealized_pl || '0') > 0);
-  const hasLosers = positions.some(pos => parseFloat(pos.unrealized_pl || '0') < 0);
-  
-  const holdingsContext = numHoldings === 1 ? "a single holding"
-    : numHoldings <= 3 ? "a few holdings"
-    : numHoldings <= 10 ? "several holdings"
-    : "many holdings";
-  
-  const diversificationContext = hasETFs && hasIndividualStocks ? "a mix of ETFs and individual stocks"
-    : hasETFs ? "primarily ETFs"
-    : "individual stocks";
-  
-  const performanceContext = hasWinners && hasLosers ? "some gains and some losses"
-    : hasWinners ? "mostly gains"
-    : hasLosers ? "some current losses"
-    : "neutral performance";
-
-  // Create contextual prompt with holdings analysis
-  const generatePrompt = useContextualPrompt(
-    "Evaluate my current holdings: {holdingsContext}, {diversificationContext}, and {performanceContext}. Provide a brief assessment and 1–2 specific improvements (e.g., trimming concentration, adding a core ETF, or rebalancing).",
-    "holdings_analysis",
-    {
-      holdingsContext: holdingsContext,
-      diversificationContext: diversificationContext,
-      performanceContext: performanceContext,
-      numHoldings: numHoldings.toString()
-    }
-  );
-
-  const getContextualPrompt = () => {
+  // Memoize all calculations and prompt generation
+  // Only recalculates when positions array or disabled flag changes
+  const { contextualPrompt, triggerText, description } = useMemo(() => {
     if (disabled) {
-      return "I'm interested in learning about building a stock portfolio. Can you explain what makes a good holding, how to think about diversification, and what young investors should look for when choosing individual stocks versus ETFs?";
+      return {
+        contextualPrompt: "Can you explain how to think about building a portfolio? I'm curious about the difference between individual stocks vs ETFs, and how to approach diversification.",
+        triggerText: "Learn about this",
+        description: "Understand portfolio building and investment selection"
+      };
     }
     
     if (positions.length === 0) {
-      return "I have no positions yet. Help me choose my first investments: suggest an approach for starting simple, avoiding overtrading, and building a diversified core.";
+      return {
+        contextualPrompt: "I'm ready to start investing. What's a sensible approach for building a first portfolio - keeping it simple while still being diversified?",
+        triggerText: "Get started",
+        description: "Get guidance on building your first portfolio"
+      };
     }
     
-    return generatePrompt();
-  };
+    // Calculate totals
+    const totalPL = positions.reduce((sum, pos) => sum + parseFloat(pos.unrealized_pl || '0'), 0);
+    const totalValue = positions.reduce((sum, pos) => sum + parseFloat(pos.market_value || '0'), 0);
+    const totalCostBasis = positions.reduce((sum, pos) => sum + parseFloat(pos.cost_basis || '0'), 0);
+    const totalPLPercent = totalCostBasis > 0 ? (totalPL / totalCostBasis) : 0;
+    
+    // Sort positions by P&L to find winners and losers
+    const sortedByPL = [...positions].sort((a, b) => 
+      parseFloat(b.unrealized_pl || '0') - parseFloat(a.unrealized_pl || '0')
+    );
+    
+    // Get top 3 winners and losers
+    const winners = sortedByPL.filter(p => parseFloat(p.unrealized_pl || '0') > 0).slice(0, 3);
+    const losers = sortedByPL.filter(p => parseFloat(p.unrealized_pl || '0') < 0).slice(-3).reverse();
+    
+    // Check for ETFs vs individual stocks
+    const hasETFs = positions.some(pos => pos.symbol.includes('ETF') || COMMON_ETFS.has(pos.symbol));
+    const hasIndividualStocks = positions.some(pos => !pos.symbol.includes('ETF') && !COMMON_ETFS.has(pos.symbol));
+    
+    // Build concise holdings summary
+    let prompt = `I have ${positions.length} positions worth $${totalValue.toLocaleString('en-US', { minimumFractionDigits: 0 })} total, `;
+    prompt += `with overall P&L of ${formatCurrencyWithSign(totalPL)} (${formatPercentWithSign(totalPLPercent)}). `;
+    prompt += `Mix: ${hasETFs && hasIndividualStocks ? 'ETFs + individual stocks' : hasETFs ? 'ETFs only' : 'individual stocks'}.\n\n`;
+    
+    // Highlight winners and losers concisely
+    if (winners.length > 0) {
+      const winnersList = winners.slice(0, 2).map(p => p.symbol).join(', ');
+      prompt += `Top performers: ${winnersList}. `;
+    }
+    if (losers.length > 0) {
+      const losersList = losers.slice(0, 2).map(p => p.symbol).join(', ');
+      prompt += `Underperformers: ${losersList}.\n\n`;
+    }
+    
+    prompt += `Which holdings should I consider adding to or trimming? Any gaps I should fill?`;
+    
+    return {
+      contextualPrompt: prompt,
+      triggerText: "Analyze holdings",
+      description: "Get recommendations on positions to add, trim, or rebalance"
+    };
+  }, [positions, disabled]);
 
-  const getTriggerText = () => {
-    if (disabled) return "Learn about holdings";
-    if (positions.length === 0) return "Choosing first investments";
-    return "Evaluate my holdings";
-  };
-
-  const getDescription = () => {
-    if (disabled) return "Learn about building a diversified portfolio and choosing good investments";
-    if (positions.length === 0) return "Get guidance on selecting your first investments";
-    return "Understand your current holdings and how to optimize your portfolio";
+  // Get visible positions based on expand/collapse state
+  const visiblePositions = shouldShowCollapseButton && !isExpanded 
+    ? positions.slice(0, COLLAPSE_THRESHOLD) 
+    : positions;
+  
+  // Collapse/expand button component
+  const CollapseButton = () => {
+    if (!shouldShowCollapseButton) return null;
+    
+    return (
+      <div className="flex justify-center py-3 border-t border-border/50">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="text-muted-foreground hover:text-foreground gap-1"
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp className="h-4 w-4" />
+              Show less
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-4 w-4" />
+              Show all {positions.length} holdings
+            </>
+          )}
+        </Button>
+      </div>
+    );
   };
 
   if (!isEnabled) {
@@ -114,20 +173,23 @@ const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
     return (
       <Card className="bg-card shadow-lg mt-4">
         <CardContent className="p-0">
-                  {isLoading && positions.length === 0 ? (
-          <Skeleton className="h-64 w-full rounded-t-none" />
-        ) : positions.length > 0 ? (
-          <HoldingsTable 
-            positions={positions} 
-            onInvestClick={onInvestClick}
-            onSellClick={onSellClick}
-            accountId={accountId}
-          />
-        ) : (
-          <p className="text-muted-foreground p-6 text-center">
-            Waiting for your first trade to display holdings.
-          </p>
-        )}
+          {isLoading && positions.length === 0 ? (
+            <Skeleton className="h-64 w-full rounded-t-none" />
+          ) : positions.length > 0 ? (
+            <>
+              <HoldingsTable 
+                positions={visiblePositions} 
+                onInvestClick={onInvestClick}
+                onSellClick={onSellClick}
+                accountId={accountId}
+              />
+              <CollapseButton />
+            </>
+          ) : (
+            <p className="text-muted-foreground p-6 text-center">
+              Waiting for your first trade to display holdings.
+            </p>
+          )}
         </CardContent>
       </Card>
     );
@@ -138,9 +200,9 @@ const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
       title="Your Holdings"
       content="Individual position details and performance"
       context="holdings_analysis"
-      prompt={getContextualPrompt()}
-      triggerText={getTriggerText()}
-      description={getDescription()}
+      prompt={contextualPrompt}
+      triggerText={triggerText}
+      description={description}
       onAssistClick={(prompt) => openChatWithPrompt(prompt, "holdings_analysis")}
       disabled={disabled}
       className="bg-card shadow-lg mt-4"
@@ -149,12 +211,15 @@ const HoldingsTableWithAssist: React.FC<HoldingsTableWithAssistProps> = ({
         {isLoading && positions.length === 0 ? (
           <Skeleton className="h-64 w-full rounded-t-none" />
         ) : positions.length > 0 ? (
-          <HoldingsTable 
-            positions={positions} 
-            onInvestClick={onInvestClick}
-            onSellClick={onSellClick}
-            accountId={accountId}
-          />
+          <>
+            <HoldingsTable 
+              positions={visiblePositions} 
+              onInvestClick={onInvestClick}
+              onSellClick={onSellClick}
+              accountId={accountId}
+            />
+            <CollapseButton />
+          </>
         ) : (
           <p className="text-muted-foreground p-6 text-center">
             Waiting for your first trade to display holdings.

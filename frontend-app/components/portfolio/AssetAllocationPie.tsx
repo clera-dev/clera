@@ -119,7 +119,8 @@ const AssetAllocationPie: React.FC<AssetAllocationPieProps> = ({ positions, acco
             const colors = {
                 'cash': '#87CEEB',    // Sky Blue
                 'stock': '#4A90E2',   // Medium Blue  
-                'bond': '#2E5BBA'     // Deep Blue
+                'bond': '#2E5BBA',    // Deep Blue
+                'crypto': '#F7931A'   // Bitcoin Orange
             };
             
             return assetClassData.map(item => ({

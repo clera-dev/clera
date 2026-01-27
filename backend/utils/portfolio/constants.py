@@ -32,6 +32,33 @@ UNAMBIGUOUS_CRYPTO = frozenset({
 
 # Crypto exchanges where we can trust that holdings are crypto
 # even if SnapTrade returns wrong security_type
+# CRITICAL: Use lowercase for case-insensitive matching
+CRYPTO_EXCHANGES_LOWERCASE = frozenset({
+    'coinbase', 'coinbase pro', 'coinbase advanced', 'coinbase prime',
+    'kraken', 'gemini', 'binance', 'binance.us', 'binance us',
+    'ftx', 'crypto.com', 'blockfi', 'celsius', 'nexo',
+    'robinhood crypto', 'webull crypto',
+})
+
+def is_crypto_exchange(institution_name: str) -> bool:
+    """
+    Check if an institution is a crypto exchange.
+    Uses case-insensitive partial matching to handle variations like:
+    - 'Coinbase' vs 'COINBASE' vs 'Coinbase Advanced'
+    """
+    if not institution_name:
+        return False
+    name_lower = institution_name.lower().strip()
+    # Exact match first
+    if name_lower in CRYPTO_EXCHANGES_LOWERCASE:
+        return True
+    # Partial match for variations (e.g., 'Coinbase - Pro' would match 'coinbase')
+    for exchange in CRYPTO_EXCHANGES_LOWERCASE:
+        if exchange in name_lower or name_lower in exchange:
+            return True
+    return False
+
+# Keep legacy frozenset for backward compatibility (deprecated)
 CRYPTO_EXCHANGES = frozenset({
     'Coinbase', 'Coinbase Pro', 'Kraken', 'Gemini', 'Binance', 'Binance.US',
     'FTX', 'Crypto.com', 'BlockFi', 'Celsius', 'Nexo',

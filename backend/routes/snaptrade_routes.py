@@ -304,6 +304,12 @@ async def get_trade_enabled_accounts(
             # cash_and_margin = shows full buying power including margin
             display_buying_power = float(cash_balance or 0) if buying_power_display == 'cash_only' else float(buying_power or 0)
             
+            # PRODUCTION-GRADE: Detect crypto exchanges
+            # Crypto exchanges typically don't have USD cash - users trade crypto-to-crypto
+            # or need to sell crypto to get fiat. Mark these so frontend can show better UX.
+            from utils.portfolio.constants import is_crypto_exchange
+            is_crypto_institution = is_crypto_exchange(account['institution_name'])
+            
             account_data = {
                 'id': account['id'],
                 'account_id': account_id,
@@ -315,6 +321,7 @@ async def get_trade_enabled_accounts(
                 'is_trade_enabled': connection_status == 'active',  # Only trade-enabled if connection is healthy
                 'connection_status': connection_status,
                 'connection_error': connection_error,
+                'is_crypto_exchange': is_crypto_institution,  # Flag for crypto exchanges
             }
             
             # PRODUCTION-GRADE: For broken connections, include reconnect URL

@@ -63,7 +63,7 @@ class TestPersonalizationService:
             'investment_timeline': '5_to_10_years',
             'experience_level': 'comfortable',
             'monthly_investment_goal': 500,
-            'market_interests': ['technology', 'healthcare']
+            'market_interests': ['ai_tech', 'healthcare']
         }
         
         with patch('utils.personalization_service.get_supabase_client') as mock_client:
@@ -88,7 +88,7 @@ class TestPersonalizationService:
             assert 'Saving for retirement, Buying a house' in context.investment_goals
             assert 'moderate risk tolerance' in context.risk_tolerance_guidance
             assert '$500' in context.monthly_budget_guidance
-            assert 'Technology, Healthcare' in context.market_interests
+            assert 'AI & Technology, Healthcare & Biotech' in context.market_interests
             
             # Verify Supabase was called correctly
             mock_client.return_value.table.assert_called_once_with('user_personalization')
@@ -135,7 +135,7 @@ class TestPersonalizationService:
             'investment_timeline': '10_plus_years',
             'experience_level': 'professional',
             'monthly_investment_goal': 1000,
-            'market_interests': ['technology', 'healthcare', 'energy']
+            'market_interests': ['ai_tech', 'healthcare', 'clean_energy']
         }
         
         context = PersonalizationService._format_personalization_context(data)
@@ -148,7 +148,7 @@ class TestPersonalizationService:
         assert 'Very long timeline (10+ years)' in context.timeline_guidance
         assert 'professional investment experience' in context.experience_guidance
         assert '$1000' in context.monthly_budget_guidance
-        assert 'Technology, Healthcare, Energy' in context.market_interests
+        assert 'AI & Technology, Healthcare & Biotech, Clean Energy' in context.market_interests
     
     def test_format_personalization_context_partial_data(self):
         """Test formatting with only partial data."""
@@ -398,7 +398,7 @@ class TestIntegrationScenarios:
             'investment_timeline': '5_to_10_years', 
             'experience_level': 'some_familiarity',
             'monthly_investment_goal': 750,
-            'market_interests': ['technology', 'healthcare']
+            'market_interests': ['ai_tech', 'healthcare']
         }
         
         config = {
@@ -423,8 +423,8 @@ class TestIntegrationScenarios:
             assert '5-10 years' in enhanced_prompt
             assert 'some investment familiarity' in enhanced_prompt
             assert '$750' in enhanced_prompt
-            assert 'Technology' in enhanced_prompt
-            assert 'Healthcare' in enhanced_prompt
+            assert 'AI & Technology' in enhanced_prompt
+            assert 'Healthcare & Biotech' in enhanced_prompt
             assert 'USER PERSONALIZATION CONTEXT:' in enhanced_prompt
             assert 'tailor your responses' in enhanced_prompt
     

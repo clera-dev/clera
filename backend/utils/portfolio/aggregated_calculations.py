@@ -335,10 +335,18 @@ def _classify_security_type(security_type: str, holding: Dict[str, Any]) -> str:
     # CRITICAL FIX: Check for UNAMBIGUOUS crypto symbols FIRST, BEFORE applying the us_equity override
     # This handles the case where SnapTrade/Coinbase returns security_type='equity' for crypto assets
     # Only symbols that are NEVER valid US stock tickers are in UNAMBIGUOUS_CRYPTO
-    from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
+    from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO, is_crypto_exchange
     
     if symbol in UNAMBIGUOUS_CRYPTO:
         return 'crypto'
+    
+    # CRITICAL FIX: Also check institution name - if from crypto exchange, it's crypto
+    # This handles cases where holdings weren't synced with the latest provider
+    institution = holding.get('institution_name', '')
+    if institution and is_crypto_exchange(institution):
+        # If it's from a crypto exchange and not explicitly marked as cash, it's crypto
+        if security_type not in ['cash']:
+            return 'crypto'
     
     # Map Plaid security types to asset_class for proper classification
     # This prevents stocks like ONE (One Gas Inc) from being misclassified as crypto (Harmony ONE)

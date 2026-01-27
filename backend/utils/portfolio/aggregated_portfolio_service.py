@@ -469,6 +469,14 @@ class AggregatedPortfolioService:
             # Calculate base value (oldest value in period)
             base_value = equity_values[0] if equity_values else 0.0
             
+            # NOTE: We intentionally do NOT validate historical vs current value ratios here.
+            # A portfolio can legitimately gain or lose 70%+ (crypto volatility, market crashes, etc.)
+            # and we should show the user their actual performance history.
+            #
+            # The account-specific fallback function (_get_current_account_value_fallback) has
+            # a more targeted check for cases where historical snapshots are from completely
+            # different accounts (e.g., user disconnected old accounts, connected new one).
+            
             logger.info(f"Portfolio history constructed for user {user_id}: {len(equity_values)} data points over {period}")
             
             return {
@@ -502,13 +510,13 @@ class AggregatedPortfolioService:
         """
         try:
             from utils.asset_classification import classify_asset, AssetClassification
-            from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO
+            from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO, is_crypto_exchange
             
             supabase = self._get_supabase_client()
             
-            # Get user's holdings
+            # Get user's holdings with institution_breakdown for exchange detection
             result = supabase.table('user_aggregated_holdings')\
-                .select('symbol, security_type, security_name')\
+                .select('symbol, security_type, security_name, institution_breakdown')\
                 .eq('user_id', user_id)\
                 .execute()
             
@@ -529,6 +537,19 @@ class AggregatedPortfolioService:
                 if symbol in UNAMBIGUOUS_CRYPTO:
                     logger.debug(f"Found crypto by unambiguous symbol: {symbol}")
                     return True
+                
+                # CRITICAL FIX: Check institution name from institution_breakdown
+                # This handles cases where security_type isn't properly set to 'crypto'
+                institution_breakdown = holding.get('institution_breakdown')
+                if institution_breakdown:
+                    if isinstance(institution_breakdown, str):
+                        import json
+                        institution_breakdown = json.loads(institution_breakdown) if institution_breakdown else []
+                    for contrib in institution_breakdown:
+                        institution_name = contrib.get('institution_name', '')
+                        if is_crypto_exchange(institution_name) and security_type not in ['cash']:
+                            logger.debug(f"Found crypto by institution: {symbol} from {institution_name}")
+                            return True
                 
                 # Use comprehensive classification
                 classification = classify_asset(symbol, security_name)
@@ -1419,6 +1440,76 @@ class AggregatedPortfolioService:
                     "base_value_asof": str(int(now.timestamp())),
                     "data_source": "current_value_only"
                 }
+            
+            # CRITICAL FIX: Validate that proportional reconstruction makes sense
+            # If the account is 100% of portfolio (single account) but historical values
+            # are vastly different, it means the historical data is from different accounts.
+            # In this case, DON'T reconstruct - just show current value with no history.
+            #
+            # This prevents showing crazy P/L like "-$6000" on a $164 account.
+            #
+            # IMPORTANT: We also check when the account was connected. If historical snapshots
+            # predate the account connection, those snapshots can't possibly be from this account.
+            # This avoids false positives where a single-account user had legitimate volatility.
+            
+            earliest_snapshot_date = datetime.fromisoformat(snapshots[0]['value_date']).date() if snapshots else None
+            latest_historical_total = float(snapshots[-1].get('total_value', 0)) if snapshots else 0
+            
+            # Get when this account was connected to determine if snapshots could be from it
+            account_connected_at = None
+            try:
+                account_result = supabase.table('user_investment_accounts')\
+                    .select('created_at')\
+                    .eq('id', account_uuid)\
+                    .single()\
+                    .execute()
+                if account_result.data:
+                    account_connected_at = datetime.fromisoformat(
+                        account_result.data['created_at'].replace('Z', '+00:00')
+                    ).date()
+            except Exception as e:
+                logger.warning(f"Could not fetch account connection date: {e}")
+            
+            # If account is 100% of current portfolio but historical total is >3x or <0.33x
+            # of current account value, AND the snapshots predate account connection,
+            # the history is definitely from different accounts
+            if account_percentage > 0.95:  # Account is essentially the whole portfolio
+                if latest_historical_total > 0 and current_account_value > 0:
+                    ratio = latest_historical_total / current_account_value
+                    
+                    # Check if this is clearly mismatched history (not from this account)
+                    # Two conditions that must BOTH be true to trigger:
+                    # 1. Values are very different (>3x or <0.33x)
+                    # 2. EITHER account was recently connected (< 7 days) OR earliest snapshot predates connection
+                    snapshots_predate_connection = (
+                        account_connected_at and earliest_snapshot_date and 
+                        earliest_snapshot_date < account_connected_at
+                    )
+                    account_is_new = (
+                        account_connected_at and 
+                        (datetime.now().date() - account_connected_at).days <= 7
+                    )
+                    
+                    if (ratio > 3.0 or ratio < 0.33) and (snapshots_predate_connection or account_is_new):
+                        # Historical data is from a completely different portfolio composition
+                        # Don't try to reconstruct - it would show misleading P/L
+                        logger.warning(
+                            f"⚠️ Historical data mismatch: account=${current_account_value:.2f} but "
+                            f"historical total=${latest_historical_total:.2f} (ratio={ratio:.1f}x). "
+                            f"Account connected: {account_connected_at}, earliest snapshot: {earliest_snapshot_date}. "
+                            f"Returning current-only data to avoid misleading P/L."
+                        )
+                        now = datetime.now()
+                        return {
+                            "timestamp": [int(now.timestamp())],
+                            "equity": [current_account_value],
+                            "profit_loss": [0.0],
+                            "profit_loss_pct": [0.0],
+                            "base_value": current_account_value,
+                            "timeframe": period,
+                            "base_value_asof": str(int(now.timestamp())),
+                            "data_source": "current_only_mismatched_history"
+                        }
             
             # 5. Apply account percentage to total historical values
             timestamps = []

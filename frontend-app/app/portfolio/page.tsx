@@ -1393,16 +1393,7 @@ export default function PortfolioPage() {
             </div>
           </div>
 
-          {/* Row 2: Investment Growth Projection - Full Width */}
-          <div className="w-full">
-            <InvestmentGrowthWithAssist
-              currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)}
-              isLoading={isLoading && positions.length === 0}
-              disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
-            />
-          </div>
-
-          {/* Row 3: Holdings and Transactions Tabs - Full Width */}
+          {/* Row 2: Holdings and Transactions Tabs - Full Width (moved above What-If for user priority) */}
           <div className="w-full">
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid w-full grid-cols-2 bg-muted p-1 h-auto">
@@ -1463,6 +1454,15 @@ export default function PortfolioPage() {
                 </Card>
               </TabsContent>
             </Tabs>
+          </div>
+
+          {/* Row 3: Investment Growth Projection - Full Width */}
+          <div className="w-full">
+            <InvestmentGrowthWithAssist
+              currentPortfolioValue={positions.reduce((sum, pos) => sum + (safeParseFloat(pos.market_value) ?? 0), 0)}
+              isLoading={isLoading && positions.length === 0}
+              disabled={!hasTradeHistory && portfolioMode !== 'aggregation'}
+            />
           </div>
         </div>
 

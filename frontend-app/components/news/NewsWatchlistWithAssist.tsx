@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Eye, Loader2, AlertCircle } from "lucide-react";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
-import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
+import { useCleraAssist } from '@/components/ui/clera-assist-provider';
+import { useMemo } from 'react';
 
 interface WatchlistNewsItem {
   title: string;
@@ -85,59 +86,53 @@ const NewsWatchlistWithAssist: React.FC<NewsWatchlistWithAssistProps> = ({
 }) => {
   const { openChatWithPrompt, isEnabled } = useCleraAssist();
   
-  // Extract watchlist context for dynamic prompts
-  const selectedCategories = Object.entries(watchlist).filter(([_, selected]) => selected).map(([category, _]) => category);
-  const numSelectedCategories = selectedCategories.length;
-  const hasSelectedCategories = numSelectedCategories > 0;
-  const filteredNews = getFilteredWatchlistNews();
-  
-  const watchlistContext = hasSelectedCategories 
-    ? `following ${numSelectedCategories} categories: ${selectedCategories.slice(0, 3).join(', ')}${selectedCategories.length > 3 ? ' and others' : ''}`
-    : "no categories selected yet";
-  
-  const diversificationContext = numSelectedCategories >= 5 ? "good diversification across sectors"
-    : numSelectedCategories >= 3 ? "moderate diversification"
-    : numSelectedCategories >= 1 ? "focused on specific areas"
-    : "no areas selected";
-
-  // Create contextual prompt with watchlist analysis
-  const generatePrompt = useContextualPrompt(
-    "Given my news watchlist ({watchlistContext}, {diversificationContext}), recommend which sectors to follow and which to drop to stay informed without noise.\n\nAvailable sectors: {availableSectors}\nCurrently selected: {selectedSectors}",
-    "news_watchlist_optimization",
-    {
-      watchlistContext: watchlistContext,
-      diversificationContext: diversificationContext,
-      numCategories: numSelectedCategories.toString(),
-      availableSectors: Object.keys(watchlist).map(category => formatCategoryName(category)).join(', '),
-      selectedSectors: hasSelectedCategories 
-        ? selectedCategories.map(category => formatCategoryName(category)).join(', ')
-        : "None selected yet"
-    }
-  );
-
-  const getContextualPrompt = () => {
+  // Memoize prompt and UI text generation
+  const { contextualPrompt, triggerText, description } = useMemo(() => {
+    const selectedCategories = Object.entries(watchlist).filter(([_, selected]) => selected).map(([category, _]) => category);
+    const numSelectedCategories = selectedCategories.length;
+    const hasSelectedCategories = numSelectedCategories > 0;
+    
     if (disabled) {
-      return "I'm interested in learning about different market sectors and financial news categories. Can you explain which areas young investors should follow and how to build investment knowledge through focused news consumption?";
+      return {
+        contextualPrompt: "Can you explain the different market sectors and news categories? I'd like to know which areas are worth following based on my investment interests.",
+        triggerText: "Learn sectors",
+        description: "Understand different investment sectors and categories"
+      };
     }
     
     if (!hasSelectedCategories) {
-      return "I haven't selected any categories yet. Suggest a small set of sectors to follow that will give good coverage without overwhelm, and explain why.";
+      return {
+        contextualPrompt: `I haven't selected any news categories. Based on my portfolio holdings, which 3-5 sectors would be most relevant for me to follow?`,
+        triggerText: "Choose sectors",
+        description: "Get sector recommendations based on your holdings"
+      };
     }
     
-    return generatePrompt();
-  };
-
-  const getTriggerText = () => {
-    if (disabled) return "Learn about sectors";
-    if (!hasSelectedCategories) return "Which sectors to follow?";
-    return "Optimize my selections";
-  };
-
-  const getDescription = () => {
-    if (disabled) return "Learn about different investment sectors and market categories";
-    if (!hasSelectedCategories) return "Get guidance on which market sectors to follow for investment insights";
-    return "Get recommendations on which sectors to add or remove from your watchlist";
-  };
+    // Get unselected categories for recommendations
+    const unselectedCategories = Object.entries(watchlist).filter(([_, selected]) => !selected).map(([category, _]) => category);
+    
+    // Count news per selected category
+    const newsByCategory: Record<string, number> = {};
+    selectedCategories.forEach(cat => {
+      newsByCategory[cat] = watchlistNews[cat]?.length || 0;
+    });
+    
+    // Build concise watchlist prompt
+    const selectedList = selectedCategories.map(c => formatCategoryName(c)).join(', ');
+    
+    let prompt = `I'm following ${numSelectedCategories} news categories: ${selectedList}. `;
+    prompt += `Based on my actual portfolio holdings, am I following the right sectors? `;
+    prompt += `Should I add or remove any to better match what I own?`;
+    
+    return {
+      contextualPrompt: prompt,
+      triggerText: "Optimize this",
+      description: "Match your news feed to your actual holdings"
+    };
+  }, [watchlist, watchlistNews, disabled, formatCategoryName]);
+  
+  // Get filtered news for display (not memoized as it's needed for rendering)
+  const filteredNews = getFilteredWatchlistNews();
 
   if (!isEnabled) {
     // Fallback to original component when assist is disabled
@@ -274,9 +269,9 @@ const NewsWatchlistWithAssist: React.FC<NewsWatchlistWithAssistProps> = ({
       title="Your News Watchlist"
       content="Sector and topic focused news categories"
       context="news_watchlist_optimization"
-      prompt={getContextualPrompt()}
-      triggerText={getTriggerText()}
-      description={getDescription()}
+      prompt={contextualPrompt}
+      triggerText={triggerText}
+      description={description}
       onAssistClick={(prompt) => openChatWithPrompt(prompt, "news_watchlist_optimization")}
       disabled={disabled}
       className="flex-[0.8]"

@@ -39,9 +39,14 @@ const SECTOR_COLORS: Record<string, string> = {
   'Communication Services': 'hsl(280, 55%, 60%)', // Comm Purple
   'Basic Materials': 'hsl(200, 60%, 55%)',    // Materials Blue
   'Broad ETFs': 'hsl(0, 0%, 65%)',            // Grey for broad market ETFs (SPY, VTI, etc.)
+  'Broad Market ETFs': 'hsl(0, 0%, 65%)',     // Grey for broad market ETFs (alternative name)
   'Fixed Income': 'hsl(170, 40%, 45%)',       // Bond ETFs - Teal-Green
   'Commodities': 'hsl(40, 70%, 50%)',         // Commodity ETFs - Gold-like
   'International ETFs': 'hsl(250, 50%, 55%)', // International ETFs - Purple-Blue
+  'International': 'hsl(250, 50%, 55%)',      // International (alternative name)
+  'Cryptocurrency': 'hsl(25, 90%, 50%)',      // Bitcoin Orange for crypto
+  'Cash & Equivalents': 'hsl(195, 70%, 60%)', // Light Blue for cash
+  'Other': 'hsl(0, 0%, 55%)',                 // Dark gray for other/unknown
   'Unknown': 'hsl(0, 0%, 60%)',               // Neutral Gray
 };
 

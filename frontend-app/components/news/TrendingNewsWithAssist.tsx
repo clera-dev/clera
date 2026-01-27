@@ -5,7 +5,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { TrendingUp, Loader2, AlertCircle } from "lucide-react";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
-import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
+import { useCleraAssist } from '@/components/ui/clera-assist-provider';
+import { useMemo } from 'react';
 
 interface TrendingNewsItem {
   id: string;
@@ -47,61 +48,56 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
     return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
   };
   
-  // Extract news context for dynamic prompts
-  const hasNews = trendingNews.length > 0;
-  const newsCount = trendingNews.length;
-  const hasMarketMovingNews = trendingNews.some(news => 
-    news.topics?.some(topic => 
-      ['earnings', 'fed', 'inflation', 'jobs', 'gdp'].some(keyword => 
-        topic.toLowerCase().includes(keyword)
-      )
-    )
-  );
-  
-  const sentimentContext = hasNews ? 
-    trendingNews.some(news => news.sentiment_score > 0.3) ? "positive market sentiment" :
-    trendingNews.some(news => news.sentiment_score < -0.3) ? "negative market sentiment" :
-    "mixed market sentiment" : "neutral sentiment";
-
-  // Create contextual prompt with news analysis
-  const generatePrompt = useContextualPrompt(
-    "Analyze these {newsCount} trending headlines and summarize what matters most for market direction and a diversified long-term portfolio. Then give 1–2 specific watch-outs or actions if warranted.\n\n<trending_news_headlines>\n{newsHeadlines}\n</trending_news_headlines>",
-    "trending_news_analysis",
-    {
-      newsCount: newsCount.toString(),
-      sentimentContext: sentimentContext,
-      newsHeadlines: hasNews 
-        ? trendingNews.map(news => `- ${news.title} (${news.source})`).join('\n')
-        : "No headlines available",
-      marketContext: hasMarketMovingNews 
-        ? "There appear to be some significant market-moving stories."
-        : "The news seems to be mostly routine market updates."
-    }
-  );
-
-  const getContextualPrompt = () => {
+  // Memoize all prompt and UI text generation
+  const { contextualPrompt, triggerText, description } = useMemo(() => {
     if (disabled) {
-      return "I'm interested in learning how to read financial news effectively. Can you explain what young investors should focus on when reading market news and how to avoid getting overwhelmed by daily market noise?";
+      return {
+        contextualPrompt: "How should I approach reading financial news? I want to stay informed without getting overwhelmed or reacting to every headline.",
+        triggerText: "Learn about news",
+        description: "Understand how to read financial news effectively"
+      };
     }
+    
+    const hasNews = trendingNews.length > 0;
     
     if (!hasNews) {
-      return "No articles are showing. Briefly explain which types of news usually matter for long-term investors and how to avoid overreacting to noise.";
+      return {
+        contextualPrompt: "No articles are loading right now. What types of news actually matter for long-term investing, and what can I safely ignore?",
+        triggerText: "Learn market news",
+        description: "Understand what financial news matters for your investments"
+      };
     }
     
-    return generatePrompt();
-  };
-
-  const getTriggerText = () => {
-    if (disabled) return "Learn news analysis";
-    if (!hasNews) return "Understanding market news";
-    return "Analyze these headlines";
-  };
-
-  const getDescription = () => {
-    if (disabled) return "Learn how to effectively analyze financial news and market trends";
-    if (!hasNews) return "Understand what financial news matters for your investments";
-    return "Get analysis of what these specific headlines mean for your investments";
-  };
+    const newsCount = trendingNews.length;
+    
+    // Categorize news by topic
+    const marketMovingTopics = ['earnings', 'fed', 'inflation', 'jobs', 'gdp', 'interest rate', 'recession'];
+    const marketMovingNews = trendingNews.filter(news => 
+      news.topics?.some(topic => 
+        marketMovingTopics.some(keyword => topic.toLowerCase().includes(keyword))
+      ) || marketMovingTopics.some(keyword => news.title.toLowerCase().includes(keyword))
+    );
+    
+    // Calculate overall sentiment
+    const avgSentiment = trendingNews.reduce((sum, n) => sum + (n.sentiment_score || 0), 0) / newsCount;
+    const sentimentLabel = avgSentiment > 0.15 ? "bullish" : avgSentiment < -0.15 ? "bearish" : "neutral";
+    
+    // Build concise trending news prompt  
+    const topHeadlines = trendingNews.slice(0, 5).map(n => n.title).join('; ');
+    
+    let prompt = `There are ${newsCount} trending stories right now with ${sentimentLabel} sentiment overall. `;
+    if (marketMovingNews.length > 0) {
+      prompt += `${marketMovingNews.length} appear to be market-moving. `;
+    }
+    prompt += `\n\nTop headlines: ${topHeadlines}\n\n`;
+    prompt += `Which of these stories are relevant to my portfolio? What should I pay attention to vs ignore?`;
+    
+    return {
+      contextualPrompt: prompt,
+      triggerText: "Analyze headlines",
+      description: "Find out which headlines matter for your holdings"
+    };
+  }, [trendingNews, disabled]);
 
   if (!isEnabled) {
     // Fallback to original component when assist is disabled
@@ -185,9 +181,9 @@ const TrendingNewsWithAssist: React.FC<TrendingNewsWithAssistProps> = ({
       title="Trending Market News"
       content="Latest financial news and market trends"
       context="trending_news_analysis"
-      prompt={getContextualPrompt()}
-      triggerText={getTriggerText()}
-      description={getDescription()}
+        prompt={contextualPrompt}
+      triggerText={triggerText}
+      description={description}
       onAssistClick={(prompt) => openChatWithPrompt(prompt, "trending_news_analysis")}
       disabled={disabled}
       className="flex-1"

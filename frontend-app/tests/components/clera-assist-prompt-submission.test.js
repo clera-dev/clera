@@ -409,19 +409,19 @@ describe('CleraAssistProvider Integration', () => {
 
 describe('Component-Specific Scenarios', () => {
   describe('PortfolioSummaryWithAssist', () => {
-    test('should generate correct prompt for "Analyze my progress" button', () => {
+    test('should generate correct prompt for "Analyze progress" button', () => {
       // From PortfolioSummaryWithAssist.tsx
       const accountId = undefined; // Aggregation mode
       const disabled = false;
       const hasHistoryData = true;
 
       const getTriggerText = () => {
-        if (!accountId || disabled) return "Analyze my progress";
-        if (!hasHistoryData) return "Understanding performance";
-        return "Analyze my progress";
+        if (!accountId || disabled) return "Analyze progress";
+        if (!hasHistoryData) return "Understand this";
+        return "Analyze progress";
       };
 
-      expect(getTriggerText()).toBe("Analyze my progress");
+      expect(getTriggerText()).toBe("Analyze progress");
     });
   });
 
@@ -436,12 +436,12 @@ describe('Component-Specific Scenarios', () => {
       const hasNews = trendingNews.length > 0;
 
       const getTriggerText = () => {
-        if (disabled) return "Learn news analysis";
-        if (!hasNews) return "Understanding market news";
-        return "Analyze these headlines";
+        if (disabled) return "Learn about news";
+        if (!hasNews) return "Learn market news";
+        return "Analyze headlines";
       };
 
-      expect(getTriggerText()).toBe("Analyze these headlines");
+      expect(getTriggerText()).toBe("Analyze headlines");
     });
   });
 });

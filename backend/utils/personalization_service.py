@@ -83,23 +83,20 @@ class PersonalizationService:
     }
     
     # Market interest descriptions mapping (from frontend types)
+    # Beginner-friendly categories for new investors
     MARKET_INTEREST_DESCRIPTIONS = {
-        'global_politics': 'Global politics',
-        'trade': 'Trade',
-        'stocks': 'Stocks',
-        'bonds': 'Bonds',
-        'economy': 'Economy',
-        'technology': 'Technology',
-        'healthcare': 'Healthcare',
-        'utilities': 'Utilities',
-        'materials': 'Materials',
-        'consumer_staples': 'Consumer staples',
-        'consumer_discretionary': 'Consumer discretionary',
-        'industrials': 'Industrials',
-        'communication_services': 'Communication services',
-        'energy': 'Energy',
-        'financials': 'Financials',
-        'real_estate': 'Real estate'
+        'ai_tech': 'AI & Technology',
+        'crypto': 'Crypto & Blockchain',
+        'global_markets': 'Global & Emerging Markets',
+        'clean_energy': 'Clean Energy',
+        'healthcare': 'Healthcare & Biotech',
+        'gaming_entertainment': 'Gaming & Entertainment',
+        'ecommerce': 'E-commerce & Retail',
+        'social_media': 'Social Media',
+        'real_estate': 'Real Estate',
+        'banking_finance': 'Banking & Finance',
+        'travel_leisure': 'Travel & Leisure',
+        'food_dining': 'Food & Restaurants'
     }
     
     @staticmethod

@@ -459,12 +459,28 @@ The user's portfolio will show holdings with their percentage weights (e.g., "AA
 
 When gathering information for this summary, endeavor to consult at least 4-6 distinct news articles from various reputable sources. (MAKE SURE THEY ARE RECENT AND CREDIBLE SOURCES, such as CNBC, Bloomberg, Reuters, Wall Street Journal, etc. Specifically search for those and other Wall Street sources.)
 
-Your response for the main summary MUST be a single, valid JSON object. ABSOLUTELY NO OTHER TEXT, MARKDOWN, OR EXPLANATIONS BEFORE OR AFTER THE JSON OBJECT.
+Your response MUST be a single, valid JSON object. ABSOLUTELY NO OTHER TEXT, MARKDOWN, OR EXPLANATIONS BEFORE OR AFTER THE JSON OBJECT.
 This JSON object must strictly follow this structure:
 {
-  "summary_text": "string, exactly two paragraphs.\nParagraph 1: 2-3 sentences discussing yesterday's key market/world news relevant to the user's portfolio/goals. In this paragraph, aim to synthesize information from at least 2-3 distinct articles you consulted.\nParagraph 2: 2-3 sentences discussing what the user should look out for today relevant to their portfolio/goals. In this paragraph, also aim to synthesize information from at least 2-3 distinct articles (can be the same or different from Paragraph 1's sources).\nBoth paragraphs should reference specific companies or market-moving events if applicable. Max 150 words total for both paragraphs."
+  "market_recap": [
+    "First bullet: 1-2 sentences about key market news from yesterday relevant to portfolio",
+    "Second bullet: 1-2 sentences about another significant development",
+    "Third bullet if needed: additional key point"
+  ],
+  "what_to_watch": [
+    "First bullet: 1-2 sentences about what to monitor today/this week",
+    "Second bullet: 1-2 sentences about upcoming events or risks",
+    "Third bullet if needed: additional watchpoint"
+  ]
 }
-If the portfolio string indicates 'No positions found in portfolio.' or is empty, state that the summary cannot be personalized due to lack of portfolio data and provide a general market overview instead, still aiming for two paragraphs and citing any general market news sources used. You will provide cited URLs separately via the API's citation mechanism.`;
+RULES:
+- market_recap: 2-4 bullet strings about what happened yesterday/recently that affects their portfolio or interests
+- what_to_watch: 2-4 bullet strings about upcoming events, risks, or things to monitor
+- Each bullet should be a complete sentence (1-2 sentences max)
+- Reference specific companies or market-moving events when relevant
+- Max 200 words total across both arrays
+- If the portfolio indicates 'No positions found' or is empty, focus on their investment goals and market interests instead - provide general market news and news relevant to their stated interests. Do NOT apologize or mention that content cannot be personalized.
+You will provide cited URLs separately via the API's citation mechanism.`;
 
   // Enhance the system prompt with personalization context
   const enhancedSystemPrompt = NewsPersonalizationService.enhanceSystemPrompt(baseSystemPrompt, personalizationData);
@@ -515,13 +531,33 @@ Provide a summary covering:
   try {
     parsedSummaryContent = JSON.parse(summaryJsonText);
   } catch (e: any) {
-    console.error(`Failed to parse extracted summary_text JSON from Perplexity (sonar-pro) for user ${userId}. Error: ${e.message}. Extracted text: ${summaryJsonText}`);
-    throw new Error('Failed to parse summary_text JSON from Perplexity response');
+    console.error(`Failed to parse JSON from Perplexity (sonar-pro) response. Error: ${e.message}. Extracted text: ${summaryJsonText}`);
+    throw new Error('Failed to parse JSON from Perplexity response');
   }
   
-  if (!parsedSummaryContent.summary_text) {
-    console.error(`Invalid JSON structure for summary_text after parsing (sonar-pro) for user ${userId}. Parsed: ${JSON.stringify(parsedSummaryContent)}`);
-    throw new Error('Invalid JSON structure for summary_text from Perplexity after parsing');
+  // Handle new structured format (market_recap + what_to_watch arrays)
+  // Convert to a formatted string with clear section markers for storage
+  let formattedSummaryText: string;
+  
+  if (parsedSummaryContent.market_recap && parsedSummaryContent.what_to_watch) {
+    // New structured format - convert to marked-up text
+    const marketRecapBullets = Array.isArray(parsedSummaryContent.market_recap) 
+      ? parsedSummaryContent.market_recap 
+      : [parsedSummaryContent.market_recap];
+    const whatToWatchBullets = Array.isArray(parsedSummaryContent.what_to_watch) 
+      ? parsedSummaryContent.what_to_watch 
+      : [parsedSummaryContent.what_to_watch];
+    
+    formattedSummaryText = `Yesterday's Market Recap:\n${marketRecapBullets.map((b: string) => `• ${b}`).join('\n')}\n\nWhat to Watch Out For:\n${whatToWatchBullets.map((b: string) => `• ${b}`).join('\n')}`;
+    
+    console.log(`Converted structured response to formatted text for user ${userId}`);
+  } else if (parsedSummaryContent.summary_text) {
+    // Legacy format - use as-is
+    formattedSummaryText = parsedSummaryContent.summary_text;
+    console.log(`Using legacy summary_text format for user ${userId}`);
+  } else {
+    console.error(`Invalid JSON structure after parsing (sonar-pro) for user ${userId}. Parsed: ${JSON.stringify(parsedSummaryContent)}`);
+    throw new Error('Invalid JSON structure from Perplexity after parsing - missing both market_recap/what_to_watch and summary_text');
   }
 
   let enrichedReferencedArticles: any[] = [];
@@ -533,7 +569,7 @@ Provide a summary covering:
   }
   
   const finalResult = {
-    summary_text: parsedSummaryContent.summary_text,
+    summary_text: formattedSummaryText,
     referenced_articles: enrichedReferencedArticles,
     generated_at: new Date().toISOString(),
     perplexity_model: response.model || 'sonar-pro',

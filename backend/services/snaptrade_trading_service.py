@@ -28,6 +28,7 @@ import os
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal, ROUND_DOWN
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -1081,17 +1082,18 @@ class SnapTradeTradingService:
                     }
                     
                     if order_units is not None:
-                        # Format as string to avoid float precision issues
-                        order_params['units'] = f"{float(order_units):.6f}"
+                        # SnapTrade SDK expects numeric type (float/Decimal), not string
+                        # Use Decimal for precision, round to 6 decimal places for fractional shares
+                        order_params['units'] = float(Decimal(str(order_units)).quantize(Decimal('0.000001'), rounding=ROUND_DOWN))
                     elif notional_value is not None:
-                        # CRITICAL: Format as string to avoid float precision issues
-                        # SDK validates with Decimal which exposes full binary precision of floats
-                        order_params['notional_value'] = f"{float(notional_value):.2f}"
+                        # SnapTrade SDK expects numeric type (float/Decimal), not string
+                        # Use Decimal for precision, round to 2 decimal places for currency
+                        order_params['notional_value'] = float(Decimal(str(notional_value)).quantize(Decimal('0.01'), rounding=ROUND_DOWN))
                     
                     if price is not None:
-                        order_params['price'] = f"{float(price):.2f}"
+                        order_params['price'] = float(Decimal(str(price)).quantize(Decimal('0.01'), rounding=ROUND_DOWN))
                     if stop is not None:
-                        order_params['stop'] = f"{float(stop):.2f}"
+                        order_params['stop'] = float(Decimal(str(stop)).quantize(Decimal('0.01'), rounding=ROUND_DOWN))
                     if trading_session:
                         order_params['trading_session'] = trading_session
                     
