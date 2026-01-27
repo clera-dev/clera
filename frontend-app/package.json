@@ -46,7 +46,7 @@
     "ioredis": "^5.6.1",
     "link-preview-js": "^3.0.14",
     "lucide-react": "^0.468.0",
-    "motion": "^12.29.0",
+    "motion": "^12.29.2",
     "next": "^15.5.9",
     "next-themes": "^0.4.3",
     "openai": "^4.99.0",

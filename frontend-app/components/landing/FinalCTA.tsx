@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "motion/react";
 import { Spotlight } from "@/components/ui/spotlight";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { BlurFade } from "@/components/ui/blur-fade";
@@ -17,6 +16,9 @@ export default function FinalCTA() {
 
       <div className="relative z-10 max-w-3xl mx-auto text-center">
         <BlurFade delay={0.1} inView>
+          <p className="text-lg font-medium text-blue-400 mb-4">
+            Elite advice. No elitist fees.
+          </p>
           <h2 className="text-4xl sm:text-5xl font-bold text-white mb-6">
             Ready to invest smarter?
           </h2>
@@ -24,7 +26,7 @@ export default function FinalCTA() {
 
         <BlurFade delay={0.2} inView>
           <p className="text-xl text-gray-400 mb-10 max-w-xl mx-auto">
-            Join thousands of investors getting personalized, conflict-free financial guidance.
+            Join investors getting personalized, conflict-free financial guidance.
           </p>
         </BlurFade>
 
@@ -37,16 +39,10 @@ export default function FinalCTA() {
                 borderRadius="0.75rem"
                 className="h-14 px-10 text-lg font-semibold"
               >
-                Get Started Free
+                Try Clera
               </ShimmerButton>
             </Link>
           </div>
-        </BlurFade>
-
-        <BlurFade delay={0.4} inView>
-          <p className="text-gray-500 text-sm mt-6">
-            No credit card required
-          </p>
         </BlurFade>
       </div>
 

@@ -65,7 +65,7 @@ const features = [
   },
   {
     title: "SEC-Registered Investment Advisor",
-    description: "We're legally bound to act in your best interest. No conflicts. No hidden agendas. CRD #338073",
+    description: "We're legally bound to act in your best interest. No conflicts. No hidden agendas.",
     icon: <Award className="h-6 w-6 text-blue-400" />,
     className: "md:col-span-2",
     header: (

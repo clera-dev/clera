@@ -9,33 +9,70 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  Legend
+  PieChart,
+  Pie,
+  Cell
 } from 'recharts';
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { BlurFade } from "@/components/ui/blur-fade";
+import { cn } from "@/lib/utils";
 
-// Return rates for comparison
-const RETURN_RATES = {
-  clera: 0.09,           // 9% - with Clera's guidance
-  averageInvestor: 0.026 // 2.6% - per Dalbar & JP Morgan 2023
+// Risk profiles with return rates and allocations
+type RiskLevel = 'conservative' | 'balanced' | 'aggressive';
+
+const RISK_PROFILES: Record<RiskLevel, {
+  rate: number;
+  label: string;
+  allocation: { name: string; value: number; color: string }[];
+}> = {
+  conservative: {
+    rate: 0.06,
+    label: 'Conservative',
+    allocation: [
+      { name: 'Stocks', value: 30, color: '#3b82f6' },
+      { name: 'Bonds', value: 50, color: '#6b7280' },
+      { name: 'Cash', value: 20, color: '#9ca3af' },
+    ],
+  },
+  balanced: {
+    rate: 0.08,
+    label: 'Balanced',
+    allocation: [
+      { name: 'Stocks', value: 60, color: '#3b82f6' },
+      { name: 'Bonds', value: 30, color: '#6b7280' },
+      { name: 'Alternatives', value: 10, color: '#22d3ee' },
+    ],
+  },
+  aggressive: {
+    rate: 0.10,
+    label: 'Aggressive',
+    allocation: [
+      { name: 'Stocks', value: 80, color: '#3b82f6' },
+      { name: 'Bonds', value: 15, color: '#6b7280' },
+      { name: 'Alternatives', value: 5, color: '#22d3ee' },
+    ],
+  },
 };
 
-// Value limits
+// Average investor return - DALBAR 2023
+const AVERAGE_INVESTOR_RATE = 0.0405; // 4.05%
+
+// Value limits - V2 expanded ranges
 const VALUE_LIMITS = {
   initialInvestment: {
-    min: 0,
-    max: 500_000,
+    min: 1_000,
+    max: 1_000_000,
     step: 1000,
-    sliderMax: 100_000,
+    sliderMax: 250_000,
   },
   monthlyInvestment: {
     min: 0,
-    max: 5_000,
-    step: 50,
-    sliderMax: 2_000,
+    max: 10_000,
+    step: 100,
+    sliderMax: 5_000,
   },
   timeHorizon: {
     min: 5,
@@ -67,7 +104,7 @@ const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const dataPoint = payload[0].payload;
     return (
-      <div className="rounded-lg border border-gray-800 bg-black/90 backdrop-blur-sm p-3 shadow-lg">
+      <div className="rounded-2xl border border-gray-800 bg-black/90 backdrop-blur-sm p-3 shadow-lg">
         <p className="text-sm text-gray-400 mb-2">Year {dataPoint.year}</p>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -87,14 +124,47 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
+// Mini pie chart for allocation display
+function AllocationPieChart({ allocation }: { allocation: { name: string; value: number; color: string }[] }) {
+  return (
+    <div className="flex items-center gap-4">
+      <PieChart width={70} height={70}>
+        <Pie
+          data={allocation}
+          cx={35}
+          cy={35}
+          innerRadius={18}
+          outerRadius={32}
+          dataKey="value"
+          stroke="none"
+        >
+          {allocation.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={entry.color} />
+          ))}
+        </Pie>
+      </PieChart>
+      <div className="text-xs text-gray-400 space-y-0.5">
+        {allocation.map((item) => (
+          <div key={item.name} className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+            <span>{item.name}: {item.value}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ComparisonChart() {
-  const [initialInvestment, setInitialInvestment] = useState<number>(10000);
-  const [monthlyInvestment, setMonthlyInvestment] = useState<number>(500);
+  // V2 defaults
+  const [initialInvestment, setInitialInvestment] = useState<number>(25000);
+  const [monthlyInvestment, setMonthlyInvestment] = useState<number>(1000);
   const [timeHorizon, setTimeHorizon] = useState<number>(20);
+  const [riskLevel, setRiskLevel] = useState<RiskLevel>('balanced');
 
   // Input field state
-  const [initialInvestmentInput, setInitialInvestmentInput] = useState<string>(formatCurrency(10000));
-  const [monthlyInvestmentInput, setMonthlyInvestmentInput] = useState<string>(formatCurrency(500));
+  const [initialInvestmentInput, setInitialInvestmentInput] = useState<string>(formatCurrency(25000));
+  const [monthlyInvestmentInput, setMonthlyInvestmentInput] = useState<string>(formatCurrency(1000));
   const [timeHorizonInput, setTimeHorizonInput] = useState<string>('20');
 
   // Handlers
@@ -126,6 +196,7 @@ export default function ComparisonChart() {
     let averageValue = initialInvestment;
     const currentYear = new Date().getFullYear();
     const annualInvestment = monthlyInvestment * 12;
+    const cleraRate = RISK_PROFILES[riskLevel].rate;
 
     data.push({
       year: currentYear,
@@ -136,10 +207,10 @@ export default function ComparisonChart() {
     for (let i = 1; i <= timeHorizon; i++) {
       // Add annual investment then apply growth
       cleraValue += annualInvestment;
-      cleraValue *= (1 + RETURN_RATES.clera);
+      cleraValue *= (1 + cleraRate);
 
       averageValue += annualInvestment;
-      averageValue *= (1 + RETURN_RATES.averageInvestor);
+      averageValue *= (1 + AVERAGE_INVESTOR_RATE);
 
       data.push({
         year: currentYear + i,
@@ -148,7 +219,7 @@ export default function ComparisonChart() {
       });
     }
     return data;
-  }, [initialInvestment, monthlyInvestment, timeHorizon]);
+  }, [initialInvestment, monthlyInvestment, timeHorizon, riskLevel]);
 
   const finalCleraValue = projectionData[projectionData.length - 1]?.clera ?? initialInvestment;
   const finalAverageValue = projectionData[projectionData.length - 1]?.average ?? initialInvestment;
@@ -174,7 +245,7 @@ export default function ComparisonChart() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* Controls */}
           <BlurFade delay={0.2} inView>
-            <div className="space-y-6 bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
+            <div className="space-y-6 bg-gray-900/50 border border-gray-800 rounded-3xl p-6">
               {/* Starting Investment */}
               <div>
                 <Label htmlFor="initialInvestment" className="text-sm font-medium text-gray-300">
@@ -192,8 +263,8 @@ export default function ComparisonChart() {
                         handleInitialInvestmentChange(parseCurrencyInput(initialInvestmentInput));
                       }
                     }}
-                    className="w-32 text-sm bg-black border-gray-700 text-white"
-                    placeholder="$10,000"
+                    className="w-36 text-sm bg-black border-gray-700 text-white rounded-xl"
+                    placeholder="$25,000"
                   />
                 </div>
                 <Slider
@@ -224,8 +295,8 @@ export default function ComparisonChart() {
                         handleMonthlyInvestmentChange(parseCurrencyInput(monthlyInvestmentInput));
                       }
                     }}
-                    className="w-32 text-sm bg-black border-gray-700 text-white"
-                    placeholder="$500"
+                    className="w-32 text-sm bg-black border-gray-700 text-white rounded-xl"
+                    placeholder="$1,000"
                   />
                 </div>
                 <Slider
@@ -260,7 +331,7 @@ export default function ComparisonChart() {
                         handleTimeHorizonChange(isNaN(parsed) ? 20 : parsed);
                       }
                     }}
-                    className="w-20 text-sm bg-black border-gray-700 text-white"
+                    className="w-20 text-sm bg-black border-gray-700 text-white rounded-xl"
                     placeholder="20"
                   />
                   <span className="text-sm text-gray-400">years</span>
@@ -275,21 +346,53 @@ export default function ComparisonChart() {
                   className="mt-3"
                 />
               </div>
+
+              {/* Risk Level Toggle */}
+              <div className="pt-4 border-t border-gray-800">
+                <Label className="text-sm font-medium text-gray-300 mb-3 block">
+                  Risk Profile
+                </Label>
+                <div className="flex gap-1 bg-gray-800/50 p-1 rounded-2xl">
+                  {(['conservative', 'balanced', 'aggressive'] as RiskLevel[]).map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => setRiskLevel(level)}
+                      className={cn(
+                        "flex-1 py-2 px-2 rounded-xl text-xs font-medium transition-all",
+                        riskLevel === level
+                          ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg"
+                          : "text-gray-400 hover:text-gray-300"
+                      )}
+                    >
+                      {RISK_PROFILES[level].label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Allocation Pie Chart */}
+                <div className="mt-4 flex justify-center">
+                  <AllocationPieChart allocation={RISK_PROFILES[riskLevel].allocation} />
+                </div>
+
+                <p className="text-xs text-gray-500 mt-3 text-center">
+                  Expected return: {(RISK_PROFILES[riskLevel].rate * 100).toFixed(0)}% annually
+                </p>
+              </div>
             </div>
           </BlurFade>
 
           {/* Chart and Results */}
           <BlurFade delay={0.3} inView className="lg:col-span-2">
-            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
+            <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-6">
               {/* Results Summary */}
               <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30 rounded-xl p-4">
+                <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30 rounded-2xl p-4">
                   <p className="text-sm text-gray-400 mb-1">With Clera</p>
                   <div className="text-2xl sm:text-3xl font-bold text-white flex items-baseline">
                     $<NumberTicker value={Math.round(finalCleraValue)} className="text-white" />
                   </div>
                 </div>
-                <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+                <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4">
                   <p className="text-sm text-gray-400 mb-1">Average Investor</p>
                   <div className="text-2xl sm:text-3xl font-bold text-gray-400 flex items-baseline">
                     $<NumberTicker value={Math.round(finalAverageValue)} className="text-gray-400" />
@@ -335,7 +438,7 @@ export default function ComparisonChart() {
                         if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
                         return `$${value.toFixed(0)}`;
                       }}
-                      width={50}
+                      width={55}
                     />
                     <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }} />
                     <Line
@@ -363,7 +466,7 @@ export default function ComparisonChart() {
               <p className="text-xs text-gray-500 mt-4 text-center">
                 Projections are hypothetical and for illustrative purposes only.
                 Past performance does not guarantee future results.
-                Average investor returns based on Dalbar & JP Morgan 2023 data (2.6% annually).
+                Average equity fund investor return: 4.05% over the past 3-year period. Source: DALBAR QAIB, 2023.
               </p>
             </div>
           </BlurFade>

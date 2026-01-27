@@ -14,7 +14,7 @@ const propositions = [
   },
   {
     number: "03",
-    text: "Wall Street-level strategies, now accessible to everyone.",
+    text: "Private wealth strategies, now accessible to everyone.",
   },
   {
     number: "04",

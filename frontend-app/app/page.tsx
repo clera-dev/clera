@@ -12,6 +12,7 @@ const FeaturesBento = nextDynamic(() => import("@/components/landing/FeaturesBen
 const SocialProof = nextDynamic(() => import("@/components/landing/SocialProof"));
 const FAQSection = nextDynamic(() => import("@/components/landing/FAQSection"));
 const FinalCTA = nextDynamic(() => import("@/components/landing/FinalCTA"));
+const DisclaimerSection = nextDynamic(() => import("@/components/landing/DisclaimerSection"));
 const LandingFooter = nextDynamic(() => import("@/components/landing/LandingFooter"));
 
 // This ensures Next.js knows this page should not be statically rendered
@@ -31,6 +32,7 @@ export default function Home() {
       <SocialProof />
       <FAQSection />
       <FinalCTA />
+      <DisclaimerSection />
       <LandingFooter />
     </main>
   );
