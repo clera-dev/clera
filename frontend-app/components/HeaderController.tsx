@@ -18,8 +18,8 @@ export default function HeaderController({ children }: HeaderControllerProps) {
   
   // Pages that should show the auth header
   // CRITICAL: Use exact matches to prevent header showing on all pages
+  // NOTE: Landing page ('/') has its own navbar, so it's excluded
   const authPages = [
-    '/',               // Landing page (exact match)
     '/sign-in',        // Sign in page (exact match)
     '/sign-up',        // Sign up page (exact match)
     '/forgot-password', // Password reset page (exact match)

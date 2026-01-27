@@ -1,0 +1,10 @@
+export { default as LandingNavbar } from './LandingNavbar';
+export { default as HeroSection } from './HeroSection';
+export { default as ValuePropositions } from './ValuePropositions';
+export { default as ComparisonChart } from './ComparisonChart';
+export { default as AIConversation } from './AIConversation';
+export { default as FeaturesBento } from './FeaturesBento';
+export { default as SocialProof } from './SocialProof';
+export { default as FAQSection } from './FAQSection';
+export { default as FinalCTA } from './FinalCTA';
+export { default as LandingFooter } from './LandingFooter';
