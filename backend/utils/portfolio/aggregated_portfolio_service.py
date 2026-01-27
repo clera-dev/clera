@@ -1460,7 +1460,7 @@ class AggregatedPortfolioService:
             try:
                 account_result = supabase.table('user_investment_accounts')\
                     .select('created_at')\
-                    .eq('id', account_uuid)\
+                    .eq('id', filter_account)\
                     .single()\
                     .execute()
                 if account_result.data:

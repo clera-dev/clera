@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from "@/utils/supabase/client";
-import { getAlpacaAccountId } from "@/lib/utils";
+// NOTE: getAlpacaAccountId is deprecated - Alpaca integration paused, using SnapTrade only
 import SidebarChat from '@/components/chat/SidebarChat';
 
 interface SideBySideLayoutProps {
@@ -38,18 +38,22 @@ export default function SideBySideLayout({
   const [isHoveringDivider, setIsHoveringDivider] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load saved chat width from localStorage
+  // Load saved chat width from localStorage (clamped to current viewport)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedWidth = localStorage.getItem(CHAT_WIDTH_STORAGE_KEY);
       if (savedWidth) {
         const parsedWidth = parseInt(savedWidth, 10);
-        if (!isNaN(parsedWidth) && parsedWidth >= minChatWidth) {
-          setChatWidth(parsedWidth);
+        if (!isNaN(parsedWidth)) {
+          // CRITICAL: Clamp to current viewport max to prevent negative main content width
+          // This handles the case where user saved a width on a large screen but now uses smaller screen
+          const maxAllowedWidth = Math.floor(window.innerWidth * maxChatWidthPercent);
+          const clampedWidth = Math.max(minChatWidth, Math.min(parsedWidth, maxAllowedWidth));
+          setChatWidth(clampedWidth);
         }
       }
     }
-  }, [minChatWidth]);
+  }, [minChatWidth, maxChatWidthPercent]);
 
   // Save chat width to localStorage when it changes
   useEffect(() => {
@@ -57,6 +61,19 @@ export default function SideBySideLayout({
       localStorage.setItem(CHAT_WIDTH_STORAGE_KEY, chatWidth.toString());
     }
   }, [chatWidth, initialChatWidth]);
+
+  // Re-clamp chat width when window is resized to prevent negative main content width
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const handleResize = () => {
+      const maxAllowedWidth = Math.floor(window.innerWidth * maxChatWidthPercent);
+      setChatWidth(prev => Math.max(minChatWidth, Math.min(prev, maxAllowedWidth)));
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [maxChatWidthPercent, minChatWidth]);
 
   // Reset fullscreen state whenever chat closes
   useEffect(() => {
@@ -129,16 +146,9 @@ export default function SideBySideLayout({
         
         setUserId(user.id);
         
-        // Get Alpaca Account ID (optional - only needed for brokerage mode)
-        const fetchedAccountId = await getAlpacaAccountId();
-        if (fetchedAccountId) {
-          setAccountId(fetchedAccountId);
-        } else {
-          // In aggregation mode, user doesn't have an Alpaca account
-          // Set to null and continue - chat will still work for portfolio queries
-          console.log("No Alpaca account found - user in aggregation mode");
-          setAccountId(null);
-        }
+        // NOTE: Alpaca integration is paused - using SnapTrade only
+        // accountId is set to null (not used for SnapTrade/aggregation mode)
+        setAccountId(null);
       } catch (error) {
         console.error("Error initializing user data:", error);
       } finally {

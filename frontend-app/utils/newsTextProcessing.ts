@@ -15,6 +15,7 @@ export const parseSummary = (text: string) => {
   const yesterday: string[] = [];
   const today: string[] = [];
   let mode: 'none' | 'y' | 't' = 'none';
+  let headlineCaptured = false;
 
   // Check for section headers - expanded patterns for more flexibility
   const yesterdayHeaderPatterns = [
@@ -47,8 +48,14 @@ export const parseSummary = (text: string) => {
     } else if (mode === 't') {
       today.push(cleanedLine);
     } else {
-      // No header found yet - assume it's part of yesterday (backward compat)
-      yesterday.push(cleanedLine);
+      // No header found yet - capture first non-header line as headline (if not a bullet)
+      // then subsequent lines go to yesterday for backward compatibility
+      if (!headlineCaptured && !line.match(/^[•\-\*]/)) {
+        headline = cleanedLine;
+        headlineCaptured = true;
+      } else {
+        yesterday.push(cleanedLine);
+      }
     }
   }
   return { headline, yesterday, today };

@@ -324,6 +324,9 @@ def _classify_security_type(security_type: str, holding: Dict[str, Any]) -> str:
     # Use the comprehensive crypto classification from asset_classification module
     from utils.asset_classification import classify_asset, AssetClassification
     
+    # CRITICAL: Normalize security_type to lowercase to handle case variations (CASH, Cash, cash)
+    security_type = (security_type or '').lower().strip()
+    
     symbol = holding.get('symbol', '').upper()
     security_name = holding.get('security_name', '')
     

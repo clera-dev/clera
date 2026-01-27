@@ -102,35 +102,28 @@ export const cleanupGlobalLocalStorage = async (): Promise<void> => {
 };
 
 /**
- * Retrieves the Alpaca Account ID for the current authenticated user.
- * ALWAYS fetches from Supabase to ensure correct user context and avoid localStorage issues.
- * No caching to prevent authentication issues when switching between accounts.
+ * @deprecated Alpaca integration is paused - using SnapTrade only.
+ * This function is kept for backward compatibility but returns null immediately.
  * 
- * @returns {Promise<string | null>} The Alpaca Account ID or null if not found.
+ * Retrieves the Alpaca Account ID for the current authenticated user.
+ * 
+ * @returns {Promise<string | null>} Always returns null (Alpaca not in use).
  */
 export const getAlpacaAccountId = async (): Promise<string | null> => {
-  console.log("Alpaca Account ID: Starting secure user-specific lookup.");
+  // ALPACA PAUSED: Return null immediately to avoid unnecessary DB calls and console spam
+  // Uncomment the code below if Alpaca integration is re-enabled
+  return null;
   
-  // SECURITY CRITICAL: Get current authenticated user first
+  /* ALPACA CODE - COMMENTED OUT (not in use)
   const supabase = createClient();
   
   try {
-    console.log("Alpaca Account ID: Attempting to get authenticated user.");
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (authError) {
-      console.error("Alpaca Account ID: Supabase auth error:", authError);
+    if (authError || !user) {
       return null;
     }
-    if (!user) {
-      console.warn("Alpaca Account ID: No authenticated user found via Supabase.");
-      return null; // Cannot fetch without user
-    }
-
-    console.log("Alpaca Account ID: User found.");
     
-    // Always fetch from Supabase (NO localStorage caching)
-    console.log("Alpaca Account ID: Fetching from Supabase.");
     const { data: onboardingData, error: dbError } = await supabase
       .from('user_onboarding')
       .select('alpaca_account_id')
@@ -138,24 +131,17 @@ export const getAlpacaAccountId = async (): Promise<string | null> => {
       .maybeSingle();
 
     if (dbError) {
-      console.error("Alpaca Account ID: Supabase DB query error:", dbError);
       return null;
     }
-
-    console.log("Alpaca Account ID: Supabase DB query successful.");
 
     if (onboardingData && onboardingData.alpaca_account_id) {
-      const fetchedId = onboardingData.alpaca_account_id;
-      console.log("Alpaca Account ID: Retrieved from Supabase.");
-      return fetchedId;
-    } else {
-      console.warn("Alpaca Account ID: Not found in Supabase onboarding data for user:", user.id);
-      return null;
+      return onboardingData.alpaca_account_id;
     }
+    return null;
   } catch (error) {
-    console.error("Alpaca Account ID: Unexpected error during secure lookup:", error);
     return null;
   }
+  */
 };
 
 // --- Query Limit Helpers ---

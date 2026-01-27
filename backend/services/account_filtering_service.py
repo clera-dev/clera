@@ -246,8 +246,9 @@ class AccountFilteringService:
             market_value = float(holding.get('total_market_value', 0))
             if market_value <= 0:
                 continue
-                
-            security_type = holding.get('security_type', '')
+            
+            # CRITICAL: Normalize security_type to lowercase to handle case variations
+            security_type = (holding.get('security_type') or '').lower().strip()
             symbol = holding.get('symbol', '').upper()
             security_name = holding.get('security_name', '')
             
@@ -344,7 +345,8 @@ class AccountFilteringService:
             total_value = 0.0
             
             for holding in holdings:
-                security_type = holding.get('security_type', '')
+                # CRITICAL: Normalize security_type to lowercase to handle case variations
+                security_type = (holding.get('security_type') or '').lower().strip()
                 symbol = holding.get('symbol', '').upper()
                 security_name = holding.get('security_name', '')
                 market_value = float(holding.get('total_market_value', 0))

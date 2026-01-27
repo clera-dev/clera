@@ -218,9 +218,15 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                       </li>
                     ))}
                   </ul>
-                ) : (
+                ) : portfolioSummary.summary_text && portfolioSummary.summary_text.trim() ? (
+                  // Fallback: Show raw summary text if parsing yielded no bullets
                   <p style={{ whiteSpace: 'pre-line' }}>
                     {portfolioSummary.summary_text.replace(/\\n/g, '\n')}
+                  </p>
+                ) : (
+                  // Last resort: Show a meaningful message if there's no content at all
+                  <p className="text-muted-foreground italic">
+                    No market summary available at this time. Check back later for your personalized news digest.
                   </p>
                 )}
 
