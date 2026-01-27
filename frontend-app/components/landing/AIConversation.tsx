@@ -72,34 +72,29 @@ Would you like me to suggest hedging strategies that could reduce your max drawd
     ],
   },
   {
-    title: "Tax Strategy",
+    title: "401k Planning",
     icon: "🎯",
     messages: [
       {
         role: "user",
-        content: "I want to retire at 50. Should I max my 401k or Roth first?",
+        content: "I am concerned about my 401k health. What's the play?",
       },
       {
         role: "assistant",
-        content: `Great question—early retirement requires a specific tax optimization strategy.
+        content: `Based on your profile, you have stated you are 45 with a goal of $1.8M in your 401(k) and retiring early.
 
-For retiring at 50 with your income ($185K), here's my recommendation:
+Early retirement with traditional accounts = Roth conversion ladder opportunity.
 
-1. Max 401(k) first ($23,000/yr)
-   → Immediate tax savings: ~$6,900/year at your bracket
-   → Pre-59½ access via Rule of 55 or SEPP
+From 45-59: Convert ~$94K/year (stay in 22% bracket)
+By 60: ~$1.4M+ moved to Roth, tax-free forever
+Net tax savings: ~$380K vs. Required Minimum Distribution-forced distributions at 73
 
-2. Then max Roth IRA ($7,000/yr)
-   → Tax-free growth for 35+ years
-   → Contributions (not gains) accessible anytime
+I'd pair this with Substantially Equal Periodic Payments (72t) for bridge income. Your healthcare costs qualify for Affordable Care Act subsidies if we keep Modified Adjusted Gross Income under $64K.
 
-3. Build taxable bridge account
-   → Cover ages 50-59½ before penalty-free access
-
-The Roth conversion ladder strategy could save you $127,000+ in taxes over retirement. Want me to model this with your specific numbers?`,
+Want me to build the year-by-year conversion schedule or explain any of the programs mentioned?`,
         highlight: [
-          { value: "$127K+", label: "Tax Savings" },
-          { value: "50", label: "Target Age" },
+          { value: "$380K", label: "Tax Savings" },
+          { value: "45→60", label: "Conversion Window" },
         ],
       },
     ],
@@ -206,6 +201,7 @@ export default function AIConversation() {
 
   return (
     <section
+      id="chat"
       ref={sectionRef}
       className="relative w-full bg-black py-24 px-6 min-h-[100vh]"
     >

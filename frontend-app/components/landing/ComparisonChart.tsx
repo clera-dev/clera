@@ -20,40 +20,79 @@ import { NumberTicker } from "@/components/ui/number-ticker";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { cn } from "@/lib/utils";
 
-// Risk profiles with return rates and allocations
+// Risk profiles with return rates and professionally accurate allocations
 type RiskLevel = 'conservative' | 'balanced' | 'aggressive';
+
+// Clera Blue Color Palette
+const COLORS = {
+  // Stocks - Blue Gradient Family
+  stocksLargeCap: '#1e40af',    // Dark Blue
+  stocksMidCap: '#2563eb',      // Medium Blue
+  stocksSmallCap: '#3b82f6',    // Blue
+  stocksIntl: '#60a5fa',        // Light Blue
+  stocksEmerging: '#22d3ee',    // Cyan
+  // Bonds - Sky/Light Blue Family
+  bondsInvestment: '#7dd3fc',   // Sky Blue
+  bondsTreasury: '#bae6fd',     // Lighter Sky
+  // Cash & Alternatives - Neutral
+  cash: '#9ca3af',              // Gray 400
+  alternatives: '#64748b',      // Slate 500
+};
 
 const RISK_PROFILES: Record<RiskLevel, {
   rate: number;
   label: string;
+  description: string;
   allocation: { name: string; value: number; color: string }[];
+  summary: { stocks: number; bonds: number; other: number };
 }> = {
   conservative: {
-    rate: 0.06,
+    rate: 0.055, // 5-6% expected
     label: 'Conservative',
+    description: '5-6% expected return',
     allocation: [
-      { name: 'Stocks', value: 30, color: '#3b82f6' },
-      { name: 'Bonds', value: 50, color: '#6b7280' },
-      { name: 'Cash', value: 20, color: '#9ca3af' },
+      { name: 'US Large Cap', value: 15, color: COLORS.stocksLargeCap },
+      { name: 'US Mid/Small Cap', value: 5, color: COLORS.stocksMidCap },
+      { name: 'International', value: 5, color: COLORS.stocksIntl },
+      { name: 'Investment Grade Bonds', value: 40, color: COLORS.bondsInvestment },
+      { name: 'Treasury Bonds', value: 20, color: COLORS.bondsTreasury },
+      { name: 'Cash', value: 10, color: COLORS.cash },
+      { name: 'Alternatives', value: 5, color: COLORS.alternatives },
     ],
+    summary: { stocks: 25, bonds: 60, other: 15 },
   },
   balanced: {
-    rate: 0.08,
+    rate: 0.075, // 7-8% expected
     label: 'Balanced',
+    description: '7-8% expected return',
     allocation: [
-      { name: 'Stocks', value: 60, color: '#3b82f6' },
-      { name: 'Bonds', value: 30, color: '#6b7280' },
-      { name: 'Alternatives', value: 10, color: '#22d3ee' },
+      { name: 'US Large Cap', value: 30, color: COLORS.stocksLargeCap },
+      { name: 'US Mid Cap', value: 10, color: COLORS.stocksMidCap },
+      { name: 'US Small Cap', value: 5, color: COLORS.stocksSmallCap },
+      { name: 'International', value: 10, color: COLORS.stocksIntl },
+      { name: 'Emerging Markets', value: 5, color: COLORS.stocksEmerging },
+      { name: 'Investment Grade Bonds', value: 20, color: COLORS.bondsInvestment },
+      { name: 'Treasury Bonds', value: 10, color: COLORS.bondsTreasury },
+      { name: 'Cash', value: 5, color: COLORS.cash },
+      { name: 'Alternatives', value: 5, color: COLORS.alternatives },
     ],
+    summary: { stocks: 60, bonds: 30, other: 10 },
   },
   aggressive: {
-    rate: 0.10,
+    rate: 0.095, // 9-10% expected
     label: 'Aggressive',
+    description: '9-10% expected return',
     allocation: [
-      { name: 'Stocks', value: 80, color: '#3b82f6' },
-      { name: 'Bonds', value: 15, color: '#6b7280' },
-      { name: 'Alternatives', value: 5, color: '#22d3ee' },
+      { name: 'US Large Cap', value: 35, color: COLORS.stocksLargeCap },
+      { name: 'US Mid Cap', value: 15, color: COLORS.stocksMidCap },
+      { name: 'US Small Cap', value: 10, color: COLORS.stocksSmallCap },
+      { name: 'International', value: 15, color: COLORS.stocksIntl },
+      { name: 'Emerging Markets', value: 10, color: COLORS.stocksEmerging },
+      { name: 'Investment Grade Bonds', value: 5, color: COLORS.bondsInvestment },
+      { name: 'Treasury Bonds', value: 5, color: COLORS.bondsTreasury },
+      { name: 'Alternatives', value: 5, color: COLORS.alternatives },
     ],
+    summary: { stocks: 85, bonds: 10, other: 5 },
   },
 };
 
@@ -124,32 +163,76 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
-// Mini pie chart for allocation display
-function AllocationPieChart({ allocation }: { allocation: { name: string; value: number; color: string }[] }) {
+// Mini donut chart for allocation display
+function AllocationDonutChart({
+  allocation,
+  summary
+}: {
+  allocation: { name: string; value: number; color: string }[];
+  summary: { stocks: number; bonds: number; other: number };
+}) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
   return (
-    <div className="flex items-center gap-4">
-      <PieChart width={70} height={70}>
-        <Pie
-          data={allocation}
-          cx={35}
-          cy={35}
-          innerRadius={18}
-          outerRadius={32}
-          dataKey="value"
-          stroke="none"
-        >
-          {allocation.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={entry.color} />
-          ))}
-        </Pie>
-      </PieChart>
-      <div className="text-xs text-gray-400 space-y-0.5">
-        {allocation.map((item) => (
-          <div key={item.name} className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-            <span>{item.name}: {item.value}%</span>
-          </div>
-        ))}
+    <div className="flex flex-col items-center gap-3">
+      <div className="relative">
+        <PieChart width={150} height={150}>
+          <Pie
+            data={allocation}
+            cx={75}
+            cy={75}
+            innerRadius={45}
+            outerRadius={70}
+            dataKey="value"
+            stroke="rgba(0,0,0,0.3)"
+            strokeWidth={1}
+            onMouseEnter={(_, index) => setActiveIndex(index)}
+            onMouseLeave={() => setActiveIndex(null)}
+          >
+            {allocation.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={entry.color}
+                opacity={activeIndex === null || activeIndex === index ? 1 : 0.5}
+                style={{
+                  transform: activeIndex === index ? 'scale(1.05)' : 'scale(1)',
+                  transformOrigin: 'center',
+                  transition: 'all 0.2s ease-out',
+                }}
+              />
+            ))}
+          </Pie>
+        </PieChart>
+
+        {/* Center text - show hovered segment or default */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          {activeIndex !== null ? (
+            <div className="text-center">
+              <p className="text-lg font-bold text-white">{allocation[activeIndex].value}%</p>
+              <p className="text-xs text-gray-400 max-w-[70px] leading-tight">{allocation[activeIndex].name}</p>
+            </div>
+          ) : (
+            <div className="text-center">
+              <p className="text-xs text-gray-500">Allocation</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Summary legend */}
+      <div className="flex gap-4 text-xs">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-blue-600 to-blue-400" />
+          <span className="text-gray-300">Stocks {summary.stocks}%</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-sky-300 to-sky-200" />
+          <span className="text-gray-300">Bonds {summary.bonds}%</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-gray-400" />
+          <span className="text-gray-300">Other {summary.other}%</span>
+        </div>
       </div>
     </div>
   );
@@ -369,13 +452,16 @@ export default function ComparisonChart() {
                   ))}
                 </div>
 
-                {/* Allocation Pie Chart */}
+                {/* Allocation Donut Chart */}
                 <div className="mt-4 flex justify-center">
-                  <AllocationPieChart allocation={RISK_PROFILES[riskLevel].allocation} />
+                  <AllocationDonutChart
+                    allocation={RISK_PROFILES[riskLevel].allocation}
+                    summary={RISK_PROFILES[riskLevel].summary}
+                  />
                 </div>
 
                 <p className="text-xs text-gray-500 mt-3 text-center">
-                  Expected return: {(RISK_PROFILES[riskLevel].rate * 100).toFixed(0)}% annually
+                  {RISK_PROFILES[riskLevel].description}
                 </p>
               </div>
             </div>

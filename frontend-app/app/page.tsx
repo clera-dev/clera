@@ -6,10 +6,9 @@ import HeroSection from "@/components/landing/HeroSection";
 
 // Lazy load below-fold sections for better performance
 const ValuePropositions = nextDynamic(() => import("@/components/landing/ValuePropositions"));
-const ComparisonChart = nextDynamic(() => import("@/components/landing/ComparisonChart"));
 const AIConversation = nextDynamic(() => import("@/components/landing/AIConversation"));
+const ComparisonChart = nextDynamic(() => import("@/components/landing/ComparisonChart"));
 const FeaturesBento = nextDynamic(() => import("@/components/landing/FeaturesBento"));
-const SocialProof = nextDynamic(() => import("@/components/landing/SocialProof"));
 const FAQSection = nextDynamic(() => import("@/components/landing/FAQSection"));
 const FinalCTA = nextDynamic(() => import("@/components/landing/FinalCTA"));
 const DisclaimerSection = nextDynamic(() => import("@/components/landing/DisclaimerSection"));
@@ -26,10 +25,9 @@ export default function Home() {
       <LandingNavbar />
       <HeroSection />
       <ValuePropositions />
-      <ComparisonChart />
       <AIConversation />
+      <ComparisonChart />
       <FeaturesBento />
-      <SocialProof />
       <FAQSection />
       <FinalCTA />
       <DisclaimerSection />
