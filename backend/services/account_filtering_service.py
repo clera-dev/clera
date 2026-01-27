@@ -46,6 +46,51 @@ class AccountFilteringService:
             self.supabase = get_supabase_client()
         return self.supabase
     
+    def _extract_institution_names(self, institution_breakdown) -> List[str]:
+        """
+        Safely extract institution names from institution_breakdown field.
+        
+        Handles multiple formats:
+        - List of dicts: [{"institution_name": "Coinbase", ...}, ...]
+        - Dict with institution keys: {"coinbase": {...}, "webull": {...}}
+        - JSON string: Parse and recurse
+        - None/empty: Return empty list
+        
+        Returns:
+            List of institution name strings
+        """
+        import json
+        
+        if not institution_breakdown:
+            return []
+        
+        # Handle JSON string
+        if isinstance(institution_breakdown, str):
+            try:
+                institution_breakdown = json.loads(institution_breakdown)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        
+        # Handle list of dicts: [{"institution_name": "Coinbase"}, ...]
+        if isinstance(institution_breakdown, list):
+            names = []
+            for item in institution_breakdown:
+                if isinstance(item, dict):
+                    name = item.get('institution_name', '')
+                    if name:
+                        names.append(name)
+                elif isinstance(item, str):
+                    # List of strings directly
+                    names.append(item)
+            return names
+        
+        # Handle dict with institution keys: {"coinbase": {...}, ...}
+        if isinstance(institution_breakdown, dict):
+            # Keys are the institution names
+            return list(institution_breakdown.keys())
+        
+        return []
+    
     async def get_account_filtered_data(self, user_id: str, account_uuid: str) -> Dict[str, Any]:
         """
         Get complete portfolio data filtered to a specific account.
@@ -268,16 +313,11 @@ class AccountFilteringService:
                 # CRITICAL FIX: Check institution name for crypto exchange detection
                 # This catches holdings from Coinbase/Kraken etc. even if security_type is wrong
                 institution_breakdown = holding.get('institution_breakdown', [])
-                if isinstance(institution_breakdown, str):
-                    import json
-                    institution_breakdown = json.loads(institution_breakdown) if institution_breakdown else []
                 
-                is_from_crypto_exchange = False
-                for contrib in institution_breakdown:
-                    institution_name = contrib.get('institution_name', '')
-                    if is_crypto_exchange(institution_name):
-                        is_from_crypto_exchange = True
-                        break
+                # Normalize institution_breakdown - can be list of dicts, dict, JSON string, or None
+                institution_names = self._extract_institution_names(institution_breakdown)
+                
+                is_from_crypto_exchange = any(is_crypto_exchange(name) for name in institution_names)
                 
                 if is_from_crypto_exchange and security_type not in ['cash']:
                     allocations['crypto'] += market_value
@@ -370,15 +410,8 @@ class AccountFilteringService:
                 else:
                     # CRITICAL FIX: Check institution name for crypto exchange detection
                     institution_breakdown = holding.get('institution_breakdown', [])
-                    if isinstance(institution_breakdown, str):
-                        institution_breakdown = json.loads(institution_breakdown) if institution_breakdown else []
-                    
-                    is_from_crypto_exchange = False
-                    for contrib in institution_breakdown:
-                        institution_name = contrib.get('institution_name', '')
-                        if is_crypto_exchange(institution_name):
-                            is_from_crypto_exchange = True
-                            break
+                    institution_names = self._extract_institution_names(institution_breakdown)
+                    is_from_crypto_exchange = any(is_crypto_exchange(name) for name in institution_names)
                     
                     if is_from_crypto_exchange and security_type not in ['cash']:
                         sector = 'Cryptocurrency'

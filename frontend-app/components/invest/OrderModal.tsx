@@ -49,26 +49,40 @@ const CRYPTO_SYMBOLS = new Set([
   'WBTC', 'WETH', 'STETH', 'CBETH',
 ]);
 
-// Helper to check if a symbol is likely a cryptocurrency
+// Common stock/ETF symbols that definitely cannot be traded on crypto exchanges
+// This is intentionally a subset - we only block what we KNOW is a stock
+const KNOWN_STOCK_SYMBOLS = new Set([
+  // Major indices/ETFs
+  'SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'VOO', 'VXX', 'ARKK', 'XLF', 'XLE', 'XLK',
+  // Mega cap stocks
+  'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.A', 'BRK.B',
+  'JPM', 'V', 'JNJ', 'WMT', 'PG', 'MA', 'UNH', 'HD', 'DIS', 'BAC', 'XOM', 'PFE',
+  'KO', 'PEP', 'CSCO', 'INTC', 'VZ', 'CMCSA', 'ADBE', 'NFLX', 'CRM', 'AMD', 'PYPL',
+  'COST', 'TMO', 'ABT', 'MRK', 'AVGO', 'NKE', 'ORCL', 'ACN', 'LLY', 'DHR', 'MCD',
+]);
+
+// Helper to check if a symbol is a KNOWN cryptocurrency
 const isCryptoSymbol = (symbol: string): boolean => {
   const upperSymbol = symbol.toUpperCase();
-  // Check if in our known list
-  if (CRYPTO_SYMBOLS.has(upperSymbol)) return true;
-  // Heuristics for crypto symbols:
-  // - Typically 3-5 characters
-  // - Often end in common suffixes or contain them
-  // - Stock symbols in US are typically 1-4 letters
-  // For now, rely on the known list - this can be expanded
-  return false;
+  return CRYPTO_SYMBOLS.has(upperSymbol);
 };
 
-// Helper to check if a symbol is likely a stock/ETF
+// Helper to check if a symbol is a KNOWN stock/ETF
+// IMPORTANT: Returns false for unknown symbols - we don't assume
+const isKnownStockSymbol = (symbol: string): boolean => {
+  const upperSymbol = symbol.toUpperCase();
+  return KNOWN_STOCK_SYMBOLS.has(upperSymbol);
+};
+
+// For backward compatibility - but now only returns true for KNOWN stocks
 const isStockSymbol = (symbol: string): boolean => {
-  // If it's a known crypto, it's not a stock
+  // If it's a known crypto, it's definitely not a stock
   if (isCryptoSymbol(symbol)) return false;
-  // Common stock/ETF patterns: 1-5 letters, often include major indices
-  // For now, if it's not crypto, assume it's a stock
-  return true;
+  // If it's a known stock, it's definitely a stock
+  if (isKnownStockSymbol(symbol)) return true;
+  // CHANGED: Unknown symbols return false (don't assume it's a stock)
+  // This allows newer crypto tokens to be traded on crypto exchanges
+  return false;
 };
 
 interface OrderModalProps {
@@ -314,11 +328,19 @@ export default function OrderModal({
     if (!selectedAccount || !selectedAccountForValidation || parsedAmount <= 0) return null;
     
     // 1. Brokerage-Symbol Compatibility
-    const symbolIsCrypto = isCryptoSymbol(symbol);
-    const symbolIsStock = isStockSymbol(symbol);
+    const symbolIsKnownCrypto = isCryptoSymbol(symbol);
+    const symbolIsKnownStock = isKnownStockSymbol(symbol);
     
-    if (selectedAccountForValidation.is_crypto_exchange && symbolIsStock) {
+    // On crypto exchanges: block only KNOWN stocks (SPY, AAPL, etc.)
+    // Unknown symbols are allowed - the exchange will reject if invalid
+    if (selectedAccountForValidation.is_crypto_exchange && symbolIsKnownStock) {
       return `${symbol} is a stock/ETF and cannot be traded on ${selectedAccountForValidation.institution_name}. Crypto exchanges only support cryptocurrency.`;
+    }
+    
+    // On traditional brokerages: warn about KNOWN crypto symbols
+    // (Most traditional brokerages don't support crypto trading)
+    if (!selectedAccountForValidation.is_crypto_exchange && symbolIsKnownCrypto) {
+      return `${symbol} is a cryptocurrency and may not be supported on ${selectedAccountForValidation.institution_name}. Consider using a crypto exchange.`;
     }
     
     // 2. Buying Power Check (for buy orders)
@@ -387,10 +409,11 @@ export default function OrderModal({
     // Stock brokerages (Webull, etc.) can only trade stocks/ETFs
     const accountData = tradeAccounts.find(acc => acc.account_id === selectedAccount);
     if (accountData) {
-      const symbolIsCrypto = isCryptoSymbol(symbol);
-      const symbolIsStock = isStockSymbol(symbol);
+      const symbolIsKnownCrypto = isCryptoSymbol(symbol);
+      const symbolIsKnownStock = isKnownStockSymbol(symbol);
       
-      if (accountData.is_crypto_exchange && symbolIsStock) {
+      // On crypto exchanges: block KNOWN stocks only
+      if (accountData.is_crypto_exchange && symbolIsKnownStock) {
         setSubmitError(
           `${symbol} is a stock/ETF and cannot be traded on ${accountData.institution_name}. ` +
           `Crypto exchanges like Coinbase only support cryptocurrency trading.`
@@ -398,9 +421,14 @@ export default function OrderModal({
         return;
       }
       
-      // Note: Some brokerages like Robinhood support both, so we only block crypto on
-      // traditional brokerages if we're certain they don't support it.
-      // For now, we allow stocks on all non-crypto exchanges.
+      // On traditional brokerages: block KNOWN crypto symbols
+      if (!accountData.is_crypto_exchange && symbolIsKnownCrypto) {
+        setSubmitError(
+          `${symbol} is a cryptocurrency and may not be supported on ${accountData.institution_name}. ` +
+          `Try using a crypto exchange instead.`
+        );
+        return;
+      }
     }
 
     if (!marketStatus.isOpen) {
