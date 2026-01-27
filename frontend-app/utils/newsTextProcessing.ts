@@ -25,7 +25,11 @@ export const parseSummary = (text: string) => {
   
   const todayHeaderPatterns = [
     /^what\s*to\s*watch\s*(?:out\s*)?(?:for)?:?$/i,
+    /^what\s*to\s*watch\s*today:?$/i,  // "What to watch today:"
+    /^today'?s?\s*(?:outlook|news|highlights?):?$/i,  // "Today's outlook:", "Today's news:"
     /^looking\s*ahead:?$/i,
+    /^coming\s*up:?$/i,  // "Coming up:"
+    /^what'?s?\s*(?:next|coming|ahead):?$/i,  // "What's next:", "What's coming:"
   ];
   
   const isYesterdayHeader = (s: string) => yesterdayHeaderPatterns.some(p => p.test(s));
