@@ -41,6 +41,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const { paddingBottom } = useDynamicBottomSpacing();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSideChatOpen, setIsSideChatOpen] = useState(false);
+  const [hasInitializedChat, setHasInitializedChat] = useState(false);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [currentMobilePage, setCurrentMobilePage] = useState<string>('');
   const pathname = usePathname();
@@ -137,6 +138,29 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     // Note: Mobile chat should NOT auto-close on navigation
     // Users should manually close it when they're done
   }, [pathname]);
+
+  // Auto-open chat sidebar on desktop for first-time visitors to make it discoverable
+  useEffect(() => {
+    if (
+      typeof window !== 'undefined' &&
+      isDesktop &&
+      !hasInitializedChat &&
+      isAuthenticated &&
+      hasCompletedOnboarding &&
+      !isLoading &&
+      sideChatEnabledPaths.includes(pathname || '')
+    ) {
+      const hasSeenChat = localStorage.getItem('cleraHasSeenChat');
+      
+      if (!hasSeenChat) {
+        // First time user on desktop - auto-open the chat to make it discoverable
+        setIsSideChatOpen(true);
+        localStorage.setItem('cleraHasSeenChat', 'true');
+      }
+      
+      setHasInitializedChat(true);
+    }
+  }, [isDesktop, hasInitializedChat, isAuthenticated, hasCompletedOnboarding, isLoading, pathname]);
 
   // Close mobile sidebar when screen becomes desktop size
   useEffect(() => {

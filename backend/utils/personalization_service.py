@@ -83,23 +83,53 @@ class PersonalizationService:
     }
     
     # Market interest descriptions mapping (from frontend types)
+    # Beginner-friendly categories for new investors
     MARKET_INTEREST_DESCRIPTIONS = {
-        'global_politics': 'Global politics',
-        'trade': 'Trade',
-        'stocks': 'Stocks',
-        'bonds': 'Bonds',
-        'economy': 'Economy',
-        'technology': 'Technology',
-        'healthcare': 'Healthcare',
+        'ai_tech': 'AI & Technology',
+        'crypto': 'Crypto & Blockchain',
+        'global_markets': 'Global & Emerging Markets',
+        'clean_energy': 'Clean Energy',
+        'healthcare': 'Healthcare & Biotech',
+        'gaming_entertainment': 'Gaming & Entertainment',
+        'ecommerce': 'E-commerce & Retail',
+        'social_media': 'Social Media',
+        'real_estate': 'Real Estate',
+        'banking_finance': 'Banking & Finance',
+        'travel_leisure': 'Travel & Leisure',
+        'food_dining': 'Food & Restaurants'
+    }
+    
+    # LEGACY: Map old GICS-style market interest keys to new descriptions
+    # This ensures existing users with old keys in their profile continue to work
+    LEGACY_MARKET_INTEREST_DESCRIPTIONS = {
+        # Old GICS-style keys -> human-readable descriptions
+        'TECHNOLOGY': 'AI & Technology',
+        'HEALTHCARE_BIOTECH': 'Healthcare & Biotech',
+        'CLEAN_ENERGY': 'Clean Energy',
+        'ELECTRIC_VEHICLES': 'Electric Vehicles',  # Old value, no longer used
+        'CONSUMER_DISCRETIONARY': 'Consumer Discretionary',
+        'CONSUMER_STAPLES': 'Consumer Staples',
+        'FINANCIAL_SERVICES': 'Banking & Finance',
+        'REAL_ESTATE': 'Real Estate',
+        'COMMUNICATION_SERVICES': 'Social Media',
+        'INDUSTRIALS': 'Industrial Sector',
+        'UTILITIES': 'Utilities',
+        'MATERIALS': 'Materials',
+        'ENERGY': 'Energy Sector',
+        # Also handle lowercase variants
+        'technology': 'AI & Technology',
+        'healthcare_biotech': 'Healthcare & Biotech',
+        'clean_energy': 'Clean Energy',
+        'electric_vehicles': 'Electric Vehicles',
+        'consumer_discretionary': 'Consumer Discretionary',
+        'consumer_staples': 'Consumer Staples',
+        'financial_services': 'Banking & Finance',
+        'real_estate': 'Real Estate',
+        'communication_services': 'Social Media',
+        'industrials': 'Industrial Sector',
         'utilities': 'Utilities',
         'materials': 'Materials',
-        'consumer_staples': 'Consumer staples',
-        'consumer_discretionary': 'Consumer discretionary',
-        'industrials': 'Industrials',
-        'communication_services': 'Communication services',
-        'energy': 'Energy',
-        'financials': 'Financials',
-        'real_estate': 'Real estate'
+        'energy': 'Energy Sector',
     }
     
     @staticmethod
@@ -202,10 +232,17 @@ class PersonalizationService:
         if data.get('market_interests'):
             interests = data['market_interests']
             if isinstance(interests, list) and interests:
-                # Map interest keys to descriptions
+                # Map interest keys to descriptions (check current, then legacy, then use key as fallback)
                 interest_descriptions = []
                 for interest in interests:
-                    desc = PersonalizationService.MARKET_INTEREST_DESCRIPTIONS.get(interest, interest)
+                    # First try current mapping
+                    desc = PersonalizationService.MARKET_INTEREST_DESCRIPTIONS.get(interest)
+                    if not desc:
+                        # Then try legacy mapping (for existing users with old keys)
+                        desc = PersonalizationService.LEGACY_MARKET_INTEREST_DESCRIPTIONS.get(interest)
+                    if not desc:
+                        # Last resort: use key itself but make it readable
+                        desc = interest.replace('_', ' ').title()
                     interest_descriptions.append(desc)
                 
                 context.market_interests = (

@@ -1,17 +1,15 @@
 "use client";
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Globe, Volume2, Loader2, AlertCircle, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
-import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
+import { useCleraAssist } from '@/components/ui/clera-assist-provider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   parseSummary, 
-  splitIntoBullets, 
-  getFallbackSections, 
   sanitizeForPrompt 
 } from '@/utils/newsTextProcessing';
 import { renderWithEmphasis } from '@/utils/newsTextRendering';
@@ -67,44 +65,69 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
   // Maximum number of articles to display to prevent layout issues
   const MAX_PORTFOLIO_ARTICLES = 5;
   
-  // Extract key data for dynamic prompts
-  const articleCount = portfolioSummary?.referenced_articles?.length || 0;
-  const hasPositiveNews = portfolioSummary?.referenced_articles?.some(article => article.sentimentScore > 0) || false;
-  const hasNegativeNews = portfolioSummary?.referenced_articles?.some(article => article.sentimentScore < 0) || false;
-  
-  // Create contextual prompt with news analysis
-  const generatePrompt = useContextualPrompt(
-    "Analyze the personalized portfolio news summary below. Explain the likely impact on a diversified long-term portfolio and call out 1–2 concrete watch items or actions if needed.\n\n<portfolio_news_summary>\n{summaryText}\n</portfolio_news_summary>",
-    "portfolio_news_analysis",
-    {
-      summaryText: portfolioSummary?.summary_text || "No summary available"
-    }
-  );
-
-  // Different prompts based on content availability
-  const getContextualPrompt = () => {
+  // Memoize prompt and UI text generation - only recalculates when data changes
+  const { contextualPrompt, triggerText, description } = useMemo(() => {
     if (!portfolioSummary || disabled) {
-      return "I'm interested in understanding how market news affects my investments. Can you explain how to read financial news and what to look for?";
+      return {
+        contextualPrompt: "How does market news typically affect investments? I want to understand what to pay attention to without overreacting to every story.",
+        triggerText: "Get guidance",
+        description: "Understand how news affects your investments"
+      };
     }
     
     if (summaryError) {
-      return "The personalized summary isn't available. What kinds of market news should a long-term investor actually pay attention to, and what can usually be ignored?";
+      return {
+        contextualPrompt: "The summary isn't loading right now. What kinds of market news should I actually pay attention to, and what can I safely tune out?",
+        triggerText: "Ask about news",
+        description: "Understand what market news matters for your investments"
+      };
     }
     
-    return generatePrompt();
-  };
-
-  const getTriggerText = () => {
-    if (!portfolioSummary || disabled) return "Get news guidance";
-    if (summaryError) return "Ask about market news";
-    return "Get actionable insights";
-  };
-
-  const getDescription = () => {
-    if (!portfolioSummary || disabled) return "Learn how to read financial news";
-    if (summaryError) return "Get help understanding what market news matters for you";
-    return "Get specific analysis of how this news affects your investments and what actions to consider";
-  };
+    // Extract key data
+    const articleCount = portfolioSummary.referenced_articles?.length || 0;
+    const positiveArticles = portfolioSummary.referenced_articles?.filter(a => a.sentimentScore > 0.2) || [];
+    const negativeArticles = portfolioSummary.referenced_articles?.filter(a => a.sentimentScore < -0.2) || [];
+    
+    // Extract key topics from summary with human-readable labels
+    const topicMappings: Array<{ pattern: RegExp; label: string }> = [
+      { pattern: /\b(?:fed|federal reserve|interest rate|rate cut|rate hike)\b/i, label: "Interest Rates/Fed" },
+      { pattern: /\b(?:inflation|cpi|pce|prices)\b/i, label: "Inflation" },
+      { pattern: /\b(?:earnings|revenue|profit|beat|miss)\b/i, label: "Earnings" },
+      { pattern: /\b(?:tech|technology|ai|artificial intelligence|nvidia|apple|microsoft|google)\b/i, label: "Tech" },
+      { pattern: /\b(?:crypto|bitcoin|ethereum|btc|eth)\b/i, label: "Crypto" },
+      { pattern: /\b(?:oil|energy|gas|opec)\b/i, label: "Energy" },
+      { pattern: /\b(?:jobs|employment|unemployment|labor|payroll)\b/i, label: "Jobs/Labor" },
+      { pattern: /\b(?:gdp|economy|recession|growth)\b/i, label: "Economy" },
+    ];
+    
+    const topics: string[] = [];
+    topicMappings.forEach(({ pattern, label }) => {
+      if (pattern.test(portfolioSummary.summary_text) && !topics.includes(label)) {
+        topics.push(label);
+      }
+    });
+    const topTopics = topics.slice(0, 3);
+    
+    const sentimentSummary = positiveArticles.length > negativeArticles.length 
+      ? "mostly positive" 
+      : negativeArticles.length > positiveArticles.length 
+        ? "mostly negative" 
+        : "mixed";
+    
+    // Build a concise, conversational prompt
+    let prompt = `Today's news summary covers ${articleCount} articles with ${sentimentSummary} sentiment overall.`;
+    if (topTopics.length > 0) {
+      prompt += ` Key themes: ${topTopics.join(', ')}.`;
+    }
+    prompt += `\n\nHere's the summary:\n"${portfolioSummary.summary_text.slice(0, 500)}${portfolioSummary.summary_text.length > 500 ? '...' : ''}"`;
+    prompt += `\n\nLooking at my portfolio, which of my holdings might be affected by this news? What's the key takeaway I should remember?`;
+    
+    return {
+      contextualPrompt: prompt,
+      triggerText: "Get insights",
+      description: "See how today's news affects your specific holdings"
+    };
+  }, [portfolioSummary, summaryError, disabled]);
 
   // Parse model output into headline, yesterday bullets, and today bullets.
 
@@ -117,9 +140,18 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
 
 
 
-  const fallback = (!structured.yesterday.length && !structured.today.length && portfolioSummary?.summary_text)
-    ? getFallbackSections(portfolioSummary.summary_text)
-    : { yesterday: [] as string[], today: [] as string[] };
+  // Simple fallback: if parsing found no "today" section but has items in yesterday,
+  // split the bullets in half (for backward compatibility with old summaries without headers)
+  // Threshold is 2+ bullets - we expect at least one for each section
+  const needsFallbackSplit = structured.yesterday.length >= 2 && structured.today.length === 0;
+  
+  const finalYesterday = needsFallbackSplit
+    ? structured.yesterday.slice(0, Math.ceil(structured.yesterday.length / 2))
+    : structured.yesterday;
+    
+  const finalToday = needsFallbackSplit
+    ? structured.yesterday.slice(Math.ceil(structured.yesterday.length / 2))
+    : structured.today;
 
 
 
@@ -148,9 +180,12 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
               <p className="text-base font-medium">Market Recap:</p>
             </div>
             {isLoadingSummary && (
-              <div className="flex items-center space-x-2 text-muted-foreground text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading your personalized summary...</span>
+              <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-foreground">Refreshing your personalized news summary</p>
+                  <p className="text-xs text-muted-foreground mt-1">Analyzing latest market news for your portfolio...</p>
+                </div>
               </div>
             )}
             {summaryError && !isLoadingSummary && (
@@ -161,9 +196,9 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
             )}
             {!isLoadingSummary && !summaryError && portfolioSummary && (
               <div className="text-sm text-muted-foreground space-y-3">
-                {structured.yesterday.length > 0 ? (
+                {finalYesterday.length > 0 ? (
                   <ul className="space-y-2">
-                    {structured.yesterday.map((b, idx) => (
+                    {finalYesterday.map((b, idx) => (
                       <li key={`y-${idx}`} className="flex items-start gap-2">
                         <span className="text-muted-foreground" aria-hidden>•</span>
                         <span className="flex-1 leading-6">{b}</span>
@@ -183,33 +218,39 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                       </li>
                     ))}
                   </ul>
-                ) : (
+                ) : portfolioSummary.summary_text && portfolioSummary.summary_text.trim() ? (
+                  // Fallback: Show raw summary text if parsing yielded no bullets
                   <p style={{ whiteSpace: 'pre-line' }}>
                     {portfolioSummary.summary_text.replace(/\\n/g, '\n')}
                   </p>
+                ) : (
+                  // Last resort: Show a meaningful message if there's no content at all
+                  <p className="text-muted-foreground italic">
+                    No market summary available at this time. Check back later for your personalized news digest.
+                  </p>
                 )}
 
-                {structured.today.length > 0 && (
+                {finalToday.length > 0 && (
                   <div className="mt-4">
                     <p className="text-base font-medium text-foreground mb-1">What to Watch Out For:</p>
                     <ul className="space-y-2">
-                      {structured.today.map((b, idx) => (
+                      {finalToday.map((b, idx) => (
                         <li key={`t-${idx}`} className="flex items-start gap-2">
-                                                  <span className="text-muted-foreground" aria-hidden>•</span>
-                        <span className="flex-1 leading-6">{b}</span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="text-blue-400 hover:text-blue-300 p-1"
-                              onClick={() => handleBulletAssist("What to Watch Out For", b)}
-                              aria-label="Learn more"
-                            >
-                              <ArrowUpRight className="w-4 h-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">Learn more</TooltipContent>
-                        </Tooltip>
+                          <span className="text-muted-foreground" aria-hidden>•</span>
+                          <span className="flex-1 leading-6">{b}</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="text-blue-400 hover:text-blue-300 p-1"
+                                onClick={() => handleBulletAssist("What to Watch Out For", b)}
+                                aria-label="Learn more"
+                              >
+                                <ArrowUpRight className="w-4 h-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">Learn more</TooltipContent>
+                          </Tooltip>
                         </li>
                       ))}
                     </ul>
@@ -250,9 +291,9 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
       title="News Impacting Your Portfolio"
       content="Personalized market analysis and news summary"
       context="portfolio_news_summary"
-      prompt={getContextualPrompt()}
-      triggerText={getTriggerText()}
-      description={getDescription()}
+      prompt={contextualPrompt}
+      triggerText={triggerText}
+      description={description}
       onAssistClick={(prompt) => openChatWithPrompt(prompt, "portfolio_news_summary")}
       disabled={disabled}
       className="flex-1 flex flex-col h-full"
@@ -266,9 +307,12 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
           
           <div className="flex-1 overflow-auto">
             {isLoadingSummary && (
-              <div className="flex items-center space-x-2 text-muted-foreground text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading your personalized summary...</span>
+              <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-foreground">Refreshing your personalized news summary</p>
+                  <p className="text-xs text-muted-foreground mt-1">Analyzing latest market news for your portfolio...</p>
+                </div>
               </div>
             )}
             {summaryError && !isLoadingSummary && (
@@ -279,9 +323,9 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
             )}
             {!isLoadingSummary && !summaryError && portfolioSummary && (
               <div className="text-[15px] text-gray-200 space-y-3">
-                {(structured.yesterday.length ? structured.yesterday : fallback.yesterday).length > 0 ? (
+                {finalYesterday.length > 0 ? (
                   <ul className="space-y-2">
-                    {(structured.yesterday.length ? structured.yesterday : fallback.yesterday).map((b, idx) => (
+                    {finalYesterday.map((b, idx) => (
                       <li key={`y-enabled-${idx}`} className="flex items-start gap-2">
                         <span className="text-gray-400" aria-hidden>•</span>
                         <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
@@ -303,27 +347,27 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                   </ul>
                 ) : null}
 
-                {(structured.today.length ? structured.today : fallback.today).length > 0 && (
+                {finalToday.length > 0 && (
                   <div className="mt-4">
                     <p className="text-base font-medium text-foreground mb-1">What to Watch Out For:</p>
                     <ul className="space-y-2">
-                      {(structured.today.length ? structured.today : fallback.today).map((b, idx) => (
+                      {finalToday.map((b, idx) => (
                         <li key={`t-enabled-${idx}`} className="flex items-start gap-2">
-                                                  <span className="text-gray-400" aria-hidden>•</span>
-                        <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="text-blue-400 hover:text-blue-300 p-1"
+                          <span className="text-gray-400" aria-hidden>•</span>
+                          <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="text-blue-400 hover:text-blue-300 p-1"
                                 onClick={() => handleBulletAssist("What to Watch Out For", b)}
-                              aria-label="Learn more"
-                            >
-                              <ArrowUpRight className="w-4 h-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">Learn more</TooltipContent>
-                        </Tooltip>
+                                aria-label="Learn more"
+                              >
+                                <ArrowUpRight className="w-4 h-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">Learn more</TooltipContent>
+                          </Tooltip>
                         </li>
                       ))}
                     </ul>

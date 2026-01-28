@@ -7,14 +7,22 @@ import { OnboardingStatus } from "@/lib/types/onboarding";
  * This function implements the business rules for user navigation based on their onboarding status:
  * - pending_closure users → /account-closure (dedicated closure page)
  * - closed users → /protected (can restart account)
- * - completed onboarding + funded → /portfolio (main app)
- * - default → /protected (onboarding or funding)
+ * - completed onboarding + connected accounts + active payment → /portfolio (main app)
+ * - default → /protected (onboarding, connection, or payment)
+ * 
+ * NOTE: Alpaca funding is paused - using SnapTrade only. With SnapTrade, users connect
+ * existing brokerages (Webull, Coinbase, etc.) so there's no separate "funding" step.
  * 
  * @param userStatus - The user's onboarding status
- * @param hasTransfers - Whether the user has funded their account
+ * @param hasAccountsOrFunding - Whether the user has connected accounts (SnapTrade/Plaid)
+ * @param hasActivePayment - Whether the user has an active payment subscription
  * @returns The appropriate redirect path based on user status
  */
-export function getRedirectPathForUserStatus(userStatus: OnboardingStatus | undefined, hasTransfers: boolean = false): string {
+export function getRedirectPathForUserStatus(
+  userStatus: OnboardingStatus | undefined, 
+  hasAccountsOrFunding: boolean = false,
+  hasActivePayment: boolean = false
+): string {
   // Account closure statuses - highest priority
   if (userStatus === 'pending_closure') {
     return "/account-closure";
@@ -24,22 +32,27 @@ export function getRedirectPathForUserStatus(userStatus: OnboardingStatus | unde
     return "/protected"; // For closed accounts that want to restart
   }
   
-  // Completed onboarding with funding
+  // Completed onboarding with accounts/funding AND payment
   const hasCompletedOnboarding = userStatus === 'submitted' || userStatus === 'approved';
-  if (hasCompletedOnboarding && hasTransfers) {
+  if (hasCompletedOnboarding && hasAccountsOrFunding && hasActivePayment) {
     return "/portfolio";
   }
   
-  // Default: protected page for onboarding or funding
+  // Default: protected page for onboarding, connection, or payment
   return "/protected";
 }
 
 /**
  * Enhanced routing function for SERVER-SIDE usage (Server Actions, API routes).
- * ARCHITECTURAL FIX: Centralizes transfer lookup logic with proper server client.
+ * Checks for connected brokerage accounts AND active payment status.
+ * 
+ * Users with completed onboarding + connected accounts (SnapTrade) + active payment → /portfolio
+ * 
+ * NOTE: Alpaca funding is paused - we're only using SnapTrade for brokerage connections.
+ * With SnapTrade, users connect existing brokerages so there's no separate funding step.
  * 
  * @param userStatus - The user's onboarding status
- * @param userId - The user ID for transfer lookup
+ * @param userId - The user ID for account lookup
  * @param supabaseServerClient - Server-side Supabase client with proper auth context
  * @returns Promise<string> The appropriate redirect path
  */
@@ -57,47 +70,95 @@ export async function getRedirectPathWithServerTransferLookup(
     return "/protected"; // For closed accounts that want to restart
   }
   
-  // For other statuses, we need to check transfer history
-  let hasTransfers = false;
+  const hasCompletedOnboarding = userStatus === 'submitted' || userStatus === 'approved';
   
-  try {
-    const { data: transfers, error: transfersError } = await supabaseServerClient
-      .from('user_transfers')
-      .select('id')
-      .eq('user_id', userId)
-      .limit(1);
-    
-    // Handle transfer query errors gracefully
-    if (transfersError) {
-      console.error('Error fetching user transfers for routing:', transfersError);
-      // Default to false (no transfers) on error to be conservative
-      // This ensures users go to /protected for onboarding/funding rather than /portfolio
-      hasTransfers = false;
-    } else {
-      hasTransfers = Boolean(transfers && transfers.length > 0);
-    }
-  } catch (error) {
-    console.error('Unexpected error during transfer lookup:', error);
-    hasTransfers = false; // Conservative fallback
+  // Only do additional checks if onboarding is complete
+  if (!hasCompletedOnboarding) {
+    return "/protected";
   }
   
-  // Use the existing routing logic with the looked-up transfer status
-  return getRedirectPathForUserStatus(userStatus, hasTransfers);
+  // Check for connected accounts (SnapTrade, Plaid) AND payment status
+  // NOTE: Alpaca funding is paused - we're only using SnapTrade currently
+  let hasSnapTradeAccounts = false;
+  let hasPlaidAccounts = false;
+  let hasActivePayment = false;
+  
+  try {
+    // Run all checks in parallel for performance
+    const [snaptradeResult, plaidResult, paymentResult] = await Promise.all([
+      // Check SnapTrade connections (primary - this is what we use)
+      supabaseServerClient
+        .from('snaptrade_brokerage_connections')
+        .select('authorization_id')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .limit(1),
+      // Check Plaid connected accounts (secondary)
+      supabaseServerClient
+        .from('user_investment_accounts')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .limit(1),
+      // Check active payment subscription
+      supabaseServerClient
+        .from('user_payments')
+        .select('id, status')
+        .eq('user_id', userId)
+        .in('status', ['active', 'trialing'])
+        .limit(1)
+    ]);
+    
+    // Process SnapTrade result (primary check)
+    if (!snaptradeResult.error && snaptradeResult.data) {
+      hasSnapTradeAccounts = snaptradeResult.data.length > 0;
+    }
+    
+    // Process Plaid result
+    if (!plaidResult.error && plaidResult.data) {
+      hasPlaidAccounts = plaidResult.data.length > 0;
+    }
+    
+    // Process payment result
+    if (!paymentResult.error && paymentResult.data) {
+      hasActivePayment = paymentResult.data.length > 0;
+    }
+    
+  } catch (error) {
+    console.error('Unexpected error during routing lookup:', error);
+    // Conservative fallback - go to /protected
+    return "/protected";
+  }
+  
+  // User can access portfolio if they have:
+  // 1. Completed onboarding AND
+  // 2. Connected accounts (SnapTrade or Plaid) AND
+  // 3. Active payment subscription
+  const hasConnectedAccounts = hasSnapTradeAccounts || hasPlaidAccounts;
+  
+  if (hasCompletedOnboarding && hasConnectedAccounts && hasActivePayment) {
+    return "/portfolio";
+  }
+  
+  // Default: protected page for onboarding, connection, or payment
+  return "/protected";
 }
 
 /**
  * Enhanced routing function for CLIENT-SIDE usage (React components, hooks).
- * Uses browser Supabase client for client-side transfer lookup.
+ * Uses browser Supabase client for client-side lookups.
+ * 
+ * Now also checks for SnapTrade/Plaid connected accounts AND payment status.
  * 
  * @param userStatus - The user's onboarding status
- * @param userId - The user ID for transfer lookup
+ * @param userId - The user ID for lookups
  * @returns Promise<string> The appropriate redirect path
  */
 export async function getRedirectPathWithClientTransferLookup(
   userStatus: OnboardingStatus | undefined, 
   userId: string
 ): Promise<string> {
-  // Account closure statuses - highest priority (no transfer lookup needed)
+  // Account closure statuses - highest priority (no lookup needed)
   if (userStatus === 'pending_closure') {
     return "/account-closure";
   }
@@ -106,33 +167,66 @@ export async function getRedirectPathWithClientTransferLookup(
     return "/protected"; // For closed accounts that want to restart
   }
   
-  // For other statuses, we need to check transfer history
-  let hasTransfers = false;
+  const hasCompletedOnboarding = userStatus === 'submitted' || userStatus === 'approved';
+  
+  // Only do additional checks if onboarding is complete
+  if (!hasCompletedOnboarding) {
+    return "/protected";
+  }
+  
+  // Check for connected accounts (SnapTrade, Plaid) and payment status
+  // NOTE: Alpaca funding is paused - we're only using SnapTrade currently
+  let hasSnapTradeAccounts = false;
+  let hasPlaidAccounts = false;
+  let hasActivePayment = false;
   
   try {
     // Dynamic import to avoid server/client issues
     const { createClient } = await import('@/utils/supabase/client');
     const supabase = createClient();
     
-    const { data: transfers, error: transfersError } = await supabase
-      .from('user_transfers')
-      .select('id')
-      .eq('user_id', userId)
-      .limit(1);
+    // Run all checks in parallel for performance
+    const [snaptradeResult, plaidResult, paymentResult] = await Promise.all([
+      // Check SnapTrade connections (primary - this is what we use)
+      supabase
+        .from('snaptrade_brokerage_connections')
+        .select('authorization_id')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .limit(1),
+      // Check Plaid connected accounts (secondary)
+      supabase
+        .from('user_investment_accounts')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .limit(1),
+      // Check active payment subscription
+      supabase
+        .from('user_payments')
+        .select('id, status')
+        .eq('user_id', userId)
+        .in('status', ['active', 'trialing'])
+        .limit(1)
+    ]);
     
-    // Handle transfer query errors gracefully
-    if (transfersError) {
-      console.error('Error fetching user transfers for routing:', transfersError);
-      // Default to false (no transfers) on error to be conservative
-      hasTransfers = false;
-    } else {
-      hasTransfers = Boolean(transfers && transfers.length > 0);
+    // Process results
+    if (!snaptradeResult.error && snaptradeResult.data) {
+      hasSnapTradeAccounts = snaptradeResult.data.length > 0;
     }
+    if (!plaidResult.error && plaidResult.data) {
+      hasPlaidAccounts = plaidResult.data.length > 0;
+    }
+    if (!paymentResult.error && paymentResult.data) {
+      hasActivePayment = paymentResult.data.length > 0;
+    }
+    
   } catch (error) {
-    console.error('Unexpected error during transfer lookup:', error);
-    hasTransfers = false; // Conservative fallback
+    console.error('Unexpected error during routing lookup:', error);
+    return "/protected"; // Conservative fallback
   }
   
-  // Use the existing routing logic with the looked-up transfer status
-  return getRedirectPathForUserStatus(userStatus, hasTransfers);
+  // Use the existing routing logic
+  const hasConnectedAccounts = hasSnapTradeAccounts || hasPlaidAccounts;
+  return getRedirectPathForUserStatus(userStatus, hasConnectedAccounts, hasActivePayment);
 } 

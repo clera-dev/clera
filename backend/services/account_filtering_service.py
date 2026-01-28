@@ -46,6 +46,51 @@ class AccountFilteringService:
             self.supabase = get_supabase_client()
         return self.supabase
     
+    def _extract_institution_names(self, institution_breakdown) -> List[str]:
+        """
+        Safely extract institution names from institution_breakdown field.
+        
+        Handles multiple formats:
+        - List of dicts: [{"institution_name": "Coinbase", ...}, ...]
+        - Dict with institution keys: {"coinbase": {...}, "webull": {...}}
+        - JSON string: Parse and recurse
+        - None/empty: Return empty list
+        
+        Returns:
+            List of institution name strings
+        """
+        import json
+        
+        if not institution_breakdown:
+            return []
+        
+        # Handle JSON string
+        if isinstance(institution_breakdown, str):
+            try:
+                institution_breakdown = json.loads(institution_breakdown)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        
+        # Handle list of dicts: [{"institution_name": "Coinbase"}, ...]
+        if isinstance(institution_breakdown, list):
+            names = []
+            for item in institution_breakdown:
+                if isinstance(item, dict):
+                    name = item.get('institution_name', '')
+                    if name:
+                        names.append(name)
+                elif isinstance(item, str):
+                    # List of strings directly
+                    names.append(item)
+            return names
+        
+        # Handle dict with institution keys: {"coinbase": {...}, ...}
+        if isinstance(institution_breakdown, dict):
+            # Keys are the institution names
+            return list(institution_breakdown.keys())
+        
+        return []
+    
     async def get_account_filtered_data(self, user_id: str, account_uuid: str) -> Dict[str, Any]:
         """
         Get complete portfolio data filtered to a specific account.
@@ -223,27 +268,79 @@ class AccountFilteringService:
         }
     
     def _calculate_asset_allocation(self, holdings: List[Dict]) -> Dict[str, Any]:
-        """Calculate cash/stock/bond allocation for account."""
+        """
+        Calculate cash/stock/bond/crypto allocation for account.
+        
+        CRITICAL: Uses proper asset classification to correctly identify:
+        - Cash: Cash and cash equivalents
+        - Stock: Equities, ETFs (non-bond), mutual funds
+        - Bond: Bond ETFs, fixed income
+        - Crypto: Cryptocurrency assets (BTC, ETH, ADA, etc.)
+        """
+        from utils.asset_classification import classify_asset, AssetClassification
+        from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO, is_crypto_exchange
+        
         allocations = {
             'cash': 0.0,
             'stock': 0.0,
-            'bond': 0.0
+            'bond': 0.0,
+            'crypto': 0.0  # CRITICAL: Track crypto separately!
         }
         
         for holding in holdings:
             market_value = float(holding.get('total_market_value', 0))
-            security_type = holding.get('security_type', 'equity')
+            if market_value <= 0:
+                continue
             
-            # Map to asset categories
+            # CRITICAL: Normalize security_type to lowercase to handle case variations
+            security_type = (holding.get('security_type') or '').lower().strip()
+            symbol = holding.get('symbol', '').upper()
+            security_name = holding.get('security_name', '')
+            
+            # CRITICAL FIX: Use proper classification logic
+            # Map SnapTrade/Plaid security_type to Alpaca-style asset_class for classifier
             if security_type == 'cash':
                 allocations['cash'] += market_value
-            elif security_type in ['bond', 'fixed_income']:
+            elif security_type in ['crypto', 'cryptocurrency']:
+                # SnapTrade marks crypto as 'crypto' (or 'cryptocurrency' in some codepaths)
+                allocations['crypto'] += market_value
+            elif symbol in UNAMBIGUOUS_CRYPTO:
+                # Check UNAMBIGUOUS crypto symbols (BTC, ETH, etc.) regardless of security_type
+                allocations['crypto'] += market_value
+            elif security_type in ['bond', 'fixed_income', 'fixed income']:
                 allocations['bond'] += market_value
-            elif security_type in ['equity', 'etf', 'mutual_fund']:
-                allocations['stock'] += market_value
             else:
-                # Other types (crypto, options) count as stock for simplicity
-                allocations['stock'] += market_value
+                # CRITICAL FIX: Check institution name for crypto exchange detection
+                # This catches holdings from Coinbase/Kraken etc. even if security_type is wrong
+                institution_breakdown = holding.get('institution_breakdown', [])
+                
+                # Normalize institution_breakdown - can be list of dicts, dict, JSON string, or None
+                institution_names = self._extract_institution_names(institution_breakdown)
+                
+                is_from_crypto_exchange = any(is_crypto_exchange(name) for name in institution_names)
+                
+                if is_from_crypto_exchange and security_type not in ['cash']:
+                    allocations['crypto'] += market_value
+                    continue
+                
+                # For equities/ETFs/other, use classify_asset to detect bonds vs stocks vs crypto
+                # Map security_type to asset_class for the classifier
+                asset_class = None
+                if security_type in ['equity', 'etf', 'mutual_fund', 'mutual fund']:
+                    asset_class = 'us_equity'
+                elif security_type == 'derivative':
+                    asset_class = 'us_option'
+                
+                classification = classify_asset(symbol, security_name, asset_class)
+                
+                if classification == AssetClassification.BOND:
+                    allocations['bond'] += market_value
+                elif classification == AssetClassification.CRYPTO:
+                    allocations['crypto'] += market_value
+                elif classification == AssetClassification.CASH:
+                    allocations['cash'] += market_value
+                else:
+                    allocations['stock'] += market_value
         
         total_value = sum(allocations.values())
         
@@ -261,11 +358,20 @@ class AccountFilteringService:
         return result
     
     async def _calculate_sector_allocation(self, holdings: List[Dict], user_id: str) -> Dict[str, Any]:
-        """Calculate sector allocation for account (equities + ETFs only)."""
+        """
+        Calculate sector allocation for account.
+        
+        Includes:
+        - Equities and ETFs with proper sector lookup via FMP/Redis
+        - Cryptocurrency assets shown as "Cryptocurrency" sector
+        - Bonds/fixed income shown as "Fixed Income" sector
+        """
         try:
             import redis
             import json
             import os
+            from utils.asset_classification import classify_asset, AssetClassification
+            from utils.portfolio.constants import UNAMBIGUOUS_CRYPTO, is_crypto_exchange
             
             # Connect to Redis
             redis_client = redis.Redis(
@@ -278,29 +384,72 @@ class AccountFilteringService:
             sector_values = {}
             total_value = 0.0
             
-            # Filter to equities and ETFs only
             for holding in holdings:
-                security_type = holding.get('security_type', '')
-                if security_type not in ['equity', 'etf']:
-                    continue  # Skip non-equities
+                # CRITICAL: Normalize security_type to lowercase to handle case variations
+                security_type = (holding.get('security_type') or '').lower().strip()
+                symbol = holding.get('symbol', '').upper()
+                security_name = holding.get('security_name', '')
+                market_value = float(holding.get('total_market_value', 0))
                 
-                symbol = holding['symbol']
-                market_value = float(holding['total_market_value'])
+                if market_value <= 0:
+                    continue
+                
                 total_value += market_value
                 
-                # Look up FMP sector data in Redis
-                fmp_sector_key = f"sector:{symbol}"
-                sector_data_json = redis_client.get(fmp_sector_key)
-                
-                if sector_data_json:
-                    sector_data = json.loads(sector_data_json)
-                    sector = sector_data.get('sector', 'Unknown')
+                # CRITICAL FIX: Handle crypto and bonds properly in sector allocation
+                # SnapTrade marks crypto as 'crypto' (or 'cryptocurrency' in some codepaths)
+                if security_type in ['crypto', 'cryptocurrency']:
+                    sector = 'Cryptocurrency'
+                elif symbol in UNAMBIGUOUS_CRYPTO:
+                    # Check UNAMBIGUOUS crypto symbols (BTC, ETH, etc.)
+                    sector = 'Cryptocurrency'
+                elif security_type in ['bond', 'fixed_income', 'fixed income']:
+                    sector = 'Fixed Income'
+                elif security_type == 'cash':
+                    sector = 'Cash & Equivalents'
                 else:
-                    # Classify ETF by name if no FMP data
-                    if security_type == 'etf':
-                        sector = self._classify_etf_by_name(symbol, holding.get('security_name', ''))
+                    # CRITICAL FIX: Check institution name for crypto exchange detection
+                    institution_breakdown = holding.get('institution_breakdown', [])
+                    institution_names = self._extract_institution_names(institution_breakdown)
+                    is_from_crypto_exchange = any(is_crypto_exchange(name) for name in institution_names)
+                    
+                    if is_from_crypto_exchange and security_type not in ['cash']:
+                        sector = 'Cryptocurrency'
+                    elif security_type in ['equity', 'etf', 'mutual_fund', 'mutual fund']:
+                        # For equities/ETFs, use FMP data or classify
+                        # First check if it's actually a crypto via symbol (for edge cases)
+                        asset_class = 'us_equity'
+                        classification = classify_asset(symbol, security_name, asset_class)
+                        
+                        if classification == AssetClassification.CRYPTO:
+                            sector = 'Cryptocurrency'
+                        elif classification == AssetClassification.BOND:
+                            sector = 'Fixed Income'
+                        else:
+                            # Look up FMP sector data in Redis
+                            fmp_sector_key = f"sector:{symbol}"
+                            sector_data_json = redis_client.get(fmp_sector_key)
+                            
+                            if sector_data_json:
+                                sector_data = json.loads(sector_data_json)
+                                sector = sector_data.get('sector', 'Unknown')
+                            else:
+                                # Classify ETF by name if no FMP data
+                                if security_type == 'etf':
+                                    sector = self._classify_etf_by_name(symbol, security_name)
+                                else:
+                                    sector = 'Unknown'
                     else:
-                        sector = 'Unknown'
+                        # Unknown security type - try to classify
+                        classification = classify_asset(symbol, security_name, None)
+                        if classification == AssetClassification.CRYPTO:
+                            sector = 'Cryptocurrency'
+                        elif classification == AssetClassification.BOND:
+                            sector = 'Fixed Income'
+                        elif classification == AssetClassification.CASH:
+                            sector = 'Cash & Equivalents'
+                        else:
+                            sector = 'Other'
                 
                 if sector and sector != 'Unknown':
                     sector_values[sector] = sector_values.get(sector, 0) + market_value

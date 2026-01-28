@@ -126,23 +126,23 @@ export default function ProtectedPageClient() {
           }
         } catch (error) {
           console.error('[Protected] Error fetching connection status:', error);
-          // Fallback: Check for Alpaca funding only
-          const { data: transfers } = await supabase
-            .from('user_transfers')
-            .select('amount, status')
-            .eq('user_id', user.id)
-            .gte('amount', 1);
-          
-          const funded = !!(transfers && transfers.length > 0 && 
-            transfers.some((transfer: any) => 
-              transfer.status === 'QUEUED' ||
-              transfer.status === 'SUBMITTED' ||
-              transfer.status === 'COMPLETED' || 
-              transfer.status === 'SETTLED'
-            ));
-          
-          setHasFunding(funded);
-          setHasConnectedAccounts(funded);
+          // Fallback: Check for SnapTrade connections directly (primary brokerage integration)
+          try {
+            const { data: snaptradeConnections } = await supabase
+              .from('snaptrade_brokerage_connections')
+              .select('authorization_id')
+              .eq('user_id', user.id)
+              .eq('status', 'active')
+              .limit(1);
+            
+            const hasAccounts = !!(snaptradeConnections && snaptradeConnections.length > 0);
+            setHasConnectedAccounts(hasAccounts);
+            setHasFunding(false); // Alpaca funding is paused
+          } catch (accountError) {
+            console.error('[Protected] Error checking SnapTrade in fallback:', accountError);
+            setHasConnectedAccounts(false);
+            setHasFunding(false);
+          }
         }
       }
       

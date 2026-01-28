@@ -15,56 +15,51 @@ export const parseSummary = (text: string) => {
   const yesterday: string[] = [];
   const today: string[] = [];
   let mode: 'none' | 'y' | 't' = 'none';
+  let headlineCaptured = false;
 
-  // Regex for common abbreviations that should not split sentences
-  const noSplitAfter = /(U\.S\.|U\.K\.|U\.N\.|E\.U\.|Inc\.|Ltd\.|Co\.|Mr\.|Ms\.|Dr\.)$/;
-
-  // Function to split a paragraph into sentences, handling abbreviations
-  const splitIntoSentences = (paragraph: string): string[] => {
-    const sentences: string[] = [];
-    let currentSentence = '';
-    for (let i = 0; i < paragraph.length; i++) {
-      currentSentence += paragraph[i];
-      if (/[.!?]/.test(paragraph[i])) {
-        // Check if it's an abbreviation or part of a number/URL
-        const nextChar = paragraph[i + 1];
-        const isAbbreviation = noSplitAfter.test(paragraph.substring(i - 3, i + 1));
-        const isNumber = /\d/.test(nextChar);
-        const isUrl = (paragraph[i] === '.' && (nextChar === '/' || nextChar === '\\' || nextChar === 'c' || nextChar === 'o')); // rudimentary URL check
-
-        if (!isAbbreviation && !isNumber && !isUrl && nextChar && nextChar.trim() !== '') {
-          sentences.push(currentSentence.trim());
-          currentSentence = '';
-        }
-      }
-    }
-    if (currentSentence.trim()) {
-      sentences.push(currentSentence.trim());
-    }
-    return sentences.filter(s => s.length > 5); // Filter out very short fragments
-  };
+  // Check for section headers - expanded patterns for more flexibility
+  const yesterdayHeaderPatterns = [
+    /^yesterday'?s?\s*market\s*recap:?$/i,
+    /^market\s*recap:?$/i,
+  ];
+  
+  const todayHeaderPatterns = [
+    /^what\s*to\s*watch\s*(?:out\s*)?(?:for)?:?$/i,
+    /^what\s*to\s*watch\s*today:?$/i,  // "What to watch today:"
+    /^today'?s?\s*(?:outlook|news|highlights?):?$/i,  // "Today's outlook:", "Today's news:"
+    /^looking\s*ahead:?$/i,
+    /^coming\s*up:?$/i,  // "Coming up:"
+    /^what'?s?\s*(?:next|coming|ahead):?$/i,  // "What's next:", "What's coming:"
+  ];
+  
+  const isYesterdayHeader = (s: string) => yesterdayHeaderPatterns.some(p => p.test(s));
+  const isTodayHeader = (s: string) => todayHeaderPatterns.some(p => p.test(s));
 
   for (const line of lines) {
     const n = normalize(line);
-    if (!headline && !/^yesterday'?s market recap:/i.test(n) && !/^what to watch today:/i.test(n) && !/^what to watch out for:/i.test(n) && !/^•\s*/.test(n) && !/^\-\s*/.test(n)) {
-      headline = line;
-      continue;
-    }
-    if (/^yesterday'?s market recap:/i.test(n)) { mode = 'y'; continue; }
-    if (/^what to watch today:/i.test(n) || /^what to watch out for:/i.test(n)) { mode = 't'; continue; }
+    
+    // Check for section headers
+    if (isYesterdayHeader(n)) { mode = 'y'; continue; }
+    if (isTodayHeader(n)) { mode = 't'; continue; }
 
-    const cleanedLine = n.replace(/^•\s*/, '').replace(/^\-\s*/, '').trim();
+    // Clean bullet markers (•, -, *)
+    const cleanedLine = n.replace(/^[•\-\*]\s*/, '').trim();
     if (!cleanedLine) continue;
 
-    // If the line is a full paragraph, split it into sentences
-    if (!/^•\s*/.test(line) && !/^\-\s*/.test(line) && cleanedLine.includes('.')) {
-      const sentences = splitIntoSentences(cleanedLine);
-      if (mode === 'y') yesterday.push(...sentences);
-      else if (mode === 't') today.push(...sentences);
+    // Add to appropriate section
+    if (mode === 'y') {
+      yesterday.push(cleanedLine);
+    } else if (mode === 't') {
+      today.push(cleanedLine);
     } else {
-      // Otherwise, treat it as a single bullet
-      if (mode === 'y') yesterday.push(cleanedLine);
-      else if (mode === 't') today.push(cleanedLine);
+      // No header found yet - capture first non-header line as headline (if not a bullet)
+      // then subsequent lines go to yesterday for backward compatibility
+      if (!headlineCaptured && !line.match(/^[•\-\*]/)) {
+        headline = cleanedLine;
+        headlineCaptured = true;
+      } else {
+        yesterday.push(cleanedLine);
+      }
     }
   }
   return { headline, yesterday, today };

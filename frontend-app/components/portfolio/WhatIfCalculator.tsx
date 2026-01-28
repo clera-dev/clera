@@ -171,7 +171,7 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
     const finalProjectedValue = projectionData[projectionData.length - 1]?.value ?? initialInvestment;
 
     return (
-        <div className="grid grid-cols-1 2xl:grid-cols-3 gap-4 items-start">
+        <div className="grid grid-cols-1 2xl:grid-cols-3 gap-4 items-start overflow-hidden">
             {/* Inputs Column */}
             <div className="2xl:col-span-1 space-y-4">
                 {/* Initial Investment - Typable + Slider */}
@@ -339,7 +339,7 @@ const WhatIfCalculator: React.FC<WhatIfCalculatorProps> = ({ currentPortfolioVal
             </div>
 
             {/* Chart & Result Column */}
-            <div className="2xl:col-span-2 space-y-4">
+            <div className="2xl:col-span-2 space-y-4 overflow-hidden">
                  <Card className="bg-muted/50 border-dashed border-border">
                     <CardContent className="p-3 text-center">
                          <p className="text-xs text-muted-foreground mb-1">Projected Value in {timeHorizon} Years</p>

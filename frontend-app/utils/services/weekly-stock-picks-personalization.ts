@@ -130,22 +130,18 @@ export class WeeklyStockPicksPersonalizationService {
     }
     
     const sectorMappings: Record<MarketInterest, string> = {
-      [MarketInterest.GLOBAL_POLITICS]: 'global politics and international relations',
-      [MarketInterest.TRADE]: 'international trade and commerce',
-      [MarketInterest.STOCKS]: 'equity markets and stock trading',
-      [MarketInterest.BONDS]: 'fixed income and bond markets',
-      [MarketInterest.ECONOMY]: 'economic indicators and macroeconomics',
-      [MarketInterest.TECHNOLOGY]: 'software, semiconductors, cloud computing, AI, and cybersecurity',
+      [MarketInterest.AI_TECH]: 'artificial intelligence, software, semiconductors, cloud computing, and cybersecurity companies',
+      [MarketInterest.CRYPTO]: 'cryptocurrency, blockchain technology, and digital asset companies',
+      [MarketInterest.GLOBAL_MARKETS]: 'international stocks, emerging markets, global companies, and multinational corporations',
+      [MarketInterest.CLEAN_ENERGY]: 'solar, wind, renewable energy, and sustainability-focused companies',
       [MarketInterest.HEALTHCARE]: 'pharmaceuticals, biotechnology, medical devices, and healthcare services',
-      [MarketInterest.FINANCIALS]: 'banks, insurance, fintech, payment processors, and asset management',
-      [MarketInterest.ENERGY]: 'renewable energy, oil & gas, utilities, and energy infrastructure',
-      [MarketInterest.CONSUMER_DISCRETIONARY]: 'retail, automotive, entertainment, and luxury goods',
-      [MarketInterest.CONSUMER_STAPLES]: 'food & beverage, household products, and personal care',
-      [MarketInterest.INDUSTRIALS]: 'aerospace, manufacturing, logistics, and industrial equipment',
-      [MarketInterest.MATERIALS]: 'mining, chemicals, construction materials, and commodity producers',
+      [MarketInterest.GAMING_ENTERTAINMENT]: 'video game companies, streaming services, media, and entertainment',
+      [MarketInterest.ECOMMERCE]: 'online retail, e-commerce platforms, and consumer retail companies',
+      [MarketInterest.SOCIAL_MEDIA]: 'social media platforms, digital advertising, and online communication',
       [MarketInterest.REAL_ESTATE]: 'REITs, real estate development, and property management',
-      [MarketInterest.COMMUNICATION_SERVICES]: 'telecommunications, media, and social media platforms',
-      [MarketInterest.UTILITY]: 'electric utilities, water utilities, and renewable energy infrastructure'
+      [MarketInterest.BANKING_FINANCE]: 'banks, fintech, payment processors, insurance, and asset management',
+      [MarketInterest.TRAVEL_LEISURE]: 'airlines, hotels, cruise lines, travel booking, and leisure experiences',
+      [MarketInterest.FOOD_DINING]: 'restaurants, fast food chains, food & beverage, and consumer brands'
     };
     
     const focusAreas = marketInterests

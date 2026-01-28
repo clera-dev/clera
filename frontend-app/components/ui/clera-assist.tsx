@@ -124,15 +124,15 @@ const CleraAssist: React.FC<CleraAssistProps> = ({
   const getPlacementClasses = () => {
     switch (placement) {
       case 'corner':
-        return 'absolute top-2 right-2 z-[9999]';
+        return 'absolute top-2 right-2 z-10';
       case 'overlay':
-        return 'absolute inset-0 flex items-center justify-center z-[9999] bg-black/5 backdrop-blur-sm';
+        return 'absolute inset-0 flex items-center justify-center z-10 bg-black/5 backdrop-blur-sm';
       case 'inline':
-        return 'relative mt-2 z-[9999]';
+        return 'relative mt-2 z-10';
       case 'header':
-        return 'absolute top-2 right-2 z-[9999]';
+        return 'absolute top-2 right-2 z-10';
       default:
-        return 'absolute top-2 right-2 z-[9999]';
+        return 'absolute top-2 right-2 z-10';
     }
   };
 
@@ -141,8 +141,7 @@ const CleraAssist: React.FC<CleraAssistProps> = ({
       ref={containerRef}
       className={cn(
         "relative transition-all duration-300 ease-out",
-        isHovered && !isMobile && "clera-glow",
-        placement === 'overlay' && isVisible && "overflow-hidden"
+        isHovered && !isMobile && "clera-glow"
       )}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -166,6 +165,7 @@ const CleraAssist: React.FC<CleraAssistProps> = ({
                     "text-white border-0",
                     "transition-all duration-200 ease-out",
                     "transform hover:scale-105 hover:-translate-y-0.5",
+                    "flex items-center gap-1.5",
                     getPriorityClasses(),
                     // Mobile-specific styles
                     isMobile && "touch-manipulation",
@@ -176,8 +176,8 @@ const CleraAssist: React.FC<CleraAssistProps> = ({
                     placement === 'header' && "text-sm px-4 py-2"
                   )}
                 >
-                  <Sparkles className="w-3 h-3 mr-1.5" />
-                  {triggerText}
+                  <Sparkles className="w-3 h-3 flex-shrink-0" />
+                  <span>{triggerText}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-xs z-[10000]">
@@ -190,7 +190,7 @@ const CleraAssist: React.FC<CleraAssistProps> = ({
       
       {/* Mobile indicator for corner placement */}
       {isMobile && placement === 'corner' && !isVisible && (
-        <div className="absolute top-2 right-2 z-[9999]">
+        <div className="absolute top-2 right-2 z-10">
           <div className="w-2 h-2 bg-blue-500 rounded-full clera-pulse" />
         </div>
       )}

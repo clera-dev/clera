@@ -33,6 +33,58 @@ import { NoTradeAccountsNotice } from "@/components/invest/NoTradeAccountsNotice
 const MINIMUM_ORDER_AMOUNT = 5;
 const DEFAULT_LIMIT_BUFFER_PCT = 0.01;
 
+// Common crypto symbols - used to detect crypto vs stock trades
+// This list includes popular cryptocurrencies available on exchanges like Coinbase
+const CRYPTO_SYMBOLS = new Set([
+  'BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOT', 'MATIC', 'LINK',
+  'SHIB', 'LTC', 'UNI', 'ATOM', 'XLM', 'ALGO', 'VET', 'FIL', 'AAVE', 'ETC',
+  'XTZ', 'MANA', 'SAND', 'AXS', 'CRO', 'NEAR', 'FTM', 'GRT', 'ENJ', 'CHZ',
+  'LRC', 'BAT', 'COMP', 'MKR', 'SNX', 'YFI', 'SUSHI', 'ZEC', 'DASH', 'NEO',
+  'WAVES', 'KSM', 'ZRX', 'REN', 'ICX', 'ONT', 'QTUM', 'ZIL', 'HBAR', 'IOTA',
+  'SUI', 'APT', 'ARB', 'OP', 'INJ', 'SEI', 'TIA', 'JUP', 'PYTH', 'BONK',
+  'PEPE', 'WIF', 'FLOKI', 'RENDER', 'FET', 'AGIX', 'RNDR', 'TAO', 'WLD',
+  // Stablecoins (not really tradeable but included for detection)
+  'USDC', 'USDT', 'DAI', 'BUSD',
+  // Bitcoin/Ethereum variants
+  'WBTC', 'WETH', 'STETH', 'CBETH',
+]);
+
+// Common stock/ETF symbols that definitely cannot be traded on crypto exchanges
+// This is intentionally a subset - we only block what we KNOW is a stock
+const KNOWN_STOCK_SYMBOLS = new Set([
+  // Major indices/ETFs
+  'SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'VOO', 'VXX', 'ARKK', 'XLF', 'XLE', 'XLK',
+  // Mega cap stocks
+  'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.A', 'BRK.B',
+  'JPM', 'V', 'JNJ', 'WMT', 'PG', 'MA', 'UNH', 'HD', 'DIS', 'BAC', 'XOM', 'PFE',
+  'KO', 'PEP', 'CSCO', 'INTC', 'VZ', 'CMCSA', 'ADBE', 'NFLX', 'CRM', 'AMD', 'PYPL',
+  'COST', 'TMO', 'ABT', 'MRK', 'AVGO', 'NKE', 'ORCL', 'ACN', 'LLY', 'DHR', 'MCD',
+]);
+
+// Helper to check if a symbol is a KNOWN cryptocurrency
+const isCryptoSymbol = (symbol: string): boolean => {
+  const upperSymbol = symbol.toUpperCase();
+  return CRYPTO_SYMBOLS.has(upperSymbol);
+};
+
+// Helper to check if a symbol is a KNOWN stock/ETF
+// IMPORTANT: Returns false for unknown symbols - we don't assume
+const isKnownStockSymbol = (symbol: string): boolean => {
+  const upperSymbol = symbol.toUpperCase();
+  return KNOWN_STOCK_SYMBOLS.has(upperSymbol);
+};
+
+// For backward compatibility - but now only returns true for KNOWN stocks
+const isStockSymbol = (symbol: string): boolean => {
+  // If it's a known crypto, it's definitely not a stock
+  if (isCryptoSymbol(symbol)) return false;
+  // If it's a known stock, it's definitely a stock
+  if (isKnownStockSymbol(symbol)) return true;
+  // CHANGED: Unknown symbols return false (don't assume it's a stock)
+  // This allows newer crypto tokens to be traded on crypto exchanges
+  return false;
+};
+
 interface OrderModalProps {
   isOpen: boolean;
   onClose: (shouldRefresh?: boolean) => void;
@@ -56,6 +108,7 @@ interface TradeAccount {
   connection_status?: 'active' | 'error';  // Connection health status
   connection_error?: string;  // Error message if connection is broken
   reconnect_url?: string;  // URL to reconnect a broken connection
+  is_crypto_exchange?: boolean;  // Flag for crypto exchanges (no USD cash by default)
 }
 
 export default function OrderModal({ 
@@ -194,6 +247,9 @@ export default function OrderModal({
   }, [afterHoursPolicy, marketStatus.isOpen, marketPrice, isBuyOrder]);
 
   const handleNumberPadInput = (value: string) => {
+    // Clear any previous submission error when user changes input
+    if (submitError) setSubmitError(null);
+    
     if (value === '⌫') {
       setAmount((prev) => prev.slice(0, -1));
     } else if (value === '.') {
@@ -211,26 +267,43 @@ export default function OrderModal({
     // Allow only numbers and a single decimal point
     if (/^\d*\.?\d*$/.test(value)) {
       setAmount(value);
+      // Clear any previous submission error when user changes input
+      // This allows real-time validation to take over
+      if (submitError) setSubmitError(null);
     }
   };
 
   const validateSellOrder = (): string | null => {
     if (!isSellOrder) return null;
     
+    const shareAmount = parseFloat(amount) || 0;
+    
     if (inputMode === 'shares') {
-      const shareAmount = parseFloat(amount);
+      // CRITICAL: Validate user isn't trying to sell more shares than they own
+      if (shareAmount > availableShares) {
+        return `Cannot sell ${shareAmount} shares. You only have ${availableShares.toFixed(6)} shares (${maxWholeShares} whole).`;
+      }
       if (shareAmount > maxWholeShares) {
-        return `Cannot sell more than ${maxWholeShares} whole shares. You have ${availableShares.toFixed(3)} shares total.`;
+        return `Cannot sell more than ${maxWholeShares} whole shares. Brokerages require selling whole shares.`;
       }
       if (shareAmount <= 0) {
         return 'Please enter at least 1 share to sell.';
       }
     } else {
-      const notionalAmount = parseFloat(amount);
+      // Dollars mode - validate against holdings value
+      const notionalAmount = parseFloat(amount) || 0;
       const maxSellValue = currentMarketValue ? parseFloat(currentMarketValue) : null;
       
       if (maxSellValue && notionalAmount > maxSellValue) {
-        return `Cannot sell more than your current holdings value of ${formatCurrency(maxSellValue)}.`;
+        return `Cannot sell ${formatCurrency(notionalAmount)}. Your holdings are only worth ${formatCurrency(maxSellValue)}.`;
+      }
+      
+      // Also validate that if we have market price, the dollar amount doesn't exceed holdings
+      if (marketPrice && availableShares > 0) {
+        const estimatedShares = notionalAmount / marketPrice;
+        if (estimatedShares > availableShares) {
+          return `Cannot sell ${formatCurrency(notionalAmount)} (≈${estimatedShares.toFixed(2)} shares). You only have ${availableShares.toFixed(6)} shares.`;
+        }
       }
     }
     
@@ -247,6 +320,75 @@ export default function OrderModal({
     ? (parsedAmount >= 1 && Number.isInteger(parsedAmount))
     : (parsedAmount >= MINIMUM_ORDER_AMOUNT);
 
+  // REAL-TIME VALIDATION: Compute validation warnings to show immediately
+  // This prevents users from attempting trades that will fail
+  const selectedAccountForValidation = tradeAccounts.find(acc => acc.account_id === selectedAccount);
+  
+  const realTimeValidationError = (() => {
+    if (!selectedAccount || !selectedAccountForValidation || parsedAmount <= 0) return null;
+    
+    // 1. Brokerage-Symbol Compatibility
+    const symbolIsKnownCrypto = isCryptoSymbol(symbol);
+    const symbolIsKnownStock = isKnownStockSymbol(symbol);
+    
+    // On crypto exchanges: block only KNOWN stocks (SPY, AAPL, etc.)
+    // Unknown symbols are allowed - the exchange will reject if invalid
+    if (selectedAccountForValidation.is_crypto_exchange && symbolIsKnownStock) {
+      return `${symbol} is a stock/ETF and cannot be traded on ${selectedAccountForValidation.institution_name}. Crypto exchanges only support cryptocurrency.`;
+    }
+    
+    // On traditional brokerages: warn about KNOWN crypto symbols
+    // (Most traditional brokerages don't support crypto trading)
+    if (!selectedAccountForValidation.is_crypto_exchange && symbolIsKnownCrypto) {
+      return `${symbol} is a cryptocurrency and may not be supported on ${selectedAccountForValidation.institution_name}. Consider using a crypto exchange.`;
+    }
+    
+    // 2. Buying Power Check (for buy orders)
+    if (isBuyOrder) {
+      let estimatedCost = parsedAmount;
+      if (inputMode === 'shares' && marketPrice) {
+        estimatedCost = parsedAmount * marketPrice;
+      }
+      
+      if (estimatedCost > selectedAccountForValidation.buying_power) {
+        if (selectedAccountForValidation.is_crypto_exchange && selectedAccountForValidation.buying_power === 0) {
+          return 'This account has no USD cash. Sell crypto first to add buying power.';
+        }
+        if (inputMode === 'shares' && marketPrice) {
+          return `Insufficient buying power. ${parsedAmount} shares × ${formatCurrency(marketPrice)} = ${formatCurrency(estimatedCost)} exceeds available ${formatCurrency(selectedAccountForValidation.buying_power)}.`;
+        }
+        return `Insufficient buying power. Available: ${formatCurrency(selectedAccountForValidation.buying_power)}`;
+      }
+    }
+    
+    // 3. Sell Order Validation
+    if (isSellOrder) {
+      if (inputMode === 'shares') {
+        if (parsedAmount > availableShares) {
+          return `Cannot sell ${parsedAmount} shares. You only have ${availableShares.toFixed(6)} shares.`;
+        }
+        if (parsedAmount > maxWholeShares) {
+          return `Cannot sell more than ${maxWholeShares} whole shares.`;
+        }
+      } else {
+        // Dollars mode
+        const maxSellValue = currentMarketValue ? parseFloat(currentMarketValue) : null;
+        if (maxSellValue && parsedAmount > maxSellValue) {
+          return `Cannot sell ${formatCurrency(parsedAmount)}. Your holdings are only worth ${formatCurrency(maxSellValue)}.`;
+        }
+        // Also check estimated shares
+        if (marketPrice && availableShares > 0) {
+          const estimatedShares = parsedAmount / marketPrice;
+          if (estimatedShares > availableShares) {
+            return `Cannot sell ${formatCurrency(parsedAmount)} (≈${estimatedShares.toFixed(2)} shares). You only have ${availableShares.toFixed(6)} shares.`;
+          }
+        }
+      }
+    }
+    
+    return null;
+  })();
+
   const handlePlaceOrder = async () => {
     // Validate brokerage account selection
     if (!selectedAccount) {
@@ -260,6 +402,33 @@ export default function OrderModal({
         ? "Please enter a valid number of shares." 
         : "Please enter a valid amount greater than $0.");
       return;
+    }
+    
+    // CRITICAL: Validate brokerage-symbol compatibility
+    // Crypto exchanges (Coinbase, etc.) can only trade crypto
+    // Stock brokerages (Webull, etc.) can only trade stocks/ETFs
+    const accountData = tradeAccounts.find(acc => acc.account_id === selectedAccount);
+    if (accountData) {
+      const symbolIsKnownCrypto = isCryptoSymbol(symbol);
+      const symbolIsKnownStock = isKnownStockSymbol(symbol);
+      
+      // On crypto exchanges: block KNOWN stocks only
+      if (accountData.is_crypto_exchange && symbolIsKnownStock) {
+        setSubmitError(
+          `${symbol} is a stock/ETF and cannot be traded on ${accountData.institution_name}. ` +
+          `Crypto exchanges like Coinbase only support cryptocurrency trading.`
+        );
+        return;
+      }
+      
+      // On traditional brokerages: block KNOWN crypto symbols
+      if (!accountData.is_crypto_exchange && symbolIsKnownCrypto) {
+        setSubmitError(
+          `${symbol} is a cryptocurrency and may not be supported on ${accountData.institution_name}. ` +
+          `Try using a crypto exchange instead.`
+        );
+        return;
+      }
     }
 
     if (!marketStatus.isOpen) {
@@ -289,9 +458,43 @@ export default function OrderModal({
     // Check if user has sufficient buying power for buy orders
     const selectedAccountData = tradeAccounts.find(acc => acc.account_id === selectedAccount);
     if (isBuyOrder && selectedAccountData) {
-      if (parsedValue > selectedAccountData.buying_power) {
-        setSubmitError(`Insufficient buying power. Available: ${formatCurrency(selectedAccountData.buying_power)}`);
-        return;
+      // CRITICAL FIX: For shares mode, we MUST have a price to validate buying power
+      // Otherwise we'd compare share count to dollar amount (wrong!)
+      if (inputMode === 'shares' && !marketPrice) {
+        // Try to use limit price if set (for after-hours orders)
+        const limitPriceNum = parseFloat(limitPrice);
+        if (!limitPriceNum || limitPriceNum <= 0) {
+          setSubmitError('Unable to validate order - market price unavailable. Please try again or use dollar amount mode.');
+          return;
+        }
+        // Use limit price for estimation
+        const estimatedCost = parsedValue * limitPriceNum;
+        if (estimatedCost > selectedAccountData.buying_power) {
+          setSubmitError(
+            `Insufficient buying power. ${parsedValue} shares × ${formatCurrency(limitPriceNum)} (limit) = ${formatCurrency(estimatedCost)} exceeds your available ${formatCurrency(selectedAccountData.buying_power)}.`
+          );
+          return;
+        }
+      } else {
+        // Normal case: we have market price or we're in dollars mode
+        let estimatedCost = parsedValue;
+        if (inputMode === 'shares' && marketPrice) {
+          estimatedCost = parsedValue * marketPrice;
+        }
+        
+        if (estimatedCost > selectedAccountData.buying_power) {
+          // For crypto exchanges with $0 buying power, show a more helpful message
+          if (selectedAccountData.is_crypto_exchange && selectedAccountData.buying_power === 0) {
+            setSubmitError('This account has no USD cash. Sell crypto first to add buying power.');
+          } else if (inputMode === 'shares' && marketPrice) {
+            setSubmitError(
+              `Insufficient buying power. ${parsedValue} shares × ${formatCurrency(marketPrice)} = ${formatCurrency(estimatedCost)} exceeds your available ${formatCurrency(selectedAccountData.buying_power)}.`
+            );
+          } else {
+            setSubmitError(`Insufficient buying power. Available: ${formatCurrency(selectedAccountData.buying_power)}`);
+          }
+          return;
+        }
       }
     }
 
@@ -591,6 +794,8 @@ export default function OrderModal({
                         return;
                       }
                       setSelectedAccount(value);
+                      // Clear errors when account changes - real-time validation will re-evaluate
+                      if (submitError) setSubmitError(null);
                     }}
                   >
                   <SelectTrigger className="w-full bg-background">
@@ -601,7 +806,12 @@ export default function OrderModal({
                         {selectedAccountData && selectedAccountData.connection_status !== 'error' && (
                         <SelectLabel className="text-xs text-muted-foreground px-2 py-1 flex items-center gap-1">
                           <Wallet className="h-3 w-3" />
-                          Available: {formatCurrency(selectedAccountData.buying_power)}
+                          {selectedAccountData.buying_power > 0 
+                            ? `Available: ${formatCurrency(selectedAccountData.buying_power)}`
+                            : selectedAccountData.is_crypto_exchange
+                              ? 'Sell crypto to buy new assets'
+                              : 'Available: $0.00'
+                          }
                         </SelectLabel>
                       )}
                       {tradeAccounts.map((account) => (
@@ -630,7 +840,12 @@ export default function OrderModal({
                               {account.connection_status !== 'error' && (
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                               <Wallet className="h-3 w-3" />
-                              {formatCurrency(account.buying_power)}
+                              {account.buying_power > 0 
+                                ? formatCurrency(account.buying_power)
+                                : account.is_crypto_exchange
+                                  ? 'Crypto only'
+                                  : '$0.00'
+                              }
                             </div>
                               )}
                               {account.connection_status === 'error' && (
@@ -815,6 +1030,14 @@ export default function OrderModal({
               ))}
             </div>
 
+            {/* REAL-TIME VALIDATION ERROR - Shows BEFORE user clicks submit */}
+            {realTimeValidationError && !submitError && (
+              <Alert variant="destructive" className="mt-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-sm">{realTimeValidationError}</AlertDescription>
+              </Alert>
+            )}
+
             {submitError && (
               <Alert variant="destructive" className="mt-4">
                 <Terminal className="h-4 w-4" />
@@ -824,7 +1047,7 @@ export default function OrderModal({
             )}
 
             {/* Minimum order amount warning */}
-            {isBelowMinimum && (
+            {isBelowMinimum && !realTimeValidationError && (
               <Alert className="mt-4 border-amber-500/50 bg-amber-500/10">
                 <AlertDescription className="text-sm text-amber-600 dark:text-amber-400">
                   {inputMode === 'shares' 
@@ -835,7 +1058,7 @@ export default function OrderModal({
             )}
             
             {/* Non-whole number warning for shares mode */}
-            {inputMode === 'shares' && parsedAmount > 0 && !Number.isInteger(parsedAmount) && (
+            {inputMode === 'shares' && parsedAmount > 0 && !Number.isInteger(parsedAmount) && !realTimeValidationError && (
               <Alert className="mt-4 border-amber-500/50 bg-amber-500/10">
                 <AlertDescription className="text-sm text-amber-600 dark:text-amber-400">
                   Please enter a whole number of shares. This brokerage only supports selling whole shares.
@@ -851,10 +1074,12 @@ export default function OrderModal({
             size="lg"
             className={`w-full ${buttonColorClasses} text-white font-bold text-base sm:text-lg h-12 sm:h-14`}
             onClick={handlePlaceOrder}
-            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || (inputMode === 'shares' && !Number.isInteger(parsedAmount))}
+            disabled={isSubmitting || isLoadingPrice || !meetsMinimum || (inputMode === 'shares' && !Number.isInteger(parsedAmount)) || !!realTimeValidationError}
           >
             {isSubmitting ? (
               <><Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> {marketStatus.isOpen ? 'Placing Order...' : (afterHoursPolicy === 'broker_limit_gtc' ? 'Placing Limit Order...' : 'Queueing Order...')}</>
+            ) : realTimeValidationError ? (
+              'Cannot Place Order'
             ) : isBelowMinimum ? (
               inputMode === 'shares' ? 'Minimum 1 share required' : `Minimum $${MINIMUM_ORDER_AMOUNT} required`
             ) : inputMode === 'shares' && !Number.isInteger(parsedAmount) ? (

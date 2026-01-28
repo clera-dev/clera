@@ -269,7 +269,7 @@ body > div:last-child:not([id]):not([class]) {
   }
 }
 
-/* Enhanced card header layout */
+/* Enhanced card header layout - button anchored right, grows left */
 .clera-assist-card-header {
   position: relative;
   display: flex;
@@ -278,25 +278,34 @@ body > div:last-child:not([id]):not([class]) {
   min-height: 40px;
   z-index: 10;
   isolation: isolate;
+  gap: 12px;
 }
 
 .clera-assist-card-header .card-title {
-  flex: 1;
-  margin-right: 12px;
+  flex-shrink: 1;
+  min-width: 60px; /* Title always has some minimum space */
 }
 
-/* Smooth transitions for button appearance */
+/* Button container - right-aligned, grows leftward, never clips button */
 .clera-assist-button-container {
   transition: all 0.3s ease-out;
   opacity: 0;
   transform: translateY(4px);
   z-index: 11;
   position: relative;
+  flex-shrink: 0;
+  /* Button can grow but leaves at least 30% for the title */
+  max-width: 70%;
 }
 
 .clera-assist-button-container.visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Ensure button itself is never clipped - always shows full rounded corners */
+.clera-assist-button-container .clera-assist-button {
+  white-space: nowrap;
 }
 
 /* Tooltip z-index and solid background */

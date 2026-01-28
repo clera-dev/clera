@@ -1,10 +1,10 @@
 "use client";
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import CleraAssistCard from '@/components/ui/clera-assist-card';
-import { useCleraAssist, useContextualPrompt } from '@/components/ui/clera-assist-provider';
+import { useCleraAssist } from '@/components/ui/clera-assist-provider';
 import LivePortfolioValue from './LivePortfolioValue';
 import StaticPortfolioValue from './StaticPortfolioValue';
 import PortfolioHistoryChart from './PortfolioHistoryChart';
@@ -38,6 +38,21 @@ interface PortfolioSummaryWithAssistProps {
   availableAccounts?: any[];
 }
 
+// Pure utility functions defined outside component for efficiency
+const formatCurrency = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return 'N/A';
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+};
+
+const TIME_RANGE_LABELS: Record<string, string> = {
+  '1D': 'today',
+  '1W': 'this week',
+  '1M': 'this month',
+  '3M': 'the past 3 months',
+  '1Y': 'the past year',
+  'ALL': 'all time'
+};
+
 const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
   accountId,
   portfolioHistory,
@@ -58,56 +73,76 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
 }) => {
   const { openChatWithPrompt, isEnabled } = useCleraAssist();
   
-  // Extract portfolio metrics for context
-  const hasHistoryData = portfolioHistory && portfolioHistory.equity && portfolioHistory.equity.length > 0;
-  const currentValue = hasHistoryData ? portfolioHistory.equity[portfolioHistory.equity.length - 1] : null;
-  const hasPositiveReturn = hasHistoryData && portfolioHistory.profit_loss && 
-    portfolioHistory.profit_loss.length > 0 &&
-    portfolioHistory.profit_loss[portfolioHistory.profit_loss.length - 1] !== null &&
-    portfolioHistory.profit_loss[portfolioHistory.profit_loss.length - 1]! > 0;
-  
-  // Create contextual prompt with portfolio performance data
-  const generatePrompt = useContextualPrompt(
-    "Please review my portfolio summary for the {timeRange} period. {performanceSentence} Give me a short interpretation and 1–2 practical next steps.",
-    "portfolio_summary",
-    {
-      timeRange: selectedTimeRange,
-      performanceSentence: (() => {
-        if (!hasHistoryData || !portfolioHistory) return "I don't have enough history yet.";
-        const plPctArray = portfolioHistory.profit_loss_pct || [];
-        const lastPlPct = plPctArray.length ? plPctArray[plPctArray.length - 1] : null;
-        if (typeof lastPlPct === 'number') {
-          const pct = (lastPlPct * 100).toFixed(1);
-          return Number(pct) >= 0 ? `Change: +${pct}%.` : `Change: ${pct}%.`;
-        }
-        return hasPositiveReturn ? "The portfolio is up." : "The portfolio is down.";
-      })()
+  // Memoize all derived values to prevent recalculation on unrelated state changes
+  const { contextualPrompt, triggerText, description, hasHistoryData } = useMemo(() => {
+    const hasHistory = portfolioHistory && portfolioHistory.equity && portfolioHistory.equity.length > 0;
+    
+    // Calculate return data
+    let returnData: { returnAmount: number | null; returnPercent: number | null; currentValue: number | null } | null = null;
+    if (hasHistory && portfolioHistory) {
+      const plArray = portfolioHistory.profit_loss || [];
+      const plPctArray = portfolioHistory.profit_loss_pct || [];
+      const lastPl = plArray.length ? plArray[plArray.length - 1] : null;
+      const lastPlPct = plPctArray.length ? plPctArray[plPctArray.length - 1] : null;
+      const currentVal = portfolioHistory.equity[portfolioHistory.equity.length - 1];
+      
+      returnData = {
+        returnAmount: lastPl,
+        returnPercent: lastPlPct !== null ? lastPlPct * 100 : null,
+        currentValue: currentVal
+      };
     }
-  );
-
-  const getContextualPrompt = () => {
+    
+    // Generate prompt
+    let prompt: string;
     if (!accountId || disabled) {
-      return "I'm interested in learning about portfolio tracking and performance. Can you briefly explain how to evaluate investment performance and what I should focus on?";
+      prompt = "Can you explain how to evaluate investment performance - what matters, what doesn't, and how to stay focused on long-term goals?";
+    } else if (!hasHistory) {
+      prompt = "My portfolio is new so there isn't much performance history to show. What should I keep an eye on as it grows, and how do I measure progress in a healthy way?";
+    } else {
+      const timeLabel = TIME_RANGE_LABELS[selectedTimeRange] || selectedTimeRange;
+      
+      // Build a highly personalized prompt with actual numbers
+      let promptParts = [`My portfolio performance for ${timeLabel}:`];
+      promptParts.push(`• Current Value: ${formatCurrency(returnData?.currentValue ?? null)}`);
+      
+      if (returnData && returnData.returnAmount !== null && returnData.returnPercent !== null) {
+        const sign = returnData.returnAmount >= 0 ? '+' : '';
+        promptParts.push(`• Return: ${sign}${formatCurrency(returnData.returnAmount)} (${sign}${returnData.returnPercent.toFixed(2)}%)`);
+      }
+      
+      if (allTimeReturnAmount != null && allTimeReturnPercent != null && selectedTimeRange !== 'ALL') {
+        const allTimeSign = allTimeReturnAmount >= 0 ? '+' : '';
+        promptParts.push(`• All-Time Return: ${allTimeSign}${formatCurrency(allTimeReturnAmount)} (${allTimeSign}${(allTimeReturnPercent * 100).toFixed(2)}%)`);
+      }
+      
+      promptParts.push('');
+      promptParts.push(`How am I doing? Is this return good, average, or concerning for someone investing long-term? What's driving my performance - which holdings are helping or hurting the most?`);
+      
+      prompt = promptParts.join('\n');
     }
     
-    if (!hasHistoryData) {
-      return "I don't have much performance history yet. Give me a brief overview of what to monitor and how to judge progress fairly over time.";
+    // Generate trigger text and description
+    let trigger: string;
+    let desc: string;
+    if (!accountId || disabled) {
+      trigger = "Analyze progress";
+      desc = "Learn how to track and evaluate investment performance";
+    } else if (!hasHistory) {
+      trigger = "Understand this";
+      desc = "Understand what to expect as your portfolio grows";
+    } else {
+      trigger = "Analyze progress";
+      desc = "Get insights on your investment performance and what it means for your financial goals";
     }
     
-    return generatePrompt();
-  };
-
-  const getTriggerText = () => {
-    if (!accountId || disabled) return "Analyze my progress";
-    if (!hasHistoryData) return "Understanding performance";
-    return "Analyze my progress";
-  };
-
-  const getDescription = () => {
-    if (!accountId || disabled) return "Learn how to track and evaluate investment performance";
-    if (!hasHistoryData) return "Understand what to expect as your portfolio grows";
-    return "Get insights on your investment performance and what it means for your financial goals";
-  };
+    return {
+      contextualPrompt: prompt,
+      triggerText: trigger,
+      description: desc,
+      hasHistoryData: hasHistory
+    };
+  }, [accountId, disabled, portfolioHistory, selectedTimeRange, allTimeReturnAmount, allTimeReturnPercent]);
 
   if (!isEnabled) {
     // Fallback to original component when assist is disabled
@@ -161,9 +196,9 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
       title="Portfolio Value"
       content="Portfolio value and performance tracking"
       context="portfolio_summary"
-      prompt={getContextualPrompt()}
-      triggerText={getTriggerText()}
-      description={getDescription()}
+      prompt={contextualPrompt}
+      triggerText={triggerText}
+      description={description}
       onAssistClick={(prompt) => openChatWithPrompt(prompt, "portfolio_summary")}
       disabled={disabled}
       className="bg-card shadow-lg"

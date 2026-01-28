@@ -20,7 +20,7 @@ from snaptrade_client.exceptions import ApiException
 from .abstract_provider import (
     AbstractPortfolioProvider, Account, Position, Transaction, PerformanceData, ProviderError
 )
-from .constants import UNAMBIGUOUS_CRYPTO, CRYPTO_EXCHANGES
+from .constants import UNAMBIGUOUS_CRYPTO, is_crypto_exchange
 
 logger = logging.getLogger(__name__)
 
@@ -236,11 +236,11 @@ class SnapTradePortfolioProvider(AbstractPortfolioProvider):
                 # Use symbol-based detection for UNAMBIGUOUS crypto symbols
                 # Check if symbol is unambiguous crypto OR if it's from a known crypto exchange
                 symbol_upper = symbol_str.upper()
-                is_crypto_exchange = institution_name in CRYPTO_EXCHANGES
+                is_crypto_institution = is_crypto_exchange(institution_name)
                 
-                if symbol_upper in UNAMBIGUOUS_CRYPTO or (is_crypto_exchange and snaptrade_code == 'cs'):
+                if symbol_upper in UNAMBIGUOUS_CRYPTO or (is_crypto_institution and snaptrade_code == 'cs'):
                     security_type = 'crypto'
-                    logger.debug(f"Overriding security_type for {symbol_str} to 'crypto' (was '{snaptrade_code}', exchange: {institution_name})")
+                    logger.info(f"🔒 Overriding security_type for {symbol_str} to 'crypto' (was '{snaptrade_code}', exchange: {institution_name})")
                 
                 # Calculate quantities and values
                 quantity = Decimal(str(pos.get('units', 0)))
