@@ -7,11 +7,14 @@ import { OnboardingStatus } from "@/lib/types/onboarding";
  * This function implements the business rules for user navigation based on their onboarding status:
  * - pending_closure users → /account-closure (dedicated closure page)
  * - closed users → /protected (can restart account)
- * - completed onboarding + (connected accounts OR funded) + active payment → /portfolio (main app)
+ * - completed onboarding + connected accounts + active payment → /portfolio (main app)
  * - default → /protected (onboarding, connection, or payment)
  * 
+ * NOTE: Alpaca funding is paused - using SnapTrade only. With SnapTrade, users connect
+ * existing brokerages (Webull, Coinbase, etc.) so there's no separate "funding" step.
+ * 
  * @param userStatus - The user's onboarding status
- * @param hasAccountsOrFunding - Whether the user has connected accounts or funded their account
+ * @param hasAccountsOrFunding - Whether the user has connected accounts (SnapTrade/Plaid)
  * @param hasActivePayment - Whether the user has an active payment subscription
  * @returns The appropriate redirect path based on user status
  */
@@ -41,13 +44,15 @@ export function getRedirectPathForUserStatus(
 
 /**
  * Enhanced routing function for SERVER-SIDE usage (Server Actions, API routes).
- * ARCHITECTURAL FIX: Centralizes transfer lookup logic with proper server client.
+ * Checks for connected brokerage accounts AND active payment status.
  * 
- * Now also checks for SnapTrade/Plaid connected accounts AND payment status.
- * Users with completed onboarding + connected accounts + active payment → /portfolio
+ * Users with completed onboarding + connected accounts (SnapTrade) + active payment → /portfolio
+ * 
+ * NOTE: Alpaca funding is paused - we're only using SnapTrade for brokerage connections.
+ * With SnapTrade, users connect existing brokerages so there's no separate funding step.
  * 
  * @param userStatus - The user's onboarding status
- * @param userId - The user ID for transfer lookup
+ * @param userId - The user ID for account lookup
  * @param supabaseServerClient - Server-side Supabase client with proper auth context
  * @returns Promise<string> The appropriate redirect path
  */
