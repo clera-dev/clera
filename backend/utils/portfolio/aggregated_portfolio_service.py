@@ -542,11 +542,27 @@ class AggregatedPortfolioService:
                 # This handles cases where security_type isn't properly set to 'crypto'
                 institution_breakdown = holding.get('institution_breakdown')
                 if institution_breakdown:
+                    # Parse JSON string if needed
                     if isinstance(institution_breakdown, str):
                         import json
-                        institution_breakdown = json.loads(institution_breakdown) if institution_breakdown else []
-                    for contrib in institution_breakdown:
-                        institution_name = contrib.get('institution_name', '')
+                        try:
+                            institution_breakdown = json.loads(institution_breakdown)
+                        except (json.JSONDecodeError, TypeError):
+                            institution_breakdown = []
+                    
+                    # Handle different formats: list of dicts or dict with keys
+                    institution_names = []
+                    if isinstance(institution_breakdown, list):
+                        for contrib in institution_breakdown:
+                            if isinstance(contrib, dict):
+                                name = contrib.get('institution_name', '')
+                                if name:
+                                    institution_names.append(name)
+                    elif isinstance(institution_breakdown, dict):
+                        # Keys are institution names
+                        institution_names = list(institution_breakdown.keys())
+                    
+                    for institution_name in institution_names:
                         if is_crypto_exchange(institution_name) and security_type not in ['cash']:
                             logger.debug(f"Found crypto by institution: {symbol} from {institution_name}")
                             return True

@@ -110,7 +110,9 @@ export default function SideBySideLayout({
       
       // Apply constraints
       const maxWidth = containerWidth * maxChatWidthPercent;
-      newWidth = Math.max(minChatWidth, Math.min(maxWidth, newWidth));
+      // On very small viewports, max may be less than min - use the smaller as lower bound
+      const effectiveMin = Math.min(minChatWidth, maxWidth);
+      newWidth = Math.max(effectiveMin, Math.min(maxWidth, newWidth));
       
       setChatWidth(newWidth);
     };
