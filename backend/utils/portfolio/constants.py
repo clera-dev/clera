@@ -52,9 +52,12 @@ def is_crypto_exchange(institution_name: str) -> bool:
     # Exact match first
     if name_lower in CRYPTO_EXCHANGES_LOWERCASE:
         return True
-    # Partial match for variations (e.g., 'Coinbase - Pro' would match 'coinbase')
+    # Partial match: exchange name must appear IN the institution name
+    # (e.g., 'Coinbase - Pro' contains 'coinbase')
+    # NOTE: We do NOT check `name_lower in exchange` as that would cause
+    # false positives (e.g., "Pro" would match "coinbase pro")
     for exchange in CRYPTO_EXCHANGES_LOWERCASE:
-        if exchange in name_lower or name_lower in exchange:
+        if exchange in name_lower:
             return True
     return False
 

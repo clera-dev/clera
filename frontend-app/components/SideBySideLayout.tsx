@@ -48,7 +48,9 @@ export default function SideBySideLayout({
           // CRITICAL: Clamp to current viewport max to prevent negative main content width
           // This handles the case where user saved a width on a large screen but now uses smaller screen
           const maxAllowedWidth = Math.floor(window.innerWidth * maxChatWidthPercent);
-          const clampedWidth = Math.max(minChatWidth, Math.min(parsedWidth, maxAllowedWidth));
+          // On very small viewports, max may be less than min - use the smaller of the two as lower bound
+          const effectiveMin = Math.min(minChatWidth, maxAllowedWidth);
+          const clampedWidth = Math.max(effectiveMin, Math.min(parsedWidth, maxAllowedWidth));
           setChatWidth(clampedWidth);
         }
       }
@@ -68,7 +70,9 @@ export default function SideBySideLayout({
     
     const handleResize = () => {
       const maxAllowedWidth = Math.floor(window.innerWidth * maxChatWidthPercent);
-      setChatWidth(prev => Math.max(minChatWidth, Math.min(prev, maxAllowedWidth)));
+      // On very small viewports, max may be less than min - use the smaller as lower bound
+      const effectiveMin = Math.min(minChatWidth, maxAllowedWidth);
+      setChatWidth(prev => Math.max(effectiveMin, Math.min(prev, maxAllowedWidth)));
     };
     
     window.addEventListener('resize', handleResize);
