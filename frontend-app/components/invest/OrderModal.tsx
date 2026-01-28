@@ -458,24 +458,43 @@ export default function OrderModal({
     // Check if user has sufficient buying power for buy orders
     const selectedAccountData = tradeAccounts.find(acc => acc.account_id === selectedAccount);
     if (isBuyOrder && selectedAccountData) {
-      // CRITICAL FIX: For shares mode, convert to estimated dollar cost before comparing
-      let estimatedCost = parsedValue;
-      if (inputMode === 'shares' && marketPrice) {
-        estimatedCost = parsedValue * marketPrice;
-      }
-      
-      if (estimatedCost > selectedAccountData.buying_power) {
-        // For crypto exchanges with $0 buying power, show a more helpful message
-        if (selectedAccountData.is_crypto_exchange && selectedAccountData.buying_power === 0) {
-          setSubmitError('This account has no USD cash. Sell crypto first to add buying power.');
-        } else if (inputMode === 'shares' && marketPrice) {
-          setSubmitError(
-            `Insufficient buying power. ${parsedValue} shares × ${formatCurrency(marketPrice)} = ${formatCurrency(estimatedCost)} exceeds your available ${formatCurrency(selectedAccountData.buying_power)}.`
-          );
-        } else {
-          setSubmitError(`Insufficient buying power. Available: ${formatCurrency(selectedAccountData.buying_power)}`);
+      // CRITICAL FIX: For shares mode, we MUST have a price to validate buying power
+      // Otherwise we'd compare share count to dollar amount (wrong!)
+      if (inputMode === 'shares' && !marketPrice) {
+        // Try to use limit price if set (for after-hours orders)
+        const limitPriceNum = parseFloat(limitPrice);
+        if (!limitPriceNum || limitPriceNum <= 0) {
+          setSubmitError('Unable to validate order - market price unavailable. Please try again or use dollar amount mode.');
+          return;
         }
-        return;
+        // Use limit price for estimation
+        const estimatedCost = parsedValue * limitPriceNum;
+        if (estimatedCost > selectedAccountData.buying_power) {
+          setSubmitError(
+            `Insufficient buying power. ${parsedValue} shares × ${formatCurrency(limitPriceNum)} (limit) = ${formatCurrency(estimatedCost)} exceeds your available ${formatCurrency(selectedAccountData.buying_power)}.`
+          );
+          return;
+        }
+      } else {
+        // Normal case: we have market price or we're in dollars mode
+        let estimatedCost = parsedValue;
+        if (inputMode === 'shares' && marketPrice) {
+          estimatedCost = parsedValue * marketPrice;
+        }
+        
+        if (estimatedCost > selectedAccountData.buying_power) {
+          // For crypto exchanges with $0 buying power, show a more helpful message
+          if (selectedAccountData.is_crypto_exchange && selectedAccountData.buying_power === 0) {
+            setSubmitError('This account has no USD cash. Sell crypto first to add buying power.');
+          } else if (inputMode === 'shares' && marketPrice) {
+            setSubmitError(
+              `Insufficient buying power. ${parsedValue} shares × ${formatCurrency(marketPrice)} = ${formatCurrency(estimatedCost)} exceeds your available ${formatCurrency(selectedAccountData.buying_power)}.`
+            );
+          } else {
+            setSubmitError(`Insufficient buying power. Available: ${formatCurrency(selectedAccountData.buying_power)}`);
+          }
+          return;
+        }
       }
     }
 
