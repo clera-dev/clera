@@ -236,21 +236,21 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                     <ul className="space-y-2">
                       {finalToday.map((b, idx) => (
                         <li key={`t-${idx}`} className="flex items-start gap-2">
-                                                  <span className="text-muted-foreground" aria-hidden>•</span>
-                        <span className="flex-1 leading-6">{b}</span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="text-blue-400 hover:text-blue-300 p-1"
-                              onClick={() => handleBulletAssist("What to Watch Out For", b)}
-                              aria-label="Learn more"
-                            >
-                              <ArrowUpRight className="w-4 h-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">Learn more</TooltipContent>
-                        </Tooltip>
+                          <span className="text-muted-foreground" aria-hidden>•</span>
+                          <span className="flex-1 leading-6">{b}</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="text-blue-400 hover:text-blue-300 p-1"
+                                onClick={() => handleBulletAssist("What to Watch Out For", b)}
+                                aria-label="Learn more"
+                              >
+                                <ArrowUpRight className="w-4 h-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">Learn more</TooltipContent>
+                          </Tooltip>
                         </li>
                       ))}
                     </ul>
@@ -353,21 +353,21 @@ const PortfolioNewsSummaryWithAssist: React.FC<PortfolioNewsSummaryWithAssistPro
                     <ul className="space-y-2">
                       {finalToday.map((b, idx) => (
                         <li key={`t-enabled-${idx}`} className="flex items-start gap-2">
-                                                  <span className="text-gray-400" aria-hidden>•</span>
-                        <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="text-blue-400 hover:text-blue-300 p-1"
+                          <span className="text-gray-400" aria-hidden>•</span>
+                          <span className="flex-1 leading-7">{renderWithEmphasis(b)}</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="text-blue-400 hover:text-blue-300 p-1"
                                 onClick={() => handleBulletAssist("What to Watch Out For", b)}
-                              aria-label="Learn more"
-                            >
-                              <ArrowUpRight className="w-4 h-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">Learn more</TooltipContent>
-                        </Tooltip>
+                                aria-label="Learn more"
+                              >
+                                <ArrowUpRight className="w-4 h-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">Learn more</TooltipContent>
+                          </Tooltip>
                         </li>
                       ))}
                     </ul>
