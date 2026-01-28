@@ -72,11 +72,11 @@ For our full advisory agreement, Form ADV, and privacy policy, please visit our 
 
 export default function DisclaimerSection() {
   return (
-    <section className="relative w-full bg-black py-16 px-6">
+    <section className="relative w-full py-16 px-6 bg-black">
       <div className="max-w-3xl mx-auto">
         <BlurFade delay={0.1} inView>
           <div className="text-center mb-8">
-            <h3 className="text-xl font-semibold text-gray-300 mb-2">
+            <h3 className="text-xl font-semibold mb-2 text-gray-300">
               Important Disclosures
             </h3>
             <p className="text-sm text-gray-500">
@@ -91,15 +91,15 @@ export default function DisclaimerSection() {
               <AccordionItem
                 key={item.id}
                 value={item.id}
-                className="border-gray-800 border-b last:border-b-0"
+                className="border-b last:border-b-0 border-gray-800"
               >
-                <AccordionTrigger className="text-gray-200 hover:text-white hover:no-underline py-4">
+                <AccordionTrigger className="hover:no-underline py-4 text-gray-200 hover:text-white">
                   <div className="flex items-center gap-3">
                     {item.icon}
                     <span className="text-sm font-medium">{item.title}</span>
                   </div>
                 </AccordionTrigger>
-                <AccordionContent className="text-gray-400 text-sm leading-relaxed whitespace-pre-line">
+                <AccordionContent className="text-sm leading-relaxed whitespace-pre-line text-gray-400">
                   {item.content}
                 </AccordionContent>
               </AccordionItem>

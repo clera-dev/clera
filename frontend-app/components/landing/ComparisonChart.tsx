@@ -83,16 +83,17 @@ const RISK_PROFILES: Record<RiskLevel, {
     label: 'Aggressive',
     description: '9-10% expected return',
     allocation: [
-      { name: 'US Large Cap', value: 35, color: COLORS.stocksLargeCap },
+      { name: 'US Large Cap', value: 34, color: COLORS.stocksLargeCap },
       { name: 'US Mid Cap', value: 15, color: COLORS.stocksMidCap },
       { name: 'US Small Cap', value: 10, color: COLORS.stocksSmallCap },
-      { name: 'International', value: 15, color: COLORS.stocksIntl },
+      { name: 'International', value: 14, color: COLORS.stocksIntl },
       { name: 'Emerging Markets', value: 10, color: COLORS.stocksEmerging },
       { name: 'Investment Grade Bonds', value: 5, color: COLORS.bondsInvestment },
       { name: 'Treasury Bonds', value: 5, color: COLORS.bondsTreasury },
+      { name: 'Cash', value: 2, color: COLORS.cash },
       { name: 'Alternatives', value: 5, color: COLORS.alternatives },
     ],
-    summary: { stocks: 85, bonds: 10, other: 5 },
+    summary: { stocks: 83, bonds: 10, other: 7 },
   },
 };
 
@@ -143,8 +144,8 @@ const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const dataPoint = payload[0].payload;
     return (
-      <div className="rounded-2xl border border-gray-800 bg-black/90 backdrop-blur-sm p-3 shadow-lg">
-        <p className="text-sm text-gray-400 mb-2">Year {dataPoint.year}</p>
+      <div className="rounded-2xl border backdrop-blur-sm p-3 shadow-lg border-gray-800 bg-black/90">
+        <p className="text-sm mb-2 text-gray-400">Year {dataPoint.year}</p>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-gradient-to-r from-blue-400 to-cyan-400" />
@@ -166,7 +167,7 @@ const CustomTooltip = ({ active, payload }: any) => {
 // Mini donut chart for allocation display
 function AllocationDonutChart({
   allocation,
-  summary
+  summary,
 }: {
   allocation: { name: string; value: number; color: string }[];
   summary: { stocks: number; bonds: number; other: number };
@@ -209,7 +210,7 @@ function AllocationDonutChart({
           {activeIndex !== null ? (
             <div className="text-center">
               <p className="text-lg font-bold text-white">{allocation[activeIndex].value}%</p>
-              <p className="text-xs text-gray-400 max-w-[70px] leading-tight">{allocation[activeIndex].name}</p>
+              <p className="text-xs max-w-[70px] leading-tight text-gray-400">{allocation[activeIndex].name}</p>
             </div>
           ) : (
             <div className="text-center">
@@ -310,15 +311,15 @@ export default function ComparisonChart() {
   const advantagePercent = finalAverageValue > 0 ? ((finalCleraValue / finalAverageValue - 1) * 100) : 0;
 
   return (
-    <section id="comparison" className="relative w-full bg-black py-24 px-6">
+    <section id="comparison" className="relative w-full py-24 px-6 bg-black">
       <div className="max-w-6xl mx-auto">
         {/* Section Header */}
         <BlurFade delay={0.1} inView>
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-white">
               See the difference Clera makes.
             </h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+            <p className="text-lg max-w-2xl mx-auto text-gray-400">
               Compare your potential returns with Clera&apos;s personalized guidance
               versus the average investor.
             </p>
@@ -328,7 +329,7 @@ export default function ComparisonChart() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* Controls */}
           <BlurFade delay={0.2} inView>
-            <div className="space-y-6 bg-gray-900/50 border border-gray-800 rounded-3xl p-6">
+            <div className="space-y-6 rounded-3xl p-6 backdrop-blur-xl bg-gray-900/50 border border-gray-800">
               {/* Starting Investment */}
               <div>
                 <Label htmlFor="initialInvestment" className="text-sm font-medium text-gray-300">
@@ -346,7 +347,7 @@ export default function ComparisonChart() {
                         handleInitialInvestmentChange(parseCurrencyInput(initialInvestmentInput));
                       }
                     }}
-                    className="w-36 text-sm bg-black border-gray-700 text-white rounded-xl"
+                    className="w-36 text-sm rounded-xl bg-black border-gray-700 text-white"
                     placeholder="$25,000"
                   />
                 </div>
@@ -378,7 +379,7 @@ export default function ComparisonChart() {
                         handleMonthlyInvestmentChange(parseCurrencyInput(monthlyInvestmentInput));
                       }
                     }}
-                    className="w-32 text-sm bg-black border-gray-700 text-white rounded-xl"
+                    className="w-32 text-sm rounded-xl bg-black border-gray-700 text-white"
                     placeholder="$1,000"
                   />
                 </div>
@@ -414,7 +415,7 @@ export default function ComparisonChart() {
                         handleTimeHorizonChange(isNaN(parsed) ? 20 : parsed);
                       }
                     }}
-                    className="w-20 text-sm bg-black border-gray-700 text-white rounded-xl"
+                    className="w-20 text-sm rounded-xl bg-black border-gray-700 text-white"
                     placeholder="20"
                   />
                   <span className="text-sm text-gray-400">years</span>
@@ -432,10 +433,10 @@ export default function ComparisonChart() {
 
               {/* Risk Level Toggle */}
               <div className="pt-4 border-t border-gray-800">
-                <Label className="text-sm font-medium text-gray-300 mb-3 block">
+                <Label className="text-sm font-medium mb-3 block text-gray-300">
                   Risk Profile
                 </Label>
-                <div className="flex gap-1 bg-gray-800/50 p-1 rounded-2xl">
+                <div className="flex gap-1 p-1 rounded-2xl bg-gray-800/50">
                   {(['conservative', 'balanced', 'aggressive'] as RiskLevel[]).map((level) => (
                     <button
                       key={level}
@@ -469,18 +470,18 @@ export default function ComparisonChart() {
 
           {/* Chart and Results */}
           <BlurFade delay={0.3} inView className="lg:col-span-2">
-            <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-6">
+            <div className="rounded-3xl p-6 backdrop-blur-xl bg-gray-900/50 border border-gray-800">
               {/* Results Summary */}
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30 rounded-2xl p-4">
-                  <p className="text-sm text-gray-400 mb-1">With Clera</p>
-                  <div className="text-2xl sm:text-3xl font-bold text-white flex items-baseline">
+                  <p className="text-sm mb-1 text-gray-400">With Clera</p>
+                  <div className="text-2xl sm:text-3xl font-bold flex items-baseline text-white">
                     $<NumberTicker value={Math.round(finalCleraValue)} className="text-white" />
                   </div>
                 </div>
-                <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4">
-                  <p className="text-sm text-gray-400 mb-1">Average Investor</p>
-                  <div className="text-2xl sm:text-3xl font-bold text-gray-400 flex items-baseline">
+                <div className="rounded-2xl p-4 bg-gray-800/50 border border-gray-700">
+                  <p className="text-sm mb-1 text-gray-400">Average Investor</p>
+                  <div className="text-2xl sm:text-3xl font-bold flex items-baseline text-gray-400">
                     $<NumberTicker value={Math.round(finalAverageValue)} className="text-gray-400" />
                   </div>
                 </div>
@@ -490,7 +491,7 @@ export default function ComparisonChart() {
               <div className="mb-6 text-center">
                 <span className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-500/30 rounded-full">
                   <span className="text-blue-400 font-semibold">Clera advantage:</span>
-                  <span className="text-white font-bold">+{formatCurrency(advantageAmount)}</span>
+                  <span className="font-bold text-white">+{formatCurrency(advantageAmount)}</span>
                   <span className="text-cyan-400">(+{advantagePercent.toFixed(0)}%)</span>
                 </span>
               </div>
@@ -505,7 +506,11 @@ export default function ComparisonChart() {
                         <stop offset="100%" stopColor="#22d3ee" />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="rgba(255,255,255,0.1)"
+                      vertical={false}
+                    />
                     <XAxis
                       dataKey="year"
                       stroke="#6b7280"
@@ -526,7 +531,10 @@ export default function ComparisonChart() {
                       }}
                       width={55}
                     />
-                    <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }} />
+                    <Tooltip
+                      content={<CustomTooltip />}
+                      cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }}
+                    />
                     <Line
                       type="monotone"
                       dataKey="clera"

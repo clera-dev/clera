@@ -1,4 +1,7 @@
+"use client";
+
 import { cn } from "@/lib/utils";
+import { GlowingEffect } from "@/components/ui/glowing-effect";
 
 export const BentoGrid = ({
   className,
@@ -35,10 +38,20 @@ export const BentoGridItem = ({
   return (
     <div
       className={cn(
-        "group/bento relative row-span-1 flex flex-col justify-between space-y-4 rounded-2xl border border-gray-800 bg-gray-900/50 p-4 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 dark:border-gray-800 dark:bg-gray-900/50",
+        "group/bento relative row-span-1 flex flex-col justify-between space-y-4 rounded-2xl border p-4 transition-all duration-300 backdrop-blur-xl border-gray-800 bg-gray-900/50",
         className,
       )}
     >
+      {/* Glowing effect on hover */}
+      <GlowingEffect
+        spread={40}
+        glow={true}
+        disabled={false}
+        proximity={64}
+        inactiveZone={0.01}
+        borderWidth={2}
+      />
+
       {/* Gradient overlay on hover */}
       <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-500/5 via-transparent to-cyan-500/5 opacity-0 transition-opacity duration-300 group-hover/bento:opacity-100 pointer-events-none" />
 

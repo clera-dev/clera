@@ -208,7 +208,7 @@ const SecurityVisualization = () => (
 const features = [
   {
     title: "Intelligence That Learns You",
-    description: "Clera analyzes your complete financial picture—income, goals, risk tolerance, tax situation—and continuously adapts as your life changes.",
+    description: "Clera analyzes your complete financial picture: income, goals, risk tolerance, tax situation; and continuously adapts as your life changes.",
     icon: <Brain className="h-5 w-5 text-blue-400" />,
     className: "md:col-span-2",
     header: <DataPointsVisualization />,
@@ -229,20 +229,21 @@ const features = [
     title: "Strategies Reserved for the Elite",
     description: "Access allocation models and rebalancing approaches typically available only to high-net-worth family offices.",
     icon: <Sparkles className="h-5 w-5 text-amber-400" />,
+    className: "md:col-span-2",
     header: <VaultVisualization />,
   },
   {
     title: "Your Data. Locked Down.",
-    description: "Bank-level 256-bit encryption. SEC-registered fiduciary. We don't sell your data—ever. Your financial life stays yours.",
+    description: "Bank-level 256-bit encryption. SEC-registered fiduciary. We don't sell your data, ever. Your financial life stays yours.",
     icon: <Shield className="h-5 w-5 text-blue-400" />,
-    className: "md:col-span-2",
+    className: "md:col-span-3",
     header: <SecurityVisualization />,
   },
 ];
 
 export default function FeaturesBento() {
   return (
-    <section className="relative w-full bg-black py-24 px-6 overflow-hidden">
+    <section className="relative w-full py-24 px-6 overflow-hidden bg-black">
       {/* Background gradient effect */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[800px]">
@@ -256,7 +257,7 @@ export default function FeaturesBento() {
               repeat: Infinity,
               ease: "easeInOut",
             }}
-            className="absolute inset-0 bg-gradient-radial from-blue-500/20 via-blue-600/10 to-transparent rounded-full blur-3xl"
+            className="absolute inset-0 rounded-full blur-3xl bg-gradient-radial from-blue-500/20 via-blue-600/10 to-transparent"
           />
           <motion.div
             animate={{
@@ -268,7 +269,7 @@ export default function FeaturesBento() {
               ease: "easeInOut",
               delay: 2,
             }}
-            className="absolute top-[20%] right-[10%] w-[400px] h-[400px] bg-gradient-radial from-cyan-500/15 via-transparent to-transparent rounded-full blur-3xl"
+            className="absolute top-[20%] right-[10%] w-[400px] h-[400px] rounded-full blur-3xl bg-gradient-radial from-cyan-500/15 via-transparent to-transparent"
           />
         </div>
       </div>
@@ -277,10 +278,10 @@ export default function FeaturesBento() {
         {/* Section Header */}
         <BlurFade delay={0.1} inView>
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-white">
               Everything you need to invest with confidence
             </h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+            <p className="text-lg max-w-2xl mx-auto text-gray-400">
               Powerful features designed to help you make smarter financial decisions.
             </p>
           </div>

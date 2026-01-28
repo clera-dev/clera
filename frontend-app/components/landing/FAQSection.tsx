@@ -65,15 +65,15 @@ We typically respond within 24 hours, often much faster. Whether you have questi
 
 export default function FAQSection() {
   return (
-    <section className="relative w-full bg-black py-24 px-6">
+    <section className="relative w-full py-24 px-6 bg-black">
       <div className="max-w-3xl mx-auto">
         {/* Section Header */}
         <BlurFade delay={0.1} inView>
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-white">
               Frequently asked questions
             </h2>
-            <p className="text-gray-400 text-lg">
+            <p className="text-lg text-gray-400">
               Everything you need to know about Clera.
             </p>
           </div>
@@ -86,12 +86,12 @@ export default function FAQSection() {
               <AccordionItem
                 key={index}
                 value={`item-${index}`}
-                className="border border-gray-800 rounded-2xl px-6 bg-gray-900/30 hover:bg-gray-900/50 transition-colors"
+                className="border rounded-2xl px-6 transition-colors backdrop-blur-xl border-gray-800 bg-gray-900/30 hover:bg-gray-900/50"
               >
-                <AccordionTrigger className="text-left text-white text-lg font-medium py-5 hover:no-underline">
+                <AccordionTrigger className="text-left text-lg font-medium py-5 hover:no-underline text-white">
                   {faq.question}
                 </AccordionTrigger>
-                <AccordionContent className="text-gray-400 text-base leading-relaxed whitespace-pre-line">
+                <AccordionContent className="text-base leading-relaxed whitespace-pre-line text-gray-400">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>

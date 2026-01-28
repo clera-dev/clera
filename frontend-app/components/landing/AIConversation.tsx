@@ -118,21 +118,21 @@ function ChatMessage({ message, index }: { message: Message; index: number }) {
       <div
         className={cn(
           "flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center overflow-hidden",
-          isUser ? "bg-gradient-to-br from-gray-600 to-gray-800" : "bg-gradient-to-br from-blue-500 to-cyan-500 p-[2px]"
+          isUser
+            ? "bg-gradient-to-br from-gray-600 to-gray-800"
+            : "bg-gradient-to-br from-blue-500 to-cyan-500 p-[2px]"
         )}
       >
         {isUser ? (
           <span className="text-xs font-medium text-white">You</span>
         ) : (
-          <div className="w-full h-full rounded-full overflow-hidden bg-black flex items-center justify-center">
-            <Image
-              src="/clera-circle.png"
-              alt="Clera"
-              width={36}
-              height={36}
-              className="w-full h-full object-cover"
-            />
-          </div>
+          <Image
+            src="/clera-circle.png"
+            alt="Clera"
+            width={36}
+            height={36}
+            className="w-full h-full object-cover rounded-full"
+          />
         )}
       </div>
 
@@ -156,7 +156,7 @@ function ChatMessage({ message, index }: { message: Message; index: number }) {
               <div key={i} className="text-center">
                 <p className={cn(
                   "text-lg font-bold",
-                  item.value.startsWith("-") ? "text-red-400" : "text-emerald-400"
+                  item.value.startsWith("-") ? "text-red-500" : "text-emerald-500"
                 )}>
                   {item.value}
                 </p>
@@ -203,12 +203,12 @@ export default function AIConversation() {
     <section
       id="chat"
       ref={sectionRef}
-      className="relative w-full bg-black py-24 px-6 min-h-[100vh]"
+      className="relative w-full py-24 px-6 min-h-[100vh] bg-black"
     >
       {/* Background effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {/* Radial gradient */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-blue-500/10 via-transparent to-transparent rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full blur-3xl bg-gradient-radial from-blue-500/10 via-transparent to-transparent" />
 
         {/* Glow orbs */}
         <motion.div
@@ -217,7 +217,7 @@ export default function AIConversation() {
             y: [0, -30, 0],
           }}
           transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute top-20 right-[20%] w-64 h-64 bg-cyan-500/20 rounded-full blur-3xl"
+          className="absolute top-20 right-[20%] w-64 h-64 rounded-full blur-3xl bg-cyan-500/20"
         />
         <motion.div
           animate={{
@@ -225,7 +225,7 @@ export default function AIConversation() {
             y: [0, 40, 0],
           }}
           transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute bottom-20 left-[15%] w-72 h-72 bg-blue-600/15 rounded-full blur-3xl"
+          className="absolute bottom-20 left-[15%] w-72 h-72 rounded-full blur-3xl bg-blue-600/15"
         />
       </div>
 
@@ -233,11 +233,11 @@ export default function AIConversation() {
         {/* Section Header */}
         <BlurFade delay={0.1} inView>
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-white">
               Ask anything. Get real answers.
             </h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-              See how Clera provides personalized, actionable guidance—from daily market moves to long-term strategy.
+            <p className="text-lg max-w-2xl mx-auto text-gray-400">
+              See how Clera provides personalized, actionable guidance, from daily market moves to long-term strategy.
             </p>
           </div>
         </BlurFade>
@@ -271,7 +271,7 @@ export default function AIConversation() {
             exit={{ opacity: 0 }}
             className="text-center mb-4"
           >
-            <p className="text-gray-500 text-sm flex items-center justify-center gap-2">
+            <p className="text-sm flex items-center justify-center gap-2 text-gray-500">
               <motion.span
                 animate={{ y: [0, 4, 0] }}
                 transition={{ duration: 1.5, repeat: Infinity }}
@@ -285,23 +285,21 @@ export default function AIConversation() {
 
         {/* Chat Interface */}
         <BlurFade delay={0.3} inView>
-          <div className="bg-gray-900/60 border border-gray-800/80 rounded-3xl p-6 min-h-[450px] backdrop-blur-xl shadow-2xl shadow-blue-500/5">
+          <div className="rounded-3xl p-6 min-h-[450px] backdrop-blur-xl shadow-2xl bg-gray-900/60 border border-gray-800/80 shadow-blue-500/5">
             {/* Chat Header */}
-            <div className="flex items-center gap-3 pb-4 border-b border-gray-800/50 mb-6">
-              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 p-[2px]">
-                <div className="w-full h-full rounded-full overflow-hidden bg-black">
-                  <Image
-                    src="/clera-circle.png"
-                    alt="Clera"
-                    width={44}
-                    height={44}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+            <div className="flex items-center gap-3 pb-4 border-b mb-6 border-gray-800/50">
+              <div className="w-11 h-11 rounded-full overflow-hidden">
+                <Image
+                  src="/clera-circle.png"
+                  alt="Clera"
+                  width={44}
+                  height={44}
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div>
-                <p className="text-white font-medium">Clera</p>
-                <p className="text-gray-500 text-xs">Your Investment Advisor</p>
+                <p className="font-medium text-white">Clera</p>
+                <p className="text-xs text-gray-500">Your Investment Advisor</p>
               </div>
               <div className="ml-auto flex items-center gap-1.5">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -327,8 +325,8 @@ export default function AIConversation() {
 
             {/* Typing indicator area */}
             <div className="mt-6 pt-4 border-t border-gray-800/50">
-              <div className="flex items-center gap-2 text-gray-500 text-sm">
-                <div className="flex-1 bg-gray-800/50 rounded-full px-4 py-2.5 text-gray-500">
+              <div className="flex items-center gap-2 text-sm">
+                <div className="flex-1 rounded-full px-4 py-2.5 bg-gray-800/50 text-gray-500">
                   Ask Clera anything...
                 </div>
                 <button className="p-2.5 rounded-full bg-blue-600 hover:bg-blue-500 transition-colors">
