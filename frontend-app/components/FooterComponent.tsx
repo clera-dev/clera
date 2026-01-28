@@ -10,8 +10,7 @@ export default function FooterComponent() {
   const [isClient, setIsClient] = useState(false);
 
   // Pages where we don't want to show the footer
-  // NOTE: Landing page ('/') has its own footer component
-  const noFooterPages = ['/', '/dashboard', '/chat', '/invest', '/portfolio', '/news'];
+  const noFooterPages = ['/dashboard', '/chat', '/invest', '/portfolio', '/news'];
   
   useEffect(() => {
     setIsClient(true);

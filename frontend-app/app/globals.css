@@ -57,10 +57,6 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
-  .theme {
-    --animate-shimmer-slide: shimmer-slide var(--speed) ease-in-out infinite alternate;
-    --animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;
-  }
 }
 
 @layer base {
@@ -70,21 +66,21 @@
   body {
     @apply bg-background text-foreground;
   }
-
+  
   /* Use CSS variables for consistent dark theme */
   :root {
     --page-background: hsl(var(--background));
   }
-
+  
   .dark {
     --page-background: #000000;
   }
-
+  
   /* Apply dark background using CSS variables instead of !important */
   html {
     background-color: var(--page-background);
   }
-
+  
   /* Ensure main containers inherit the dark theme */
   main, div[class*="bg-background"] {
     background-color: var(--page-background);
@@ -361,7 +357,7 @@ body > div:last-child:not([id]):not([class]) {
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
-
+  
   .clera-pulse {
     animation-duration: 1.5s;
   }
@@ -398,30 +394,30 @@ body > div:last-child:not([id]):not([class]) {
   input, textarea, select {
     font-size: 16px !important;
   }
-
+  
   /* Ensure onboarding content fits properly on mobile */
   .onboarding-container {
     min-height: calc(100vh - 3.5rem); /* 56px header */
     min-height: calc(100dvh - 3.5rem);
   }
-
+  
   /* Optimize mobile onboarding spacing for better UX */
   .onboarding-container .space-y-6 > * + * {
     margin-top: 1rem; /* Reduce from 1.5rem to 1rem on mobile */
   }
-
+  
   .onboarding-container .mb-4 {
     margin-bottom: 0.75rem; /* Reduce mobile margins */
   }
-
+  
   .onboarding-container .mb-8 {
     margin-bottom: 1rem; /* Reduce mobile margins */
   }
-
+  
   .onboarding-container .p-4 {
     padding: 0.75rem; /* Slightly reduce mobile padding */
   }
-
+  
   .onboarding-container .py-4 {
     padding-top: 0.75rem;
     padding-bottom: 0.75rem;
@@ -435,7 +431,7 @@ body > div:last-child:not([id]):not([class]) {
     height: 100vh;
     height: 100dvh; /* Use dynamic viewport height when available */
   }
-
+  
   main {
     height: 100vh;
     height: 100dvh;
@@ -478,11 +474,11 @@ body > div:last-child:not([id]):not([class]) {
     max-height: 40vh;
     overflow-y: auto;
   }
-
+  
   .mobile-suggested-questions .grid {
     gap: 0.5rem;
   }
-
+  
   .mobile-suggested-questions button {
     min-height: 2.5rem;
     font-size: 0.75rem;
@@ -509,36 +505,15 @@ body > div:last-child:not([id]):not([class]) {
   main {
     z-index: 1 !important;
   }
-
+  
   /* Ensure sidebar overlay is above main content */
   .sidebar-overlay {
     z-index: 50 !important;
   }
-
+  
   /* Ensure sidebar is above overlay */
   .sidebar-container {
     z-index: 55 !important;
   }
 }
 
-@theme inline {
-  @keyframes shimmer-slide {
-  to {
-    transform: translate(calc(100cqw - 100%), 0);
-    }
-  }
-  @keyframes spin-around {
-  0% {
-    transform: translateZ(0) rotate(0);
-    }
-  15%, 35% {
-    transform: translateZ(0) rotate(90deg);
-    }
-  65%, 85% {
-    transform: translateZ(0) rotate(270deg);
-    }
-  100% {
-    transform: translateZ(0) rotate(360deg);
-    }
-  }
-}
