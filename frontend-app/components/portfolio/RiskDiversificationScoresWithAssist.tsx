@@ -49,7 +49,9 @@ const RiskDiversificationScoresWithAssist: React.FC<RiskDiversificationScoresWit
   // Memoize prompt generation - only recalculates when data actually changes
   // This prevents unnecessary recalculations on hover/unhover state changes
   const contextualPrompt = useMemo(() => {
-    if (!accountId || disabled) {
+    // CRITICAL: Don't check accountId here - it's null for SnapTrade/aggregation mode users
+    // who still have valid portfolio data. Use 'disabled' prop for access control instead.
+    if (disabled) {
       return "Can you explain what risk and diversification scores actually measure? I want to understand how to use these metrics without obsessing over them.";
     }
     
@@ -66,7 +68,7 @@ const RiskDiversificationScoresWithAssist: React.FC<RiskDiversificationScoresWit
     const divInterpretation = getDiversificationInterpretation(divScore);
     
     return `My Risk Score is ${riskScore.toFixed(1)}/10 (${riskInterpretation}) and Diversification Score is ${divScore.toFixed(1)}/10 (${divInterpretation}). Can you look at my actual holdings and explain why my scores are what they are? What specific changes could improve them?`;
-  }, [accountId, disabled, initialData]);
+  }, [disabled, initialData]);
 
   if (!isEnabled) {
     return (

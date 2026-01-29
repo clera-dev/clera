@@ -94,8 +94,12 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
     }
     
     // Generate prompt
+    // CRITICAL: For SnapTrade/aggregation mode, accountId is null but user still has portfolio data
+    // Check for either accountId (Alpaca) OR aggregation mode with userId (SnapTrade)
+    const hasPortfolioAccess = accountId || (portfolioMode === 'aggregation' && userId);
+    
     let prompt: string;
-    if (!accountId || disabled) {
+    if (!hasPortfolioAccess || disabled) {
       prompt = "Can you explain how to evaluate investment performance - what matters, what doesn't, and how to stay focused on long-term goals?";
     } else if (!hasHistory) {
       prompt = "My portfolio is new so there isn't much performance history to show. What should I keep an eye on as it grows, and how do I measure progress in a healthy way?";
@@ -125,7 +129,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
     // Generate trigger text and description
     let trigger: string;
     let desc: string;
-    if (!accountId || disabled) {
+    if (!hasPortfolioAccess || disabled) {
       trigger = "Analyze progress";
       desc = "Learn how to track and evaluate investment performance";
     } else if (!hasHistory) {
@@ -142,7 +146,7 @@ const PortfolioSummaryWithAssist: React.FC<PortfolioSummaryWithAssistProps> = ({
       description: desc,
       hasHistoryData: hasHistory
     };
-  }, [accountId, disabled, portfolioHistory, selectedTimeRange, allTimeReturnAmount, allTimeReturnPercent]);
+  }, [accountId, disabled, portfolioHistory, selectedTimeRange, allTimeReturnAmount, allTimeReturnPercent, portfolioMode, userId]);
 
   if (!isEnabled) {
     // Fallback to original component when assist is disabled
