@@ -44,7 +44,7 @@
     "ioredis": "^5.6.1",
     "link-preview-js": "^3.0.14",
     "lucide-react": "^0.468.0",
-    "next": "^15.5.9",
+    "next": "^16.1.6",
     "next-themes": "^0.4.3",
     "openai": "^4.99.0",
     "plaid": "^31.1.0",
