@@ -28,6 +28,7 @@ import { ResearchMethodModal } from "@/components/invest/ResearchMethodModal"
 interface StockSearchBarProps {
   onStockSelect: (symbol: string) => void;
   accountId?: string | null;
+  userId?: string | null; // User ID for watchlist - ensures refetch on user change
   watchlistSymbols?: Set<string>;
   onWatchlistChange?: () => void;
   onOptimisticAdd?: (symbol: string) => void;
@@ -38,7 +39,8 @@ interface StockSearchBarProps {
 
 export default function StockSearchBar({ 
   onStockSelect, 
-  accountId, 
+  accountId,
+  userId,
   watchlistSymbols, 
   onWatchlistChange, 
   onOptimisticAdd, 
@@ -85,33 +87,36 @@ export default function StockSearchBar({
   const isLoading = hasSearchResults ? isSearching : isLoadingPopular;
 
   // Fetch watchlist data only if not provided via props
+  // PRODUCTION-GRADE: Use user-based watchlist API (works for both SnapTrade and Alpaca)
+  // IMPORTANT: Include userId in deps so watchlist refreshes when user changes (prevents stale data)
   useEffect(() => {
     if (watchlistSymbols) return; // Skip if watchlist provided via props
     
     const fetchWatchlist = async () => {
-      if (!accountId) {
-        setLocalWatchlistSymbols(new Set());
-        return;
-      }
-      
       try {
-        const response = await fetch(`/api/watchlist/${accountId}`);
+        // Use user-based API instead of accountId-based (works for all users)
+        const response = await fetch(`/api/user/watchlist`);
         
         if (response.ok) {
           const result = await response.json();
           setLocalWatchlistSymbols(new Set(result.symbols || []));
+        } else {
+          // Clear watchlist if fetch fails (e.g., user not authenticated)
+          setLocalWatchlistSymbols(new Set());
         }
       } catch (err) {
         console.warn('Failed to fetch watchlist for search:', err);
+        setLocalWatchlistSymbols(new Set());
       }
     };
 
     fetchWatchlist();
-  }, [accountId, watchlistSymbols]);
+  }, [watchlistSymbols, userId]);
 
   // Add/remove from watchlist
+  // PRODUCTION-GRADE: Use user-based watchlist API (works for both SnapTrade and Alpaca)
   const toggleWatchlist = async (symbol: string, isInWatchlist: boolean) => {
-    if (!accountId || isUpdatingWatchlist) return;
+    if (isUpdatingWatchlist) return;
     
     setIsUpdatingWatchlist(true);
     
@@ -135,7 +140,8 @@ export default function StockSearchBar({
       const endpoint = isInWatchlist ? 'remove' : 'add';
       const method = isInWatchlist ? 'DELETE' : 'POST';
       
-      const response = await fetch(`/api/watchlist/${accountId}/${endpoint}`, {
+      // Use user-based API instead of accountId-based (works for all users)
+      const response = await fetch(`/api/user/watchlist/${endpoint}`, {
         method,
         headers: {
           'Content-Type': 'application/json',

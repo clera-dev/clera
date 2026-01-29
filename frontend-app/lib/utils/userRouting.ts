@@ -101,11 +101,12 @@ export async function getRedirectPathWithServerTransferLookup(
         .eq('is_active', true)
         .limit(1),
       // Check active payment subscription
+      // CRITICAL: Check both payment_status AND subscription_status columns
+      // The table uses these column names, NOT a generic 'status' column
       supabaseServerClient
         .from('user_payments')
-        .select('id, status')
+        .select('id, payment_status, subscription_status')
         .eq('user_id', userId)
-        .in('status', ['active', 'trialing'])
         .limit(1)
     ]);
     
@@ -119,9 +120,15 @@ export async function getRedirectPathWithServerTransferLookup(
       hasPlaidAccounts = plaidResult.data.length > 0;
     }
     
-    // Process payment result
-    if (!paymentResult.error && paymentResult.data) {
-      hasActivePayment = paymentResult.data.length > 0;
+    // Process payment result - check both payment_status and subscription_status
+    // This matches the logic in /api/stripe/check-payment-status
+    if (!paymentResult.error && paymentResult.data && paymentResult.data.length > 0) {
+      const payment = paymentResult.data[0];
+      hasActivePayment = (
+        payment.payment_status === 'active' || 
+        payment.subscription_status === 'active' ||
+        payment.subscription_status === 'trialing'
+      );
     }
     
   } catch (error) {
@@ -202,11 +209,11 @@ export async function getRedirectPathWithClientTransferLookup(
         .eq('is_active', true)
         .limit(1),
       // Check active payment subscription
+      // CRITICAL: Check both payment_status AND subscription_status columns
       supabase
         .from('user_payments')
-        .select('id, status')
+        .select('id, payment_status, subscription_status')
         .eq('user_id', userId)
-        .in('status', ['active', 'trialing'])
         .limit(1)
     ]);
     
@@ -217,8 +224,15 @@ export async function getRedirectPathWithClientTransferLookup(
     if (!plaidResult.error && plaidResult.data) {
       hasPlaidAccounts = plaidResult.data.length > 0;
     }
-    if (!paymentResult.error && paymentResult.data) {
-      hasActivePayment = paymentResult.data.length > 0;
+    // Process payment result - check both payment_status and subscription_status
+    // This matches the logic in /api/stripe/check-payment-status
+    if (!paymentResult.error && paymentResult.data && paymentResult.data.length > 0) {
+      const payment = paymentResult.data[0];
+      hasActivePayment = (
+        payment.payment_status === 'active' || 
+        payment.subscription_status === 'active' ||
+        payment.subscription_status === 'trialing'
+      );
     }
     
   } catch (error) {

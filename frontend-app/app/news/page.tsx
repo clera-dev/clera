@@ -608,7 +608,7 @@ export default function NewsPage() {
               isPlaying={isPlaying}
               onReadSummary={handleReadSummary}
               WatchlistNewsItemClient={WatchlistNewsItemClient}
-              disabled={!accountId || !portfolioSummary}
+              disabled={!portfolioSummary}
             />
           </div>
 

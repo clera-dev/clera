@@ -22,6 +22,7 @@ import StockChart from "./StockChart";
 interface StockInfoCardProps {
   symbol: string;
   accountId?: string | null;
+  userId?: string | null; // User ID for watchlist - ensures refetch on user change
   isInWatchlist?: boolean;
   onWatchlistChange?: () => void;
   onOptimisticAdd?: (symbol: string) => void;
@@ -83,7 +84,7 @@ interface PriceTargetSummary {
 
 // Using WeeklyStockPick type from the types file for consistency
 
-export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockInfoCardProps) {
+export default function StockInfoCard({ symbol, accountId, userId, isInWatchlist, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockInfoCardProps) {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [priceTarget, setPriceTarget] = useState<PriceTargetSummary | null>(null);
   const [cleraRecommendation, setCleraRecommendation] = useState<WeeklyStockPick | null>(null);
@@ -128,20 +129,24 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
   };
 
   // Check if symbol is in watchlist (only if not provided via props)
+  // PRODUCTION-GRADE: Use user-based watchlist API (works for both SnapTrade and Alpaca)
   const checkWatchlistStatus = async () => {
     if (isInWatchlist !== undefined) return; // Skip if provided via props
     
-    if (!accountId || !symbol) {
+    if (!symbol) {
       setLocalIsInWatchlist(false);
       return;
     }
     
     try {
-      const response = await fetch(`/api/watchlist/${accountId}/check/${symbol}`);
+      // Fetch full watchlist and check if symbol is in it
+      // (user-based API doesn't have a /check endpoint, so we fetch all)
+      const response = await fetch(`/api/user/watchlist`);
       
       if (response.ok) {
         const result = await response.json();
-        setLocalIsInWatchlist(result.in_watchlist);
+        const symbols = new Set((result.symbols || []).map((s: string) => s.toUpperCase()));
+        setLocalIsInWatchlist(symbols.has(symbol.toUpperCase()));
       }
     } catch (err) {
       console.warn('Failed to check watchlist status:', err);
@@ -149,8 +154,9 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
   };
 
   // Toggle watchlist status
+  // PRODUCTION-GRADE: Use user-based watchlist API (works for both SnapTrade and Alpaca)
   const toggleWatchlist = async () => {
-    if (!accountId || !symbol || isUpdatingWatchlist) return;
+    if (!symbol || isUpdatingWatchlist) return;
     
     setIsUpdatingWatchlist(true);
     
@@ -170,7 +176,8 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
       const endpoint = currentIsInWatchlist ? 'remove' : 'add';
       const method = currentIsInWatchlist ? 'DELETE' : 'POST';
       
-      const response = await fetch(`/api/watchlist/${accountId}/${endpoint}`, {
+      // Use user-based API instead of accountId-based (works for all users)
+      const response = await fetch(`/api/user/watchlist/${endpoint}`, {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -207,9 +214,10 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
     }
   };
 
+  // IMPORTANT: Include userId in deps so watchlist status refreshes when user changes
   useEffect(() => {
     checkWatchlistStatus();
-  }, [accountId, symbol, isInWatchlist]);
+  }, [symbol, isInWatchlist, userId]);
 
   useEffect(() => {
     if (!symbol) return;
