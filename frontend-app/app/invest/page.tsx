@@ -14,6 +14,7 @@ import ResearchSourcesCard from '@/components/invest/ResearchSourcesCard';
 import { Button } from '@/components/ui/button';
 import { Toaster } from 'react-hot-toast';
 import { formatCurrency, getAlpacaAccountId } from "@/lib/utils";
+import { createClient } from "@/utils/supabase/client";
 import { useSidebarCollapse } from "@/components/ClientLayout";
 import { useCleraAssist } from "@/components/ui/clera-assist-provider";
 import { useWeeklyStockPicks } from "@/hooks/useWeeklyStockPicks";
@@ -58,6 +59,7 @@ export default function InvestPage() {
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isLoadingAccountId, setIsLoadingAccountId] = useState(true);
   const [watchlistSymbols, setWatchlistSymbols] = useState<Set<string>>(new Set());
   const [watchlistVersion, setWatchlistVersion] = useState(0);
@@ -156,6 +158,23 @@ export default function InvestPage() {
   // Fetch portfolio mode on mount
   useEffect(() => {
     fetchPortfolioMode();
+  }, []);
+  
+  // Fetch user ID for watchlist functionality
+  // IMPORTANT: userId ensures watchlist refreshes when user changes (prevents stale data)
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (user && !error) {
+          setUserId(user.id);
+        }
+      } catch (error) {
+        console.error('Error fetching user ID:', error);
+      }
+    };
+    fetchUserId();
   }, []);
   
   // Fetch account ID after portfolio mode is determined
@@ -423,6 +442,7 @@ export default function InvestPage() {
         <StockSearchBar 
           onStockSelect={handleStockSelect} 
           accountId={accountId}
+          userId={userId}
           watchlistSymbols={watchlistSymbols}
           onWatchlistChange={refreshWatchlist}
           onOptimisticAdd={optimisticAddToWatchlist}
@@ -447,6 +467,7 @@ export default function InvestPage() {
             {/* Stock Watchlist - First in stacked layout */}
             <StockWatchlist 
               accountId={accountId}
+              userId={userId}
               onStockSelect={handleStockSelect}
               watchlistSymbols={watchlistSymbols}
               onWatchlistChange={refreshWatchlist}
@@ -497,6 +518,7 @@ export default function InvestPage() {
               />
               <StockWatchlist 
                 accountId={accountId}
+                userId={userId}
                 onStockSelect={handleStockSelect}
                 watchlistSymbols={watchlistSymbols}
                 onWatchlistChange={refreshWatchlist}
@@ -552,6 +574,7 @@ export default function InvestPage() {
                 <StockInfoCard 
                   symbol={selectedSymbol} 
                   accountId={accountId}
+                  userId={userId}
                   isInWatchlist={watchlistSymbols.has(selectedSymbol)}
                   onWatchlistChange={refreshWatchlist}
                   onOptimisticAdd={optimisticAddToWatchlist}

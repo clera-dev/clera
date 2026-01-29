@@ -16,6 +16,7 @@ import { useMarketPercentages } from "@/hooks/useMarketPercentages";
 
 interface StockWatchlistProps {
   accountId: string | null; // Kept for backwards compatibility, but not required
+  userId?: string | null; // User ID for watchlist - ensures refetch on user change
   onStockSelect?: (symbol: string) => void;
   watchlistSymbols?: Set<string>;
   onWatchlistChange?: () => void;
@@ -23,7 +24,7 @@ interface StockWatchlistProps {
   onOptimisticRemove?: (symbol: string) => void;
 }
 
-export default function StockWatchlist({ accountId, onStockSelect, watchlistSymbols, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockWatchlistProps) {
+export default function StockWatchlist({ accountId, userId, onStockSelect, watchlistSymbols, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockWatchlistProps) {
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
 
   // Use the extracted data management hook
@@ -232,6 +233,7 @@ export default function StockWatchlist({ accountId, onStockSelect, watchlistSymb
       <StockSearchBar 
         onStockSelect={handleStockSelect} 
         accountId={accountId}
+        userId={userId}
         watchlistSymbols={watchlistSymbols}
         onWatchlistChange={onWatchlistChange}
         onOptimisticAdd={onOptimisticAdd}

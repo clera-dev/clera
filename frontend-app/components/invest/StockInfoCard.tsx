@@ -22,6 +22,7 @@ import StockChart from "./StockChart";
 interface StockInfoCardProps {
   symbol: string;
   accountId?: string | null;
+  userId?: string | null; // User ID for watchlist - ensures refetch on user change
   isInWatchlist?: boolean;
   onWatchlistChange?: () => void;
   onOptimisticAdd?: (symbol: string) => void;
@@ -83,7 +84,7 @@ interface PriceTargetSummary {
 
 // Using WeeklyStockPick type from the types file for consistency
 
-export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockInfoCardProps) {
+export default function StockInfoCard({ symbol, accountId, userId, isInWatchlist, onWatchlistChange, onOptimisticAdd, onOptimisticRemove }: StockInfoCardProps) {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [priceTarget, setPriceTarget] = useState<PriceTargetSummary | null>(null);
   const [cleraRecommendation, setCleraRecommendation] = useState<WeeklyStockPick | null>(null);
@@ -213,9 +214,10 @@ export default function StockInfoCard({ symbol, accountId, isInWatchlist, onWatc
     }
   };
 
+  // IMPORTANT: Include userId in deps so watchlist status refreshes when user changes
   useEffect(() => {
     checkWatchlistStatus();
-  }, [accountId, symbol, isInWatchlist]);
+  }, [symbol, isInWatchlist, userId]);
 
   useEffect(() => {
     if (!symbol) return;
