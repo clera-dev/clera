@@ -299,15 +299,12 @@ export default function InvestPage() {
     setIsModalOpen(false);
   };
 
-  // Fetch watchlist data
+  // Fetch watchlist data using user-based API (works for both aggregation and brokerage modes)
   const fetchWatchlist = async () => {
-    if (!accountId) {
-      setWatchlistSymbols(new Set());
-      return;
-    }
-
     try {
-      const response = await fetch(`/api/watchlist/${accountId}`);
+      // PRODUCTION-GRADE: Use user-based watchlist API instead of accountId-based
+      // This works for both SnapTrade (aggregation) and Alpaca (brokerage) users
+      const response = await fetch(`/api/user/watchlist`);
       if (response.ok) {
         const data = await response.json();
         setWatchlistSymbols(new Set(data.symbols || []));
@@ -343,10 +340,13 @@ export default function InvestPage() {
     handleWatchlistChange(symbol, 'remove');
   };
 
-  // Load watchlist when account changes
+  // Load watchlist on mount and when portfolio mode is determined
+  // PRODUCTION-GRADE: User-based watchlist API works regardless of accountId
   useEffect(() => {
-    fetchWatchlist();
-  }, [accountId]);
+    if (portfolioMode !== 'loading') {
+      fetchWatchlist();
+    }
+  }, [portfolioMode]);
 
   if (isLoadingAccountId) {
     return (

@@ -85,17 +85,14 @@ export default function StockSearchBar({
   const isLoading = hasSearchResults ? isSearching : isLoadingPopular;
 
   // Fetch watchlist data only if not provided via props
+  // PRODUCTION-GRADE: Use user-based watchlist API (works for both SnapTrade and Alpaca)
   useEffect(() => {
     if (watchlistSymbols) return; // Skip if watchlist provided via props
     
     const fetchWatchlist = async () => {
-      if (!accountId) {
-        setLocalWatchlistSymbols(new Set());
-        return;
-      }
-      
       try {
-        const response = await fetch(`/api/watchlist/${accountId}`);
+        // Use user-based API instead of accountId-based (works for all users)
+        const response = await fetch(`/api/user/watchlist`);
         
         if (response.ok) {
           const result = await response.json();
@@ -107,11 +104,12 @@ export default function StockSearchBar({
     };
 
     fetchWatchlist();
-  }, [accountId, watchlistSymbols]);
+  }, [watchlistSymbols]);
 
   // Add/remove from watchlist
+  // PRODUCTION-GRADE: Use user-based watchlist API (works for both SnapTrade and Alpaca)
   const toggleWatchlist = async (symbol: string, isInWatchlist: boolean) => {
-    if (!accountId || isUpdatingWatchlist) return;
+    if (isUpdatingWatchlist) return;
     
     setIsUpdatingWatchlist(true);
     
@@ -135,7 +133,8 @@ export default function StockSearchBar({
       const endpoint = isInWatchlist ? 'remove' : 'add';
       const method = isInWatchlist ? 'DELETE' : 'POST';
       
-      const response = await fetch(`/api/watchlist/${accountId}/${endpoint}`, {
+      // Use user-based API instead of accountId-based (works for all users)
+      const response = await fetch(`/api/user/watchlist/${endpoint}`, {
         method,
         headers: {
           'Content-Type': 'application/json',
