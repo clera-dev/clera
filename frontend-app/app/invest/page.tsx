@@ -359,13 +359,19 @@ export default function InvestPage() {
     handleWatchlistChange(symbol, 'remove');
   };
 
-  // Load watchlist on mount and when portfolio mode is determined
+  // Load watchlist on mount, when portfolio mode is determined, and when user changes
   // PRODUCTION-GRADE: User-based watchlist API works regardless of accountId
+  // IMPORTANT: Include userId so watchlist refreshes when user changes (prevents stale data)
   useEffect(() => {
     if (portfolioMode !== 'loading') {
-      fetchWatchlist();
+      if (userId) {
+        fetchWatchlist();
+      } else {
+        // Clear watchlist when no user (logged out)
+        setWatchlistSymbols(new Set());
+      }
     }
-  }, [portfolioMode]);
+  }, [portfolioMode, userId]);
 
   if (isLoadingAccountId) {
     return (

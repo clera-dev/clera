@@ -30,7 +30,6 @@ export default function SideBySideLayout({
   const [accountId, setAccountId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isChatFullscreen, setIsChatFullscreen] = useState(false);
   
   // Resizable chat width state
   const [chatWidth, setChatWidth] = useState<number>(initialChatWidth);
@@ -78,17 +77,6 @@ export default function SideBySideLayout({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [maxChatWidthPercent, minChatWidth]);
-
-  // Reset fullscreen state whenever chat closes
-  useEffect(() => {
-    if (!isChatOpen && isChatFullscreen) {
-      setIsChatFullscreen(false);
-    }
-  }, [isChatOpen, isChatFullscreen]);
-
-  const toggleChatFullscreen = () => {
-    setIsChatFullscreen(prev => !prev);
-  };
 
   // Handle drag start
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -167,20 +155,18 @@ export default function SideBySideLayout({
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden">
-      {/* Content container - hidden when chat is fullscreen */}
-      {!isChatFullscreen && (
-        <div 
-          className={`absolute top-0 bottom-0 left-0 overflow-y-auto overflow-x-hidden ${!isDragging ? 'transition-all duration-300' : ''}`}
-          style={{ 
-            width: isChatOpen ? `calc(100% - ${chatWidth}px)` : "100%",
-          }}
-        >
-          {children}
-        </div>
-      )}
+      {/* Content container */}
+      <div 
+        className={`absolute top-0 bottom-0 left-0 overflow-y-auto overflow-x-hidden ${!isDragging ? 'transition-all duration-300' : ''}`}
+        style={{ 
+          width: isChatOpen ? `calc(100% - ${chatWidth}px)` : "100%",
+        }}
+      >
+        {children}
+      </div>
       
-      {/* Draggable divider - only show when chat is open and not fullscreen */}
-      {isChatOpen && !isChatFullscreen && !isLoading && userId && (
+      {/* Draggable divider - only show when chat is open */}
+      {isChatOpen && !isLoading && userId && (
         <div
           className={`absolute top-0 bottom-0 w-1 cursor-col-resize z-20 group ${!isDragging ? 'transition-all duration-300' : ''}`}
           style={{ 
@@ -216,15 +202,15 @@ export default function SideBySideLayout({
         </div>
       )}
       
-      {/* Chat container - positioned based on fullscreen state */}
+      {/* Chat container - positioned below header */}
       {isChatOpen && !isLoading && userId && (
         <div 
           className={`absolute overflow-hidden z-10 ${!isDragging ? 'transition-all duration-300' : ''}`}
           style={{ 
-            top: isChatFullscreen ? 0 : '64px', // Full height when fullscreen, below header when sidebar
+            top: '64px', // Below header
             bottom: 0,
             right: 0,
-            width: isChatFullscreen ? "100%" : `${chatWidth}px`,
+            width: `${chatWidth}px`,
           }}
         >
           <SidebarChat 
@@ -232,8 +218,6 @@ export default function SideBySideLayout({
             userId={userId}
             onClose={onCloseSideChat}
             width="100%"
-            onToggleFullscreen={toggleChatFullscreen}
-            isFullscreen={isChatFullscreen}
           />
         </div>
       )}

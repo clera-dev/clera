@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { PlusIcon, Clock, ChevronsRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Chat from '@/components/chat/Chat';
@@ -15,18 +14,14 @@ interface SidebarChatProps {
   userId: string;
   onClose: () => void;
   width?: number | string; // Width in pixels or percentage
-  onToggleFullscreen?: () => void; // New prop for fullscreen toggle
-  isFullscreen?: boolean; // New prop to know if we're in fullscreen mode
 }
 
-export default function SidebarChat({ accountId, userId, onClose, width = 350, onToggleFullscreen, isFullscreen = false }: SidebarChatProps) {
+export default function SidebarChat({ accountId, userId, onClose, width = 350 }: SidebarChatProps) {
   const [queryCount, setQueryCount] = useState<number>(0);
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const router = useRouter();
-  const pathname = usePathname();
 
   useEffect(() => {
     const fetchQueryCount = async () => {
@@ -73,13 +68,6 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350, o
   const handleSessionCreated = (newSessionId: string) => {
     setCurrentSessionId(newSessionId);
     setRefreshTrigger(prev => prev + 1);
-  };
-
-  const handleDoubleClick = () => {
-    // Only navigate to chat page if not already on chat page and not in fullscreen
-    if (pathname !== '/chat' && !isFullscreen) {
-      router.push('/chat');
-    }
   };
 
   // Convert width to a CSS value (either px or %)
@@ -131,13 +119,13 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350, o
           accountId={accountId}
           userId={userId}
           onClose={onClose}
-          isFullscreen={isFullscreen}
+          isFullscreen={false}
           sessionId={currentSessionId}
           initialMessages={initialMessages}
           onQuerySent={handleQuerySent}
           isLimitReached={queryCount >= DAILY_QUERY_LIMIT}
           onSessionCreated={handleSessionCreated}
-          isSidebarMode={!isFullscreen}
+          isSidebarMode={true}
         />
         
         {/* Overlay for sidebar */}
