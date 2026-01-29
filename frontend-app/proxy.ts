@@ -72,7 +72,7 @@ const authRequiredApiPaths = [
   '/api/broker/create-account',
 ];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   
   try {
