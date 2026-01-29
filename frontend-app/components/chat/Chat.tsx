@@ -687,8 +687,9 @@ export default function Chat({
         </div>
       )}
 
-      {/* Close button for fullscreen and sidebar modes - positioned absolutely */}
-      {(isFullscreen || isSidebarMode) && showCloseButton && (
+      {/* Close button for fullscreen mode only - positioned absolutely */}
+      {/* Note: Sidebar mode close button is now in SidebarChat header with >> icon */}
+      {isFullscreen && showCloseButton && (
         <Button 
           variant="ghost" 
           size="icon" 

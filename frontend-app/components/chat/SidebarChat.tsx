@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { PlusIcon, Clock, X, ChevronsRight, ChevronsLeft } from 'lucide-react';
+import { PlusIcon, Clock, ChevronsRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Chat from '@/components/chat/Chat';
 import { Message } from '@/utils/api/chat-client';
@@ -93,22 +93,16 @@ export default function SidebarChat({ accountId, userId, onClose, width = 350, o
       {/* Header with New Chat and History buttons - fixed at top */}
       <div className="flex-shrink-0 p-2 border-b bg-background">
         <div className="flex justify-between items-center">
-          {/* Expand/Collapse button - left side */}
-          {onToggleFullscreen && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onToggleFullscreen}
-              className="flex items-center h-8 px-2"
-              title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
-            >
-              {isFullscreen ? (
-                <ChevronsRight size={16} className="text-muted-foreground" />
-              ) : (
-                <ChevronsLeft size={16} className="text-muted-foreground" />
-              )}
-            </Button>
-          )}
+          {/* Close button - left side with clear >> arrows */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="flex items-center h-8 px-2 hover:bg-muted"
+            title="Close chat"
+          >
+            <ChevronsRight size={18} className="text-muted-foreground" />
+          </Button>
           
           <Button
             variant="outline"
